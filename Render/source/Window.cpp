@@ -1,4 +1,7 @@
 #include "Window.h"
+#include "InputTranslator.h"
+#include <optional>
+
 
 Window::Window(const WindowConfig& config)
 {
@@ -28,6 +31,38 @@ void Window::Clear()
 void Window::Display()
 {
     m_window.display();
+}
+
+bool Window::PollEvents(InputManager& input)
+{
+    while (const std::optional<sf::Event> event = m_window.pollEvent())
+    {
+        if (event->is<sf::Event::Closed>())
+            return false;
+
+        if (const auto* keyPress = event->getIf<sf::Event::KeyPressed>())
+        {
+            const KeyCode code = InputTranslator::TranslateKey(keyPress->code);
+            if (code != KeyCode::Count) input.SetKeyState(code, true);
+        }
+        else if (const auto* keyRelease = event->getIf<sf::Event::KeyReleased>())
+        {
+            const KeyCode code = InputTranslator::TranslateKey(keyRelease->code);
+            if (code != KeyCode::Count) input.SetKeyState(code, false);
+        }
+        else if (const auto* mousePress = event->getIf<sf::Event::MouseButtonPressed>())
+        {
+            const MouseButton button = InputTranslator::TranslateMouseButton(mousePress->button);
+            if (button != MouseButton::Count) input.SetMouseButtonState(button, true);
+        }
+        else if (const auto* mouseRelease = event->getIf<sf::Event::MouseButtonReleased>())
+        {
+            const MouseButton button = InputTranslator::TranslateMouseButton(mouseRelease->button);
+            if (button != MouseButton::Count) input.SetMouseButtonState(button, false);
+        }
+    }
+
+    return true;
 }
 
 void Window::ApplyConfig(const WindowConfig &config)
