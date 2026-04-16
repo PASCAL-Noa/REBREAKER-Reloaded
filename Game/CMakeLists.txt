@@ -1,5 +1,5 @@
 file(GLOB_RECURSE GAME_SOURCES CONFIG_DEPENDS "source/*.cpp")
-file(GLOB_RECURSE GAME_HEADERS CONFIG_DEPENDS "include/*.hpp")
+file(GLOB_RECURSE RENDER_HEADERS CONFIG_DEPENDS "include/*.hpp" "include/*.h")
 
 add_executable(RebreakerReload ${GAME_SOURCES} ${GAME_HEADERS})
 
