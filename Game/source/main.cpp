@@ -6,7 +6,7 @@
 #include "Camera2D.h"
 #include <string>
 
-static void HandlePlayerInput(InputManager& input, Transform2D& player, float speed)
+static void HandlePlayerInput(const InputManager& input, Transform2D& player, float speed)
 {
     if (input.IsKeyDown(KeyCode::Up) || input.IsKeyDown(KeyCode::Z))    player.Y -= speed;
     if (input.IsKeyDown(KeyCode::Down) || input.IsKeyDown(KeyCode::S))  player.Y += speed;
@@ -14,7 +14,7 @@ static void HandlePlayerInput(InputManager& input, Transform2D& player, float sp
     if (input.IsKeyDown(KeyCode::Right) || input.IsKeyDown(KeyCode::D)) player.X += speed;
 }
 
-static void HandleCameraInput(InputManager& input, Camera2D& camera)
+static void HandleCameraInput(const InputManager& input, Camera2D& camera)
 {
     if (input.IsKeyDown(KeyCode::Space)) camera.Rotation += 2.0f;
     else camera.Rotation = 0.0f;
@@ -30,7 +30,7 @@ static void UpdateCamera(Camera2D& camera, const Transform2D& target)
     camera.Y += (target.Y - camera.Y) * 0.1f;
 }
 
-static void DrawGrid(const Renderer& renderer)
+static void DrawGrid(Renderer& renderer)
 {
     for (int x = -1000; x <= 1000; x += 200)
     {
@@ -41,7 +41,7 @@ static void DrawGrid(const Renderer& renderer)
     }
 }
 
-static void DrawDebugUI(const Renderer& renderer, const Camera2D& camera, uint32_t fontId)
+static void DrawDebugUI(Renderer& renderer, const Camera2D& camera, uint32_t fontId)
 {
     std::string debugText = "Controles: ZQSD (Mouvement) | E/A (Zoom) | Espace (Rotation)\n";
     debugText += "Camera X: " + std::to_string(static_cast<int>(camera.X)) +
@@ -64,13 +64,12 @@ int main()
     const uint32_t fontDebugId = resourceManager.LoadResource("Resources/font/arial.ttf");
 
     Transform2D playerTransform{0.0f, 0.0f, 0.0f, 1.0f, 1.0f};
-    Transform2D obstacleTransform{300.0f, 200.0f, 45.0f, 1.0f, 1.0f};
     Camera2D camera{playerTransform.X, playerTransform.Y, 1.0f, 0.0f};
-
-    const float speed = 10.0f;
 
     while (window.IsOpen())
     {
+        constexpr float speed = 10.0f;
+        Transform2D obstacleTransform{300.0f, 200.0f, 45.0f, 1.0f, 1.0f};
         inputManager.Update();
 
         if (!window.PollEvents(inputManager))
