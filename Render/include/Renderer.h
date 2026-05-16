@@ -5,6 +5,8 @@
 #include "Transform2D.h"
 #include <string>
 
+#include "Camera2D.h"
+
 class Renderer
 {
 public:
@@ -13,6 +15,9 @@ public:
 
     void                BeginDraw() const;
     void                EndDraw() const;
+
+    void                SetCamera(const Camera2D& camera) const;
+    void                ResetCamera() const;
 
     void                DrawSprite(uint32_t textureId, const Transform2D& transform, Color color = Colors::White) const;
     void                DrawCircle(float radius, const Transform2D& transform, Color color = Colors::White) const;

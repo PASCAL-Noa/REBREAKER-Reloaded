@@ -21,6 +21,22 @@ void Renderer::EndDraw() const
     m_window.Display();
 }
 
+void Renderer::SetCamera(const Camera2D& camera) const
+{
+    sf::View view = m_window.GetNative().getDefaultView();
+
+    view.setCenter({camera.X, camera.Y});
+    view.setRotation(sf::degrees(camera.Rotation));
+    view.zoom(camera.Zoom);
+
+    m_window.GetNative().setView(view);
+}
+
+void Renderer::ResetCamera() const
+{
+    m_window.GetNative().setView(m_window.GetNative().getDefaultView());
+}
+
 void Renderer::DrawSprite(uint32_t textureId, const Transform2D& transform, Color color) const
 {
     if (sf::Texture* tex = m_resources.Get<sf::Texture>(textureId))
