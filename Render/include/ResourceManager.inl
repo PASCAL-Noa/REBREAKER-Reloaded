@@ -1,3 +1,5 @@
+#pragma once
+
 template <>
 inline sf::Texture* ResourceManager::Get<sf::Texture>(uint32_t id) const
 {
