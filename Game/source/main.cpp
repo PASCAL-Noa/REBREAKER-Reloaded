@@ -36,7 +36,7 @@ static void DrawGrid(Renderer& renderer)
     {
         for (int y = -1000; y <= 1000; y += 200)
         {
-            renderer.DrawCircle(5.0f, {static_cast<float>(x), static_cast<float>(y), 0, 1, 1}, Colors::Blue);
+            renderer.DrawCircle(5.0f, {static_cast<float>(x), static_cast<float>(y), 0.0f, 1.0f, 1.0f}, Colors::Blue);
         }
     }
 }
@@ -48,10 +48,30 @@ static void DrawDebugUI(Renderer& renderer, const Camera2D& camera, uint32_t fon
                  " Y: " + std::to_string(static_cast<int>(camera.Y)) +
                  " Zoom: " + std::to_string(camera.Zoom);
 
-    Transform2D textTransform{10.0f, 10.0f, 0.0f, 1.0f, 1.0f};
-
     renderer.ResetCamera();
-    renderer.DrawText(debugText, fontId, 20.0f, textTransform, Colors::Yellow);
+    renderer.DrawText(debugText, fontId, 20.0f, {10.0f, 10.0f, 0.0f, 1.0f, 1.0f}, Colors::Yellow);
+}
+
+static void DrawLights(Renderer& renderer)
+{
+    renderer.DrawCircle(80.0f, { 0.0f, -20.0f, 0.0f, 1.0f, 1.0f }, { 255, 0, 0, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, { -20.0f, 20.0f, 0.0f, 1.0f, 1.0f }, { 0, 255, 0, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, { 20.0f, 20.0f, 0.0f, 1.0f, 1.0f }, { 0, 0, 255, 150 }, BlendMode::Add);
+}
+
+static void RenderScene(Renderer& renderer, const Camera2D& camera, const Transform2D& player, const Transform2D& obstacle, uint32_t fontId, uint32_t shaderId, bool useShader)
+{
+    renderer.BeginDraw();
+
+    renderer.SetCamera(camera);
+    DrawGrid(renderer);
+    DrawLights(renderer);
+    renderer.DrawRectangle(150.0f, 50.0f, obstacle, Colors::Red);
+    renderer.DrawCircle(50.0f, player, Colors::Green);
+
+    DrawDebugUI(renderer, camera, fontId);
+
+    renderer.EndDraw(useShader ? shaderId : 0);
 }
 
 int main()
@@ -62,14 +82,16 @@ int main()
     Renderer renderer(window, resourceManager);
 
     const uint32_t fontDebugId = resourceManager.LoadResource("Resources/font/arial.ttf");
+    const uint32_t shaderFxId = resourceManager.LoadResource("Resources/shaders/fx.frag");
 
     Transform2D playerTransform{0.0f, 0.0f, 0.0f, 1.0f, 1.0f};
+    Transform2D obstacleTransform{300.0f, 200.0f, 45.0f, 1.0f, 1.0f};
     Camera2D camera{playerTransform.X, playerTransform.Y, 1.0f, 0.0f};
+
+    constexpr float speed = 10.0f;
 
     while (window.IsOpen())
     {
-        constexpr float speed = 10.0f;
-        Transform2D obstacleTransform{300.0f, 200.0f, 45.0f, 1.0f, 1.0f};
         inputManager.Update();
 
         if (!window.PollEvents(inputManager))
@@ -82,16 +104,9 @@ int main()
         HandleCameraInput(inputManager, camera);
         UpdateCamera(camera, playerTransform);
 
-        renderer.BeginDraw();
+        const bool enableShader = inputManager.IsKeyDown(KeyCode::F);
 
-        renderer.SetCamera(camera);
-        DrawGrid(renderer);
-        renderer.DrawRectangle(150.0f, 50.0f, obstacleTransform, Colors::Red);
-        renderer.DrawCircle(50.0f, playerTransform, Colors::Green);
-
-        DrawDebugUI(renderer, camera, fontDebugId);
-
-        renderer.EndDraw();
+        RenderScene(renderer, camera, playerTransform, obstacleTransform, fontDebugId, shaderFxId, enableShader);
     }
 
     return 0;

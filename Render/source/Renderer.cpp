@@ -6,13 +6,32 @@ static sf::Color ToSfColor(const Color& c)
     return {c.r, c.g, c.b, c.a};
 }
 
+static sf::BlendMode ToSfBlendMode(const BlendMode& mode)
+{
+    return (mode == BlendMode::Add) ? sf::BlendAdd : sf::BlendAlpha;
+}
+
+static void ApplyTransform(sf::Transformable& target, const Transform2D& transform)
+{
+    target.setPosition({transform.X, transform.Y});
+    target.setRotation(sf::degrees(transform.Rotation));
+    target.setScale({transform.ScaleX, transform.ScaleY});
+}
+
+static void RenderItem(sf::RenderTexture& texture, const sf::Drawable& drawable, BlendMode mode)
+{
+    sf::RenderStates states;
+    states.blendMode = ToSfBlendMode(mode);
+    texture.draw(drawable, states);
+}
+
 Renderer::Renderer(Window& window, ResourceManager& resources)
     : m_window(window), m_resources(resources)
 {
     sf::ContextSettings settings;
     settings.antiAliasingLevel = 32;
 
-    m_renderTexture.resize(m_window.GetNative().getSize(), settings);
+    (void)m_renderTexture.resize(m_window.GetNative().getSize(), settings);
 
     m_renderTexture.setSmooth(true);
 }
@@ -22,13 +41,23 @@ void Renderer::BeginDraw()
     m_renderTexture.clear();
 }
 
-void Renderer::EndDraw()
+void Renderer::EndDraw(uint32_t postProcessShaderId)
 {
     m_renderTexture.display();
 
     m_window.Clear();
     sf::Sprite renderSprite(m_renderTexture.getTexture());
-    m_window.GetNative().draw(renderSprite);
+
+    if (postProcessShaderId != 0 && m_resources.Get<sf::Shader>(postProcessShaderId) != nullptr)
+    {
+        sf::RenderStates states;
+        states.shader = m_resources.Get<sf::Shader>(postProcessShaderId);
+        m_window.GetNative().draw(renderSprite, states);
+    }
+    else
+    {
+        m_window.GetNative().draw(renderSprite);
+    }
     m_window.Display();
 }
 
@@ -46,52 +75,40 @@ void Renderer::ResetCamera()
     m_renderTexture.setView(m_renderTexture.getDefaultView());
 }
 
-void Renderer::DrawSprite(uint32_t textureId, const Transform2D& transform, Color color)
+void Renderer::DrawSprite(uint32_t textureId, const Transform2D& transform, Color color, BlendMode blendMode)
 {
-    if (sf::Texture* texture = m_resources.Get<sf::Texture>(textureId))
+    if (sf::Texture* tex = m_resources.Get<sf::Texture>(textureId))
     {
-        sf::Sprite sprite(*texture);
-        sprite.setPosition({transform.X, transform.Y});
-        sprite.setRotation(sf::degrees(transform.Rotation));
-        sprite.setScale({transform.ScaleX, transform.ScaleY});
+        sf::Sprite sprite(*tex);
+        ApplyTransform(sprite, transform);
         sprite.setColor(ToSfColor(color));
-
-        m_renderTexture.draw(sprite);
+        RenderItem(m_renderTexture, sprite, blendMode);
     }
 }
 
-void Renderer::DrawCircle(float radius, const Transform2D& transform, Color color)
+void Renderer::DrawCircle(float radius, const Transform2D& transform, Color color, BlendMode blendMode)
 {
     sf::CircleShape circle(radius);
-    circle.setPosition({transform.X, transform.Y});
-    circle.setRotation(sf::degrees(transform.Rotation));
-    circle.setScale({transform.ScaleX, transform.ScaleY});
+    ApplyTransform(circle, transform);
     circle.setFillColor(ToSfColor(color));
-
-    m_renderTexture.draw(circle);
+    RenderItem(m_renderTexture, circle, blendMode);
 }
 
-void Renderer::DrawRectangle(float width, float height, const Transform2D& transform, Color color)
+void Renderer::DrawRectangle(float width, float height, const Transform2D& transform, Color color, BlendMode blendMode)
 {
     sf::RectangleShape rect({width, height});
-    rect.setPosition({transform.X, transform.Y});
-    rect.setRotation(sf::degrees(transform.Rotation));
-    rect.setScale({transform.ScaleX, transform.ScaleY});
+    ApplyTransform(rect, transform);
     rect.setFillColor(ToSfColor(color));
-
-    m_renderTexture.draw(rect);
+    RenderItem(m_renderTexture, rect, blendMode);
 }
 
-void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color)
+void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color, BlendMode blendMode)
 {
     if (sf::Font* font = m_resources.Get<sf::Font>(fontId))
     {
         sf::Text sfText(*font, text, static_cast<unsigned int>(fontSize));
-        sfText.setPosition({transform.X, transform.Y});
-        sfText.setRotation(sf::degrees(transform.Rotation));
-        sfText.setScale({transform.ScaleX, transform.ScaleY});
+        ApplyTransform(sfText, transform);
         sfText.setFillColor(ToSfColor(color));
-
-        m_renderTexture.draw(sfText);
+        RenderItem(m_renderTexture, sfText, blendMode);
     }
 }
