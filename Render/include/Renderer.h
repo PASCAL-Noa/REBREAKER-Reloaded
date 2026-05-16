@@ -13,18 +13,19 @@ public:
     Renderer(Window& window, ResourceManager& resources);
     ~Renderer() = default;
 
-    void                BeginDraw() const;
-    void                EndDraw() const;
+    void                BeginDraw();
+    void                EndDraw();
 
-    void                SetCamera(const Camera2D& camera) const;
-    void                ResetCamera() const;
+    void                SetCamera(const Camera2D& camera);
+    void                ResetCamera();
 
-    void                DrawSprite(uint32_t textureId, const Transform2D& transform, Color color = Colors::White) const;
-    void                DrawCircle(float radius, const Transform2D& transform, Color color = Colors::White) const;
-    void                DrawRectangle(float width, float height, const Transform2D& transform, Color color = Colors::White) const;
-    void                DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color = Colors::White) const;
+    void                DrawSprite(uint32_t textureId, const Transform2D& transform, Color color = Colors::White);
+    void                DrawCircle(float radius, const Transform2D& transform, Color color = Colors::White);
+    void                DrawRectangle(float width, float height, const Transform2D& transform, Color color = Colors::White);
+    void                DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color = Colors::White);
 
 private:
     Window&             m_window;
     ResourceManager&    m_resources;
+    sf::RenderTexture   m_renderTexture;
 };
