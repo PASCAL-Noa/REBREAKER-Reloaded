@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
@@ -11,8 +12,8 @@ public:
     ~ResourceManager();
 
     uint32_t                                        LoadResource(const std::string& filepath);
-
     template <typename T> T*                        Get(uint32_t id) const;
+
 
     void                                            Clear();
 

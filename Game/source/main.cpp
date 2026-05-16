@@ -1,18 +1,94 @@
 #include "Window.h"
 #include "InputManager.h"
-#include <SFML/Graphics.hpp>
+#include "ResourceManager.h"
+#include "Renderer.h"
+#include "Transform2D.h"
+#include "Camera2D.h"
+#include <string>
+
+static void HandlePlayerInput(const InputManager& input, Transform2D& player, float speed)
+{
+    if (input.IsKeyDown(KeyCode::Up) || input.IsKeyDown(KeyCode::Z))    player.Y -= speed;
+    if (input.IsKeyDown(KeyCode::Down) || input.IsKeyDown(KeyCode::S))  player.Y += speed;
+    if (input.IsKeyDown(KeyCode::Left) || input.IsKeyDown(KeyCode::Q))  player.X -= speed;
+    if (input.IsKeyDown(KeyCode::Right) || input.IsKeyDown(KeyCode::D)) player.X += speed;
+}
+
+static void HandleCameraInput(const InputManager& input, Camera2D& camera)
+{
+    if (input.IsKeyDown(KeyCode::Space)) camera.Rotation += 2.0f;
+    else camera.Rotation = 0.0f;
+
+    if (input.IsKeyDown(KeyCode::A)) camera.Zoom += 0.01f;
+    if (input.IsKeyDown(KeyCode::E)) camera.Zoom -= 0.01f;
+    if (camera.Zoom < 0.1f) camera.Zoom = 0.1f;
+}
+
+static void UpdateCamera(Camera2D& camera, const Transform2D& target)
+{
+    camera.X += (target.X - camera.X) * 0.1f;
+    camera.Y += (target.Y - camera.Y) * 0.1f;
+}
+
+static void DrawGrid(Renderer& renderer)
+{
+    for (int x = -1000; x <= 1000; x += 200)
+    {
+        for (int y = -1000; y <= 1000; y += 200)
+        {
+            renderer.DrawCircle(5.0f, {static_cast<float>(x), static_cast<float>(y), 0.0f, 1.0f, 1.0f}, Colors::Blue);
+        }
+    }
+}
+
+static void DrawDebugUI(Renderer& renderer, const Camera2D& camera, uint32_t fontId)
+{
+    std::string debugText = "Controles: ZQSD (Mouvement) | E/A (Zoom) | Espace (Rotation)\n";
+    debugText += "Camera X: " + std::to_string(static_cast<int>(camera.X)) +
+                 " Y: " + std::to_string(static_cast<int>(camera.Y)) +
+                 " Zoom: " + std::to_string(camera.Zoom);
+
+    renderer.ResetCamera();
+    renderer.DrawText(debugText, fontId, 20.0f, {10.0f, 10.0f, 0.0f, 1.0f, 1.0f}, Colors::Yellow);
+}
+
+static void DrawLights(Renderer& renderer)
+{
+    renderer.DrawCircle(80.0f, { 0.0f, -20.0f, 0.0f, 1.0f, 1.0f }, { 255, 0, 0, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, { -20.0f, 20.0f, 0.0f, 1.0f, 1.0f }, { 0, 255, 0, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, { 20.0f, 20.0f, 0.0f, 1.0f, 1.0f }, { 0, 0, 255, 150 }, BlendMode::Add);
+}
+
+static void RenderScene(Renderer& renderer, const Camera2D& camera, const Transform2D& player, const Transform2D& obstacle, uint32_t fontId, uint32_t shaderId, bool useShader)
+{
+    renderer.BeginDraw();
+
+    renderer.SetCamera(camera);
+    DrawGrid(renderer);
+    DrawLights(renderer);
+    renderer.DrawRectangle(150.0f, 50.0f, obstacle, Colors::Red);
+    renderer.DrawCircle(50.0f, player, Colors::Green);
+
+    DrawDebugUI(renderer, camera, fontId);
+
+    renderer.EndDraw(useShader ? shaderId : 0);
+}
 
 int main()
 {
-    Window window{};
+    Window window;
     InputManager inputManager;
+    ResourceManager resourceManager;
+    Renderer renderer(window, resourceManager);
 
-    sf::CircleShape player(50.0f);
-    player.setFillColor(sf::Color::Green);
+    const uint32_t fontDebugId = resourceManager.LoadResource("Resources/font/arial.ttf");
+    const uint32_t shaderFxId = resourceManager.LoadResource("Resources/shaders/fx.frag");
 
-    player.setPosition({590.0f, 310.0f});
+    Transform2D playerTransform{0.0f, 0.0f, 0.0f, 1.0f, 1.0f};
+    Transform2D obstacleTransform{300.0f, 200.0f, 45.0f, 1.0f, 1.0f};
+    Camera2D camera{playerTransform.X, playerTransform.Y, 1.0f, 0.0f};
 
-    const float speed = 10.0f;
+    constexpr float speed = 10.0f;
 
     while (window.IsOpen())
     {
@@ -24,22 +100,13 @@ int main()
             break;
         }
 
-        sf::Vector2f movement(0.0f, 0.0f);
+        HandlePlayerInput(inputManager, playerTransform, speed);
+        HandleCameraInput(inputManager, camera);
+        UpdateCamera(camera, playerTransform);
 
-        if (inputManager.IsKeyDown(KeyCode::Up) || inputManager.IsKeyDown(KeyCode::Z) || inputManager.IsKeyDown(KeyCode::W))
-            movement.y -= speed;
-        if (inputManager.IsKeyDown(KeyCode::Down) || inputManager.IsKeyDown(KeyCode::S))
-            movement.y += speed;
-        if (inputManager.IsKeyDown(KeyCode::Left) || inputManager.IsKeyDown(KeyCode::Q) || inputManager.IsKeyDown(KeyCode::A))
-            movement.x -= speed;
-        if (inputManager.IsKeyDown(KeyCode::Right) || inputManager.IsKeyDown(KeyCode::D))
-            movement.x += speed;
+        const bool enableShader = inputManager.IsKeyDown(KeyCode::F);
 
-        player.move(movement);
-
-        window.Clear();
-        window.GetNative().draw(player);
-        window.Display();
+        RenderScene(renderer, camera, playerTransform, obstacleTransform, fontDebugId, shaderFxId, enableShader);
     }
 
     return 0;

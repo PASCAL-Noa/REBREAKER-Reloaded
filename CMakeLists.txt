@@ -13,7 +13,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 
-find_package(SFML COMPONENTS Graphics Window System Audio Network CONFIG REQUIRED)
+find_package(SFML 3.0.2 COMPONENTS Graphics Window System Audio Network CONFIG REQUIRED)
 
 add_subdirectory(Engine)
 add_subdirectory(Render)
