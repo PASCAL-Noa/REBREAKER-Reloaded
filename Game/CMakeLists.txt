@@ -18,4 +18,4 @@ function(add_auto_copy NAME SOURCE_DIR DEST_DIR)
     add_dependencies(RebreakerReload ${NAME})
 endfunction()
 
-add_auto_copy(copy_resources "${CMAKE_SOURCE_DIR}/Resources" "${CMAKE_BINARY_DIR}/bin/res")
+add_auto_copy(copy_resources "${CMAKE_SOURCE_DIR}/Resources" "${CMAKE_BINARY_DIR}/bin/Resources")
