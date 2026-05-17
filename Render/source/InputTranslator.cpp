@@ -1,4 +1,4 @@
-#include "InputTranslator.h"
+#include "System/InputTranslator.h"
 
 namespace InputTranslator
 {

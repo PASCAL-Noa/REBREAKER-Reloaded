@@ -1,4 +1,4 @@
-#include "Renderer.h"
+#include "Graphics/Renderer.h"
 
 
 static sf::Color ToSfColor(const Color& c)
@@ -9,6 +9,19 @@ static sf::Color ToSfColor(const Color& c)
 static sf::BlendMode ToSfBlendMode(const BlendMode& mode)
 {
     return (mode == BlendMode::Add) ? sf::BlendAdd : sf::BlendAlpha;
+}
+
+static sf::PrimitiveType ToSfPrimitiveType(const PrimitiveType type)
+{
+    switch (type)
+    {
+        case PrimitiveType::Points:         return sf::PrimitiveType::Points;
+        case PrimitiveType::Lines:          return sf::PrimitiveType::Lines;
+        case PrimitiveType::LineStrip:      return sf::PrimitiveType::LineStrip;
+        case PrimitiveType::Triangles:      return sf::PrimitiveType::Triangles;
+        case PrimitiveType::TriangleStrip:  return sf::PrimitiveType::TriangleStrip;
+        default:                            return sf::PrimitiveType::Triangles;
+    }
 }
 
 static void ApplyTransform(sf::Transformable& target, const Transform2D& transform)
@@ -25,8 +38,7 @@ static void RenderItem(sf::RenderTexture& texture, const sf::Drawable& drawable,
     texture.draw(drawable, states);
 }
 
-Renderer::Renderer(Window& window, ResourceManager& resources)
-    : m_window(window), m_resources(resources)
+Renderer::Renderer(Window& window, ResourceManager& resources) : m_window(window), m_resources(resources)
 {
     sf::ContextSettings settings;
     settings.antiAliasingLevel = 32;
@@ -111,4 +123,28 @@ void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize
         sfText.setFillColor(ToSfColor(color));
         RenderItem(m_renderTexture, sfText, blendMode);
     }
+}
+
+void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType type, uint32_t textureId,
+    BlendMode blendMode)
+{
+    if (vertices.empty()) return;
+
+    std::vector<sf::Vertex> sfVertices;
+    sfVertices.reserve(vertices.size());
+
+    for (const auto& v : vertices)
+    {
+        sfVertices.emplace_back(sf::Vector2f{v.X, v.Y}, ToSfColor(v.Color), sf::Vector2f{v.U, v.V});
+    }
+
+    sf::RenderStates states;
+    states.blendMode = ToSfBlendMode(blendMode);
+
+    if (textureId != 0)
+    {
+        states.texture = m_resources.Get<sf::Texture>(textureId);
+    }
+
+    m_renderTexture.draw(sfVertices.data(), sfVertices.size(), ToSfPrimitiveType(type), states);
 }

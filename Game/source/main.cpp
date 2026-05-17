@@ -1,10 +1,11 @@
-#include "Window.h"
+#include "System/Window.h"
 #include "InputManager.h"
-#include "ResourceManager.h"
-#include "Renderer.h"
+#include "Resources/ResourceManager.h"
+#include "Graphics/Renderer.h"
 #include "Transform2D.h"
 #include "Camera2D.h"
 #include <string>
+#include <cmath>
 
 static void HandlePlayerInput(const InputManager& input, Transform2D& player, float speed)
 {
@@ -59,12 +60,28 @@ static void DrawLights(Renderer& renderer)
     renderer.DrawCircle(80.0f, { 20.0f, 20.0f, 0.0f, 1.0f, 1.0f }, { 0, 0, 255, 150 }, BlendMode::Add);
 }
 
+static void DrawBurst(Renderer& renderer)
+{
+    std::vector<Vertex> lines;
+    lines.reserve(72);
+
+    for (int i = 0; i < 360; i += 10)
+    {
+        const float rad = i * 3.14159f / 180.0f;
+        lines.push_back({0.0f, 0.0f, Colors::White, 0.0f, 0.0f});
+        lines.push_back({std::cos(rad) * 400.0f, std::sin(rad) * 400.0f, {255, 0, 0, 0}, 0.0f, 0.0f});
+    }
+
+    renderer.DrawVertices(lines, PrimitiveType::Lines, 0, BlendMode::Add);
+}
+
 static void RenderScene(Renderer& renderer, const Camera2D& camera, const Transform2D& player, const Transform2D& obstacle, uint32_t fontId, uint32_t shaderId, bool useShader)
 {
     renderer.BeginDraw();
 
     renderer.SetCamera(camera);
     DrawGrid(renderer);
+    DrawBurst(renderer);
     DrawLights(renderer);
     renderer.DrawRectangle(150.0f, 50.0f, obstacle, Colors::Red);
     renderer.DrawCircle(50.0f, player, Colors::Green);

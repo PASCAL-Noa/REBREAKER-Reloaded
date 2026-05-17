@@ -1,5 +1,5 @@
-#include "Window.h"
-#include "InputTranslator.h"
+#include "System/Window.h"
+#include "System/InputTranslator.h"
 #include <optional>
 
 
