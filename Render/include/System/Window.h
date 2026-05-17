@@ -3,7 +3,7 @@
 #include <SFML/Graphics.hpp>
 
 #include "InputManager.h"
-#include "WindowConfig.h"
+#include "../Data/WindowConfig.h"
 
 class Window
 {

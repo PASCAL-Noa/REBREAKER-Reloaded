@@ -1,12 +1,14 @@
 #pragma once
-#include "Window.h"
-#include "ResourceManager.h"
-#include "Color.h"
+#include "../System/Window.h"
+#include "../Resources/ResourceManager.h"
+#include "../Data/Color.h"
 #include "Transform2D.h"
 #include <string>
 
-#include "BlendMode.h"
+#include "../Data/BlendMode.h"
 #include "Camera2D.h"
+#include "../Data/PrimitiveType.h"
+#include "../Data/Vertex.h"
 
 class Renderer
 {
@@ -24,6 +26,7 @@ public:
     void                DrawCircle(float radius, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
     void                DrawRectangle(float width, float height, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
     void                DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
+    void                DrawVertices(const std::vector<Vertex>& vertices, PrimitiveType type, uint32_t textureId = 0, BlendMode blendMode = BlendMode::Alpha);
 
 private:
     Window&             m_window;
