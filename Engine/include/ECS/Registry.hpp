@@ -1,66 +1,121 @@
 #pragma once
-#include <vector>
-#include <cassert>
 #include "Entity.h"
 #include "ISparseSet.h"
+#include "SparseSet.hpp"
+#include <vector>
+#include <queue>
 
-template <typename T>
-class SparseSet : public ISparseSet
+class ComponentCounter
 {
 public:
-    SparseSet()
+    template <typename T>
+    static size_t GetId()
     {
-        m_sparse.resize(MAX_ENTITIES, npos);
+        static size_t id = s_counter++;
+        return id;
+    }
+private:
+    static inline size_t s_counter = 0;
+};
+
+class Registry
+{
+public:
+    Registry() = default;
+    ~Registry()
+    {
+        for (ISparseSet* pool : m_pools)
+        {
+            delete pool;
+        }
     }
 
-    void Insert(Entity entity, const T& component)
+    Entity CreateEntity()
     {
-        assert(entity < MAX_ENTITIES);
-        if (Contains(entity)) return;
-
-        m_sparse[entity] = m_dense.size();
-        m_dense.push_back(component);
-        m_entities.push_back(entity);
+        if (!m_freeEntities.empty())
+        {
+            Entity entity = m_freeEntities.front();
+            m_freeEntities.pop();
+            return entity;
+        }
+        return m_entityCount++;
     }
 
-    void Remove(Entity entity) override
+    void DestroyEntity(Entity entity)
     {
-        assert(entity < MAX_ENTITIES);
-        if (!Contains(entity)) return;
-
-        size_t indexOfRemoved = m_sparse[entity];
-        size_t indexOfLast = m_dense.size() - 1;
-        Entity entityOfLast = m_entities[indexOfLast];
-
-        m_dense[indexOfRemoved] = m_dense[indexOfLast];
-        m_entities[indexOfRemoved] = entityOfLast;
-        m_sparse[entityOfLast] = indexOfRemoved;
-        m_sparse[entity] = npos;
-
-        m_dense.pop_back();
-        m_entities.pop_back();
+        for (ISparseSet* pool : m_pools)
+        {
+            if (pool) pool->Remove(entity);
+        }
+        m_freeEntities.push(entity);
     }
 
-    T& Get(Entity entity)
+    template <typename T, typename... Args>
+    T& AddComponent(Entity entity, Args&&... args)
     {
-        assert(Contains(entity));
-        return m_dense[m_sparse[entity]];
+        SparseSet<T>* pool = GetOrCreatePool<T>();
+        pool->Insert(entity, T(entity, std::forward<Args>(args)...));
+        return pool->Get(entity);
     }
 
-    bool Contains(Entity entity) const
+    template <typename T>
+    void RemoveComponent(Entity entity)
     {
-        return entity < MAX_ENTITIES && m_sparse[entity] != npos;
+        if (SparseSet<T>* pool = GetPool<T>())
+        {
+            pool->Remove(entity);
+        }
     }
 
-    std::vector<T>& GetDense()
+    template <typename T>
+    bool HasComponent(Entity entity) const
     {
-        return m_dense;
+        SparseSet<T>* pool = GetPool<T>();
+        return pool && pool->Contains(entity);
+    }
+
+    template <typename T>
+    T& GetComponent(Entity entity)
+    {
+        return GetPool<T>()->Get(entity);
+    }
+
+    template <typename T1, typename... Tn, typename Func>
+    void View(Func&& func)
+    {
+        SparseSet<T1>* primaryPool = GetPool<T1>();
+        if (!primaryPool) return;
+
+        for (Entity entity : primaryPool->GetEntities())
+        {
+            if ((HasComponent<Tn>(entity) && ...))
+            {
+                func(entity, primaryPool->Get(entity), GetComponent<Tn>(entity)...);
+            }
+        }
     }
 
 private:
-    static constexpr size_t npos = static_cast<size_t>(-1);
+    template <typename T>
+    SparseSet<T>* GetPool() const
+    {
+        size_t id = ComponentCounter::GetId<T>();
+        if (id >= m_pools.size() || !m_pools[id]) return nullptr;
+        return static_cast<SparseSet<T>*>(m_pools[id]);
+    }
 
-    std::vector<T> m_dense;
-    std::vector<Entity> m_entities;
-    std::vector<size_t> m_sparse;
+    template <typename T>
+    SparseSet<T>* GetOrCreatePool()
+    {
+        size_t id = ComponentCounter::GetId<T>();
+        if (id >= m_pools.size()) m_pools.resize(id + 1, nullptr);
+
+        if (!m_pools[id]) m_pools[id] = new SparseSet<T>();
+
+        return static_cast<SparseSet<T>*>(m_pools[id]);
+    }
+
+    std::vector<ISparseSet*> m_pools;
+    std::queue<Entity> m_freeEntities;
+    Entity m_entityCount = 0;
 };

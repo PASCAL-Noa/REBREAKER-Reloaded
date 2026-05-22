@@ -57,6 +57,11 @@ public:
         return m_dense;
     }
 
+    const std::vector<Entity>& GetEntities() const
+    {
+        return m_entities;
+    }
+
 private:
     static constexpr size_t npos = static_cast<size_t>(-1);
 
