@@ -2,10 +2,65 @@
 #include "InputManager.h"
 #include "Resources/ResourceManager.h"
 #include "Graphics/Renderer.h"
-#include "Transform2D.h"
-#include "Camera2D.h"
+#include "Components/Transform2D.h"
+#include "Components/Camera2D.h"
+#include "Timer.h"
 #include <string>
-#include <cmath>
+#include <vector>
+#include <random>
+
+
+struct Particle
+{
+    float x, y;
+    float vx, vy;
+    Color color;
+};
+
+constexpr int NUM_PARTICLES = 1000000;
+std::vector<Particle> particles;
+
+static void InitParticles()
+{
+    particles.resize(NUM_PARTICLES);
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<float> posDist(-800.0f, 800.0f);
+    std::uniform_real_distribution<float> velDist(-150.0f, 150.0f);
+    std::uniform_int_distribution<int> colDist(100, 255);
+
+    for (auto& p : particles)
+    {
+        p.x = posDist(rng);
+        p.y = posDist(rng);
+        p.vx = velDist(rng);
+        p.vy = velDist(rng);
+        p.color = { static_cast<uint8_t>(colDist(rng)), static_cast<uint8_t>(colDist(rng)), 255, 255 };
+    }
+}
+
+static void UpdateParticles(float dt)
+{
+    for (auto& p : particles)
+    {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+
+        if (p.x < -1000.0f || p.x > 1000.0f) p.vx *= -1.0f;
+        if (p.y < -1000.0f || p.y > 1000.0f) p.vy *= -1.0f;
+    }
+}
+
+static void DrawParticles(Renderer& renderer)
+{
+    std::vector<Vertex> vertices;
+    vertices.reserve(NUM_PARTICLES);
+    for (const auto& p : particles)
+    {
+        vertices.push_back({ p.x, p.y, p.color, 0.0f, 0.0f });
+    }
+
+    renderer.DrawVertices(vertices, PrimitiveType::Points, 0, BlendMode::Add);
+}
 
 static void HandlePlayerInput(const InputManager& input, Transform2D& player, float speed)
 {
@@ -17,11 +72,11 @@ static void HandlePlayerInput(const InputManager& input, Transform2D& player, fl
 
 static void HandleCameraInput(const InputManager& input, Camera2D& camera)
 {
-    if (input.IsKeyDown(KeyCode::Space)) camera.Rotation += 2.0f;
+    if (input.IsKeyDown(KeyCode::Space)) camera.Rotation += 1.0f;
     else camera.Rotation = 0.0f;
 
-    if (input.IsKeyDown(KeyCode::A)) camera.Zoom += 0.01f;
-    if (input.IsKeyDown(KeyCode::E)) camera.Zoom -= 0.01f;
+    if (input.IsKeyDown(KeyCode::A)) camera.Zoom += 0.02f;
+    if (input.IsKeyDown(KeyCode::E)) camera.Zoom -= 0.02f;
     if (camera.Zoom < 0.1f) camera.Zoom = 0.1f;
 }
 
@@ -31,28 +86,6 @@ static void UpdateCamera(Camera2D& camera, const Transform2D& target)
     camera.Y += (target.Y - camera.Y) * 0.1f;
 }
 
-static void DrawGrid(Renderer& renderer)
-{
-    for (int x = -1000; x <= 1000; x += 200)
-    {
-        for (int y = -1000; y <= 1000; y += 200)
-        {
-            renderer.DrawCircle(5.0f, {static_cast<float>(x), static_cast<float>(y), 0.0f, 1.0f, 1.0f}, Colors::Blue);
-        }
-    }
-}
-
-static void DrawDebugUI(Renderer& renderer, const Camera2D& camera, uint32_t fontId)
-{
-    std::string debugText = "Controles: ZQSD (Mouvement) | E/A (Zoom) | Espace (Rotation)\n";
-    debugText += "Camera X: " + std::to_string(static_cast<int>(camera.X)) +
-                 " Y: " + std::to_string(static_cast<int>(camera.Y)) +
-                 " Zoom: " + std::to_string(camera.Zoom);
-
-    renderer.ResetCamera();
-    renderer.DrawText(debugText, fontId, 20.0f, {10.0f, 10.0f, 0.0f, 1.0f, 1.0f}, Colors::Yellow);
-}
-
 static void DrawLights(Renderer& renderer)
 {
     renderer.DrawCircle(80.0f, { 0.0f, -20.0f, 0.0f, 1.0f, 1.0f }, { 255, 0, 0, 150 }, BlendMode::Add);
@@ -60,40 +93,9 @@ static void DrawLights(Renderer& renderer)
     renderer.DrawCircle(80.0f, { 20.0f, 20.0f, 0.0f, 1.0f, 1.0f }, { 0, 0, 255, 150 }, BlendMode::Add);
 }
 
-static void DrawBurst(Renderer& renderer)
-{
-    std::vector<Vertex> lines;
-    lines.reserve(72);
-
-    for (int i = 0; i < 360; i += 10)
-    {
-        const float rad = i * 3.14159f / 180.0f;
-        lines.push_back({0.0f, 0.0f, Colors::White, 0.0f, 0.0f});
-        lines.push_back({std::cos(rad) * 400.0f, std::sin(rad) * 400.0f, {255, 0, 0, 0}, 0.0f, 0.0f});
-    }
-
-    renderer.DrawVertices(lines, PrimitiveType::Lines, 0, BlendMode::Add);
-}
-
-static void RenderScene(Renderer& renderer, const Camera2D& camera, const Transform2D& player, const Transform2D& obstacle, uint32_t fontId, uint32_t shaderId, bool useShader)
-{
-    renderer.BeginDraw();
-
-    renderer.SetCamera(camera);
-    DrawGrid(renderer);
-    DrawBurst(renderer);
-    DrawLights(renderer);
-    renderer.DrawRectangle(150.0f, 50.0f, obstacle, Colors::Red);
-    renderer.DrawCircle(50.0f, player, Colors::Green);
-
-    DrawDebugUI(renderer, camera, fontId);
-
-    renderer.EndDraw(useShader ? shaderId : 0);
-}
-
 int main()
 {
-    Window window;
+    Window window{};
     InputManager inputManager;
     ResourceManager resourceManager;
     Renderer renderer(window, resourceManager);
@@ -102,28 +104,47 @@ int main()
     const uint32_t shaderFxId = resourceManager.LoadResource("Resources/shaders/fx.frag");
 
     Transform2D playerTransform{0.0f, 0.0f, 0.0f, 1.0f, 1.0f};
-    Transform2D obstacleTransform{300.0f, 200.0f, 45.0f, 1.0f, 1.0f};
     Camera2D camera{playerTransform.X, playerTransform.Y, 1.0f, 0.0f};
 
-    constexpr float speed = 10.0f;
+    InitParticles();
+
+    Timer time(window.GetConfig().VSync ? 0 : window.GetConfig().MaxFPS);
 
     while (window.IsOpen())
     {
+        time.Update();
+
         inputManager.Update();
+        if (!window.PollEvents(inputManager)) break;
 
-        if (!window.PollEvents(inputManager))
-        {
-            window.Close();
-            break;
-        }
+        const float dt = time.GetDeltaTime();
+        const float playerSpeed = 600.0f * dt;
 
-        HandlePlayerInput(inputManager, playerTransform, speed);
+        HandlePlayerInput(inputManager, playerTransform, playerSpeed);
         HandleCameraInput(inputManager, camera);
         UpdateCamera(camera, playerTransform);
+        UpdateParticles(dt);
 
         const bool enableShader = inputManager.IsKeyDown(KeyCode::F);
 
-        RenderScene(renderer, camera, playerTransform, obstacleTransform, fontDebugId, shaderFxId, enableShader);
+        renderer.BeginDraw();
+
+        renderer.SetCamera(camera);
+        renderer.DrawRectangle(50.0f, 50.0f, { -25.0f, -25.0f, 0.0f, 1.0f, 1.0f }, Colors::Red);
+        DrawParticles(renderer);
+        DrawLights(renderer);
+        renderer.DrawCircle(30.0f, playerTransform, Colors::Green);
+
+        renderer.ResetCamera();
+
+        std::string debugText = "FPS : " + std::to_string(static_cast<int>(time.GetFPS())) + "\n";
+        debugText += "Particles : " + std::to_string(NUM_PARTICLES) + "\n";
+        debugText += "Toggle shader 'F' \n";
+        debugText += "Move 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom in 'E' / Zoom out 'A')";
+
+        renderer.DrawText(debugText, fontDebugId, 24.0f, {10.0f, 10.0f, 0.0f, 1.0f, 1.0f}, Colors::Yellow);
+
+        renderer.EndDraw(enableShader ? shaderFxId : 0);
     }
 
     return 0;
