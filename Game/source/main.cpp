@@ -126,7 +126,7 @@ int main()
         renderer.ResetCamera();
 
         std::string debugText = "FPS : " + std::to_string(static_cast<int>(time.GetFPS())) + "\n";
-        debugText += "ECS Particles : " + std::to_string(NUM_PARTICLES) + "\n";
+        debugText += "Active Particles : " + std::to_string(registry.GetActiveEntityCount()) + "\n";
         debugText += "Toggle shader 'F' \n";
         debugText += "Move 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom in 'E' / Zoom out 'A'";
 

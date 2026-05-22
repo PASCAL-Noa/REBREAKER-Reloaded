@@ -50,6 +50,11 @@ public:
         m_freeEntities.push(entity);
     }
 
+    size_t GetActiveEntityCount() const
+    {
+        return m_entityCount - m_freeEntities.size();
+    }
+
     template <typename T, typename... Args>
     T& AddComponent(Entity entity, Args&&... args)
     {
