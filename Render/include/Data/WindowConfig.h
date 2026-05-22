@@ -10,9 +10,10 @@ enum class WindowMode
 
 struct WindowConfig
 {
-    unsigned int    Width   =  1280;
-    unsigned int    Height  =  720;
+    unsigned int    Width   =  1920;
+    unsigned int    Height  =  1080;
     std::string     Title   =  "Rebreaker Reload";
     WindowMode      Mode    =  WindowMode::Windowed;
-    unsigned int    MaxFPS  =  60;
+    unsigned int    MaxFPS  =  120;
+    bool            VSync   =  false;
 };

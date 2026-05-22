@@ -92,10 +92,24 @@ void Window::ApplyConfig(const WindowConfig &config)
     }
 
     m_window.create(sf::VideoMode({m_config.Width, m_config.Height}), m_config.Title, sfStyle, sfState);
-    m_window.setFramerateLimit(m_config.MaxFPS);
+    m_window.setFramerateLimit(0);
+    m_window.setVerticalSyncEnabled(m_config.VSync);
+}
+
+const WindowConfig& Window::GetConfig() const
+{
+    return m_config;
 }
 
 sf::RenderWindow& Window::GetNative()
 {
     return m_window;
+}
+
+void Window::SetVSync(bool enabled)
+{
+    if (enabled) {
+        m_window.setFramerateLimit(0);
+    }
+    m_window.setVerticalSyncEnabled(enabled);
 }

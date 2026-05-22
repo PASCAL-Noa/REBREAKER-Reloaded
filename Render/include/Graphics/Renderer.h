@@ -1,14 +1,14 @@
 #pragma once
-#include "../System/Window.h"
-#include "../Resources/ResourceManager.h"
-#include "../Data/Color.h"
-#include "Transform2D.h"
+#include "System/Window.h"
+#include "Resources/ResourceManager.h"
+#include "Data/Color.h"
+#include "Components/Transform2D.h"
 #include <string>
 
-#include "../Data/BlendMode.h"
-#include "Camera2D.h"
-#include "../Data/PrimitiveType.h"
-#include "../Data/Vertex.h"
+#include "Data/BlendMode.h"
+#include "Components/Camera2D.h"
+#include "Data/PrimitiveType.h"
+#include "Data/Vertex.h"
 
 class Renderer
 {
