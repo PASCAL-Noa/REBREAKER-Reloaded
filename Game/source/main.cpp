@@ -9,63 +9,37 @@ extern "C" {
 #include "InputManager.h"
 #include "Resources/ResourceManager.h"
 #include "Graphics/Renderer.h"
+#include "ECS/Registry.hpp"
+#include "ECS/SystemManager.hpp"
 #include "Components/Transform2D.h"
 #include "Components/Camera2D.h"
+#include "Components/Velocity2D.h"
+#include "Components/ColorComponent.h"
+#include "Systems/ParticleMovementSystem.h"
+#include "Systems/ParticleRenderSystem.h"
 #include "Timer.h"
 #include <string>
-#include <vector>
 #include <random>
 
-struct Particle
-{
-    float x, y;
-    float vx, vy;
-    Color color;
-};
-
 constexpr int NUM_PARTICLES = 100000;
-std::vector<Particle> particles;
 
-static void InitParticles()
+static void InitECSParticles(Registry& registry)
 {
-    particles.resize(NUM_PARTICLES);
     std::mt19937 rng(42);
     std::uniform_real_distribution<float> posDist(-800.0f, 800.0f);
     std::uniform_real_distribution<float> velDist(-150.0f, 150.0f);
     std::uniform_int_distribution<int> colDist(100, 255);
 
-    for (auto& p : particles)
+    for (int i = 0; i < NUM_PARTICLES; ++i)
     {
-        p.x = posDist(rng);
-        p.y = posDist(rng);
-        p.vx = velDist(rng);
-        p.vy = velDist(rng);
-        p.color = { static_cast<uint8_t>(colDist(rng)), static_cast<uint8_t>(colDist(rng)), 255, 255 };
+        Entity e = registry.CreateEntity();
+
+        registry.AddComponent<Transform2D>(e, posDist(rng), posDist(rng));
+        registry.AddComponent<Velocity2D>(e, velDist(rng), velDist(rng));
+
+        Color color = { static_cast<uint8_t>(colDist(rng)), static_cast<uint8_t>(colDist(rng)), 255, 255 };
+        registry.AddComponent<ColorComponent>(e, color);
     }
-}
-
-static void UpdateParticles(float dt)
-{
-    for (auto& p : particles)
-    {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-
-        if (p.x < -1000.0f || p.x > 1000.0f) p.vx *= -1.0f;
-        if (p.y < -1000.0f || p.y > 1000.0f) p.vy *= -1.0f;
-    }
-}
-
-static void DrawParticles(Renderer& renderer)
-{
-    std::vector<Vertex> vertices;
-    vertices.reserve(NUM_PARTICLES);
-    for (const auto& p : particles)
-    {
-        vertices.push_back({ p.x, p.y, p.color, 0.0f, 0.0f });
-    }
-
-    renderer.DrawVertices(vertices, PrimitiveType::Points, 0, BlendMode::Add);
 }
 
 static void HandlePlayerInput(const InputManager& input, Transform2D& player, float speed)
@@ -106,13 +80,20 @@ int main()
     ResourceManager resourceManager;
     Renderer renderer(window, resourceManager);
 
+    Registry registry;
+    SystemManager systemManager;
+
+    systemManager.AddSystem<ParticleMovementSystem>(registry);
+    systemManager.AddSystem<ParticleRenderSystem>(registry, renderer, NUM_PARTICLES);
+
     const uint32_t fontDebugId = resourceManager.LoadResource("Resources/font/arial.ttf");
     const uint32_t shaderFxId = resourceManager.LoadResource("Resources/shaders/fx.frag");
 
     Transform2D playerTransform{0, 0.0f, 0.0f};
     Camera2D camera{0, 0.0f, 0.0f};
 
-    InitParticles();
+    InitECSParticles(registry);
+    systemManager.OnInit();
 
     Timer time(window.GetConfig().VSync ? 0 : window.GetConfig().MaxFPS);
 
@@ -129,26 +110,25 @@ int main()
         HandlePlayerInput(inputManager, playerTransform, playerSpeed);
         HandleCameraInput(inputManager, camera);
         UpdateCamera(camera, playerTransform);
-        UpdateParticles(dt);
 
         const bool enableShader = inputManager.IsKeyDown(KeyCode::F);
 
         renderer.BeginDraw();
-
         renderer.SetCamera(camera);
 
         renderer.DrawRectangle(50.0f, 50.0f, Transform2D{0, -25.0f, -25.0f}, Colors::Red);
 
-        DrawParticles(renderer);
+        systemManager.OnUpdate(dt);
+
         DrawLights(renderer);
         renderer.DrawCircle(30.0f, playerTransform, Colors::Green);
 
         renderer.ResetCamera();
 
         std::string debugText = "FPS : " + std::to_string(static_cast<int>(time.GetFPS())) + "\n";
-        debugText += "Particles : " + std::to_string(NUM_PARTICLES) + "\n";
+        debugText += "ECS Particles : " + std::to_string(NUM_PARTICLES) + "\n";
         debugText += "Toggle shader 'F' \n";
-        debugText += "Move 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom in 'E' / Zoom out 'A')";
+        debugText += "Move 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom in 'E' / Zoom out 'A'";
 
         renderer.DrawText(debugText, fontDebugId, 24.0f, Transform2D{0, 10.0f, 10.0f}, Colors::Yellow);
 
