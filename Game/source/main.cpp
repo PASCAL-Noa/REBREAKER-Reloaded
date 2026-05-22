@@ -1,3 +1,10 @@
+#ifdef _WIN32
+extern "C" {
+    __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
+    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+#endif
+
 #include "System/Window.h"
 #include "InputManager.h"
 #include "Resources/ResourceManager.h"
@@ -9,7 +16,6 @@
 #include <vector>
 #include <random>
 
-
 struct Particle
 {
     float x, y;
@@ -17,7 +23,7 @@ struct Particle
     Color color;
 };
 
-constexpr int NUM_PARTICLES = 1000000;
+constexpr int NUM_PARTICLES = 100000;
 std::vector<Particle> particles;
 
 static void InitParticles()
@@ -88,9 +94,9 @@ static void UpdateCamera(Camera2D& camera, const Transform2D& target)
 
 static void DrawLights(Renderer& renderer)
 {
-    renderer.DrawCircle(80.0f, { 0.0f, -20.0f, 0.0f, 1.0f, 1.0f }, { 255, 0, 0, 150 }, BlendMode::Add);
-    renderer.DrawCircle(80.0f, { -20.0f, 20.0f, 0.0f, 1.0f, 1.0f }, { 0, 255, 0, 150 }, BlendMode::Add);
-    renderer.DrawCircle(80.0f, { 20.0f, 20.0f, 0.0f, 1.0f, 1.0f }, { 0, 0, 255, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, Transform2D{0, 0.0f, -20.0f}, { 255, 0, 0, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, Transform2D{0, -20.0f, 20.0f}, { 0, 255, 0, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, Transform2D{0, 20.0f, 20.0f}, { 0, 0, 255, 150 }, BlendMode::Add);
 }
 
 int main()
@@ -103,8 +109,8 @@ int main()
     const uint32_t fontDebugId = resourceManager.LoadResource("Resources/font/arial.ttf");
     const uint32_t shaderFxId = resourceManager.LoadResource("Resources/shaders/fx.frag");
 
-    Transform2D playerTransform{0.0f, 0.0f, 0.0f, 1.0f, 1.0f};
-    Camera2D camera{playerTransform.X, playerTransform.Y, 1.0f, 0.0f};
+    Transform2D playerTransform{0, 0.0f, 0.0f};
+    Camera2D camera{0, 0.0f, 0.0f};
 
     InitParticles();
 
@@ -130,7 +136,9 @@ int main()
         renderer.BeginDraw();
 
         renderer.SetCamera(camera);
-        renderer.DrawRectangle(50.0f, 50.0f, { -25.0f, -25.0f, 0.0f, 1.0f, 1.0f }, Colors::Red);
+
+        renderer.DrawRectangle(50.0f, 50.0f, Transform2D{0, -25.0f, -25.0f}, Colors::Red);
+
         DrawParticles(renderer);
         DrawLights(renderer);
         renderer.DrawCircle(30.0f, playerTransform, Colors::Green);
@@ -142,7 +150,7 @@ int main()
         debugText += "Toggle shader 'F' \n";
         debugText += "Move 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom in 'E' / Zoom out 'A')";
 
-        renderer.DrawText(debugText, fontDebugId, 24.0f, {10.0f, 10.0f, 0.0f, 1.0f, 1.0f}, Colors::Yellow);
+        renderer.DrawText(debugText, fontDebugId, 24.0f, Transform2D{0, 10.0f, 10.0f}, Colors::Yellow);
 
         renderer.EndDraw(enableShader ? shaderFxId : 0);
     }
