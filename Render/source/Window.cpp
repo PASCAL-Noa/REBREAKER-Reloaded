@@ -35,31 +35,31 @@ void Window::Display()
 
 bool Window::PollEvents(InputManager& input)
 {
+    const auto handleKey = [&input](auto sfKey, bool isPressed)
+    {
+        if (const KeyCode code = InputTranslator::TranslateKey(sfKey); code != KeyCode::Count)
+            input.SetKeyState(code, isPressed);
+    };
+
+    const auto handleMouse = [&input](auto sfButton, bool isPressed)
+    {
+        if (const MouseButton btn = InputTranslator::TranslateMouseButton(sfButton); btn != MouseButton::Count)
+            input.SetMouseButtonState(btn, isPressed);
+    };
+
     while (const std::optional<sf::Event> event = m_window.pollEvent())
     {
         if (event->is<sf::Event::Closed>())
             return false;
 
-        if (const auto* keyPress = event->getIf<sf::Event::KeyPressed>())
-        {
-            const KeyCode code = InputTranslator::TranslateKey(keyPress->code);
-            if (code != KeyCode::Count) input.SetKeyState(code, true);
-        }
-        else if (const auto* keyRelease = event->getIf<sf::Event::KeyReleased>())
-        {
-            const KeyCode code = InputTranslator::TranslateKey(keyRelease->code);
-            if (code != KeyCode::Count) input.SetKeyState(code, false);
-        }
-        else if (const auto* mousePress = event->getIf<sf::Event::MouseButtonPressed>())
-        {
-            const MouseButton button = InputTranslator::TranslateMouseButton(mousePress->button);
-            if (button != MouseButton::Count) input.SetMouseButtonState(button, true);
-        }
-        else if (const auto* mouseRelease = event->getIf<sf::Event::MouseButtonReleased>())
-        {
-            const MouseButton button = InputTranslator::TranslateMouseButton(mouseRelease->button);
-            if (button != MouseButton::Count) input.SetMouseButtonState(button, false);
-        }
+        if (const auto* e = event->getIf<sf::Event::KeyPressed>())
+            handleKey(e->code, true);
+        else if (const auto* e = event->getIf<sf::Event::KeyReleased>())
+            handleKey(e->code, false);
+        else if (const auto* e = event->getIf<sf::Event::MouseButtonPressed>())
+            handleMouse(e->button, true);
+        else if (const auto* e = event->getIf<sf::Event::MouseButtonReleased>())
+            handleMouse(e->button, false);
     }
 
     return true;
@@ -92,10 +92,24 @@ void Window::ApplyConfig(const WindowConfig &config)
     }
 
     m_window.create(sf::VideoMode({m_config.Width, m_config.Height}), m_config.Title, sfStyle, sfState);
-    m_window.setFramerateLimit(m_config.MaxFPS);
+    m_window.setFramerateLimit(0);
+    m_window.setVerticalSyncEnabled(m_config.VSync);
+}
+
+const WindowConfig& Window::GetConfig() const
+{
+    return m_config;
 }
 
 sf::RenderWindow& Window::GetNative()
 {
     return m_window;
+}
+
+void Window::SetVSync(bool enabled)
+{
+    if (enabled) {
+        m_window.setFramerateLimit(0);
+    }
+    m_window.setVerticalSyncEnabled(enabled);
 }

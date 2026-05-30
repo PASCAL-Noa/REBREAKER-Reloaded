@@ -3,12 +3,12 @@
 #include <SFML/Graphics.hpp>
 
 #include "InputManager.h"
-#include "../Data/WindowConfig.h"
+#include "Data/WindowConfig.h"
 
 class Window
 {
 public:
-    Window(const WindowConfig& config = WindowConfig());
+    Window(const WindowConfig& config = WindowConfig{});
     ~Window();
 
     bool                IsOpen() const;
@@ -18,7 +18,10 @@ public:
 
     bool                PollEvents(InputManager& input);
     void                ApplyConfig(const WindowConfig& config);
+
+    const WindowConfig& GetConfig() const;
     sf::RenderWindow&   GetNative();
+    void                SetVSync(bool enabled);
 
 private:
     sf::RenderWindow    m_window;
