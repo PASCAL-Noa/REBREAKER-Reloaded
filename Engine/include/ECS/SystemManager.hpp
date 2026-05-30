@@ -49,6 +49,11 @@ public:
         for (System* system : m_systems) system->OnEndUpdate();
     }
 
+    void OnRender() const
+    {
+        for (System* system : m_systems) system->OnRender();
+    }
+
 private:
     std::vector<System*> m_systems;
 };

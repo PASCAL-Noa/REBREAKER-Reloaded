@@ -13,6 +13,7 @@ public:
     virtual void OnUpdate(float dt) {}
     virtual void OnLateUpdate(float dt) {}
     virtual void OnEndUpdate() {}
+    virtual void OnRender() {}
 
 protected:
     Registry& m_registry;
