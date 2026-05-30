@@ -1,14 +1,23 @@
 #include "Scenes/Sandbox.h"
 
+#include <random>
+#include <string>
+
+#include "Core/Debug.h"
+#include "Core/GameData.h"
+#include "ECS/Components/ColorComponent.h"
+#include "ECS/Components/Velocity2D.h"
+#include "ECS/Systems/ParticleSystem.h"
+#include "Graphics/Renderer.h"
+
 void SandBox::OnInit(GameContext& context)
 {
     Scene::OnInit(context);
 
     m_fontId = context.Resources.LoadResource("Resources/font/arial.ttf");
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
-
-    m_systemManager.AddSystem<ParticleMovementSystem>(m_registry);
-    m_systemManager.AddSystem<ParticleRenderSystem>(m_registry, context.Render, 100000);
+    
+    m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 100000);
 
     InitParticles();
     m_systemManager.OnInit();
@@ -113,7 +122,7 @@ void SandBox::DrawLights(Renderer& renderer)
     renderer.DrawCircle(80.0f, Transform2D{0, 20.0f, 20.0f}, { 0, 0, 255, 150 }, BlendMode::Add);
 }
 
-void SandBox::DrawUI(GameContext& context)
+void SandBox::DrawUI(const GameContext& context) const
 {
     std::string debugText = "FPS : " + std::to_string(context.Data.FPS) + "\n";
     debugText += "Active Particles : " + std::to_string(m_registry.GetActiveEntityCount()) + "\n";

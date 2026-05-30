@@ -1,19 +1,9 @@
 #pragma once
 #include "Core/Scene.h"
 #include "Core/GameContext.h"
-#include "Core/GameData.h"
-#include "Core/Debug.h"
 #include "InputManager.h"
-#include "Graphics/Renderer.h"
-#include "Resources/ResourceManager.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/Camera2D.h"
-#include "ECS/Components/Velocity2D.h"
-#include "ECS/Components/ColorComponent.h"
-#include "ECS/Systems/ParticleMovementSystem.h"
-#include "ECS/Systems/ParticleRenderSystem.h"
-#include <random>
-#include <string>
 
 class SandBox : public Scene
 {
@@ -28,8 +18,8 @@ private:
     void InitParticles();
     void HandleInput(float dt, const InputManager& input);
     void SpawnParticles(int count, float x, float y);
-    void DrawLights(Renderer& renderer);
-    void DrawUI(GameContext& context);
+    static void DrawLights(Renderer& renderer);
+    void DrawUI(const GameContext& context) const;
 
     Transform2D m_player{0, 0.0f, 0.0f};
     Camera2D m_camera{0, 0.0f, 0.0f};
