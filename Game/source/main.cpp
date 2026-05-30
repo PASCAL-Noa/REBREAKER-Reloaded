@@ -11,13 +11,14 @@ extern "C" {
 #include "Graphics/Renderer.h"
 #include "ECS/Registry.hpp"
 #include "ECS/SystemManager.hpp"
-#include "Components/Transform2D.h"
-#include "Components/Camera2D.h"
-#include "Components/Velocity2D.h"
-#include "Components/ColorComponent.h"
-#include "Systems/ParticleMovementSystem.h"
-#include "Systems/ParticleRenderSystem.h"
+#include "ECS/Components/Transform2D.h"
+#include "ECS/Components/Camera2D.h"
+#include "ECS/Components/Velocity2D.h"
+#include "ECS/Components/ColorComponent.h"
+#include "ECS/Systems/ParticleMovementSystem.h"
+#include "ECS/Systems/ParticleRenderSystem.h"
 #include "Timer.h"
+#include "Core/Debug.h"
 #include <string>
 #include <random>
 
@@ -73,9 +74,33 @@ static void DrawLights(Renderer& renderer)
     renderer.DrawCircle(80.0f, Transform2D{0, 20.0f, 20.0f}, { 0, 0, 255, 150 }, BlendMode::Add);
 }
 
+static void SpawnParticles(Registry& registry, int count, float x, float y)
+{
+    static std::mt19937 rng(42);
+    std::uniform_real_distribution<float> velDist(-300.0f, 300.0f);
+    std::uniform_int_distribution<int> colDist(150, 255);
+
+    for (int i = 0; i < count; ++i)
+    {
+        Entity e = registry.CreateEntity();
+
+        registry.AddComponent<Transform2D>(e, x, y);
+        registry.AddComponent<Velocity2D>(e, velDist(rng), velDist(rng));
+
+        Color color = { static_cast<uint8_t>(colDist(rng)), static_cast<uint8_t>(colDist(rng)), 255, 255 };
+        registry.AddComponent<ColorComponent>(e, color);
+    }
+}
+
 int main()
 {
+    Debug::Init();
+    Debug::Info("Engine initialized successfully.");
+
     Window window{};
+
+    Debug::Warning("Testing warnings... Max FPS set to {}", window.GetConfig().MaxFPS);
+
     InputManager inputManager;
     ResourceManager resourceManager;
     Renderer renderer(window, resourceManager);
@@ -111,6 +136,12 @@ int main()
         HandleCameraInput(inputManager, camera);
         UpdateCamera(camera, playerTransform);
 
+        if (inputManager.IsKeyDown(KeyCode::C))
+        {
+            SpawnParticles(registry, 500, playerTransform.X, playerTransform.Y);
+            Debug::Info("Spawned 500 particles at X:{}, Y:{}", playerTransform.X, playerTransform.Y);
+        }
+
         const bool enableShader = inputManager.IsKeyDown(KeyCode::F);
 
         renderer.BeginDraw();
@@ -128,7 +159,7 @@ int main()
         std::string debugText = "FPS : " + std::to_string(static_cast<int>(time.GetFPS())) + "\n";
         debugText += "Active Particles : " + std::to_string(registry.GetActiveEntityCount()) + "\n";
         debugText += "Toggle shader 'F' \n";
-        debugText += "Move 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom in 'E' / Zoom out 'A'";
+        debugText += "Move 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom 'E' / 'A' | Spawn 'C'";
 
         renderer.DrawText(debugText, fontDebugId, 24.0f, Transform2D{0, 10.0f, 10.0f}, Colors::Yellow);
 

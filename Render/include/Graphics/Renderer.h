@@ -2,11 +2,11 @@
 #include "System/Window.h"
 #include "Resources/ResourceManager.h"
 #include "Data/Color.h"
-#include "Components/Transform2D.h"
+#include "ECS/Components/Transform2D.h"
 #include <string>
 
 #include "Data/BlendMode.h"
-#include "Components/Camera2D.h"
+#include "ECS/Components/Camera2D.h"
 #include "Data/PrimitiveType.h"
 #include "Data/Vertex.h"
 

@@ -1,8 +1,8 @@
 #pragma once
 #include "ECS/System.h"
 #include "Graphics/Renderer.h"
-#include "Components/Transform2D.h"
-#include "Components/ColorComponent.h"
+#include "ECS/Components/Transform2D.h"
+#include "ECS/Components/ColorComponent.h"
 #include <vector>
 
 class ParticleRenderSystem : public System

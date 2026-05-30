@@ -1,7 +1,7 @@
 #pragma once
 #include "ECS/System.h"
-#include "Components/Transform2D.h"
-#include "Components/Velocity2D.h"
+#include "ECS/Components/Transform2D.h"
+#include "ECS/Components/Velocity2D.h"
 #include <vector>
 
 class ParticleMovementSystem : public System
