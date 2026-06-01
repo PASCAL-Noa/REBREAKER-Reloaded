@@ -5,4 +5,6 @@ struct BoxCollider
 {
     Vector2f    Size;
     Vector2f    Offset;
+    bool        IsColliding = false;
+    bool        IsTrigger = false;
 };

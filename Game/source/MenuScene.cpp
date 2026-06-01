@@ -5,6 +5,7 @@
 #include "InputManager.h"
 #include "Graphics/Renderer.h"
 #include "Resources/ResourceManager.h"
+#include "Scenes/SamplePhysics.h"
 
 void MenuScene::OnInit(GameContext& context)
 {
@@ -17,9 +18,16 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     {
         context.Scenes.LoadScene<SandBox>();
     }
+
+    if (context.Input.IsKeyDown(KeyCode::Num2))
+    {
+        context.Scenes.LoadScene<SamplePhysics>();
+    }
+
 }
 
 void MenuScene::OnRender(GameContext& context)
 {
-    context.Render.DrawText("MENU SCENE - Appuie sur '1' pour la SandBox", m_fontId, 32.0f, Transform2D{200.0f, 300.0f}, Colors::White);
+    context.Render.DrawText("Press '1' for SandBox", m_fontId, 32.0f, Transform2D{200.0f, 300.0f}, Colors::White);
+    context.Render.DrawText("Press '2' for Physics", m_fontId, 32.0f, Transform2D{200.0f, 350.0f}, Colors::White);
 }

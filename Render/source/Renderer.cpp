@@ -146,3 +146,23 @@ void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType t
 
     m_renderTexture.draw(sfVertices.data(), sfVertices.size(), ToSfPrimitiveType(type), states);
 }
+
+void Renderer::DrawRectangleOutline(float width, float height, const Transform2D& transform, Color color, float thickness)
+{
+    sf::RectangleShape rect({width, height});
+    ApplyTransform(rect, transform);
+    rect.setFillColor(sf::Color::Transparent); // Intérieur vide
+    rect.setOutlineColor(ToSfColor(color));
+    rect.setOutlineThickness(thickness);
+    RenderItem(m_renderTexture, rect, BlendMode::Alpha);
+}
+
+void Renderer::DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness)
+{
+    sf::CircleShape circle(radius);
+    ApplyTransform(circle, transform);
+    circle.setFillColor(sf::Color::Transparent); // Intérieur vide
+    circle.setOutlineColor(ToSfColor(color));
+    circle.setOutlineThickness(thickness);
+    RenderItem(m_renderTexture, circle, BlendMode::Alpha);
+}
