@@ -27,6 +27,8 @@ public:
     void                DrawRectangle(float width, float height, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
     void                DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
     void                DrawVertices(const std::vector<Vertex>& vertices, PrimitiveType type, uint32_t textureId = 0, BlendMode blendMode = BlendMode::Alpha);
+    void                DrawRectangleOutline(float width, float height, const Transform2D& transform, Color color, float thickness = 2.0f);
+    void                DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness = 2.0f);
 
 private:
     Window&             m_window;

@@ -3,6 +3,7 @@
 class   InputManager;
 class   Renderer;
 class   ResourceManager;
+class   SceneManager;
 struct  GameData;
 
 struct GameContext
@@ -11,4 +12,5 @@ struct GameContext
     Renderer&           Render;
     ResourceManager&    Resources;
     GameData&           Data;
+    SceneManager&       Scenes;
 };

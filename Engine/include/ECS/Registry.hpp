@@ -59,7 +59,7 @@ public:
     T& AddComponent(Entity entity, Args&&... args)
     {
         SparseSet<T>* pool = GetOrCreatePool<T>();
-        pool->Insert(entity, T(entity, std::forward<Args>(args)...));
+        pool->Insert(entity, T(std::forward<Args>(args)...));
         return pool->Get(entity);
     }
 

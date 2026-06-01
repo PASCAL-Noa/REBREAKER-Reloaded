@@ -1,16 +1,9 @@
 #pragma once
-#include "ECS/Component.h"
+#include "Math/Vector2.h"
 
-struct Transform2D : public Component
+struct Transform2D
 {
-    float X = 0.0f;
-    float Y = 0.0f;
-    float Rotation = 0.0f;
-    float ScaleX = 1.0f;
-    float ScaleY = 1.0f;
-
-    Transform2D() = default;
-
-    Transform2D(Entity owner, float x, float y, float rotation = 0.0f, float scaleX = 1.0f, float scaleY = 1.0f)
-        : Component(owner), X(x), Y(y), Rotation(rotation), ScaleX(scaleX), ScaleY(scaleY) {}
+    Vector2f    Position;
+    float       Rotation = 0.0f;
+    Vector2f    Scale{1.0f, 1.0f};
 };
