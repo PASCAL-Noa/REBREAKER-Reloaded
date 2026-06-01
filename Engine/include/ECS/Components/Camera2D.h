@@ -1,15 +1,9 @@
 #pragma once
-#include "ECS/Component.h"
+#include "Math/Vector2.h"
 
-struct Camera2D : public Component
+struct Camera2D
 {
-    float X = 0.0f;
-    float Y = 0.0f;
-    float Zoom = 1.0f;
-    float Rotation = 0.0f;
-
-    Camera2D() = default;
-
-    Camera2D(Entity owner, float x, float y, float zoom = 1.0f, float rotation = 0.0f)
-        : Component(owner), X(x), Y(y), Zoom(zoom), Rotation(rotation) {}
+    Vector2f    Position;
+    float       Zoom = 1.0f;
+    float       Rotation = 0.0f;
 };
