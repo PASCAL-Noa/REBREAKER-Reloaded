@@ -5,10 +5,12 @@
 
 #include "Core/Debug.h"
 #include "Core/GameData.h"
+#include "Core/SceneManager.h"
 #include "ECS/Components/ColorComponent.h"
-#include "ECS/Components/Velocity2D.h"
+#include "ECS/Components/RigidBody.h"
 #include "ECS/Systems/ParticleSystem.h"
 #include "Graphics/Renderer.h"
+#include "Scenes/MenuScene.h"
 
 void SandBox::OnInit(GameContext& context)
 {
@@ -16,7 +18,7 @@ void SandBox::OnInit(GameContext& context)
 
     m_fontId = context.Resources.LoadResource("Resources/font/arial.ttf");
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
-    
+
     m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 100000);
 
     InitParticles();
@@ -28,7 +30,7 @@ void SandBox::OnUpdate(float dt, GameContext& context)
 {
     Scene::OnUpdate(dt, context);
 
-    HandleInput(dt, context.Input);
+    HandleInput(dt, context);
     m_systemManager.OnUpdate(dt);
 }
 
@@ -37,7 +39,7 @@ void SandBox::OnRender(GameContext& context)
     Scene::OnRender(context);
 
     context.Render.SetCamera(m_camera);
-    context.Render.DrawRectangle(50.0f, 50.0f, Transform2D{0, -25.0f, -25.0f}, Colors::Red);
+    context.Render.DrawRectangle(50.0f, 50.0f, Transform2D{Vector2f{-25.0f, -25.0f}}, Colors::Red);
 
     m_systemManager.OnRender();
 
@@ -70,20 +72,23 @@ void SandBox::InitParticles()
     for (int i = 0; i < 100000; ++i)
     {
         Entity e = m_registry.CreateEntity();
-        m_registry.AddComponent<Transform2D>(e, posDist(rng), posDist(rng));
-        m_registry.AddComponent<Velocity2D>(e, velDist(rng), velDist(rng));
+        m_registry.AddComponent<Transform2D>(e, Vector2f{posDist(rng), posDist(rng)});
+        m_registry.AddComponent<RigidBody>(e, RigidBody{Vector2f{velDist(rng), velDist(rng)}});
         m_registry.AddComponent<ColorComponent>(e, Color{ static_cast<uint8_t>(colDist(rng)), static_cast<uint8_t>(colDist(rng)), 255, 255 });
     }
 }
 
-void SandBox::HandleInput(float dt, const InputManager& input)
+void SandBox::HandleInput(float dt, const GameContext& context)
 {
     const float speed = 600.0f * dt;
+    const InputManager& input = context.Input;
 
-    if (input.IsKeyDown(KeyCode::Up) || input.IsKeyDown(KeyCode::Z))    m_player.Y -= speed;
-    if (input.IsKeyDown(KeyCode::Down) || input.IsKeyDown(KeyCode::S))  m_player.Y += speed;
-    if (input.IsKeyDown(KeyCode::Left) || input.IsKeyDown(KeyCode::Q))  m_player.X -= speed;
-    if (input.IsKeyDown(KeyCode::Right) || input.IsKeyDown(KeyCode::D)) m_player.X += speed;
+    if (input.IsKeyDown(KeyCode::Num0)) context.Scenes.LoadScene<MenuScene>();
+
+    if (input.IsKeyDown(KeyCode::Up) || input.IsKeyDown(KeyCode::Z))    m_player.Position.Y -= speed;
+    if (input.IsKeyDown(KeyCode::Down) || input.IsKeyDown(KeyCode::S))  m_player.Position.Y += speed;
+    if (input.IsKeyDown(KeyCode::Left) || input.IsKeyDown(KeyCode::Q))  m_player.Position.X -= speed;
+    if (input.IsKeyDown(KeyCode::Right) || input.IsKeyDown(KeyCode::D)) m_player.Position.X += speed;
 
     if (input.IsKeyDown(KeyCode::Space)) m_camera.Rotation += 1.0f;
     else m_camera.Rotation = 0.0f;
@@ -92,12 +97,12 @@ void SandBox::HandleInput(float dt, const InputManager& input)
     if (input.IsKeyDown(KeyCode::E)) m_camera.Zoom -= 0.02f;
     if (m_camera.Zoom < 0.1f) m_camera.Zoom = 0.1f;
 
-    m_camera.X += (m_player.X - m_camera.X) * 0.1f;
-    m_camera.Y += (m_player.Y - m_camera.Y) * 0.1f;
+    m_camera.Position.X += (m_player.Position.X - m_camera.Position.X) * 0.1f;
+    m_camera.Position.Y += (m_player.Position.Y - m_camera.Position.Y) * 0.1f;
 
     m_enableShader = input.IsKeyDown(KeyCode::F);
 
-    if (input.IsKeyDown(KeyCode::C)) SpawnParticles(500, m_player.X, m_player.Y);
+    if (input.IsKeyDown(KeyCode::C)) SpawnParticles(500, m_player.Position.X, m_player.Position.Y);
 }
 
 void SandBox::SpawnParticles(int count, float x, float y)
@@ -109,17 +114,17 @@ void SandBox::SpawnParticles(int count, float x, float y)
     for (int i = 0; i < count; ++i)
     {
         Entity e = m_registry.CreateEntity();
-        m_registry.AddComponent<Transform2D>(e, x, y);
-        m_registry.AddComponent<Velocity2D>(e, velDist(rng), velDist(rng));
+        m_registry.AddComponent<Transform2D>(e, Vector2f{x, y});
+        m_registry.AddComponent<RigidBody>(e, RigidBody{Vector2f{velDist(rng), velDist(rng)}});
         m_registry.AddComponent<ColorComponent>(e, Color{ static_cast<uint8_t>(colDist(rng)), static_cast<uint8_t>(colDist(rng)), 255, 255 });
     }
 }
 
 void SandBox::DrawLights(Renderer& renderer)
 {
-    renderer.DrawCircle(80.0f, Transform2D{0, 0.0f, -20.0f}, { 255, 0, 0, 150 }, BlendMode::Add);
-    renderer.DrawCircle(80.0f, Transform2D{0, -20.0f, 20.0f}, { 0, 255, 0, 150 }, BlendMode::Add);
-    renderer.DrawCircle(80.0f, Transform2D{0, 20.0f, 20.0f}, { 0, 0, 255, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, Transform2D{Vector2f{0.0f, -20.0f}}, { 255, 0, 0, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, Transform2D{Vector2f{-20.0f, 20.0f}}, { 0, 255, 0, 150 }, BlendMode::Add);
+    renderer.DrawCircle(80.0f, Transform2D{Vector2f{20.0f, 20.0f}}, { 0, 0, 255, 150 }, BlendMode::Add);
 }
 
 void SandBox::DrawUI(const GameContext& context) const
@@ -129,5 +134,5 @@ void SandBox::DrawUI(const GameContext& context) const
     debugText += "Toggle shader 'F' \n";
     debugText += "Move 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom 'E' / 'A' | Spawn 'C'";
 
-    context.Render.DrawText(debugText, m_fontId, 24.0f, Transform2D{0, 10.0f, 10.0f}, Colors::Yellow);
+    context.Render.DrawText(debugText, m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 10.0f}}, Colors::Yellow);
 }

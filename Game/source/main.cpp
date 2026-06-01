@@ -1,3 +1,4 @@
+#include "Scenes/MenuScene.h"
 #ifdef _WIN32
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
@@ -27,10 +28,10 @@ int main()
     Renderer renderer(window, resourceManager);
 
     GameData gameData;
-    GameContext context{ inputManager, renderer, resourceManager, gameData };
-
     SceneManager sceneManager;
-    sceneManager.LoadScene<SandBox>();
+    GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager };
+
+    sceneManager.LoadScene<MenuScene>();
 
     Timer time(window.GetConfig().VSync ? 0 : window.GetConfig().MaxFPS);
 

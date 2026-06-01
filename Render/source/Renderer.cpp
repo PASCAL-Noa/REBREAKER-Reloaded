@@ -1,6 +1,5 @@
 #include "Graphics/Renderer.h"
 
-
 static sf::Color ToSfColor(const Color& c)
 {
     return {c.r, c.g, c.b, c.a};
@@ -26,9 +25,9 @@ static sf::PrimitiveType ToSfPrimitiveType(const PrimitiveType type)
 
 static void ApplyTransform(sf::Transformable& target, const Transform2D& transform)
 {
-    target.setPosition({transform.X, transform.Y});
+    target.setPosition({transform.Position.X, transform.Position.Y});
     target.setRotation(sf::degrees(transform.Rotation));
-    target.setScale({transform.ScaleX, transform.ScaleY});
+    target.setScale({transform.Scale.X, transform.Scale.Y});
 }
 
 static void RenderItem(sf::RenderTexture& texture, const sf::Drawable& drawable, BlendMode mode)
@@ -76,7 +75,7 @@ void Renderer::EndDraw(uint32_t postProcessShaderId)
 void Renderer::SetCamera(const Camera2D& camera)
 {
     sf::View view = m_renderTexture.getDefaultView();
-    view.setCenter({camera.X, camera.Y});
+    view.setCenter({camera.Position.X, camera.Position.Y});
     view.setRotation(sf::degrees(camera.Rotation));
     view.zoom(camera.Zoom);
     m_renderTexture.setView(view);
@@ -125,8 +124,7 @@ void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize
     }
 }
 
-void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType type, uint32_t textureId,
-    BlendMode blendMode)
+void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType type, uint32_t textureId, BlendMode blendMode)
 {
     if (vertices.empty()) return;
 

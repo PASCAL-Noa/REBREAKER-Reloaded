@@ -16,7 +16,7 @@ public:
 
 private:
     void InitParticles();
-    void HandleInput(float dt, const InputManager& input);
+    void HandleInput(float dt, const GameContext& context);
     void SpawnParticles(int count, float x, float y);
     static void DrawLights(Renderer& renderer);
     void DrawUI(const GameContext& context) const;
