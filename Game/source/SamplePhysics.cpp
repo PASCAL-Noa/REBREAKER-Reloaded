@@ -1,10 +1,7 @@
 #include "Scenes/SamplePhysics.h"
-#include "Scenes/MenuScene.h"
 #include "Core/GameContext.h"
-#include "Core/SceneManager.h"
 #include "InputManager.h"
 #include "Graphics/Renderer.h"
-#include "Resources/ResourceManager.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/RigidBody.h"
 #include "ECS/Components/BoxCollider.h"
@@ -13,8 +10,8 @@
 
 void SamplePhysics::OnInit(GameContext& context)
 {
-    Scene::OnInit(context);
-    m_fontId = context.Resources.LoadResource("Resources/font/arial.ttf");
+    DefaultScene::OnInit(context);
+
     m_systemManager.AddSystem<PhysicsSystem>(m_registry);
 
     CreateBox(-300.0f, -200.0f, 100.0f, 100.0f, 0.0f, 0.0f, false, true);
@@ -44,7 +41,7 @@ void SamplePhysics::OnInit(GameContext& context)
 
 void SamplePhysics::OnUpdate(float dt, GameContext& context)
 {
-    Scene::OnUpdate(dt, context);
+    DefaultScene::OnUpdate(dt, context);
     HandleInput(dt, context);
     m_systemManager.OnUpdate(dt);
 }
@@ -52,8 +49,6 @@ void SamplePhysics::OnUpdate(float dt, GameContext& context)
 void SamplePhysics::HandleInput(float dt, const GameContext& context)
 {
     const InputManager& input = context.Input;
-    if (input.IsKeyDown(KeyCode::Num0)) context.Scenes.LoadScene<MenuScene>();
-
     auto& rb = m_registry.GetComponent<RigidBody>(m_player);
     const float speed = 400.0f;
 
@@ -68,7 +63,7 @@ void SamplePhysics::HandleInput(float dt, const GameContext& context)
 
 void SamplePhysics::OnRender(GameContext& context)
 {
-    Scene::OnRender(context);
+    DefaultScene::OnRender(context);
     context.Render.SetCamera(m_camera);
 
     m_registry.View<Transform2D, BoxCollider>([&](Entity, Transform2D& transform, BoxCollider& box)
@@ -84,8 +79,8 @@ void SamplePhysics::OnRender(GameContext& context)
     });
 
     context.Render.ResetCamera();
-    context.Render.DrawText("SAMPLE PHYSICS", m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 10.0f}}, Colors::White);
-    context.Render.DrawText("[0] Return to main menu", m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 60.0f}}, Colors::White);
+
+    DrawDefaultUI(context, "SAMPLE PHYSICS", "Mouvement : Z Q S D / Fleches");
 }
 
 void SamplePhysics::CreateBox(float x, float y, float w, float h, float vx, float vy, bool isTrigger, bool isKinematic)

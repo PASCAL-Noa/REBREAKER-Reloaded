@@ -1,9 +1,7 @@
 #include "Scenes/Sandbox.h"
 #include <random>
 #include <string>
-#include "Core/Debug.h"
 #include "Core/GameData.h"
-#include "Core/SceneManager.h"
 #include "InputManager.h"
 #include "Graphics/Renderer.h"
 #include "Resources/ResourceManager.h"
@@ -14,14 +12,12 @@
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Systems/ParticleSystem.h"
 #include "ECS/Systems/PhysicsSystem.h"
-#include "Scenes/MenuScene.h"
 #include "Core/GameContext.h"
 
 void SandBox::OnInit(GameContext& context)
 {
-    Scene::OnInit(context);
+    DefaultScene::OnInit(context);
 
-    m_fontId = context.Resources.LoadResource("Resources/font/arial.ttf");
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry);
@@ -74,7 +70,7 @@ void SandBox::InitParticles()
 
 void SandBox::OnUpdate(float dt, GameContext& context)
 {
-    Scene::OnUpdate(dt, context);
+    DefaultScene::OnUpdate(dt, context);
     HandleInput(dt, context);
     m_systemManager.OnUpdate(dt);
 }
@@ -82,7 +78,6 @@ void SandBox::OnUpdate(float dt, GameContext& context)
 void SandBox::HandleInput(float dt, const GameContext& context)
 {
     const InputManager& input = context.Input;
-    if (input.IsKeyDown(KeyCode::Num0)) context.Scenes.LoadScene<MenuScene>();
 
     auto& playerRb = m_registry.GetComponent<RigidBody>(m_player);
     auto& playerTransform = m_registry.GetComponent<Transform2D>(m_player);
@@ -128,7 +123,7 @@ void SandBox::SpawnParticles(int count, float x, float y)
 
 void SandBox::OnRender(GameContext& context)
 {
-    Scene::OnRender(context);
+    DefaultScene::OnRender(context);
     context.Render.SetCamera(m_camera);
 
     m_systemManager.OnRender();
@@ -146,27 +141,19 @@ void SandBox::OnRender(GameContext& context)
     });
 
     context.Render.ResetCamera();
-    DrawUI(context);
+
+    std::string instructions = "Toggle Shader 'F'\nMove 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom 'E' / 'A' | Spawn 'C'";
+    DrawDefaultUI(context, "SANDBOX", instructions);
 }
 
 void SandBox::OnDestroy(GameContext& context)
 {
-    Scene::OnDestroy(context);
+    DefaultScene::OnDestroy(context);
 }
 
 uint32_t SandBox::GetPostProcessShader() const
 {
     return m_enableShader ? m_shaderId : 0;
-}
-
-void SandBox::DrawUI(const GameContext& context) const
-{
-    std::string debugText = "FPS : " + std::to_string(context.Data.FPS) + "\n";
-    debugText += "Active Entities : " + std::to_string(m_registry.GetActiveEntityCount()) + "\n";
-    debugText += "Toggle Shader 'F' | Menu '0' \n";
-    debugText += "Move 'Z' 'Q' 'S' 'D' | Rotate 'Space' | Zoom 'E' / 'A' | Spawn 'C'";
-
-    context.Render.DrawText(debugText, m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 10.0f}}, Colors::Yellow);
 }
 
 void SandBox::CreateWall(float x, float y, float w, float h)
@@ -176,4 +163,3 @@ void SandBox::CreateWall(float x, float y, float w, float h)
     m_registry.AddComponent<BoxCollider>(wall, BoxCollider{Vector2f{w, h}, Vector2f{w / 2.0f, h / 2.0f}, false, false});
     m_registry.AddComponent<RigidBody>(wall, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
 }
-

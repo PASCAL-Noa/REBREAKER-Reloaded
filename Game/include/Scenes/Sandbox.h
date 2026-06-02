@@ -1,9 +1,8 @@
 #pragma once
-#include "Core/Scene.h"
-#include "ECS/Components/Camera2D.h"
+#include "Scenes/DefaultScene.h"
 #include <cstdint>
 
-class SandBox : public Scene
+class SandBox : public DefaultScene
 {
 public:
     void                    OnInit(GameContext& context) override;
@@ -17,11 +16,8 @@ private:
     void                    InitParticles();
     void                    HandleInput(float dt, const GameContext& context);
     void                    SpawnParticles(int count, float x, float y);
-    void                    DrawUI(const GameContext& context) const;
     void                    CreateWall(float x, float y, float w, float h);
 
-    Camera2D                m_camera{Vector2f{0.0f, 0.0f}};
-    uint32_t                m_fontId = 0;
     uint32_t                m_shaderId = 0;
     bool                    m_enableShader = false;
     Entity                  m_player = 0;

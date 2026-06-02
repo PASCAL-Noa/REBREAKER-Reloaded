@@ -1,8 +1,8 @@
 #pragma once
-#include "Core/Scene.h"
-#include <cstdint>
+#include "Scenes/DefaultScene.h"
+#include "ECS/Entity.h"
 
-class SampleAudio : public Scene
+class SampleAudio : public DefaultScene
 {
 public:
     void OnInit(GameContext& context) override;
@@ -11,9 +11,7 @@ public:
 
 private:
     void PlaySound(uint32_t soundId);
-    void DrawUI(const GameContext& context) const;
 
-    uint32_t m_fontId = 0;
     uint32_t m_bassem = 0;
     uint32_t m_putine = 0;
     uint32_t m_electric_zoo = 0;

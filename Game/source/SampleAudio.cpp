@@ -1,27 +1,19 @@
 #include "Scenes/SampleAudio.h"
-#include "Scenes/MenuScene.h"
-#include "ECS/Components/Transform2D.h"
 #include "ECS/Components/AudioSource.h"
 #include "Core/GameContext.h"
 #include "InputManager.h"
-#include "Graphics/Renderer.h"
 #include "Resources/ResourceManager.h"
 #include "AudioMixer.h"
 #include "ECS/Systems/AudioSystem.h"
 #include <algorithm>
-#include <string>
-
-#include "AudioMixer.h"
-#include "Core/SceneManager.h"
 
 void SampleAudio::OnInit(GameContext& context)
 {
-    Scene::OnInit(context);
+    DefaultScene::OnInit(context);
 
-    m_fontId = context.Resources.LoadResource("Resources/font/arial.ttf");
     m_bassem = context.Resources.LoadResource("Resources/Audio/Sound/ToDelete/bassem.mp3");
     m_putine = context.Resources.LoadResource("Resources/Audio/Sound/ToDelete/putine.mp3");
-    m_electric_zoo = context.Resources.LoadResource("Resources/Audio/Sound/ToDelete/electric_zoo.mp3");
+    m_electric_zoo = context.Resources.LoadResource("Resources/Audio/Sound/ToDelete/electric-zoo.mp3");
     m_faaah = context.Resources.LoadResource("Resources/Audio/Sound/ToDelete/faaah.mp3");
 
     m_systemManager.AddSystem<AudioSystem>(m_registry, context.Audio);
@@ -41,13 +33,11 @@ void SampleAudio::OnInit(GameContext& context)
 
 void SampleAudio::OnUpdate(float dt, GameContext& context)
 {
-    Scene::OnUpdate(dt, context);
-    
+    DefaultScene::OnUpdate(dt, context);
+
     if (m_sfxCooldown > 0.0f) m_sfxCooldown -= dt;
 
     const InputManager& input = context.Input;
-
-    if (input.IsKeyDown(KeyCode::Num0)) context.Scenes.LoadScene<MenuScene>();
 
     if (input.IsKeyDown(KeyCode::Up) || input.IsKeyDown(KeyCode::Z))
     {
@@ -67,17 +57,17 @@ void SampleAudio::OnUpdate(float dt, GameContext& context)
             PlaySound(m_bassem);
             m_sfxCooldown = 0.2f;
         }
-        if (input.IsKeyDown(KeyCode::Num2))
+        else if (input.IsKeyDown(KeyCode::Num2))
         {
             PlaySound(m_putine);
             m_sfxCooldown = 0.2f;
         }
-        if (input.IsKeyDown(KeyCode::Num3))
+        else if (input.IsKeyDown(KeyCode::Num3))
         {
             PlaySound(m_electric_zoo);
             m_sfxCooldown = 0.2f;
         }
-        if (input.IsKeyDown(KeyCode::Num4))
+        else if (input.IsKeyDown(KeyCode::Num4))
         {
             PlaySound(m_faaah);
             m_sfxCooldown = 0.2f;
@@ -100,21 +90,14 @@ void SampleAudio::PlaySound(uint32_t soundId)
 
 void SampleAudio::OnRender(GameContext& context)
 {
-    Scene::OnRender(context);
-    DrawUI(context);
-}
+    DefaultScene::OnRender(context);
 
-void SampleAudio::DrawUI(const GameContext& context) const
-{
-    std::string uiText = "SAMPLE AUDIO\n\n";
-    uiText += "Master Volume : " + std::to_string(static_cast<int>(m_currentVolume)) + "%\n\n";
-    uiText += "[UP/DOWN] Set volume\n";
+    std::string uiText = "[UP/DOWN] Volume : " + std::to_string(static_cast<int>(m_currentVolume)) + "%\n";
     uiText += "[1] SFX : Bassem\n";
     uiText += "[2] SFX : Putine\n";
     uiText += "[3] SFX : Electric Zoo\n";
     uiText += "[4] SFX : Faaah\n";
-    uiText += "[M] Play Music | [P] Stop Music\n\n";
-    uiText += "[0] Return to main menu";
+    uiText += "[M] Play Musique | [P] Stop Musique";
 
-    context.Render.DrawText(uiText, m_fontId, 24.0f, Transform2D{Vector2f{20.0f, 20.0f}}, Colors::White);
+    DrawDefaultUI(context, "SAMPLE AUDIO", uiText);
 }
