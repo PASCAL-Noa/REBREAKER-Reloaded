@@ -4,10 +4,12 @@
 #include "ECS/Entity.h"
 #include "ECS/Components/RigidBody.h"
 
+class EventDispatcher;
+
 class PhysicsSystem : public System
 {
 public:
-    using System::System;
+    PhysicsSystem(Registry& registry, EventDispatcher& events);
 
     void            OnUpdate(float dt) override;
 
@@ -24,4 +26,6 @@ private:
                                         const CollisionManifold& manifold);
     static void     ResolveImpulse(RigidBody* rb1, float invMass1, RigidBody* rb2, float invMass2,
                                         const CollisionManifold& manifold);
+
+    EventDispatcher& m_events;
 };

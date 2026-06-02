@@ -3,7 +3,7 @@
 #include "Core/GameContext.h"
 #include "Core/GameData.h"
 #include "Core/SceneManager.h"
-#include "InputManager.h"
+#include "Core/InputManager.h"
 #include "Graphics/Renderer.h"
 #include "Resources/ResourceManager.h"
 #include "ECS/Components/Transform2D.h"

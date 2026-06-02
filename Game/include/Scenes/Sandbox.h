@@ -21,4 +21,5 @@ private:
     uint32_t                m_shaderId = 0;
     bool                    m_enableShader = false;
     Entity                  m_player = 0;
+    uint32_t                m_bounceSfxId = 0;
 };

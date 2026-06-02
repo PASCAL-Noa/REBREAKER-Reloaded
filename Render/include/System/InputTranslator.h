@@ -2,7 +2,7 @@
 
 #include <SFML/Window/Keyboard.hpp>
 #include <SFML/Window/Mouse.hpp>
-#include "InputManager.h"
+#include "Core/InputManager.h"
 
 namespace InputTranslator
 {

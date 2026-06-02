@@ -1,6 +1,6 @@
 #include "Scenes/SamplePhysics.h"
 #include "Core/GameContext.h"
-#include "InputManager.h"
+#include "Core/InputManager.h"
 #include "Graphics/Renderer.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/RigidBody.h"
@@ -12,7 +12,7 @@ void SamplePhysics::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
 
-    m_systemManager.AddSystem<PhysicsSystem>(m_registry);
+    m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
 
     CreateBox(-300.0f, -200.0f, 100.0f, 100.0f, 0.0f, 0.0f, false, true);
     CreateBox(-250.0f, -150.0f, 100.0f, 100.0f, 0.0f, 0.0f, false, true);

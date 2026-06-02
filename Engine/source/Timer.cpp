@@ -1,4 +1,4 @@
-#include "Timer.h"
+#include "Core/Timer.h"
 #include <thread>
 
 Timer::Timer(unsigned int targetFPS)

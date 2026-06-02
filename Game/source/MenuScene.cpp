@@ -2,7 +2,7 @@
 #include "Scenes/SandBox.h"
 #include "Core/GameContext.h"
 #include "Core/SceneManager.h"
-#include "InputManager.h"
+#include "Core/InputManager.h"
 #include "Graphics/Renderer.h"
 #include "Resources/ResourceManager.h"
 #include "Scenes/SampleAudio.h"

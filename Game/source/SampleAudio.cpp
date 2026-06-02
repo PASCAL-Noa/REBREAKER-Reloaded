@@ -1,7 +1,7 @@
 #include "Scenes/SampleAudio.h"
 #include "ECS/Components/AudioSource.h"
 #include "Core/GameContext.h"
-#include "InputManager.h"
+#include "Core/InputManager.h"
 #include "Resources/ResourceManager.h"
 #include "AudioMixer.h"
 #include "ECS/Systems/AudioSystem.h"

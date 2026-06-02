@@ -5,6 +5,7 @@ class   Renderer;
 class   ResourceManager;
 class   SceneManager;
 class   AudioMixer;
+class   EventDispatcher;
 struct  GameData;
 
 
@@ -16,4 +17,5 @@ struct GameContext
     GameData&           Data;
     SceneManager&       Scenes;
     AudioMixer&         Audio;
+    EventDispatcher&    Events;
 };

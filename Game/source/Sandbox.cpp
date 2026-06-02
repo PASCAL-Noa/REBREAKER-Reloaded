@@ -2,7 +2,7 @@
 #include <random>
 #include <string>
 #include "Core/GameData.h"
-#include "InputManager.h"
+#include "Core/InputManager.h"
 #include "Graphics/Renderer.h"
 #include "Resources/ResourceManager.h"
 #include "ECS/Components/ColorComponent.h"
@@ -13,6 +13,10 @@
 #include "ECS/Systems/ParticleSystem.h"
 #include "ECS/Systems/PhysicsSystem.h"
 #include "Core/GameContext.h"
+#include "Events/EventDispatcher.h"
+#include "Events/CollisionEvent.h"
+#include "AudioMixer.h"
+#include "Core/Debug.h"
 
 void SandBox::OnInit(GameContext& context)
 {
@@ -20,8 +24,16 @@ void SandBox::OnInit(GameContext& context)
 
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
 
-    m_systemManager.AddSystem<PhysicsSystem>(m_registry);
+    m_bounceSfxId = context.Resources.LoadResource("Resources/Audio/Sound/ball_hit.wav");
+
+    m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
+
+    context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
+    {
+        Debug::Info("Collision detectee entre {} et {}", e.EntityA, e.EntityB);
+        context.Audio.PlaySfx(m_bounceSfxId, 50.0f);
+    });
 
     InitPhysicsWorld();
     InitParticles();
@@ -148,6 +160,7 @@ void SandBox::OnRender(GameContext& context)
 
 void SandBox::OnDestroy(GameContext& context)
 {
+    context.Events.Clear();
     DefaultScene::OnDestroy(context);
 }
 

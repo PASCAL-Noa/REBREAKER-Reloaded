@@ -2,7 +2,7 @@
 
 #include <SFML/Graphics.hpp>
 
-#include "InputManager.h"
+#include "Core/InputManager.h"
 #include "Data/WindowConfig.h"
 
 class Window

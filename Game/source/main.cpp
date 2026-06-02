@@ -1,21 +1,21 @@
-#include "AudioMixer.h"
-#include "Scenes/MenuScene.h"
 #ifdef _WIN32
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
 #endif
-
+#include "AudioMixer.h"
+#include "Events/EventDispatcher.h"
+#include "Scenes/MenuScene.h"
 #include "System/Window.h"
-#include "InputManager.h"
+#include "Core/InputManager.h"
 #include "Resources/ResourceManager.h"
 #include "Graphics/Renderer.h"
 #include "Core/SceneManager.h"
 #include "Core/GameContext.h"
 #include "Core/GameData.h"
 #include "Scenes/Sandbox.h"
-#include "Timer.h"
+#include "Core/Timer.h"
 #include "Core/Debug.h"
 #include "AudioMixer.h"
 
@@ -29,11 +29,12 @@ int main()
     ResourceManager resourceManager;
     Renderer renderer(window, resourceManager);
     AudioMixer audioMixer(resourceManager);
+    EventDispatcher eventDispatcher;
 
     GameData gameData;
     SceneManager sceneManager;
 
-    GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager, audioMixer };
+    GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager, audioMixer, eventDispatcher };
 
     sceneManager.LoadScene<MenuScene>();
 

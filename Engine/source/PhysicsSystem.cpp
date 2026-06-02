@@ -4,7 +4,12 @@
 #include "ECS/Components/RigidBody.h"
 #include "ECS/Components/CircleCollider.h"
 #include "ECS/Components/BoxCollider.h"
+#include "Events/EventDispatcher.h"
+#include "Events/CollisionEvent.h"
 #include <algorithm>
+
+PhysicsSystem::PhysicsSystem(Registry& registry, EventDispatcher& events)
+    : System(registry), m_events(events) {}
 
 void PhysicsSystem::OnUpdate(float dt)
 {
@@ -42,6 +47,8 @@ void PhysicsSystem::CheckAABBCollisions() const
             {
                 b1.IsColliding = true;
                 b2.IsColliding = true;
+                m_events.Publish(CollisionEvent{e1, e2});
+
                 if (!b1.IsTrigger && !b2.IsTrigger) ResolveCollision(e1, t1, e2, t2, manifold);
             }
         });
@@ -59,6 +66,8 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
             {
                 c1.IsColliding = true;
                 b2.IsColliding = true;
+                m_events.Publish(CollisionEvent{e1, e2});
+
                 if (!c1.IsTrigger && !b2.IsTrigger) ResolveCollision(e1, t1, e2, t2, manifold);
             }
         });
@@ -78,6 +87,8 @@ void PhysicsSystem::CheckCircleCollisions() const
             {
                 c1.IsColliding = true;
                 c2.IsColliding = true;
+                m_events.Publish(CollisionEvent{e1, e2});
+
                 if (!c1.IsTrigger && !c2.IsTrigger) ResolveCollision(e1, t1, e2, t2, manifold);
             }
         });
