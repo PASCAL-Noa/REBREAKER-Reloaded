@@ -37,7 +37,7 @@ void SandBox::InitPhysicsWorld()
 {
     m_player = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_player, Transform2D{Vector2f{0.0f, 0.0f}});
-    m_registry.AddComponent<BoxCollider>(m_player, BoxCollider{Vector2f{40.0f, 40.0f}, Vector2f{20.0f, 20.0f}, false, false});
+    m_registry.AddComponent<BoxCollider>(m_player, BoxCollider{Vector2f{40.0f, 40.0f}, Vector2f{20.0f, 20.0f}, false, true});
     m_registry.AddComponent<RigidBody>(m_player, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 0.0f, false});
 
     CreateWall(-600.0f, -400.0f, 1200.0f, 40.0f);
@@ -63,7 +63,7 @@ void SandBox::InitParticles()
     std::uniform_real_distribution<float> velDist(-50.0f, 50.0f);
     std::uniform_int_distribution<int> colDist(100, 255);
 
-    for (int i = 0; i < 20000; ++i)
+    for (int i = 0; i < 100000; ++i)
     {
         Entity e = m_registry.CreateEntity();
         m_registry.AddComponent<Transform2D>(e, Transform2D{Vector2f{posDist(rng), posDist(rng)}});

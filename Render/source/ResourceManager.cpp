@@ -32,7 +32,7 @@ uint32_t ResourceManager::LoadResource(const std::string& filepath)
         LoadShader(id, filepath);
     else if (ext == "ttf" || ext == "otf")
         LoadFont(id, filepath);
-    else if (ext == "wav" || ext == "ogg" || ext == "flac")
+    else if (ext == "wav" || ext == "ogg" || ext == "flac" || ext == "mp3")
         LoadSoundBuffer(id, filepath);
 
     return id;

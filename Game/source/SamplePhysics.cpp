@@ -84,7 +84,8 @@ void SamplePhysics::OnRender(GameContext& context)
     });
 
     context.Render.ResetCamera();
-    context.Render.DrawText("PHYSICS TEST", m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 10.0f}}, Colors::White);
+    context.Render.DrawText("SAMPLE PHYSICS", m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 10.0f}}, Colors::White);
+    context.Render.DrawText("[0] Return to main menu", m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 60.0f}}, Colors::White);
 }
 
 void SamplePhysics::CreateBox(float x, float y, float w, float h, float vx, float vy, bool isTrigger, bool isKinematic)
