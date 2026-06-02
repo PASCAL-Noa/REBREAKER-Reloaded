@@ -91,6 +91,9 @@ void Renderer::DrawSprite(uint32_t textureId, const Transform2D& transform, Colo
     if (sf::Texture* tex = m_resources.Get<sf::Texture>(textureId))
     {
         sf::Sprite sprite(*tex);
+
+        sprite.setOrigin({tex->getSize().x / 2.0f, tex->getSize().y / 2.0f});
+
         ApplyTransform(sprite, transform);
         sprite.setColor(ToSfColor(color));
         RenderItem(m_renderTexture, sprite, blendMode);
@@ -150,8 +153,11 @@ void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType t
 void Renderer::DrawRectangleOutline(float width, float height, const Transform2D& transform, Color color, float thickness)
 {
     sf::RectangleShape rect({width, height});
+
+    rect.setOrigin({width / 2.0f, height / 2.0f});
+
     ApplyTransform(rect, transform);
-    rect.setFillColor(sf::Color::Transparent); // Intérieur vide
+    rect.setFillColor(sf::Color::Transparent);
     rect.setOutlineColor(ToSfColor(color));
     rect.setOutlineThickness(thickness);
     RenderItem(m_renderTexture, rect, BlendMode::Alpha);
@@ -160,9 +166,21 @@ void Renderer::DrawRectangleOutline(float width, float height, const Transform2D
 void Renderer::DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness)
 {
     sf::CircleShape circle(radius);
+    
+    circle.setOrigin({radius, radius});
+
     ApplyTransform(circle, transform);
-    circle.setFillColor(sf::Color::Transparent); // Intérieur vide
+    circle.setFillColor(sf::Color::Transparent);
     circle.setOutlineColor(ToSfColor(color));
     circle.setOutlineThickness(thickness);
     RenderItem(m_renderTexture, circle, BlendMode::Alpha);
+}
+
+Vector2f Renderer::GetTextureSize(uint32_t textureId) const
+{
+    if (sf::Texture* tex = m_resources.Get<sf::Texture>(textureId))
+    {
+        return Vector2f{static_cast<float>(tex->getSize().x), static_cast<float>(tex->getSize().y)};
+    }
+    return Vector2f{0.0f, 0.0f};
 }

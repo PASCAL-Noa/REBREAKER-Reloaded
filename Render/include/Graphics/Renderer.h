@@ -30,6 +30,8 @@ public:
     void                DrawRectangleOutline(float width, float height, const Transform2D& transform, Color color, float thickness = 2.0f);
     void                DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness = 2.0f);
 
+    Vector2f            GetTextureSize(uint32_t textureId) const;
+
 private:
     Window&             m_window;
     ResourceManager&    m_resources;

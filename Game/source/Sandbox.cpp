@@ -17,17 +17,20 @@
 #include "Events/CollisionEvent.h"
 #include "AudioMixer.h"
 #include "Core/Debug.h"
+#include "ECS/Systems/RenderSystem.h"
+#include "ECS/Components/SpriteComponent.h"
 
 void SandBox::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
 
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
-
     m_bounceSfxId = context.Resources.LoadResource("Resources/Audio/Sound/ball_hit.wav");
+    m_debugTexId = context.Resources.LoadResource("Resources/images/debug.jpg");
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
+    m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
 
     context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
@@ -35,33 +38,35 @@ void SandBox::OnInit(GameContext& context)
         context.Audio.PlaySfx(m_bounceSfxId, 50.0f);
     });
 
-    InitPhysicsWorld();
+    InitPhysicsWorld(context);
     InitParticles();
 
     m_systemManager.OnInit();
 }
 
-void SandBox::InitPhysicsWorld()
+void SandBox::InitPhysicsWorld(GameContext& context)
 {
     m_player = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_player, Transform2D{Vector2f{0.0f, 0.0f}});
-    m_registry.AddComponent<BoxCollider>(m_player, BoxCollider{Vector2f{40.0f, 40.0f}, Vector2f{20.0f, 20.0f}, false, true});
+    m_registry.AddComponent<BoxCollider>(m_player, BoxCollider{Vector2f{40.0f, 40.0f}, Vector2f{0.0f, 0.0f}, false, true});
     m_registry.AddComponent<RigidBody>(m_player, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 0.0f, false});
 
-    CreateWall(-600.0f, -400.0f, 1200.0f, 40.0f);
-    CreateWall(-600.0f, 360.0f, 1200.0f, 40.0f);
-    CreateWall(-600.0f, -360.0f, 40.0f, 720.0f);
-    CreateWall(560.0f, -360.0f, 40.0f, 720.0f);
+    CreateWall(0.0f, -380.0f, 1200.0f, 40.0f);
+    CreateWall(0.0f, 380.0f, 1200.0f, 40.0f);
+    CreateWall(-580.0f, 0.0f, 40.0f, 718.0f);
+    CreateWall(580.0f, 0.0f, 40.0f, 718.0f);
 
     Entity bounceBall = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(bounceBall, Transform2D{Vector2f{100.0f, 100.0f}});
-    m_registry.AddComponent<CircleCollider>(bounceBall, CircleCollider{30.0f, Vector2f{30.0f, 30.0f}, false, false});
+    m_registry.AddComponent<CircleCollider>(bounceBall, CircleCollider{30.0f, Vector2f{0.0f, 0.0f}, false, false});
     m_registry.AddComponent<RigidBody>(bounceBall, RigidBody{Vector2f{450.0f, 350.0f}, 1.0f, 1.0f, false});
 
     Entity bounceBall2 = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(bounceBall2, Transform2D{Vector2f{-100.0f, -100.0f}});
-    m_registry.AddComponent<CircleCollider>(bounceBall2, CircleCollider{20.0f, Vector2f{20.0f, 20.0f}, false, false});
+    m_registry.AddComponent<CircleCollider>(bounceBall2, CircleCollider{20.0f, Vector2f{0.0f, 0.0f}, false, false});
     m_registry.AddComponent<RigidBody>(bounceBall2, RigidBody{Vector2f{-300.0f, -500.0f}, 1.0f, 1.0f, false});
+
+    m_registry.AddComponent<SpriteComponent>(m_player, SpriteComponent{m_debugTexId});
 }
 
 void SandBox::InitParticles()
@@ -173,6 +178,6 @@ void SandBox::CreateWall(float x, float y, float w, float h)
 {
     Entity wall = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(wall, Transform2D{Vector2f{x, y}});
-    m_registry.AddComponent<BoxCollider>(wall, BoxCollider{Vector2f{w, h}, Vector2f{w / 2.0f, h / 2.0f}, false, false});
+    m_registry.AddComponent<BoxCollider>(wall, BoxCollider{Vector2f{w, h}, Vector2f{0.0f, 0.0f}, false, false});
     m_registry.AddComponent<RigidBody>(wall, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
 }
