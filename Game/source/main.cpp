@@ -1,3 +1,4 @@
+#include "AudioMixer.h"
 #include "Scenes/MenuScene.h"
 #ifdef _WIN32
 extern "C" {
@@ -16,6 +17,7 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #include "Scenes/Sandbox.h"
 #include "Timer.h"
 #include "Core/Debug.h"
+#include "AudioMixer.h"
 
 int main()
 {
@@ -26,10 +28,12 @@ int main()
     InputManager inputManager;
     ResourceManager resourceManager;
     Renderer renderer(window, resourceManager);
+    AudioMixer audioMixer(resourceManager);
 
     GameData gameData;
     SceneManager sceneManager;
-    GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager };
+
+    GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager, audioMixer };
 
     sceneManager.LoadScene<MenuScene>();
 

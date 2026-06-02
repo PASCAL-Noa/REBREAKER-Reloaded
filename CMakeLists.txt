@@ -17,4 +17,5 @@ find_package(SFML COMPONENTS Graphics Window System Audio Network CONFIG REQUIRE
 
 add_subdirectory(Engine)
 add_subdirectory(Render)
+add_subdirectory(Audio)
 add_subdirectory(Game)

@@ -4,7 +4,9 @@ class   InputManager;
 class   Renderer;
 class   ResourceManager;
 class   SceneManager;
+class   AudioMixer;
 struct  GameData;
+
 
 struct GameContext
 {
@@ -13,4 +15,5 @@ struct GameContext
     ResourceManager&    Resources;
     GameData&           Data;
     SceneManager&       Scenes;
+    AudioMixer&         Audio;
 };
