@@ -13,7 +13,6 @@
 #include "Events/EventDispatcher.h"
 #include "Events/CollisionEvent.h"
 #include <string>
-
 #include "AudioMixer.h"
 
 void GameScene::OnInit(GameContext& context)
@@ -22,6 +21,7 @@ void GameScene::OnInit(GameContext& context)
 
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
+    m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
@@ -32,10 +32,10 @@ void GameScene::OnInit(GameContext& context)
         context.Audio.PlaySfx(m_bounceSfxId, 50.0f);
     });
 
-    CreateWall(0.0f, -380.0f, 1200.0f, 40.0f);
-    CreateWall(0.0f, 380.0f, 1200.0f, 40.0f);
-    CreateWall(-620.0f, 0.0f, 40.0f, 720.0f);
-    CreateWall(620.0f, 0.0f, 40.0f, 720.0f);
+    CreateWall(0.0f, -470.0f, 1600.0f, 40.0f);
+    CreateWall(0.0f, 470.0f, 1600.0f, 40.0f);
+    CreateWall(-820.0f, 0.0f, 40.0f, 900.0f);
+    CreateWall(820.0f, 0.0f, 40.0f, 900.0f);
 
     m_ball = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_ball, Transform2D{Vector2f{0.0f, 0.0f}});
@@ -43,16 +43,19 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<RigidBody>(m_ball, RigidBody{Vector2f{500.0f, 400.0f}, 1.0f, 1.0f, false});
     m_registry.AddComponent<SpriteComponent>(m_ball, SpriteComponent{m_ballTexId});
 
+    m_paddle = m_registry.CreateEntity();
+    m_registry.AddComponent<Transform2D>(m_paddle, Transform2D{Vector2f{0.0f, 400.0f}});
+    m_registry.AddComponent<BoxCollider>(m_paddle, BoxCollider{Vector2f{120.0f, 20.0f}, Vector2f{0.0f, 0.0f}, false, false});
+    m_registry.AddComponent<RigidBody>(m_paddle, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
+    m_registry.AddComponent<SpriteComponent>(m_paddle, SpriteComponent{m_paddleTexId});
+
     m_systemManager.OnInit();
 }
 
 void GameScene::OnUpdate(float dt, GameContext& context)
 {
     DefaultScene::OnUpdate(dt, context);
-
-    if (context.Input.IsKeyPress(KeyCode::F)) m_enableShader = !m_enableShader;
-    if (context.Input.IsKeyPress(KeyCode::G)) m_showDebug = !m_showDebug;
-
+    HandleInput(dt, context);
     m_systemManager.OnUpdate(dt);
 }
 
@@ -63,10 +66,10 @@ void GameScene::OnRender(GameContext& context)
 
     m_systemManager.OnRender();
 
-    context.Render.DrawLine(Vector2f{-600.0f, -360.0f}, Vector2f{600.0f, -360.0f}, Colors::White, 2.0f);
-    context.Render.DrawLine(Vector2f{-600.0f, 360.0f}, Vector2f{600.0f, 360.0f}, Colors::White, 2.0f);
-    context.Render.DrawLine(Vector2f{-600.0f, -360.0f}, Vector2f{-600.0f, 360.0f}, Colors::White, 2.0f);
-    context.Render.DrawLine(Vector2f{600.0f, -360.0f}, Vector2f{600.0f, 360.0f}, Colors::White, 2.0f);
+    context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{800.0f, -450.0f}, Colors::White, 2.0f);
+    context.Render.DrawLine(Vector2f{-800.0f, 450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
+    context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{-800.0f, 450.0f}, Colors::White, 2.0f);
+    context.Render.DrawLine(Vector2f{800.0f, -450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
 
     if (m_showDebug)
     {
@@ -106,4 +109,27 @@ void GameScene::OnDestroy(GameContext& context)
 {
     context.Events.Clear();
     DefaultScene::OnDestroy(context);
+}
+
+void GameScene::HandleInput(float dt, const GameContext& context)
+{
+    auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
+    constexpr float speed = 700.0f;
+
+    if (context.Input.IsKeyPress(KeyCode::F)) m_enableShader = !m_enableShader;
+    if (context.Input.IsKeyPress(KeyCode::G)) m_showDebug = !m_showDebug;
+
+    if (context.Input.IsKeyDown(KeyCode::Q)) paddleTransform.Position.X -= speed * dt;
+    if (context.Input.IsKeyDown(KeyCode::D)) paddleTransform.Position.X += speed * dt;
+
+    constexpr float limitX = 740.0f;
+
+    if (paddleTransform.Position.X < -limitX)
+    {
+        paddleTransform.Position.X = -limitX;
+    }
+    else if (paddleTransform.Position.X > limitX)
+    {
+        paddleTransform.Position.X = limitX;
+    }
 }

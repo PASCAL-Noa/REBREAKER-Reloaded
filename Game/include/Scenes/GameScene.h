@@ -13,10 +13,16 @@ public:
 
 private:
     void                    CreateWall(float x, float y, float w, float h);
-    Entity                  m_ball{};
+    void                    HandleInput(float dt, const GameContext& context);
+
+    Entity                  m_ball;
+    Entity                  m_paddle;
+
     uint32_t                m_shaderId = 0;
     uint32_t                m_ballTexId = 0;
+    uint32_t                m_paddleTexId = 0;
     uint32_t                m_bounceSfxId = 0;
+
     bool                    m_enableShader = false;
     bool                    m_showDebug = false;
 };
