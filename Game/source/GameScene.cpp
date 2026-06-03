@@ -20,7 +20,7 @@ void GameScene::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
 
-    m_camera.Zoom = 1.25f;
+    m_camera.Zoom = 0.75f;
 
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
@@ -37,9 +37,17 @@ void GameScene::OnInit(GameContext& context)
         HandleBrickCollision(e.EntityA);
         HandleBrickCollision(e.EntityB);
 
-        if (e.EntityA == m_bottomWall || e.EntityB == m_bottomWall) HandleDeath();
-
+        if ((e.EntityA == m_ball && e.EntityB == m_paddle) ||
+            (e.EntityB == m_ball && e.EntityA == m_paddle))
+        {
+            HandlePaddleCollision();
+        }
+        else if (e.EntityA == m_bottomWall || e.EntityB == m_bottomWall)
+        {
+            HandleDeath();
+        }
     });
+
 
     CreateWall(0.0f, -470.0f, 1600.0f, 40.0f);
     CreateWall(-820.0f, 0.0f, 40.0f, 900.0f);
@@ -224,6 +232,27 @@ void GameScene::HandleBrickCollision(Entity entity)
     }
 }
 
+void GameScene::HandlePaddleCollision()
+{
+    auto& ballRb = m_registry.GetComponent<RigidBody>(m_ball);
+    auto& ballTransform = m_registry.GetComponent<Transform2D>(m_ball);
+    auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
+    auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
+
+    float paddleHalfWidth = paddleCollider.Size.X * 0.5f;
+    float offset = ballTransform.Position.X - paddleTransform.Position.X;
+
+    float hitFactor = offset / paddleHalfWidth;
+    if (hitFactor < -1.0f) hitFactor = -1.0f;
+    if (hitFactor > 1.0f) hitFactor = 1.0f;
+
+    float speed = std::sqrt(ballRb.Velocity.X * ballRb.Velocity.X + ballRb.Velocity.Y * ballRb.Velocity.Y);
+    float maxAngle = 60.0f * 3.14159265f / 180.0f;
+    float bounceAngle = hitFactor * maxAngle;
+
+    ballRb.Velocity.X = speed * std::sin(bounceAngle);
+    ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
+}
 void GameScene::CreateBrick(float x, float y, BrickType type, bool isSpecial)
 {
     Entity brick = m_registry.CreateEntity();

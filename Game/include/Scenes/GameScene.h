@@ -20,6 +20,7 @@ private:
     void                    HandleDeath();
     void                    CreateBrick(float x, float y, BrickType type, bool isSpecial);
     void                    HandleBrickCollision(Entity entity);
+    void                    HandlePaddleCollision();
 
     Entity                  m_ball{};
     Entity                  m_paddle{};
