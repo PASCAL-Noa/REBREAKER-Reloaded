@@ -28,12 +28,12 @@ void SamplePhysics::OnInit(GameContext& context)
 
     Entity ball = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(ball, Transform2D{Vector2f{280.0f, 100.0f}});
-    m_registry.AddComponent<CircleCollider>(ball, CircleCollider{20.0f, Vector2f{20.0f, 20.0f}, false});
+    m_registry.AddComponent<CircleCollider>(ball, CircleCollider{20.0f, Vector2f{0.0f, 0.0f}, false});
     m_registry.AddComponent<RigidBody>(ball, RigidBody{Vector2f{0.0f, 250.0f}, 1.0f, 1.0f, false});
 
     m_player = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_player, Transform2D{Vector2f{0.0f, 0.0f}});
-    m_registry.AddComponent<BoxCollider>(m_player, BoxCollider{Vector2f{40.0f, 40.0f}, Vector2f{20.0f, 20.0f}, false, false});
+    m_registry.AddComponent<BoxCollider>(m_player, BoxCollider{Vector2f{40.0f, 40.0f}, Vector2f{0.0f, 0.0f}, false, false});
     m_registry.AddComponent<RigidBody>(m_player, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 0.0f, false});
 
     m_systemManager.OnInit();
@@ -87,7 +87,8 @@ void SamplePhysics::CreateBox(float x, float y, float w, float h, float vx, floa
 {
     Entity e = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(e, Transform2D{Vector2f{x, y}});
-    m_registry.AddComponent<BoxCollider>(e, BoxCollider{Vector2f{w, h}, Vector2f{w / 2.0f, h / 2.0f}, false, isTrigger});
+
+    m_registry.AddComponent<BoxCollider>(e, BoxCollider{Vector2f{w, h}, Vector2f{0.0f, 0.0f}, false, isTrigger});
 
     if (!isKinematic || vx != 0.0f || vy != 0.0f)
     {
