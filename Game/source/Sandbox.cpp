@@ -25,8 +25,8 @@ void SandBox::OnInit(GameContext& context)
     DefaultScene::OnInit(context);
 
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
-    m_bounceSfxId = context.Resources.LoadResource("Resources/Audio/Sound/ball_hit.wav");
-    m_debugTexId = context.Resources.LoadResource("Resources/images/debug.jpg");
+    m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
+    m_debugTexId = context.Resources.LoadResource("Resources/sprite/debug.jpg");
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);

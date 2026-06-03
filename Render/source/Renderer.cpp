@@ -176,6 +176,20 @@ void Renderer::DrawCircleOutline(float radius, const Transform2D& transform, Col
     RenderItem(m_renderTexture, circle, BlendMode::Alpha);
 }
 
+void Renderer::DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, float thickness)
+{
+    float length = std::sqrt(std::pow(p2.X - p1.X, 2) + std::pow(p2.Y - p1.Y, 2));
+    float angle = std::atan2(p2.Y - p1.Y, p2.X - p1.X) * 180.0f / 3.14159265f;
+
+    sf::RectangleShape line({length, thickness});
+    line.setOrigin({0.0f, thickness / 2.0f});
+    line.setPosition({p1.X, p1.Y});
+    line.setRotation(sf::degrees(angle));
+    line.setFillColor(ToSfColor(color));
+
+    m_renderTexture.draw(line);
+}
+
 Vector2f Renderer::GetTextureSize(uint32_t textureId) const
 {
     if (sf::Texture* tex = m_resources.Get<sf::Texture>(textureId))
