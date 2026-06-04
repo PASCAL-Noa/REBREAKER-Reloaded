@@ -12,7 +12,7 @@
 void DefaultScene::OnInit(GameContext& context)
 {
     Scene::OnInit(context);
-    m_fontId = context.Resources.LoadResource("Resources/font/arial.ttf");
+    m_fontId = context.Resources.LoadResource("Resources/font/vt323.ttf");
 }
 
 void DefaultScene::OnUpdate(float dt, GameContext& context)
