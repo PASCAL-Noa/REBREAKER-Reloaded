@@ -29,7 +29,7 @@ public:
     void                DrawVertices(const std::vector<Vertex>& vertices, PrimitiveType type, uint32_t textureId = 0, BlendMode blendMode = BlendMode::Alpha);
     void                DrawRectangleOutline(float width, float height, const Transform2D& transform, Color color, float thickness = 2.0f);
     void                DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness = 2.0f);
-
+    void                DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, float thickness = 1.0f);
     Vector2f            GetTextureSize(uint32_t textureId) const;
 
 private:

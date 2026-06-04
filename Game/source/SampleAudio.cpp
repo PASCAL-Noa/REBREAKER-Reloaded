@@ -11,16 +11,16 @@ void SampleAudio::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
 
-    m_bassem = context.Resources.LoadResource("Resources/Audio/Sound/ToDelete/bassem.mp3");
-    m_putine = context.Resources.LoadResource("Resources/Audio/Sound/ToDelete/putine.mp3");
-    m_electric_zoo = context.Resources.LoadResource("Resources/Audio/Sound/ToDelete/electric-zoo.mp3");
-    m_faaah = context.Resources.LoadResource("Resources/Audio/Sound/ToDelete/faaah.mp3");
+    m_bassem = context.Resources.LoadResource("Resources/audio/sfx/ToDelete/bassem.mp3");
+    m_putine = context.Resources.LoadResource("Resources/audio/sfx/ToDelete/putine.mp3");
+    m_electric_zoo = context.Resources.LoadResource("Resources/audio/sfx/ToDelete/electric-zoo.mp3");
+    m_faaah = context.Resources.LoadResource("Resources/audio/sfx/ToDelete/faaah.mp3");
 
     m_systemManager.AddSystem<AudioSystem>(m_registry, context.Audio);
 
     m_musicEntity = m_registry.CreateEntity();
     auto& music = m_registry.AddComponent<AudioSource>(m_musicEntity);
-    music.MusicPath = "Resources/Audio/Music/Game-1.ogg";
+    music.MusicPath = "Resources/audio/music/Game-1.ogg";
     music.IsMusic = true;
     music.Loop = true;
     music.PlayRequested = true;
@@ -99,5 +99,5 @@ void SampleAudio::OnRender(GameContext& context)
     uiText += "[4] SFX : Faaah\n";
     uiText += "[M] Play Musique | [P] Stop Musique";
 
-    DrawDefaultUI(context, "SAMPLE AUDIO", uiText);
+    DrawDefaultUI(context, "SAMPLE : AUDIO", uiText);
 }

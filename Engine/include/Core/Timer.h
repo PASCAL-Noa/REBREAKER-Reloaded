@@ -9,8 +9,8 @@ public:
 
     void Update();
 
-    float GetDeltaTime() const;
-    float GetFPS() const;
+    [[nodiscard]] float     GetDeltaTime() const;
+    [[nodiscard]] float     GetFPS() const;
 
 private:
     std::chrono::high_resolution_clock::time_point m_lastTime;

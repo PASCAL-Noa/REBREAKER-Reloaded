@@ -80,7 +80,7 @@ void SamplePhysics::OnRender(GameContext& context)
 
     context.Render.ResetCamera();
 
-    DrawDefaultUI(context, "SAMPLE PHYSICS", "Mouvement : Z Q S D / Fleches");
+    DrawDefaultUI(context, "SAMPLE : PHYSICS", "Mouvement : Z Q S D / Fleches");
 }
 
 void SamplePhysics::CreateBox(float x, float y, float w, float h, float vx, float vy, bool isTrigger, bool isKinematic)
