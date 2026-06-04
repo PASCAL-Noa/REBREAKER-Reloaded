@@ -13,8 +13,11 @@
 #include "Graphics/Renderer.h"
 #include "Events/EventDispatcher.h"
 #include "Events/CollisionEvent.h"
+#include "StateMachine/Transition.h"
+#include "Conditions/KeyPressCondition.h"
 #include "AudioMixer.h"
 #include <string>
+#include <cmath>
 
 void GameScene::OnInit(GameContext& context)
 {
@@ -48,7 +51,6 @@ void GameScene::OnInit(GameContext& context)
         }
     });
 
-
     CreateWall(0.0f, -470.0f, 1600.0f, 40.0f);
     CreateWall(-820.0f, 0.0f, 40.0f, 900.0f);
     CreateWall(820.0f, 0.0f, 40.0f, 900.0f);
@@ -61,20 +63,40 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<SpriteComponent>(m_ball, SpriteComponent{m_ballTexId});
 
     m_paddle = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(m_paddle, Transform2D{Vector2f{0.0f, 400.0f}});
+    m_registry.AddComponent<Transform2D>(m_paddle, Transform2D{Vector2f{0.0f, 300.0f}});
     m_registry.AddComponent<BoxCollider>(m_paddle, BoxCollider{Vector2f{120.0f, 20.0f}, Vector2f{0.0f, 0.0f}, false, false});
     m_registry.AddComponent<RigidBody>(m_paddle, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
     m_registry.AddComponent<SpriteComponent>(m_paddle, SpriteComponent{m_paddleTexId});
 
     CreateBrickGrid();
     m_systemManager.OnInit();
+
+    mp_state_machine = new StateMachine<GameScene>(this, 2);
+
+    State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
+    playingState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Paused)));
+
+    State<GameScene>* pauseState = mp_state_machine->CreateState(static_cast<int>(SceneState::Paused));
+    pauseState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Playing)));
+
+    mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
 }
 
 void GameScene::OnUpdate(float dt, GameContext& context)
 {
     DefaultScene::OnUpdate(dt, context);
-    HandleInput(dt, context);
-    m_systemManager.OnUpdate(dt);
+    mp_context = &context;
+
+    if (mp_state_machine)
+    {
+        mp_state_machine->Update();
+    }
+
+    if (mp_state_machine && mp_state_machine->GetCurrentState() == static_cast<int>(SceneState::Playing))
+    {
+        HandleInput(dt, context);
+        m_systemManager.OnUpdate(dt);
+    }
 }
 
 void GameScene::OnRender(GameContext& context)
@@ -106,10 +128,11 @@ void GameScene::OnRender(GameContext& context)
 
     std::string debugState = m_showDebug ? "ON" : "OFF";
     std::string shaderState = m_enableShader ? "ON" : "OFF";
-    std::string stats = "Vies: " + std::to_string(m_lives) + " | Score: " + std::to_string(m_score);
-    stats += "\nDebug (G): " + debugState + " | Shader (F): " + shaderState;
+    std::string gameStateStr = (mp_state_machine && mp_state_machine->GetCurrentState() == static_cast<int>(SceneState::Paused)) ? "PAUSE" : "PLAY";
+    std::string stats = "HP : " + std::to_string(m_lives) + " | Score : " + std::to_string(m_score);
+    stats += "\nDebug (G) : " + debugState + " | Shader (F) : " + shaderState + "\nState : " + gameStateStr;
 
-    DrawDefaultUI(context, "BREAKOUT", stats);
+    DrawDefaultUI(context, "REBREAKER", stats);
 }
 
 uint32_t GameScene::GetPostProcessShader() const
@@ -129,6 +152,9 @@ Entity GameScene::CreateWall(float x, float y, float w, float h)
 
 void GameScene::OnDestroy(GameContext& context)
 {
+    delete mp_state_machine;
+    mp_state_machine = nullptr;
+
     context.Events.Clear();
     DefaultScene::OnDestroy(context);
 }
@@ -222,12 +248,6 @@ void GameScene::HandleBrickCollision(Entity entity)
     if (brick.HitPoints <= 0)
     {
         m_score += brick.ScoreValue;
-
-        if (brick.IsSpecial)
-        {
-
-        }
-
         m_registry.DestroyEntity(entity);
     }
 }
@@ -250,9 +270,10 @@ void GameScene::HandlePaddleCollision()
     float maxAngle = 60.0f * 3.14159265f / 180.0f;
     float bounceAngle = hitFactor * maxAngle;
 
-    ballRb.Velocity.X = speed * std::sin(bounceAngle);
-    ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
+    ballRb.Velocity.X = std::abs(speed * std::sin(bounceAngle));
+    ballRb.Velocity.Y = -std::abs(speed * std::cos(bounceAngle));
 }
+
 void GameScene::CreateBrick(float x, float y, BrickType type, bool isSpecial)
 {
     Entity brick = m_registry.CreateEntity();

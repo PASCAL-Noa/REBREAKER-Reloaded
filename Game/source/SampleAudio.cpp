@@ -99,5 +99,5 @@ void SampleAudio::OnRender(GameContext& context)
     uiText += "[4] SFX : Faaah\n";
     uiText += "[M] Play Musique | [P] Stop Musique";
 
-    DrawDefaultUI(context, "SAMPLE AUDIO", uiText);
+    DrawDefaultUI(context, "SAMPLE : AUDIO", uiText);
 }

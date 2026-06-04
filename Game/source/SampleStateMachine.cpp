@@ -1,6 +1,7 @@
 #include "Scenes/SampleStateMachine.h"
 #include "Core/GameContext.h"
 #include "Core/InputManager.h"
+#include "ECS/Entity.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/SpriteComponent.h"
 #include "Graphics/Renderer.h"
@@ -10,6 +11,7 @@
 #include "ECS/Systems/RenderSystem.h"
 #include "Actions/ChangeColorAction.h"
 #include "Conditions/KeyPressCondition.h"
+#include <string>
 
 void SampleStateMachine::OnInit(GameContext& context)
 {
@@ -23,17 +25,17 @@ void SampleStateMachine::OnInit(GameContext& context)
     m_registry.AddComponent<SpriteComponent>(m_agent, SpriteComponent{m_texId, Colors::White});
     m_registry.GetComponent<Transform2D>(m_agent).Scale = Vector2f{1.0f, 1.0f};
 
-    m_stateMachine = new StateMachine<SampleStateMachine>(this, 2);
+    mp_stateMachine = new StateMachine<SampleStateMachine>(this, 2);
 
-    State<SampleStateMachine>* idleState = m_stateMachine->CreateState(0);
+    State<SampleStateMachine>* idleState = mp_stateMachine->CreateState(0);
     idleState->AddAction(new ChangeColorAction<SampleStateMachine>(m_agent, Colors::Red));
     idleState->AddTransition(new Transition<SampleStateMachine>(new KeyPressCondition<SampleStateMachine>(KeyCode::Space), 1));
 
-    State<SampleStateMachine>* moveState = m_stateMachine->CreateState(1);
+    State<SampleStateMachine>* moveState = mp_stateMachine->CreateState(1);
     moveState->AddAction(new ChangeColorAction<SampleStateMachine>(m_agent, Colors::Green));
     moveState->AddTransition(new Transition<SampleStateMachine>(new KeyPressCondition<SampleStateMachine>(KeyCode::Space), 0));
 
-    m_stateMachine->SetState(0);
+    mp_stateMachine->SetState(0);
 
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
     m_systemManager.OnInit();
@@ -43,12 +45,12 @@ void SampleStateMachine::OnUpdate(float dt, GameContext& context)
 {
     DefaultScene::OnUpdate(dt, context);
 
-    m_currentContext = &context;
+    mp_currentContext = &context;
     m_dt = dt;
 
-    if (m_stateMachine)
+    if (mp_stateMachine)
     {
-        m_stateMachine->Update();
+        mp_stateMachine->Update();
     }
 
     m_systemManager.OnUpdate(dt);
@@ -62,12 +64,16 @@ void SampleStateMachine::OnRender(GameContext& context)
     m_systemManager.OnRender();
 
     context.Render.ResetCamera();
+
+    std::string stateStr = mp_stateMachine ? std::to_string(mp_stateMachine->GetCurrentState()) : "NONE";
+    std::string stats = "Active State ID: " + stateStr;
+    DrawDefaultUI(context, "SAMPLE : STATE-MACHINE", stats);
 }
 
 void SampleStateMachine::OnDestroy(GameContext& context)
 {
-    delete m_stateMachine;
-    m_stateMachine = nullptr;
+    delete mp_stateMachine;
+    mp_stateMachine = nullptr;
 
     DefaultScene::OnDestroy(context);
 }
