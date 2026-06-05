@@ -51,10 +51,10 @@ void GameScene::OnInit(GameContext& context)
         }
     });
 
-    CreateWall(0.0f, -470.0f, 1600.0f, 40.0f);
-    CreateWall(-820.0f, 0.0f, 40.0f, 900.0f);
-    CreateWall(820.0f, 0.0f, 40.0f, 900.0f);
-    m_bottomWall = CreateWall(0.0f, 470.0f, 1600.0f, 40.0f);
+    CreateWall(0.0f, -550.0f, 1600.0f, 200.0f);
+    CreateWall(-900.0f, 0.0f, 200.0f, 900.0f);
+    CreateWall(900.0f, 0.0f, 200.0f, 900.0f);
+    m_bottomWall = CreateWall(0.0f, 550.0f, 1600.0f, 200.0f);
 
     m_ball = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_ball, Transform2D{Vector2f{0.0f, 0.0f}});
@@ -270,8 +270,8 @@ void GameScene::HandlePaddleCollision()
     float maxAngle = 60.0f * 3.14159265f / 180.0f;
     float bounceAngle = hitFactor * maxAngle;
 
-    ballRb.Velocity.X = std::abs(speed * std::sin(bounceAngle));
-    ballRb.Velocity.Y = -std::abs(speed * std::cos(bounceAngle));
+    ballRb.Velocity.X = speed * std::sin(bounceAngle);
+    ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
 }
 
 void GameScene::CreateBrick(float x, float y, BrickType type, bool isSpecial)
