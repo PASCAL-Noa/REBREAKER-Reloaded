@@ -7,7 +7,9 @@
 enum class SceneState : int
 {
     Playing = 0,
-    Paused = 1
+    Paused = 1,
+    GameOver = 2,
+    Victory = 3
 };
 
 class GameScene : public DefaultScene
@@ -19,7 +21,10 @@ public:
     void    OnDestroy(GameContext& context) override;
     [[nodiscard]] uint32_t  GetPostProcessShader() const override;
 
-    [[nodiscard]] const GameContext*    GetContext() const { return mp_context; }
+    [[nodiscard]] const GameContext* GetContext() const { return mp_context; }
+    [[nodiscard]] int     GetLives() const { return m_lives; }
+    [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
+    void    FullReset();
 
 private:
     Entity  CreateWall(float x, float y, float w, float h);
@@ -31,8 +36,11 @@ private:
     void    HandleBrickCollision(Entity entity);
     void    HandlePaddleCollision();
 
+    void    LoadHighScore();
+    void    SaveHighScore();
+
     StateMachine<GameScene>*    mp_state_machine = nullptr;
-    const GameContext*      mp_context = nullptr;
+    GameContext*    mp_context = nullptr;
 
     Entity  m_ball{};
     Entity  m_paddle{};
@@ -44,9 +52,8 @@ private:
     uint32_t    m_bounceSfxId = 0;
     uint32_t    m_brickTexId = 0;
 
-    bool    m_enableShader = false;
-    bool    m_showDebug = false;
-
     uint32_t    m_score = 0;
+    uint32_t    m_highScore = 0;
     int     m_lives = 3;
+    int     m_brickCount = 0;
 };
