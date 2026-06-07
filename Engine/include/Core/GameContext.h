@@ -7,6 +7,7 @@ class   SceneManager;
 class   AudioMixer;
 class   EventDispatcher;
 struct  GameData;
+class   GameRules;
 
 
 struct GameContext
@@ -18,4 +19,5 @@ struct GameContext
     SceneManager&       Scenes;
     AudioMixer&         Audio;
     EventDispatcher&    Events;
+    GameRules&          Rules;
 };
