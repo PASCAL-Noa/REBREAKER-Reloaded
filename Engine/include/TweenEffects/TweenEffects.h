@@ -4,6 +4,6 @@
 
 namespace TweenEffects
 {
-    void Shake(TweenComponent& tweenComp, Transform2D& transform, float duration = 0.35f, float intensity = 15.0f);
-    void Spin(TweenComponent& tweenComp, Transform2D& transform, float duration = 1.0f);
+    void    Shake(TweenComponent& tweenComp, Transform2D& transform, float duration = 0.35f, float intensity = 15.0f);
+    void    Spin(TweenComponent& tweenComp, Transform2D& transform, float duration = 1.0f);
 }

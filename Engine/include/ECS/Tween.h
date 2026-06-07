@@ -7,18 +7,18 @@ class ITween
 {
 public:
     virtual ~ITween() = default;
-    virtual void Update(float dt) = 0;
-    virtual bool IsFinished() const = 0;
+    virtual void    Update(float dt) = 0;
+    virtual bool    IsFinished() const = 0;
 };
 
 template<typename T>
 struct TweenConfig
 {
-    T Start{};
-    T End{};
-    float Duration = 0.0f;
-    std::function<void(T)> Setter;
-    EasingFunctions::EasingType Ease = EasingFunctions::EasingType::Linear;
+    T   Start{};
+    T   End{};
+    float   Duration = 0.0f;
+    std::function<void(T)>  Setter;
+    EasingFunctions::EasingType     Ease = EasingFunctions::EasingType::Linear;
 };
 
 template<typename T>
@@ -55,7 +55,7 @@ public:
     }
 
 private:
-    TweenConfig<T> m_config;
-    float m_elapsed = 0.0f;
-    EasingFunctions::EasingFunction m_easeFunc;
+    TweenConfig<T>  m_config;
+    float   m_elapsed = 0.0f;
+    EasingFunctions::EasingFunction     m_easeFunc;
 };
