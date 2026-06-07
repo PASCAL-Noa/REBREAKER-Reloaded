@@ -2,6 +2,7 @@
 #include "Core/GameContext.h"
 #include "Core/GameData.h"
 #include "Core/InputManager.h"
+#include "Core/GameRules.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/BoxCollider.h"
 #include "ECS/Components/CircleCollider.h"
@@ -15,13 +16,22 @@
 #include "Events/CollisionEvent.h"
 #include "StateMachine/Transition.h"
 #include "Conditions/KeyPressCondition.h"
+#include "Conditions/GameConditions.h"
+#include "Actions/ResetGameAction.h"
 #include "AudioMixer.h"
 #include <string>
 #include <cmath>
+#include <fstream>
 
 void GameScene::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
+    mp_context = &context;
+
+    context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", false, RuleAccess::Public);
+    context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toogle Hitbox", false, RuleAccess::Private);
+    context.Rules.RegisterRule(Rule::Gameplay::Invincible, "God mod", false, RuleAccess::Private);
+    context.Rules.RegisterRule(Rule::Gameplay::InfiniteLives, "Infinite lives", false, RuleAccess::Private);
 
     m_camera.Zoom = 0.75f;
 
@@ -30,6 +40,8 @@ void GameScene::OnInit(GameContext& context)
     m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_brickTexId = context.Resources.LoadResource("Resources/sprite/brick.png");
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
+
+    LoadHighScore();
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
@@ -47,14 +59,17 @@ void GameScene::OnInit(GameContext& context)
         }
         else if (e.EntityA == m_bottomWall || e.EntityB == m_bottomWall)
         {
-            HandleDeath();
+            if (!context.Rules.GetRule(Rule::Gameplay::Invincible))
+            {
+                HandleDeath();
+            }
         }
     });
 
-    CreateWall(0.0f, -470.0f, 1600.0f, 40.0f);
-    CreateWall(-820.0f, 0.0f, 40.0f, 900.0f);
-    CreateWall(820.0f, 0.0f, 40.0f, 900.0f);
-    m_bottomWall = CreateWall(0.0f, 470.0f, 1600.0f, 40.0f);
+    CreateWall(0.0f, -550.0f, 1600.0f, 200.0f);
+    CreateWall(-900.0f, 0.0f, 200.0f, 900.0f);
+    CreateWall(900.0f, 0.0f, 200.0f, 900.0f);
+    m_bottomWall = CreateWall(0.0f, 550.0f, 1600.0f, 200.0f);
 
     m_ball = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_ball, Transform2D{Vector2f{0.0f, 0.0f}});
@@ -71,13 +86,23 @@ void GameScene::OnInit(GameContext& context)
     CreateBrickGrid();
     m_systemManager.OnInit();
 
-    mp_state_machine = new StateMachine<GameScene>(this, 2);
+    mp_state_machine = new StateMachine<GameScene>(this, 4);
 
     State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
     playingState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Paused)));
+    playingState->AddTransition(new Transition<GameScene>(new LivesCondition<GameScene>(), static_cast<int>(SceneState::GameOver)));
+    playingState->AddTransition(new Transition<GameScene>(new VictoryCondition<GameScene>(), static_cast<int>(SceneState::Victory)));
 
     State<GameScene>* pauseState = mp_state_machine->CreateState(static_cast<int>(SceneState::Paused));
     pauseState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Playing)));
+
+    State<GameScene>* gameOverState = mp_state_machine->CreateState(static_cast<int>(SceneState::GameOver));
+    gameOverState->AddAction(new ResetGameAction<GameScene>());
+    gameOverState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Space), static_cast<int>(SceneState::Playing)));
+
+    State<GameScene>* victoryState = mp_state_machine->CreateState(static_cast<int>(SceneState::Victory));
+    victoryState->AddAction(new ResetGameAction<GameScene>());
+    victoryState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Space), static_cast<int>(SceneState::Playing)));
 
     mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
 }
@@ -111,7 +136,8 @@ void GameScene::OnRender(GameContext& context)
     context.Render.DrawLine(Vector2f{800.0f, -450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
     context.Render.DrawLine(Vector2f{-800.0f, 450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
 
-    if (m_showDebug)
+    bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
+    if (showDebug)
     {
         m_registry.View<Transform2D, BoxCollider>([&](Entity, Transform2D& t, BoxCollider& b) {
             Color color = b.IsColliding ? Colors::Red : Colors::Green;
@@ -126,18 +152,35 @@ void GameScene::OnRender(GameContext& context)
 
     context.Render.ResetCamera();
 
-    std::string debugState = m_showDebug ? "ON" : "OFF";
-    std::string shaderState = m_enableShader ? "ON" : "OFF";
-    std::string gameStateStr = (mp_state_machine && mp_state_machine->GetCurrentState() == static_cast<int>(SceneState::Paused)) ? "PAUSE" : "PLAY";
-    std::string stats = "HP : " + std::to_string(m_lives) + " | Score : " + std::to_string(m_score);
-    stats += "\nDebug (G) : " + debugState + " | Shader (F) : " + shaderState + "\nState : " + gameStateStr;
+    std::string gameStateStr = "PLAY";
+    if (mp_state_machine)
+    {
+        int state = mp_state_machine->GetCurrentState();
+        if (state == static_cast<int>(SceneState::Paused)) gameStateStr = "PAUSE";
+        else if (state == static_cast<int>(SceneState::GameOver)) gameStateStr = "GAME OVER - ESPACE POUR REJOUER";
+        else if (state == static_cast<int>(SceneState::Victory)) gameStateStr = "VICTOIRE - ESPACE POUR REJOUER";
+    }
+
+    std::string debugStr = showDebug ? "ON" : "OFF";
+    std::string shaderStr = context.Rules.GetRule(Rule::Graphics::EnableShader) ? "ON" : "OFF";
+    std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
+    std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
+
+    std::string stats = "HP : " + std::to_string(m_lives) + " | Score : " + std::to_string(m_score) + " | Record : " + std::to_string(m_highScore);
+    stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
+    stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
+    stats += "\nState : " + gameStateStr;
 
     DrawDefaultUI(context, "REBREAKER", stats);
 }
 
 uint32_t GameScene::GetPostProcessShader() const
 {
-    return m_enableShader ? m_shaderId : 0;
+    if (mp_context && mp_context->Rules.GetRule(Rule::Graphics::EnableShader))
+    {
+        return m_shaderId;
+    }
+    return 0;
 }
 
 Entity GameScene::CreateWall(float x, float y, float w, float h)
@@ -159,13 +202,74 @@ void GameScene::OnDestroy(GameContext& context)
     DefaultScene::OnDestroy(context);
 }
 
+void GameScene::LoadHighScore()
+{
+    std::ifstream file("save.dat");
+    if (file.is_open())
+    {
+        file >> m_highScore;
+        file.close();
+    }
+}
+
+void GameScene::SaveHighScore()
+{
+    std::ofstream file("save.dat");
+    if (file.is_open())
+    {
+        file << m_highScore;
+        file.close();
+    }
+}
+
+void GameScene::FullReset()
+{
+    if (m_score > m_highScore)
+    {
+        m_highScore = m_score;
+        SaveHighScore();
+    }
+
+    m_score = 0;
+    m_lives = 3;
+    m_brickCount = 0;
+
+    m_registry.View<BrickComponent>([this](Entity e, BrickComponent&) {
+        m_registry.DestroyEntity(e);
+    });
+
+    CreateBrickGrid();
+    ResetBallAndPaddle();
+}
+
 void GameScene::HandleInput(float dt, const GameContext& context)
 {
     auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
     const float speed = 700.0f;
 
-    if (context.Input.IsKeyPress(KeyCode::F)) m_enableShader = !m_enableShader;
-    if (context.Input.IsKeyPress(KeyCode::G)) m_showDebug = !m_showDebug;
+    if (context.Input.IsKeyPress(KeyCode::F))
+    {
+        bool shader = context.Rules.GetRule(Rule::Graphics::EnableShader);
+        context.Rules.SetRule(Rule::Graphics::EnableShader, !shader);
+    }
+
+    if (context.Input.IsKeyPress(KeyCode::G))
+    {
+        bool debug = context.Rules.GetRule(Rule::Debug::ShowCollider);
+        context.Rules.SetRule(Rule::Debug::ShowCollider, !debug);
+    }
+
+    if (context.Input.IsKeyPress(KeyCode::I))
+    {
+        bool invincible = context.Rules.GetRule(Rule::Gameplay::Invincible);
+        context.Rules.SetRule(Rule::Gameplay::Invincible, !invincible);
+    }
+
+    if (context.Input.IsKeyPress(KeyCode::L))
+    {
+        bool infLives = context.Rules.GetRule(Rule::Gameplay::InfiniteLives);
+        context.Rules.SetRule(Rule::Gameplay::InfiniteLives, !infLives);
+    }
 
     if (context.Input.IsKeyDown(KeyCode::Q)) paddleTransform.Position.X -= speed * dt;
     if (context.Input.IsKeyDown(KeyCode::D)) paddleTransform.Position.X += speed * dt;
@@ -220,20 +324,20 @@ void GameScene::ResetBallAndPaddle()
     ballTransform.Position = Vector2f{0.0f, 0.0f};
     ballRb.Velocity = Vector2f{500.0f, 400.0f};
 
-    paddleTransform.Position = Vector2f{0.0f, 400.0f};
+    paddleTransform.Position = Vector2f{0.0f, 300.0f};
 }
 
 void GameScene::HandleDeath()
 {
-    m_lives--;
-    if (m_lives > 0)
+    bool infiniteLives = mp_context ? mp_context->Rules.GetRule(Rule::Gameplay::InfiniteLives) : false;
+
+    if (!infiniteLives)
     {
-        ResetBallAndPaddle();
+        m_lives--;
     }
-    else
+
+    if (m_lives > 0 || infiniteLives)
     {
-        m_lives = 3;
-        m_score = 0;
         ResetBallAndPaddle();
     }
 }
@@ -248,6 +352,7 @@ void GameScene::HandleBrickCollision(Entity entity)
     if (brick.HitPoints <= 0)
     {
         m_score += brick.ScoreValue;
+        m_brickCount--;
         m_registry.DestroyEntity(entity);
     }
 }
@@ -270,8 +375,8 @@ void GameScene::HandlePaddleCollision()
     float maxAngle = 60.0f * 3.14159265f / 180.0f;
     float bounceAngle = hitFactor * maxAngle;
 
-    ballRb.Velocity.X = std::abs(speed * std::sin(bounceAngle));
-    ballRb.Velocity.Y = -std::abs(speed * std::cos(bounceAngle));
+    ballRb.Velocity.X = speed * std::sin(bounceAngle);
+    ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
 }
 
 void GameScene::CreateBrick(float x, float y, BrickType type, bool isSpecial)
@@ -314,6 +419,7 @@ void GameScene::CreateBrick(float x, float y, BrickType type, bool isSpecial)
         tint = Colors::White;
     }
 
+    m_brickCount++;
     m_registry.AddComponent<BrickComponent>(brick, comp);
     m_registry.AddComponent<SpriteComponent>(brick, SpriteComponent{m_brickTexId, tint});
 }

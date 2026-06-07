@@ -1,3 +1,4 @@
+#include "Core/GameRules.h"
 #ifdef _WIN32
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
@@ -33,8 +34,9 @@ int main()
 
     GameData gameData;
     SceneManager sceneManager;
+    GameRules rules;
 
-    GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager, audioMixer, eventDispatcher };
+    GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager, audioMixer, eventDispatcher, rules };
 
     sceneManager.LoadScene<MenuScene>();
 
