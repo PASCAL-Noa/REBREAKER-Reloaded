@@ -23,6 +23,8 @@
 #include <cmath>
 #include <fstream>
 
+#include "Factories/BrickFactory.h"
+
 void GameScene::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
@@ -212,7 +214,7 @@ void GameScene::LoadHighScore()
     }
 }
 
-void GameScene::SaveHighScore()
+void GameScene::SaveHighScore() const
 {
     std::ofstream file("save.dat");
     if (file.is_open())
@@ -307,10 +309,10 @@ void GameScene::CreateBrickGrid()
         {
             float x = startX + c * (bWidth + pad);
             float y = startY + r * (bHeight + pad);
-
             bool isSpecial = (r == 0 && c == 5);
 
-            CreateBrick(x, y, rowType, isSpecial);
+            BrickFactory::Create(m_registry, x, y, rowType, isSpecial, m_brickTexId);
+            m_brickCount++;
         }
     }
 }
@@ -377,49 +379,4 @@ void GameScene::HandlePaddleCollision()
 
     ballRb.Velocity.X = speed * std::sin(bounceAngle);
     ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
-}
-
-void GameScene::CreateBrick(float x, float y, BrickType type, bool isSpecial)
-{
-    Entity brick = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(brick, Transform2D{Vector2f{x, y}});
-    m_registry.AddComponent<BoxCollider>(brick, BoxCollider{Vector2f{100.0f, 30.0f}, Vector2f{0.0f, 0.0f}, false, false});
-    m_registry.AddComponent<RigidBody>(brick, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
-
-    BrickComponent comp;
-    comp.Type = type;
-    comp.IsSpecial = isSpecial;
-
-    Color tint = Colors::White;
-
-    switch (type)
-    {
-    case BrickType::Light:
-        comp.HitPoints = 1;
-        comp.ScoreValue = 50;
-        tint = Colors::Green;
-        break;
-    case BrickType::Medium:
-        comp.HitPoints = 2;
-        comp.ScoreValue = 100;
-        tint = Colors::Yellow;
-        break;
-    case BrickType::Hard:
-        comp.HitPoints = 3;
-        comp.ScoreValue = 200;
-        tint = Colors::Red;
-        break;
-    case BrickType::Special:
-        comp.HitPoints = 1;
-        comp.ScoreValue = 500;
-        comp.IsSpecial = true;
-        tint = Color{255, 0, 255, 255};
-        break;
-    default:
-        tint = Colors::White;
-    }
-
-    m_brickCount++;
-    m_registry.AddComponent<BrickComponent>(brick, comp);
-    m_registry.AddComponent<SpriteComponent>(brick, SpriteComponent{m_brickTexId, tint});
 }

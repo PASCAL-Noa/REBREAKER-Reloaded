@@ -32,12 +32,11 @@ private:
     void    CreateBrickGrid();
     void    ResetBallAndPaddle();
     void    HandleDeath();
-    void    CreateBrick(float x, float y, BrickType type, bool isSpecial);
     void    HandleBrickCollision(Entity entity);
     void    HandlePaddleCollision();
 
     void    LoadHighScore();
-    void    SaveHighScore();
+    void    SaveHighScore() const;
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
