@@ -4,12 +4,13 @@
 
 struct BrickHitEvent : public Event
 {
-    Entity BrickEntity;
-    bool IsDestroyed;
-    bool IsSpecial;
+    Entity  BrickEntity;
+    bool    IsDestroyed;
+    bool    IsSpecial;
+    uint32_t    Combo;
 
-    BrickHitEvent(Entity brick, bool destroyed, bool special)
-        : BrickEntity(brick), IsDestroyed(destroyed), IsSpecial(special) {}
+    BrickHitEvent(const Entity brick, const bool destroyed, const bool special, const uint32_t combo)
+        : BrickEntity(brick), IsDestroyed(destroyed), IsSpecial(special), Combo(combo) {}
 };
 
 struct PaddleHitEvent : public Event
@@ -17,7 +18,7 @@ struct PaddleHitEvent : public Event
     Entity PaddleEntity;
     Entity BallEntity;
 
-    PaddleHitEvent(Entity paddle, Entity ball)
+    PaddleHitEvent(const Entity paddle, const Entity ball)
         : PaddleEntity(paddle), BallEntity(ball) {}
 };
 
@@ -25,7 +26,7 @@ struct BallDeathEvent : public Event
 {
     Entity BallEntity;
 
-    explicit BallDeathEvent(Entity ball)
+    explicit BallDeathEvent(const Entity ball)
         : BallEntity(ball) {}
 };
 
@@ -33,6 +34,6 @@ struct PowerUpEvent : public Event
 {
     Entity PowerUpEntity;
 
-    explicit PowerUpEvent(Entity powerUp)
+    explicit PowerUpEvent(const Entity powerUp)
         : PowerUpEntity(powerUp) {}
 };

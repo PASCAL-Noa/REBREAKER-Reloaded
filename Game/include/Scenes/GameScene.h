@@ -1,4 +1,6 @@
 #pragma once
+#include "PlaylistManager.h"
+#include "ScoreManager.h"
 #include "Scenes/DefaultScene.h"
 #include "ECS/Entity.h"
 #include "ECS/Components/BrickComponent.h"
@@ -35,9 +37,6 @@ private:
     void    HandleBrickCollision(Entity entity);
     void    HandlePaddleCollision();
 
-    void    LoadHighScore();
-    void    SaveHighScore() const;
-
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
 
@@ -56,5 +55,8 @@ private:
     int     m_lives = 3;
     int     m_brickCount = 0;
 
-    ILevelGenerator* mp_levelGenerator = nullptr;
+    ILevelGenerator*    mp_levelGenerator = nullptr;
+    ScoreManager       m_scoreManager{"save.dat"};
+    uint32_t    m_combo = 0;
+    PlaylistManager     m_playlist;
 };

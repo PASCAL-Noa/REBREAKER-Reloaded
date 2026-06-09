@@ -3,6 +3,7 @@
 #include "Core/GameData.h"
 #include "Core/InputManager.h"
 #include "Core/GameRules.h"
+#include "ScoreManager.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/BoxCollider.h"
 #include "ECS/Components/CircleCollider.h"
@@ -21,7 +22,6 @@
 #include "AudioMixer.h"
 #include <string>
 #include <cmath>
-#include <fstream>
 
 #include "ECS/Components/TweenComponent.h"
 #include "Factories/BrickFactory.h"
@@ -35,7 +35,7 @@ void GameScene::OnInit(GameContext& context)
     mp_context = &context;
 
     context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", false, RuleAccess::Public);
-    context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toogle Hitbox", false, RuleAccess::Private);
+    context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toggle Hitbox", false, RuleAccess::Private);
     context.Rules.RegisterRule(Rule::Gameplay::Invincible, "God mod", false, RuleAccess::Private);
     context.Rules.RegisterRule(Rule::Gameplay::InfiniteLives, "Infinite lives", false, RuleAccess::Private);
 
@@ -46,8 +46,6 @@ void GameScene::OnInit(GameContext& context)
     m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_brickTexId = context.Resources.LoadResource("Resources/sprite/brick.png");
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
-
-    LoadHighScore();
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
@@ -104,6 +102,12 @@ void GameScene::OnInit(GameContext& context)
     mp_levelGenerator = new FileLevelGenerator("Resources/levels/level01.txt");
     m_brickCount = mp_levelGenerator->Generate(m_registry, context, m_brickTexId);
 
+    m_playlist.AddTrack(context, "Resources/audio/music/Game-1.ogg");
+    m_playlist.AddTrack(context, "Resources/audio/music/Game-2.ogg");
+    m_playlist.AddTrack(context, "Resources/audio/music/Game-3.ogg");
+    m_playlist.AddTrack(context, "Resources/audio/music/Game-4.ogg");
+    m_playlist.PlayNext(context);
+
     mp_state_machine = new StateMachine<GameScene>(this, 4);
 
     State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
@@ -139,6 +143,8 @@ void GameScene::OnUpdate(float dt, GameContext& context)
     {
         HandleInput(dt, context);
         mp_levelGenerator->Update(dt, m_registry, context);
+        m_scoreManager.Update(dt);
+        m_playlist.Update(context);
         m_systemManager.OnUpdate(dt);
     }
 }
@@ -185,7 +191,17 @@ void GameScene::OnRender(GameContext& context)
     std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
     std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
 
-    std::string stats = "HP : " + std::to_string(m_lives) + " | Score : " + std::to_string(m_score) + " | Record : " + std::to_string(m_highScore);
+    std::string stats = "HP : " + std::to_string(m_lives) +
+                        " | Score : " + std::to_string(m_scoreManager.GetScore()) +
+                        " | Record : " + std::to_string(m_scoreManager.GetHighScore());
+
+    if (m_scoreManager.GetComboMultiplier() > 1)
+    {
+        stats += "\nCombo : x" + std::to_string(m_scoreManager.GetComboMultiplier()) +
+                 " (+" + std::to_string(m_scoreManager.GetComboScore()) + ") " +
+                 "[" + std::to_string(static_cast<int>(m_scoreManager.GetComboTimer())) + "s]";
+    }
+
     stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
     stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
     stats += "\nState : " + gameStateStr;
@@ -224,35 +240,9 @@ void GameScene::OnDestroy(GameContext& context)
     DefaultScene::OnDestroy(context);
 }
 
-void GameScene::LoadHighScore()
-{
-    std::ifstream file("save.dat");
-    if (file.is_open())
-    {
-        file >> m_highScore;
-        file.close();
-    }
-}
-
-void GameScene::SaveHighScore() const
-{
-    std::ofstream file("save.dat");
-    if (file.is_open())
-    {
-        file << m_highScore;
-        file.close();
-    }
-}
-
 void GameScene::FullReset()
 {
-    if (m_score > m_highScore)
-    {
-        m_highScore = m_score;
-        SaveHighScore();
-    }
-
-    m_score = 0;
+    m_scoreManager.Reset();
     m_lives = 3;
     m_brickCount = 0;
 
@@ -322,7 +312,8 @@ void GameScene::ResetBallAndPaddle()
 
 void GameScene::HandleDeath()
 {
-    mp_context->Events.Publish(BallDeathEvent{m_ball});
+    m_scoreManager.BreakCombo();
+    mp_context->Events.Publish(BallDeathEvent(m_ball));
 
     bool infiniteLives = mp_context ? mp_context->Rules.GetRule(Rule::Gameplay::InfiniteLives) : false;
 
@@ -346,18 +337,28 @@ void GameScene::HandleBrickCollision(Entity entity)
 
     bool isDestroyed = (brick.HitPoints <= 0);
 
-    mp_context->Events.Publish(BrickHitEvent{entity, isDestroyed, brick.IsSpecial});
+    if (isDestroyed)
+    {
+        m_scoreManager.AddScore(brick.ScoreValue);
+        m_brickCount--;
+    }
+    else
+    {
+        m_scoreManager.AddScore(0);
+    }
+
+    mp_context->Events.Publish(BrickHitEvent(entity, isDestroyed, brick.IsSpecial, m_scoreManager.GetComboMultiplier()));
 
     if (isDestroyed)
     {
-        m_score += brick.ScoreValue;
-        m_brickCount--;
         m_registry.DestroyEntity(entity);
     }
 }
 
 void GameScene::HandlePaddleCollision()
 {
+    m_scoreManager.BreakCombo();
+
     auto& ballRb = m_registry.GetComponent<RigidBody>(m_ball);
     auto& ballTransform = m_registry.GetComponent<Transform2D>(m_ball);
     auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
@@ -377,5 +378,5 @@ void GameScene::HandlePaddleCollision()
     ballRb.Velocity.X = speed * std::sin(bounceAngle);
     ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
 
-    mp_context->Events.Publish(PaddleHitEvent{m_paddle, m_ball});
+    mp_context->Events.Publish(PaddleHitEvent(m_paddle, m_ball));
 }

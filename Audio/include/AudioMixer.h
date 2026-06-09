@@ -22,7 +22,8 @@ public:
     void    SetMusicVolume(float volume) const;
     void    StopAll() const;
 
+    [[nodiscard]] bool  IsMusicPlaying() const;
 private:
     struct  Impl;
-    Impl*   m_impl;
+    Impl*   mp_impl;
 };

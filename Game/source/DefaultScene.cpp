@@ -8,16 +8,19 @@
 #include "Resources/ResourceManager.h"
 #include "ECS/Components/Transform2D.h"
 #include "Data/Color.h"
+#include "AudioMixer.h"
 
 void DefaultScene::OnInit(GameContext& context)
 {
     Scene::OnInit(context);
+    mp_context = &context;
     m_fontId = context.Resources.LoadResource("Resources/font/vt323.ttf");
 }
 
 void DefaultScene::OnUpdate(float dt, GameContext& context)
 {
     Scene::OnUpdate(dt, context);
+    mp_context = &context;
 
     if (context.Input.IsKeyDown(KeyCode::Num0))
     {
@@ -28,6 +31,13 @@ void DefaultScene::OnUpdate(float dt, GameContext& context)
 void DefaultScene::OnRender(GameContext& context)
 {
     Scene::OnRender(context);
+    mp_context = &context;
+}
+
+void DefaultScene::OnDestroy(GameContext& context)
+{
+    StopAllAudio();
+    Scene::OnDestroy(context);
 }
 
 void DefaultScene::DrawDefaultUI(const GameContext& context, const std::string& sceneName, const std::string& instructions) const
@@ -39,4 +49,24 @@ void DefaultScene::DrawDefaultUI(const GameContext& context, const std::string& 
     text += "[0] Retour au menu";
 
     context.Render.DrawText(text, m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 10.0f}}, Colors::White);
+}
+
+void DefaultScene::PlaySfx(uint32_t id, float volume, float pitch) const
+{
+    if (mp_context) mp_context->Audio.PlaySfx(id, volume, pitch);
+}
+
+void DefaultScene::PlayMusic(const std::string& filepath, float volume, bool loop) const
+{
+    if (mp_context) mp_context->Audio.PlayMusic(filepath, volume, loop);
+}
+
+void DefaultScene::StopMusic() const
+{
+    if (mp_context) mp_context->Audio.StopMusic();
+}
+
+void DefaultScene::StopAllAudio() const
+{
+    if (mp_context) mp_context->Audio.StopAll();
 }

@@ -17,18 +17,22 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_sfxPaddleHit = context.Resources.LoadResource("Resources/audio/sfx/paddle_hit.wav");
     m_sfxBallDeath = context.Resources.LoadResource("Resources/audio/sfx/ball_despawn.wav");
     m_sfxPowerUp = context.Resources.LoadResource("Resources/audio/sfx/powerup.wav");
+    m_sfxCombo = context.Resources.LoadResource("Resources/audio/sfx/combo.wav");
 
     m_context.Events.Subscribe<BrickHitEvent>([this](const BrickHitEvent& e)
     {
+        float pitch = 1.0f + (e.Combo * 0.05f);
+        if (pitch > 2.0f) pitch = 2.0f;
+
         if (e.IsDestroyed)
         {
-            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 50.0f);
+            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 50.0f, pitch);
         }
         else
         {
-            m_context.Audio.PlaySfx(m_sfxBrickHit, 50.0f);
+            m_context.Audio.PlaySfx(m_sfxBrickHit, 50.0f, pitch);
 
-            if (m_registry.HasComponent<TweenComponent>(e.BrickEntity) && 
+            if (m_registry.HasComponent<TweenComponent>(e.BrickEntity) &&
                 m_registry.HasComponent<Transform2D>(e.BrickEntity))
             {
                 auto& tween = m_registry.GetComponent<TweenComponent>(e.BrickEntity);
@@ -36,18 +40,16 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
                 TweenEffects::Shake(tween, transform, 0.15f, 5.0f);
             }
         }
+
+        if (e.Combo > 1)
+        {
+            m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch-0.5f);
+        }
     });
 
     m_context.Events.Subscribe<PaddleHitEvent>([this](const PaddleHitEvent& e)
     {
         m_context.Audio.PlaySfx(m_sfxPaddleHit, 50.0f);
-
-        if (m_registry.HasComponent<TweenComponent>(e.PaddleEntity) && 
-            m_registry.HasComponent<Transform2D>(e.PaddleEntity))
-        {
-            auto& tween = m_registry.GetComponent<TweenComponent>(e.PaddleEntity);
-            auto& transform = m_registry.GetComponent<Transform2D>(e.PaddleEntity);
-        }
     });
 
     m_context.Events.Subscribe<BallDeathEvent>([this](const BallDeathEvent& e)
@@ -56,12 +58,7 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     });
 }
 
-GameFeelSystem::~GameFeelSystem()
-{
-
-}
 
 void GameFeelSystem::OnUpdate(float dt)
 {
-
 }
