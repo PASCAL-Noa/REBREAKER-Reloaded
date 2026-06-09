@@ -3,6 +3,7 @@
 #include "ECS/Components/BoxCollider.h"
 #include "ECS/Components/RigidBody.h"
 #include "ECS/Components/SpriteComponent.h"
+#include "ECS/Components/TweenComponent.h"
 
 Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type, bool isSpecial, uint32_t texId)
 {
@@ -10,6 +11,7 @@ Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type
     registry.AddComponent<Transform2D>(brick, Transform2D{Vector2f{x, y}});
     registry.AddComponent<BoxCollider>(brick, BoxCollider{Vector2f{100.0f, 30.0f}, Vector2f{0.0f, 0.0f}, false, false});
     registry.AddComponent<RigidBody>(brick, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
+    registry.AddComponent<TweenComponent>(brick, TweenComponent{});
 
     BrickComponent comp;
     comp.Type = type;

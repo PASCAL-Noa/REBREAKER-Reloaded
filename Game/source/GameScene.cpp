@@ -22,8 +22,12 @@
 #include <string>
 #include <cmath>
 #include <fstream>
+
+#include "ECS/Components/TweenComponent.h"
 #include "Factories/BrickFactory.h"
 #include "Generators/FileLevelGenerator.h"
+#include "Events/GameplayEvents.h"
+#include "ECS/Systems/GameFeelSystem.h"
 
 void GameScene::OnInit(GameContext& context)
 {
@@ -47,24 +51,32 @@ void GameScene::OnInit(GameContext& context)
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
+    m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
 
     context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
-        context.Audio.PlaySfx(m_bounceSfxId, 50.0f);
+        bool isBrick = m_registry.HasComponent<BrickComponent>(e.EntityA) ||
+                       m_registry.HasComponent<BrickComponent>(e.EntityB);
+        bool isPaddle = (e.EntityA == m_paddle || e.EntityB == m_paddle);
+        bool isBottomWall = (e.EntityA == m_bottomWall || e.EntityB == m_bottomWall);
+
         HandleBrickCollision(e.EntityA);
         HandleBrickCollision(e.EntityB);
 
-        if ((e.EntityA == m_ball && e.EntityB == m_paddle) ||
-            (e.EntityB == m_ball && e.EntityA == m_paddle))
+        if (isPaddle)
         {
             HandlePaddleCollision();
         }
-        else if (e.EntityA == m_bottomWall || e.EntityB == m_bottomWall)
+        else if (isBottomWall)
         {
             if (!context.Rules.GetRule(Rule::Gameplay::Invincible))
             {
                 HandleDeath();
             }
+        }
+        else if (!isBrick && !isPaddle && !isBottomWall)
+        {
+            context.Audio.PlaySfx(m_bounceSfxId, 50.0f);
         }
     });
 
@@ -78,12 +90,14 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<CircleCollider>(m_ball, CircleCollider{20.0f, Vector2f{0.0f, 0.0f}, false});
     m_registry.AddComponent<RigidBody>(m_ball, RigidBody{Vector2f{500.0f, 400.0f}, 1.0f, 1.0f, false});
     m_registry.AddComponent<SpriteComponent>(m_ball, SpriteComponent{m_ballTexId});
+    m_registry.AddComponent<TweenComponent>(m_ball, TweenComponent{});
 
     m_paddle = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_paddle, Transform2D{Vector2f{0.0f, 300.0f}});
     m_registry.AddComponent<BoxCollider>(m_paddle, BoxCollider{Vector2f{120.0f, 20.0f}, Vector2f{0.0f, 0.0f}, false, false});
     m_registry.AddComponent<RigidBody>(m_paddle, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
     m_registry.AddComponent<SpriteComponent>(m_paddle, SpriteComponent{m_paddleTexId});
+    m_registry.AddComponent<TweenComponent>(m_paddle, TweenComponent{});
 
     m_systemManager.OnInit();
 
@@ -144,12 +158,12 @@ void GameScene::OnRender(GameContext& context)
     bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
     if (showDebug)
     {
-        m_registry.View<Transform2D, BoxCollider>([&](Entity, Transform2D& t, BoxCollider& b) {
+        m_registry.View<Transform2D, BoxCollider>([&](Entity, const Transform2D& t, const BoxCollider& b) {
             Color color = b.IsColliding ? Colors::Red : Colors::Green;
             context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, color, -2.0f);
         });
 
-        m_registry.View<Transform2D, CircleCollider>([&](Entity, Transform2D& t, CircleCollider& c) {
+        m_registry.View<Transform2D, CircleCollider>([&](Entity, const Transform2D& t, const CircleCollider& c) {
             Color color = c.IsColliding ? Colors::Red : Colors::Green;
             context.Render.DrawCircleOutline(c.Radius, t, color, -2.0f);
         });
@@ -253,7 +267,7 @@ void GameScene::FullReset()
 void GameScene::HandleInput(float dt, const GameContext& context)
 {
     auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
-    const float speed = 700.0f;
+    constexpr float speed = 700.0f;
 
     if (context.Input.IsKeyPress(KeyCode::F))
     {
@@ -263,26 +277,26 @@ void GameScene::HandleInput(float dt, const GameContext& context)
 
     if (context.Input.IsKeyPress(KeyCode::G))
     {
-        bool debug = context.Rules.GetRule(Rule::Debug::ShowCollider);
+        const bool debug = context.Rules.GetRule(Rule::Debug::ShowCollider);
         context.Rules.SetRule(Rule::Debug::ShowCollider, !debug);
     }
 
     if (context.Input.IsKeyPress(KeyCode::I))
     {
-        bool invincible = context.Rules.GetRule(Rule::Gameplay::Invincible);
+        const bool invincible = context.Rules.GetRule(Rule::Gameplay::Invincible);
         context.Rules.SetRule(Rule::Gameplay::Invincible, !invincible);
     }
 
     if (context.Input.IsKeyPress(KeyCode::L))
     {
-        bool infLives = context.Rules.GetRule(Rule::Gameplay::InfiniteLives);
+        const bool infLives = context.Rules.GetRule(Rule::Gameplay::InfiniteLives);
         context.Rules.SetRule(Rule::Gameplay::InfiniteLives, !infLives);
     }
 
     if (context.Input.IsKeyDown(KeyCode::Q)) paddleTransform.Position.X -= speed * dt;
     if (context.Input.IsKeyDown(KeyCode::D)) paddleTransform.Position.X += speed * dt;
 
-    const float limitX = 740.0f;
+    constexpr float limitX = 740.0f;
 
     if (paddleTransform.Position.X < -limitX)
     {
@@ -308,6 +322,8 @@ void GameScene::ResetBallAndPaddle()
 
 void GameScene::HandleDeath()
 {
+    mp_context->Events.Publish(BallDeathEvent{m_ball});
+
     bool infiniteLives = mp_context ? mp_context->Rules.GetRule(Rule::Gameplay::InfiniteLives) : false;
 
     if (!infiniteLives)
@@ -328,7 +344,11 @@ void GameScene::HandleBrickCollision(Entity entity)
     auto& brick = m_registry.GetComponent<BrickComponent>(entity);
     brick.HitPoints--;
 
-    if (brick.HitPoints <= 0)
+    bool isDestroyed = (brick.HitPoints <= 0);
+
+    mp_context->Events.Publish(BrickHitEvent{entity, isDestroyed, brick.IsSpecial});
+
+    if (isDestroyed)
     {
         m_score += brick.ScoreValue;
         m_brickCount--;
@@ -356,4 +376,6 @@ void GameScene::HandlePaddleCollision()
 
     ballRb.Velocity.X = speed * std::sin(bounceAngle);
     ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
+
+    mp_context->Events.Publish(PaddleHitEvent{m_paddle, m_ball});
 }

@@ -19,3 +19,4 @@ inline uint32_t GetEventId()
     static uint32_t id = GetNextEventId();
     return id;
 }
+
