@@ -9,12 +9,17 @@
 #include "ECS/Components/Transform2D.h"
 #include "Data/Color.h"
 #include "AudioMixer.h"
+#include "ECS/Components/TweenComponent.h"
 
 void DefaultScene::OnInit(GameContext& context)
 {
     Scene::OnInit(context);
     mp_context = &context;
     m_fontId = context.Resources.LoadResource("Resources/font/vt323.ttf");
+
+    m_camera = m_registry.CreateEntity();
+    m_registry.AddComponent<Camera2D>(m_camera, Camera2D{Vector2f{0.0f, 0.0f}});
+    m_registry.AddComponent<TweenComponent>(m_camera, TweenComponent{});
 }
 
 void DefaultScene::OnUpdate(float dt, GameContext& context)

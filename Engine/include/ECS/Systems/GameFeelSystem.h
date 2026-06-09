@@ -3,6 +3,8 @@
 #include "Core/GameContext.h"
 #include <cstdint>
 
+#include "ECS/Components/Transform2D.h"
+
 class GameFeelSystem : public System
 {
 public:

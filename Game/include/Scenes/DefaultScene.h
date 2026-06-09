@@ -20,6 +20,6 @@ protected:
     void    StopAllAudio() const;
 
     GameContext*    mp_context = nullptr;
-    Camera2D     m_camera{Vector2f{0.0f, 0.0f}};
+    Entity     m_camera{};
     uint32_t     m_fontId = 0;
 };

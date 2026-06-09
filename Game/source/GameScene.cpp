@@ -28,6 +28,7 @@
 #include "Generators/FileLevelGenerator.h"
 #include "Events/GameplayEvents.h"
 #include "ECS/Systems/GameFeelSystem.h"
+#include "ECS/Systems/TweenSystem.h"
 
 void GameScene::OnInit(GameContext& context)
 {
@@ -39,7 +40,10 @@ void GameScene::OnInit(GameContext& context)
     context.Rules.RegisterRule(Rule::Gameplay::Invincible, "God mod", false, RuleAccess::Private);
     context.Rules.RegisterRule(Rule::Gameplay::InfiniteLives, "Infinite lives", false, RuleAccess::Private);
 
-    m_camera.Zoom = 0.75f;
+    auto& camera = m_registry.GetComponent<Camera2D>(m_camera);
+    context.Render.SetCamera(camera);
+
+    camera.Zoom = 0.75f;
 
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
@@ -50,6 +54,7 @@ void GameScene::OnInit(GameContext& context)
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
     m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
+    m_systemManager.AddSystem<TweenSystem>(m_registry);
 
     context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
@@ -152,8 +157,7 @@ void GameScene::OnUpdate(float dt, GameContext& context)
 void GameScene::OnRender(GameContext& context)
 {
     DefaultScene::OnRender(context);
-    context.Render.SetCamera(m_camera);
-
+    context.Render.SetCamera(m_registry.GetComponent<Camera2D>(m_camera));
     m_systemManager.OnRender();
 
     context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{800.0f, -450.0f}, Colors::White, 2.0f);

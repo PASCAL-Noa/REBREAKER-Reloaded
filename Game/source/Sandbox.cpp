@@ -19,6 +19,7 @@
 #include "Core/Debug.h"
 #include "ECS/Systems/RenderSystem.h"
 #include "ECS/Components/SpriteComponent.h"
+#include "ECS/Components/Camera2D.h"
 
 void SandBox::OnInit(GameContext& context)
 {
@@ -98,6 +99,9 @@ void SandBox::HandleInput(float dt, const GameContext& context)
 
     auto& playerRb = m_registry.GetComponent<RigidBody>(m_player);
     auto& playerTransform = m_registry.GetComponent<Transform2D>(m_player);
+
+    auto& camera = m_registry.GetComponent<Camera2D>(m_camera);
+
     const float speed = 400.0f;
 
     playerRb.Velocity.X = 0.0f;
@@ -108,15 +112,15 @@ void SandBox::HandleInput(float dt, const GameContext& context)
     if (input.IsKeyDown(KeyCode::Left) || input.IsKeyDown(KeyCode::Q))  playerRb.Velocity.X = -speed;
     if (input.IsKeyDown(KeyCode::Right) || input.IsKeyDown(KeyCode::D)) playerRb.Velocity.X = speed;
 
-    if (input.IsKeyDown(KeyCode::Space)) m_camera.Rotation += 1.0f;
-    else m_camera.Rotation = 0.0f;
+    if (input.IsKeyDown(KeyCode::Space)) camera.Rotation += 1.0f;
+    else camera.Rotation = 0.f;
 
-    if (input.IsKeyDown(KeyCode::A)) m_camera.Zoom += 0.02f;
-    if (input.IsKeyDown(KeyCode::E)) m_camera.Zoom -= 0.02f;
-    if (m_camera.Zoom < 0.1f) m_camera.Zoom = 0.1f;
+    if (input.IsKeyDown(KeyCode::A)) camera.Zoom += 0.02f;
+    if (input.IsKeyDown(KeyCode::E)) camera.Zoom -= 0.02f;
+    if (camera.Zoom < 0.1f) camera.Zoom = 0.1f;
 
-    m_camera.Position.X += (playerTransform.Position.X - m_camera.Position.X) * 0.1f;
-    m_camera.Position.Y += (playerTransform.Position.Y - m_camera.Position.Y) * 0.1f;
+    camera.Position.X += (playerTransform.Position.X - camera.Position.X) * 0.1f;
+    camera.Position.Y += (playerTransform.Position.Y - camera.Position.Y) * 0.1f;
 
     m_enableShader = input.IsKeyDown(KeyCode::F);
 
@@ -141,7 +145,9 @@ void SandBox::SpawnParticles(int count, float x, float y)
 void SandBox::OnRender(GameContext& context)
 {
     DefaultScene::OnRender(context);
-    context.Render.SetCamera(m_camera);
+
+    auto& camera = m_registry.GetComponent<Camera2D>(m_camera);
+    context.Render.SetCamera(camera);
 
     m_systemManager.OnRender();
 

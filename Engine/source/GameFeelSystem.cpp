@@ -2,6 +2,7 @@
 
 #include "AudioMixer.h"
 #include "ECS/Registry.hpp"
+#include "ECS/Components/Camera2D.h"
 #include "Events/GameplayEvents.h"
 #include "ECS/Components/TweenComponent.h"
 #include "ECS/Components/Transform2D.h"
@@ -55,6 +56,9 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_context.Events.Subscribe<BallDeathEvent>([this](const BallDeathEvent& e)
     {
         m_context.Audio.PlaySfx(m_sfxBallDeath, 60.0f);
+        m_registry.View<Camera2D, TweenComponent>([&](Entity, Camera2D& cam, TweenComponent& tween) {
+        TweenEffects::Shake(tween, cam, 0.4f, 15.0f);
+    });
     });
 }
 
