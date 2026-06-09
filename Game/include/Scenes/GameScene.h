@@ -3,6 +3,7 @@
 #include "ECS/Entity.h"
 #include "ECS/Components/BrickComponent.h"
 #include "StateMachine/StateMachine.h"
+#include "Generators/ILevelGenerator.h"
 
 enum class SceneState : int
 {
@@ -29,7 +30,6 @@ public:
 private:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
-    void    CreateBrickGrid();
     void    ResetBallAndPaddle();
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity);
@@ -55,4 +55,6 @@ private:
     uint32_t    m_highScore = 0;
     int     m_lives = 3;
     int     m_brickCount = 0;
+
+    ILevelGenerator* mp_levelGenerator = nullptr;
 };

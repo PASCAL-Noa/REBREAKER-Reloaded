@@ -22,8 +22,8 @@
 #include <string>
 #include <cmath>
 #include <fstream>
-
 #include "Factories/BrickFactory.h"
+#include "Generators/FileLevelGenerator.h"
 
 void GameScene::OnInit(GameContext& context)
 {
@@ -85,8 +85,10 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<RigidBody>(m_paddle, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
     m_registry.AddComponent<SpriteComponent>(m_paddle, SpriteComponent{m_paddleTexId});
 
-    CreateBrickGrid();
     m_systemManager.OnInit();
+
+    mp_levelGenerator = new FileLevelGenerator("Resources/levels/level01.txt");
+    m_brickCount = mp_levelGenerator->Generate(m_registry, context, m_brickTexId);
 
     mp_state_machine = new StateMachine<GameScene>(this, 4);
 
@@ -122,6 +124,7 @@ void GameScene::OnUpdate(float dt, GameContext& context)
     if (mp_state_machine && mp_state_machine->GetCurrentState() == static_cast<int>(SceneState::Playing))
     {
         HandleInput(dt, context);
+        mp_levelGenerator->Update(dt, m_registry, context);
         m_systemManager.OnUpdate(dt);
     }
 }
@@ -200,6 +203,9 @@ void GameScene::OnDestroy(GameContext& context)
     delete mp_state_machine;
     mp_state_machine = nullptr;
 
+    delete mp_levelGenerator;
+    mp_levelGenerator = nullptr;
+
     context.Events.Clear();
     DefaultScene::OnDestroy(context);
 }
@@ -240,7 +246,7 @@ void GameScene::FullReset()
         m_registry.DestroyEntity(e);
     });
 
-    CreateBrickGrid();
+    m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
     ResetBallAndPaddle();
 }
 
@@ -285,35 +291,6 @@ void GameScene::HandleInput(float dt, const GameContext& context)
     else if (paddleTransform.Position.X > limitX)
     {
         paddleTransform.Position.X = limitX;
-    }
-}
-
-void GameScene::CreateBrickGrid()
-{
-    const int rows = 5;
-    const int cols = 12;
-    const float bWidth = 100.0f;
-    const float bHeight = 30.0f;
-    const float startX = -605.0f;
-    const float startY = -350.0f;
-    const float pad = 10.0f;
-
-    for (int r = 0; r < rows; ++r)
-    {
-        BrickType rowType = BrickType::Light;
-        if (r == 0) rowType = BrickType::Hard;
-        else if (r == 1 || r == 2) rowType = BrickType::Medium;
-        else if (r == 3) rowType = BrickType::Special;
-
-        for (int c = 0; c < cols; ++c)
-        {
-            float x = startX + c * (bWidth + pad);
-            float y = startY + r * (bHeight + pad);
-            bool isSpecial = (r == 0 && c == 5);
-
-            BrickFactory::Create(m_registry, x, y, rowType, isSpecial, m_brickTexId);
-            m_brickCount++;
-        }
     }
 }
 
