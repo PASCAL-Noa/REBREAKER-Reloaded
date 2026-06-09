@@ -64,7 +64,7 @@ void SamplePhysics::HandleInput(float dt, const GameContext& context)
 void SamplePhysics::OnRender(GameContext& context)
 {
     DefaultScene::OnRender(context);
-    context.Render.SetCamera(m_camera);
+    context.Render.SetCamera(m_registry.GetComponent<Camera2D>(m_camera));
 
     m_registry.View<Transform2D, BoxCollider>([&](Entity, Transform2D& transform, BoxCollider& box)
     {

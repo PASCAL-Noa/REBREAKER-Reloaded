@@ -14,7 +14,7 @@ void SampleTween::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
 
-    m_camera.Zoom = 1.25f;
+    m_registry.GetComponent<Camera2D>(m_camera).Zoom = 1.25f;
     m_texId = context.Resources.LoadResource("Resources/sprite/debug.jpg");
 
     m_agent = m_registry.CreateEntity();
@@ -54,8 +54,7 @@ void SampleTween::OnUpdate(float dt, GameContext& context)
 void SampleTween::OnRender(GameContext& context)
 {
     DefaultScene::OnRender(context);
-    context.Render.SetCamera(m_camera);
-    
+    context.Render.SetCamera(m_registry.GetComponent<Camera2D>(m_camera));
     m_systemManager.OnRender();
     
     context.Render.ResetCamera();

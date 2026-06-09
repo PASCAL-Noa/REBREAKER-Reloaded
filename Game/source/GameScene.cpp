@@ -3,6 +3,7 @@
 #include "Core/GameData.h"
 #include "Core/InputManager.h"
 #include "Core/GameRules.h"
+#include "ScoreManager.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/BoxCollider.h"
 #include "ECS/Components/CircleCollider.h"
@@ -21,7 +22,13 @@
 #include "AudioMixer.h"
 #include <string>
 #include <cmath>
-#include <fstream>
+
+#include "ECS/Components/TweenComponent.h"
+#include "Factories/BrickFactory.h"
+#include "Generators/FileLevelGenerator.h"
+#include "Events/GameplayEvents.h"
+#include "ECS/Systems/GameFeelSystem.h"
+#include "ECS/Systems/TweenSystem.h"
 
 void GameScene::OnInit(GameContext& context)
 {
@@ -29,11 +36,14 @@ void GameScene::OnInit(GameContext& context)
     mp_context = &context;
 
     context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", false, RuleAccess::Public);
-    context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toogle Hitbox", false, RuleAccess::Private);
+    context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toggle Hitbox", false, RuleAccess::Private);
     context.Rules.RegisterRule(Rule::Gameplay::Invincible, "God mod", false, RuleAccess::Private);
     context.Rules.RegisterRule(Rule::Gameplay::InfiniteLives, "Infinite lives", false, RuleAccess::Private);
 
-    m_camera.Zoom = 0.75f;
+    auto& camera = m_registry.GetComponent<Camera2D>(m_camera);
+    context.Render.SetCamera(camera);
+
+    camera.Zoom = 0.75f;
 
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
@@ -41,28 +51,35 @@ void GameScene::OnInit(GameContext& context)
     m_brickTexId = context.Resources.LoadResource("Resources/sprite/brick.png");
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
 
-    LoadHighScore();
-
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
+    m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
+    m_systemManager.AddSystem<TweenSystem>(m_registry);
 
     context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
-        context.Audio.PlaySfx(m_bounceSfxId, 50.0f);
+        bool isBrick = m_registry.HasComponent<BrickComponent>(e.EntityA) ||
+                       m_registry.HasComponent<BrickComponent>(e.EntityB);
+        bool isPaddle = (e.EntityA == m_paddle || e.EntityB == m_paddle);
+        bool isBottomWall = (e.EntityA == m_bottomWall || e.EntityB == m_bottomWall);
+
         HandleBrickCollision(e.EntityA);
         HandleBrickCollision(e.EntityB);
 
-        if ((e.EntityA == m_ball && e.EntityB == m_paddle) ||
-            (e.EntityB == m_ball && e.EntityA == m_paddle))
+        if (isPaddle)
         {
             HandlePaddleCollision();
         }
-        else if (e.EntityA == m_bottomWall || e.EntityB == m_bottomWall)
+        else if (isBottomWall)
         {
             if (!context.Rules.GetRule(Rule::Gameplay::Invincible))
             {
                 HandleDeath();
             }
+        }
+        else if (!isBrick && !isPaddle && !isBottomWall)
+        {
+            context.Audio.PlaySfx(m_bounceSfxId, 50.0f);
         }
     });
 
@@ -76,15 +93,25 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<CircleCollider>(m_ball, CircleCollider{20.0f, Vector2f{0.0f, 0.0f}, false});
     m_registry.AddComponent<RigidBody>(m_ball, RigidBody{Vector2f{500.0f, 400.0f}, 1.0f, 1.0f, false});
     m_registry.AddComponent<SpriteComponent>(m_ball, SpriteComponent{m_ballTexId});
+    m_registry.AddComponent<TweenComponent>(m_ball, TweenComponent{});
 
     m_paddle = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_paddle, Transform2D{Vector2f{0.0f, 300.0f}});
     m_registry.AddComponent<BoxCollider>(m_paddle, BoxCollider{Vector2f{120.0f, 20.0f}, Vector2f{0.0f, 0.0f}, false, false});
     m_registry.AddComponent<RigidBody>(m_paddle, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
     m_registry.AddComponent<SpriteComponent>(m_paddle, SpriteComponent{m_paddleTexId});
+    m_registry.AddComponent<TweenComponent>(m_paddle, TweenComponent{});
 
-    CreateBrickGrid();
     m_systemManager.OnInit();
+
+    mp_levelGenerator = new FileLevelGenerator("Resources/levels/level01.txt");
+    m_brickCount = mp_levelGenerator->Generate(m_registry, context, m_brickTexId);
+
+    m_playlist.AddTrack(context, "Resources/audio/music/Game-1.ogg");
+    m_playlist.AddTrack(context, "Resources/audio/music/Game-2.ogg");
+    m_playlist.AddTrack(context, "Resources/audio/music/Game-3.ogg");
+    m_playlist.AddTrack(context, "Resources/audio/music/Game-4.ogg");
+    m_playlist.PlayNext(context);
 
     mp_state_machine = new StateMachine<GameScene>(this, 4);
 
@@ -120,6 +147,9 @@ void GameScene::OnUpdate(float dt, GameContext& context)
     if (mp_state_machine && mp_state_machine->GetCurrentState() == static_cast<int>(SceneState::Playing))
     {
         HandleInput(dt, context);
+        mp_levelGenerator->Update(dt, m_registry, context);
+        m_scoreManager.Update(dt);
+        m_playlist.Update(context);
         m_systemManager.OnUpdate(dt);
     }
 }
@@ -127,8 +157,7 @@ void GameScene::OnUpdate(float dt, GameContext& context)
 void GameScene::OnRender(GameContext& context)
 {
     DefaultScene::OnRender(context);
-    context.Render.SetCamera(m_camera);
-
+    context.Render.SetCamera(m_registry.GetComponent<Camera2D>(m_camera));
     m_systemManager.OnRender();
 
     context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{800.0f, -450.0f}, Colors::White, 2.0f);
@@ -139,12 +168,12 @@ void GameScene::OnRender(GameContext& context)
     bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
     if (showDebug)
     {
-        m_registry.View<Transform2D, BoxCollider>([&](Entity, Transform2D& t, BoxCollider& b) {
+        m_registry.View<Transform2D, BoxCollider>([&](Entity, const Transform2D& t, const BoxCollider& b) {
             Color color = b.IsColliding ? Colors::Red : Colors::Green;
             context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, color, -2.0f);
         });
 
-        m_registry.View<Transform2D, CircleCollider>([&](Entity, Transform2D& t, CircleCollider& c) {
+        m_registry.View<Transform2D, CircleCollider>([&](Entity, const Transform2D& t, const CircleCollider& c) {
             Color color = c.IsColliding ? Colors::Red : Colors::Green;
             context.Render.DrawCircleOutline(c.Radius, t, color, -2.0f);
         });
@@ -166,7 +195,17 @@ void GameScene::OnRender(GameContext& context)
     std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
     std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
 
-    std::string stats = "HP : " + std::to_string(m_lives) + " | Score : " + std::to_string(m_score) + " | Record : " + std::to_string(m_highScore);
+    std::string stats = "HP : " + std::to_string(m_lives) +
+                        " | Score : " + std::to_string(m_scoreManager.GetScore()) +
+                        " | Record : " + std::to_string(m_scoreManager.GetHighScore());
+
+    if (m_scoreManager.GetComboMultiplier() > 1)
+    {
+        stats += "\nCombo : x" + std::to_string(m_scoreManager.GetComboMultiplier()) +
+                 " (+" + std::to_string(m_scoreManager.GetComboScore()) + ") " +
+                 "[" + std::to_string(static_cast<int>(m_scoreManager.GetComboTimer())) + "s]";
+    }
+
     stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
     stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
     stats += "\nState : " + gameStateStr;
@@ -198,39 +237,16 @@ void GameScene::OnDestroy(GameContext& context)
     delete mp_state_machine;
     mp_state_machine = nullptr;
 
+    delete mp_levelGenerator;
+    mp_levelGenerator = nullptr;
+
     context.Events.Clear();
     DefaultScene::OnDestroy(context);
 }
 
-void GameScene::LoadHighScore()
-{
-    std::ifstream file("save.dat");
-    if (file.is_open())
-    {
-        file >> m_highScore;
-        file.close();
-    }
-}
-
-void GameScene::SaveHighScore()
-{
-    std::ofstream file("save.dat");
-    if (file.is_open())
-    {
-        file << m_highScore;
-        file.close();
-    }
-}
-
 void GameScene::FullReset()
 {
-    if (m_score > m_highScore)
-    {
-        m_highScore = m_score;
-        SaveHighScore();
-    }
-
-    m_score = 0;
+    m_scoreManager.Reset();
     m_lives = 3;
     m_brickCount = 0;
 
@@ -238,14 +254,14 @@ void GameScene::FullReset()
         m_registry.DestroyEntity(e);
     });
 
-    CreateBrickGrid();
+    m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
     ResetBallAndPaddle();
 }
 
 void GameScene::HandleInput(float dt, const GameContext& context)
 {
     auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
-    const float speed = 700.0f;
+    constexpr float speed = 700.0f;
 
     if (context.Input.IsKeyPress(KeyCode::F))
     {
@@ -255,26 +271,26 @@ void GameScene::HandleInput(float dt, const GameContext& context)
 
     if (context.Input.IsKeyPress(KeyCode::G))
     {
-        bool debug = context.Rules.GetRule(Rule::Debug::ShowCollider);
+        const bool debug = context.Rules.GetRule(Rule::Debug::ShowCollider);
         context.Rules.SetRule(Rule::Debug::ShowCollider, !debug);
     }
 
     if (context.Input.IsKeyPress(KeyCode::I))
     {
-        bool invincible = context.Rules.GetRule(Rule::Gameplay::Invincible);
+        const bool invincible = context.Rules.GetRule(Rule::Gameplay::Invincible);
         context.Rules.SetRule(Rule::Gameplay::Invincible, !invincible);
     }
 
     if (context.Input.IsKeyPress(KeyCode::L))
     {
-        bool infLives = context.Rules.GetRule(Rule::Gameplay::InfiniteLives);
+        const bool infLives = context.Rules.GetRule(Rule::Gameplay::InfiniteLives);
         context.Rules.SetRule(Rule::Gameplay::InfiniteLives, !infLives);
     }
 
     if (context.Input.IsKeyDown(KeyCode::Q)) paddleTransform.Position.X -= speed * dt;
     if (context.Input.IsKeyDown(KeyCode::D)) paddleTransform.Position.X += speed * dt;
 
-    const float limitX = 740.0f;
+    constexpr float limitX = 740.0f;
 
     if (paddleTransform.Position.X < -limitX)
     {
@@ -283,35 +299,6 @@ void GameScene::HandleInput(float dt, const GameContext& context)
     else if (paddleTransform.Position.X > limitX)
     {
         paddleTransform.Position.X = limitX;
-    }
-}
-
-void GameScene::CreateBrickGrid()
-{
-    const int rows = 5;
-    const int cols = 12;
-    const float bWidth = 100.0f;
-    const float bHeight = 30.0f;
-    const float startX = -605.0f;
-    const float startY = -350.0f;
-    const float pad = 10.0f;
-
-    for (int r = 0; r < rows; ++r)
-    {
-        BrickType rowType = BrickType::Light;
-        if (r == 0) rowType = BrickType::Hard;
-        else if (r == 1 || r == 2) rowType = BrickType::Medium;
-        else if (r == 3) rowType = BrickType::Special;
-
-        for (int c = 0; c < cols; ++c)
-        {
-            float x = startX + c * (bWidth + pad);
-            float y = startY + r * (bHeight + pad);
-
-            bool isSpecial = (r == 0 && c == 5);
-
-            CreateBrick(x, y, rowType, isSpecial);
-        }
     }
 }
 
@@ -329,6 +316,9 @@ void GameScene::ResetBallAndPaddle()
 
 void GameScene::HandleDeath()
 {
+    m_scoreManager.BreakCombo();
+    mp_context->Events.Publish(BallDeathEvent(m_ball));
+
     bool infiniteLives = mp_context ? mp_context->Rules.GetRule(Rule::Gameplay::InfiniteLives) : false;
 
     if (!infiniteLives)
@@ -349,16 +339,30 @@ void GameScene::HandleBrickCollision(Entity entity)
     auto& brick = m_registry.GetComponent<BrickComponent>(entity);
     brick.HitPoints--;
 
-    if (brick.HitPoints <= 0)
+    bool isDestroyed = (brick.HitPoints <= 0);
+
+    if (isDestroyed)
     {
-        m_score += brick.ScoreValue;
+        m_scoreManager.AddScore(brick.ScoreValue);
         m_brickCount--;
+    }
+    else
+    {
+        m_scoreManager.AddScore(0);
+    }
+
+    mp_context->Events.Publish(BrickHitEvent(entity, isDestroyed, brick.IsSpecial, m_scoreManager.GetComboMultiplier()));
+
+    if (isDestroyed)
+    {
         m_registry.DestroyEntity(entity);
     }
 }
 
 void GameScene::HandlePaddleCollision()
 {
+    m_scoreManager.BreakCombo();
+
     auto& ballRb = m_registry.GetComponent<RigidBody>(m_ball);
     auto& ballTransform = m_registry.GetComponent<Transform2D>(m_ball);
     auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
@@ -377,49 +381,6 @@ void GameScene::HandlePaddleCollision()
 
     ballRb.Velocity.X = speed * std::sin(bounceAngle);
     ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
-}
 
-void GameScene::CreateBrick(float x, float y, BrickType type, bool isSpecial)
-{
-    Entity brick = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(brick, Transform2D{Vector2f{x, y}});
-    m_registry.AddComponent<BoxCollider>(brick, BoxCollider{Vector2f{100.0f, 30.0f}, Vector2f{0.0f, 0.0f}, false, false});
-    m_registry.AddComponent<RigidBody>(brick, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
-
-    BrickComponent comp;
-    comp.Type = type;
-    comp.IsSpecial = isSpecial;
-
-    Color tint = Colors::White;
-
-    switch (type)
-    {
-    case BrickType::Light:
-        comp.HitPoints = 1;
-        comp.ScoreValue = 50;
-        tint = Colors::Green;
-        break;
-    case BrickType::Medium:
-        comp.HitPoints = 2;
-        comp.ScoreValue = 100;
-        tint = Colors::Yellow;
-        break;
-    case BrickType::Hard:
-        comp.HitPoints = 3;
-        comp.ScoreValue = 200;
-        tint = Colors::Red;
-        break;
-    case BrickType::Special:
-        comp.HitPoints = 1;
-        comp.ScoreValue = 500;
-        comp.IsSpecial = true;
-        tint = Color{255, 0, 255, 255};
-        break;
-    default:
-        tint = Colors::White;
-    }
-
-    m_brickCount++;
-    m_registry.AddComponent<BrickComponent>(brick, comp);
-    m_registry.AddComponent<SpriteComponent>(brick, SpriteComponent{m_brickTexId, tint});
+    mp_context->Events.Publish(PaddleHitEvent(m_paddle, m_ball));
 }

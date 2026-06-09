@@ -18,7 +18,7 @@ public:
         return m_condition->Test(pOwner);
     }
 
-    int GetTargetState() const
+    [[nodiscard]] int GetTargetState() const
     {
         return m_targetState;
     }
