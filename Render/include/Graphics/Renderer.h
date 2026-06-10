@@ -22,7 +22,7 @@ public:
     void                SetCamera(const Camera2D& camera);
     void                ResetCamera();
 
-    void                DrawSprite(uint32_t textureId, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
+    void                DrawSprite(uint32_t textureId, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha, uint32_t shaderId = 0, uint32_t overlayTexId = 0, float shaderValue = 0.0f);
     void                DrawCircle(float radius, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
     void                DrawRectangle(float width, float height, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
     void                DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);

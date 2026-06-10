@@ -46,9 +46,11 @@ void GameScene::OnInit(GameContext& context)
     camera.Zoom = 0.75f;
 
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
+    m_crackShaderId = context.Resources.LoadResource("Resources/shaders/crack.frag");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
     m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_brickTexId = context.Resources.LoadResource("Resources/sprite/brick.png");
+    m_brickCrackTexId = context.Resources.LoadResource("Resources/sprite/brick_crack.png");
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
@@ -349,6 +351,20 @@ void GameScene::HandleBrickCollision(Entity entity)
     else
     {
         m_scoreManager.AddScore(0);
+        
+        if (m_registry.HasComponent<SpriteComponent>(entity))
+        {
+            auto& sprite = m_registry.GetComponent<SpriteComponent>(entity);
+            if (brick.MaxHitPoints > 1)
+            {
+                sprite.OverlayTextureId = m_brickCrackTexId;
+                sprite.ShaderId = m_crackShaderId;
+                float ratio = (float)(brick.MaxHitPoints - brick.HitPoints) / (float)(brick.MaxHitPoints - 1);
+                if (ratio > 1.0f) ratio = 1.0f;
+                if (ratio < 0.0f) ratio = 0.0f;
+                sprite.ShaderValue = ratio;
+            }
+        }
     }
 
     mp_context->Events.Publish(BrickHitEvent(entity, isDestroyed, brick.IsSpecial, m_scoreManager.GetComboMultiplier()));

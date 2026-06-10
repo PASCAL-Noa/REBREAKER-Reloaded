@@ -23,7 +23,6 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_context.Events.Subscribe<BrickHitEvent>([this](const BrickHitEvent& e)
     {
         float pitch = 1.0f + (e.Combo * 0.05f);
-        if (pitch > 2.0f) pitch = 2.0f;
 
         if (e.IsDestroyed)
         {

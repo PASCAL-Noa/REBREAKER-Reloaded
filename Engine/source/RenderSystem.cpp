@@ -41,6 +41,7 @@ void RenderSystem::OnRender()
         Transform2D renderTransform = transform;
         renderTransform.Scale = {scaleX, scaleY};
 
-        m_renderer.DrawSprite(sprite.TextureId, renderTransform, sprite.Tint);
+        m_renderer.DrawSprite(sprite.TextureId, renderTransform, sprite.Tint, BlendMode::Alpha, sprite.ShaderId, sprite.OverlayTextureId, sprite.ShaderValue);
     });
 }
+

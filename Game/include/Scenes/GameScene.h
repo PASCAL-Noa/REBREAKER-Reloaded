@@ -45,10 +45,12 @@ private:
     Entity  m_bottomWall{};
 
     uint32_t    m_shaderId = 0;
+    uint32_t    m_crackShaderId = 0;
     uint32_t    m_ballTexId = 0;
     uint32_t    m_paddleTexId = 0;
-    uint32_t    m_bounceSfxId = 0;
     uint32_t    m_brickTexId = 0;
+    uint32_t    m_brickCrackTexId = 0;
+    uint32_t    m_bounceSfxId = 0;
 
     uint32_t    m_score = 0;
     uint32_t    m_highScore = 0;
