@@ -86,7 +86,7 @@ void Renderer::ResetCamera()
     m_renderTexture.setView(m_renderTexture.getDefaultView());
 }
 
-void Renderer::DrawSprite(uint32_t textureId, const Transform2D& transform, Color color, BlendMode blendMode)
+void Renderer::DrawSprite(uint32_t textureId, const Transform2D& transform, Color color, BlendMode blendMode, uint32_t shaderId, uint32_t overlayTexId, float shaderValue)
 {
     if (sf::Texture* tex = m_resources.Get<sf::Texture>(textureId))
     {
@@ -96,7 +96,28 @@ void Renderer::DrawSprite(uint32_t textureId, const Transform2D& transform, Colo
 
         ApplyTransform(sprite, transform);
         sprite.setColor(ToSfColor(color));
-        RenderItem(m_renderTexture, sprite, blendMode);
+
+        sf::RenderStates states;
+        states.blendMode = ToSfBlendMode(blendMode);
+        if (shaderId != 0)
+        {
+            sf::Shader* shader = m_resources.Get<sf::Shader>(shaderId);
+            if (shader)
+            {
+                shader->setUniform("color", sf::Glsl::Vec4(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f));
+                shader->setUniform("crack_amount", shaderValue);
+                if (overlayTexId != 0)
+                {
+                    sf::Texture* crackTex = m_resources.Get<sf::Texture>(overlayTexId);
+                    if (crackTex)
+                    {
+                        shader->setUniform("crack_texture", *crackTex);
+                    }
+                }
+                states.shader = shader;
+            }
+        }
+        m_renderTexture.draw(sprite, states);
     }
 }
 

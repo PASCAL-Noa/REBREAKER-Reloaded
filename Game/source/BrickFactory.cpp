@@ -26,6 +26,8 @@ Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type
         case BrickType::Special: comp.HitPoints = 1; comp.ScoreValue = 500; comp.IsSpecial = true; tint = Color{255, 0, 255, 255}; break;
         default:                 tint = Colors::White;
     }
+    
+    comp.MaxHitPoints = comp.HitPoints;
 
     registry.AddComponent<BrickComponent>(brick, comp);
     registry.AddComponent<SpriteComponent>(brick, SpriteComponent{texId, tint});

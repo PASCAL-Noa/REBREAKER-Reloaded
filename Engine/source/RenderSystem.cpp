@@ -26,21 +26,22 @@ void RenderSystem::OnRender()
             if (m_registry.HasComponent<BoxCollider>(e))
             {
                 auto& box = m_registry.GetComponent<BoxCollider>(e);
-                scaleX = box.Size.X / texSize.X;
-                scaleY = box.Size.Y / texSize.Y;
+                scaleX = (box.Size.X / texSize.X) * transform.Scale.X;
+                scaleY = (box.Size.Y / texSize.Y) * transform.Scale.Y;
             }
             else if (m_registry.HasComponent<CircleCollider>(e))
             {
                 auto& circle = m_registry.GetComponent<CircleCollider>(e);
                 float diameter = circle.Radius * 2.0f;
-                scaleX = diameter / texSize.X;
-                scaleY = diameter / texSize.Y;
+                scaleX = (diameter / texSize.X) * transform.Scale.X;
+                scaleY = (diameter / texSize.Y) * transform.Scale.Y;
             }
         }
 
         Transform2D renderTransform = transform;
         renderTransform.Scale = {scaleX, scaleY};
 
-        m_renderer.DrawSprite(sprite.TextureId, renderTransform, sprite.Tint);
+        m_renderer.DrawSprite(sprite.TextureId, renderTransform, sprite.Tint, BlendMode::Alpha, sprite.ShaderId, sprite.OverlayTextureId, sprite.ShaderValue);
     });
 }
+

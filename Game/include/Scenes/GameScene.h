@@ -7,12 +7,22 @@
 #include "StateMachine/StateMachine.h"
 #include "Generators/ILevelGenerator.h"
 
+struct Color;
+
 enum class SceneState : int
 {
     Playing = 0,
     Paused = 1,
     GameOver = 2,
     Victory = 3
+};
+
+enum class BallState
+{
+    Active,
+    Dying,
+    Spawning,
+    Attached
 };
 
 class GameScene : public DefaultScene
@@ -36,6 +46,8 @@ private:
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity);
     void    HandlePaddleCollision();
+    void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
+    void    SpawnBleedParticles(const Vector2f& position);
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
@@ -45,10 +57,14 @@ private:
     Entity  m_bottomWall{};
 
     uint32_t    m_shaderId = 0;
+    uint32_t    m_crackShaderId = 0;
     uint32_t    m_ballTexId = 0;
     uint32_t    m_paddleTexId = 0;
-    uint32_t    m_bounceSfxId = 0;
     uint32_t    m_brickTexId = 0;
+    uint32_t    m_brickCrackTexId = 0;
+    uint32_t    m_bounceSfxId = 0;
+    
+    BallState   m_ballState = BallState::Spawning;
 
     uint32_t    m_score = 0;
     uint32_t    m_highScore = 0;

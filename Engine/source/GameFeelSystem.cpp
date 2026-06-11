@@ -23,16 +23,16 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_context.Events.Subscribe<BrickHitEvent>([this](const BrickHitEvent& e)
     {
         float pitch = 1.0f + (e.Combo * 0.05f);
-        if (pitch > 2.0f) pitch = 2.0f;
+
+        m_context.Audio.PlaySfx(m_sfxBrickHit, 50.0f, pitch);
 
         if (e.IsDestroyed)
         {
-            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 50.0f, pitch);
+            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 80.0f, pitch);
+            m_context.Audio.PlaySfx(m_sfxCombo, 80.0f, pitch - 0.5f);
         }
         else
         {
-            m_context.Audio.PlaySfx(m_sfxBrickHit, 50.0f, pitch);
-
             if (m_registry.HasComponent<TweenComponent>(e.BrickEntity) &&
                 m_registry.HasComponent<Transform2D>(e.BrickEntity))
             {
@@ -40,22 +40,22 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
                 auto& transform = m_registry.GetComponent<Transform2D>(e.BrickEntity);
                 TweenEffects::Shake(tween, transform, 0.15f, 5.0f);
             }
-        }
 
-        if (e.Combo > 1)
-        {
-            m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch-0.5f);
+            if (e.Combo > 1)
+            {
+                m_context.Audio.PlaySfx(m_sfxCombo, 80.0f, pitch - 0.5f);
+            }
         }
     });
 
     m_context.Events.Subscribe<PaddleHitEvent>([this](const PaddleHitEvent& e)
     {
-        m_context.Audio.PlaySfx(m_sfxPaddleHit, 50.0f);
+        m_context.Audio.PlaySfx(m_sfxPaddleHit, 80.0f);
     });
 
     m_context.Events.Subscribe<BallDeathEvent>([this](const BallDeathEvent& e)
     {
-        m_context.Audio.PlaySfx(m_sfxBallDeath, 60.0f);
+        m_context.Audio.PlaySfx(m_sfxBallDeath, 80.0f);
         m_registry.View<Camera2D, TweenComponent>([&](Entity, Camera2D& cam, TweenComponent& tween) {
         TweenEffects::Shake(tween, cam, 0.4f, 15.0f);
     });

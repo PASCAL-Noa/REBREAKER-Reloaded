@@ -10,10 +10,14 @@ void TweenSystem::OnUpdate(float dt)
 {
     m_registry.View<TweenComponent>([dt](Entity, TweenComponent& tweenComp)
     {
-        std::erase_if(tweenComp.ActiveTweens, [dt](const std::shared_ptr<ITween>& tween)
+        for (int i = static_cast<int>(tweenComp.ActiveTweens.size()) - 1; i >= 0; --i)
         {
-            tween->Update(dt);
-            return tween->IsFinished();
-        });
+            tweenComp.ActiveTweens[i]->Update(dt);
+            
+            if (tweenComp.ActiveTweens[i]->IsFinished())
+            {
+                tweenComp.ActiveTweens.erase(tweenComp.ActiveTweens.begin() + i);
+            }
+        }
     });
 }

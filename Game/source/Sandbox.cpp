@@ -20,6 +20,7 @@
 #include "ECS/Systems/RenderSystem.h"
 #include "ECS/Components/SpriteComponent.h"
 #include "ECS/Components/Camera2D.h"
+#include "ECS/Components/ParticleComponent.h"
 
 void SandBox::OnInit(GameContext& context)
 {
@@ -77,12 +78,19 @@ void SandBox::InitParticles()
     std::uniform_real_distribution<float> velDist(-50.0f, 50.0f);
     std::uniform_int_distribution<int> colDist(100, 255);
 
-    for (int i = 0; i < 100000; ++i)
+    for (int i = 0; i < 1000; ++i)
     {
         Entity e = m_registry.CreateEntity();
         m_registry.AddComponent<Transform2D>(e, Transform2D{Vector2f{posDist(rng), posDist(rng)}});
-        m_registry.AddComponent<RigidBody>(e, RigidBody{Vector2f{velDist(rng), velDist(rng)}, 1.0f, 0.0f, true});
-        m_registry.AddComponent<ColorComponent>(e, Color{static_cast<uint8_t>(colDist(rng)), 50, 200, 255});
+        
+        ParticleComponent particle;
+        particle.Velocity = Vector2f{velDist(rng), velDist(rng)};
+        particle.Life = 5.0f;
+        particle.MaxLife = 5.0f;
+        particle.Size = 4.0f;
+        particle.Tint = Color{static_cast<uint8_t>(colDist(rng)), 50, 200, 255};
+        
+        m_registry.AddComponent<ParticleComponent>(e, particle);
     }
 }
 
@@ -137,8 +145,15 @@ void SandBox::SpawnParticles(int count, float x, float y)
     {
         Entity e = m_registry.CreateEntity();
         m_registry.AddComponent<Transform2D>(e, Transform2D{Vector2f{x, y}});
-        m_registry.AddComponent<RigidBody>(e, RigidBody{Vector2f{velDist(rng), velDist(rng)}, 1.0f, 0.0f, true});
-        m_registry.AddComponent<ColorComponent>(e, Color{255, static_cast<uint8_t>(colDist(rng)), 50, 255});
+        
+        ParticleComponent particle;
+        particle.Velocity = Vector2f{velDist(rng), velDist(rng)};
+        particle.Life = 1.0f;
+        particle.MaxLife = 1.0f;
+        particle.Size = 4.0f;
+        particle.Tint = Color{255, static_cast<uint8_t>(colDist(rng)), 50, 255};
+        
+        m_registry.AddComponent<ParticleComponent>(e, particle);
     }
 }
 
