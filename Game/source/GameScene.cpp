@@ -5,6 +5,8 @@
 #include "Core/GameRules.h"
 #include "ScoreManager.h"
 #include "ECS/Components/Transform2D.h"
+#include "ECS/Systems/ParticleSystem.h"
+#include "ECS/Components/ParticleComponent.h"
 #include "ECS/Components/BoxCollider.h"
 #include "ECS/Components/CircleCollider.h"
 #include "ECS/Components/RigidBody.h"
@@ -21,6 +23,7 @@
 #include "Actions/ResetGameAction.h"
 #include "AudioMixer.h"
 #include <string>
+#include <random>
 #include <cmath>
 
 #include "ECS/Components/TweenComponent.h"
@@ -54,6 +57,7 @@ void GameScene::OnInit(GameContext& context)
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
+    m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
     m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
     m_systemManager.AddSystem<TweenSystem>(m_registry);
@@ -234,6 +238,33 @@ Entity GameScene::CreateWall(float x, float y, float w, float h)
     return wall;
 }
 
+void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& color)
+{
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> velDistX(-200.0f, 200.0f);
+    std::uniform_real_distribution<float> velDistY(-200.0f, 200.0f);
+    std::uniform_real_distribution<float> lifeDist(0.6f, 1.f);
+    std::uniform_real_distribution<float> sizeDist(3.0f, 8.0f);
+    std::uniform_real_distribution<float> posOffsetX(-15.0f, 15.0f);
+    std::uniform_real_distribution<float> posOffsetY(-10.0f, 10.0f);
+
+    int particleCount = 20;
+    for (int i = 0; i < particleCount; ++i)
+    {
+        Entity p = m_registry.CreateEntity();
+        m_registry.AddComponent<Transform2D>(p, Transform2D{Vector2f{position.X + posOffsetX(rng), position.Y + posOffsetY(rng)}});
+        
+        ParticleComponent particle;
+        particle.Velocity = Vector2f{velDistX(rng), velDistY(rng)};
+        particle.Life = lifeDist(rng);
+        particle.MaxLife = particle.Life;
+        particle.Size = sizeDist(rng);
+        particle.Tint = color; 
+        
+        m_registry.AddComponent<ParticleComponent>(p, particle);
+    }
+}
+
 void GameScene::OnDestroy(GameContext& context)
 {
     delete mp_state_machine;
@@ -371,6 +402,14 @@ void GameScene::HandleBrickCollision(Entity entity)
 
     if (isDestroyed)
     {
+        if (m_registry.HasComponent<Transform2D>(entity) && m_registry.HasComponent<SpriteComponent>(entity))
+        {
+            const auto& transform = m_registry.GetComponent<Transform2D>(entity);
+            const auto& sprite = m_registry.GetComponent<SpriteComponent>(entity);
+            
+            SpawnExplosionParticles(transform.Position, sprite.Tint);
+        }
+        
         m_registry.DestroyEntity(entity);
     }
 }

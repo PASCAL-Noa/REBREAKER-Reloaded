@@ -7,6 +7,8 @@
 #include "StateMachine/StateMachine.h"
 #include "Generators/ILevelGenerator.h"
 
+struct Color;
+
 enum class SceneState : int
 {
     Playing = 0,
@@ -36,6 +38,7 @@ private:
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity);
     void    HandlePaddleCollision();
+    void    SpawnExplosionParticles(const Vector2f& position, const Color& color);
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
