@@ -80,4 +80,34 @@ namespace TweenEffects
 
         tweenComp.AddTween(config);
     }
+
+    void BallIn(TweenComponent& tweenComp, Transform2D& transform, std::function<void()> onComplete, float duration)
+    {
+        TweenConfig<Vector2f> scaleTween;
+        scaleTween.Start = Vector2f{0.0f, 0.0f};
+        scaleTween.End = Vector2f{1.0f, 1.0f};
+        scaleTween.Duration = duration;
+        scaleTween.Ease = EasingFunctions::EasingType::EaseOutBack;
+        scaleTween.Setter = [&transform](Vector2f v) {
+            transform.Scale = v;
+        };
+        scaleTween.OnComplete = onComplete;
+        
+        tweenComp.AddTween(scaleTween);
+    }
+
+    void BallOut(TweenComponent& tweenComp, Transform2D& transform, std::function<void()> onComplete, float duration)
+    {
+        TweenConfig<Vector2f> scaleTween;
+        scaleTween.Start = Vector2f{1.0f, 1.0f};
+        scaleTween.End = Vector2f{0.0f, 0.0f};
+        scaleTween.Duration = duration;
+        scaleTween.Ease = EasingFunctions::EasingType::EaseInBack;
+        scaleTween.Setter = [&transform](Vector2f v) {
+            transform.Scale = v;
+        };
+        scaleTween.OnComplete = onComplete;
+        
+        tweenComp.AddTween(scaleTween);
+    }
 }

@@ -17,6 +17,14 @@ enum class SceneState : int
     Victory = 3
 };
 
+enum class BallState
+{
+    Active,
+    Dying,
+    Spawning,
+    Attached
+};
+
 class GameScene : public DefaultScene
 {
 public:
@@ -38,7 +46,8 @@ private:
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity);
     void    HandlePaddleCollision();
-    void    SpawnExplosionParticles(const Vector2f& position, const Color& color);
+    void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
+    void    SpawnBleedParticles(const Vector2f& position);
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
@@ -54,6 +63,8 @@ private:
     uint32_t    m_brickTexId = 0;
     uint32_t    m_brickCrackTexId = 0;
     uint32_t    m_bounceSfxId = 0;
+    
+    BallState   m_ballState = BallState::Spawning;
 
     uint32_t    m_score = 0;
     uint32_t    m_highScore = 0;

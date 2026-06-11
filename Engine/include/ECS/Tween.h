@@ -18,6 +18,7 @@ struct TweenConfig
     T   End{};
     float   Duration = 0.0f;
     std::function<void(T)>  Setter;
+    std::function<void()>   OnComplete;
     EasingFunctions::EasingType     Ease = EasingFunctions::EasingType::Linear;
 };
 
@@ -32,13 +33,15 @@ public:
 
     void Update(float dt) override
     {
-        if (IsFinished()) return;
+        if (m_completed) return;
 
         m_elapsed += dt;
 
         if (IsFinished())
         {
             m_config.Setter(m_config.End);
+            if (m_config.OnComplete) m_config.OnComplete();
+            m_completed = true;
             return;
         }
 
@@ -57,5 +60,6 @@ public:
 private:
     TweenConfig<T>  m_config;
     float   m_elapsed = 0.0f;
+    bool    m_completed = false;
     EasingFunctions::EasingFunction     m_easeFunc;
 };
