@@ -20,7 +20,7 @@ public:
     Renderer(Window& window, ResourceManager& resources);
     ~Renderer() = default;
 
-    void                BeginDraw();
+    void                BeginDraw(Color clearColor = Colors::Black);
     void                EndDraw(uint32_t postProcessShaderId = 0);
 
     void                SetCamera(const Camera2D& camera);

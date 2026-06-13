@@ -47,9 +47,9 @@ Renderer::Renderer(Window& window, ResourceManager& resources) : m_window(window
     m_renderTexture.setSmooth(true);
 }
 
-void Renderer::BeginDraw()
+void Renderer::BeginDraw(Color clearColor)
 {
-    m_renderTexture.clear();
+    m_renderTexture.clear(sf::Color(clearColor.r, clearColor.g, clearColor.b, clearColor.a));
 }
 
 void Renderer::EndDraw(uint32_t postProcessShaderId)

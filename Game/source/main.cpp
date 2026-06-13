@@ -52,7 +52,7 @@ int main()
 
         sceneManager.Update(time.GetDeltaTime(), context);
 
-        renderer.BeginDraw();
+        renderer.BeginDraw(sceneManager.GetClearColor());
         sceneManager.Render(context);
         renderer.EndDraw(sceneManager.GetPostProcessShader());
     }

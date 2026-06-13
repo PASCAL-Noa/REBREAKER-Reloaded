@@ -131,4 +131,41 @@ namespace TweenEffects
         
         tweenComp.AddTween(scaleTween);
     }
+
+    void CameraBreathing(TweenComponent& tweenComp, Camera2D& camera, const float minZoom, const float maxZoom, const float duration)
+    {
+        TweenConfig<float> config;
+        config.Start = minZoom;
+        config.End = maxZoom;
+        config.Duration = duration;
+        config.Ease = EasingFunctions::EasingType::EaseInOutSine;
+        config.Yoyo = true;
+        
+        config.Setter = [&camera](const float val) {
+            camera.Zoom = val;
+        };
+        
+        tweenComp.AddTween(config);
+    }
+
+    void BackgroundColorShift(TweenComponent& tweenComp, Color color1, Color color2, std::function<void(Color)> colorSetter, const float duration)
+    {
+        TweenConfig<float> config;
+        config.Start = 0.0f;
+        config.End = 1.0f;
+        config.Duration = duration;
+        config.Ease = EasingFunctions::EasingType::EaseInOutSine;
+        config.Yoyo = true;
+        
+        config.Setter = [color1, color2, colorSetter](const float val) {
+            Color currentColor;
+            currentColor.r = static_cast<uint8_t>(color1.r + (color2.r - color1.r) * val);
+            currentColor.g = static_cast<uint8_t>(color1.g + (color2.g - color1.g) * val);
+            currentColor.b = static_cast<uint8_t>(color1.b + (color2.b - color1.b) * val);
+            currentColor.a = static_cast<uint8_t>(color1.a + (color2.a - color1.a) * val);
+            colorSetter(currentColor);
+        };
+        
+        tweenComp.AddTween(config);
+    }
 }

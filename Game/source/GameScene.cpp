@@ -59,6 +59,12 @@ void GameScene::OnInit(GameContext& context)
     m_brickCrackTexId = context.Resources.LoadResource("Resources/sprite/brick_crack.png");
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
+    m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
+
+    m_explodingHeart = m_registry.CreateEntity();
+    m_registry.AddComponent<Transform2D>(m_explodingHeart, Transform2D{Vector2f{0.0f, 0.0f}, 0.0f, Vector2f{0.0f, 0.0f}});
+    m_registry.AddComponent<SpriteComponent>(m_explodingHeart, SpriteComponent{m_heartTexId, Colors::Transparent});
+    m_registry.AddComponent<TweenComponent>(m_explodingHeart, TweenComponent{});
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
@@ -66,6 +72,25 @@ void GameScene::OnInit(GameContext& context)
     m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
     m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
     m_systemManager.AddSystem<TweenSystem>(m_registry);
+
+    m_registry.AddComponent<TweenComponent>(m_camera, TweenComponent{});
+    auto& camTween = m_registry.GetComponent<TweenComponent>(m_camera);
+    
+    TweenEffects::CameraBreathing(camTween, camera, 0.74f, 0.76f, 6.0f);
+    
+    Color c1{20, 20, 30, 255};
+    Color c2{30, 20, 40, 255};
+    TweenEffects::BackgroundColorShift(camTween, c1, c2, [this](Color c){ m_bgColor = c; }, 5.0f);
+
+    TweenConfig<float> alphaTween;
+    alphaTween.Start = 0.0f;
+    alphaTween.End = 255.0f;
+    alphaTween.Duration = 1.0f;
+    alphaTween.Ease = EasingFunctions::EasingType::EaseInOutQuad;
+    alphaTween.Setter = [this](float val) {
+        m_heartsAlpha = val;
+    };
+    camTween.AddTween(alphaTween);
 
     context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
@@ -87,7 +112,8 @@ void GameScene::OnInit(GameContext& context)
         }
         else if (isBottomWall)
         {
-            if (!context.Rules.GetRule(Rule::Gameplay::Invincible))
+            int currentState = mp_state_machine ? mp_state_machine->GetCurrentState() : static_cast<int>(SceneState::Playing);
+            if (!context.Rules.GetRule(Rule::Gameplay::Invincible) && currentState == static_cast<int>(SceneState::Playing))
             {
                 HandleDeath();
             }
@@ -226,14 +252,8 @@ void GameScene::OnRender(GameContext& context)
         });
     }
 
-    m_textFeedback->OnRender();
-
-    std::string scoreStr = "Score : " + std::to_string(m_scoreManager.GetScore());
-    Vector2f scorePos{-800.0f, -510.0f};
-    context.Render.DrawText(scoreStr, m_fontId, 48.0f, Transform2D{scorePos}, Colors::White);
-
-    Vector2f scoreSize = context.Render.GetTextSize(scoreStr, m_fontId, 48.0f);
-    m_textFeedback->SetFlamePosition(Vector2f{scorePos.X + scoreSize.X + 30.0f, scorePos.Y + scoreSize.Y + 24.0f});
+    DrawScoreAndFlame(context);
+    DrawHearts(context);
 
     context.Render.ResetCamera();
 
@@ -251,8 +271,7 @@ void GameScene::OnRender(GameContext& context)
     std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
     std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
 
-    std::string stats = "HP : " + std::to_string(m_lives) +
-                        " | Record : " + std::to_string(m_scoreManager.GetHighScore());
+    std::string stats = "Record : " + std::to_string(m_scoreManager.GetHighScore());
 
     stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
     stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
@@ -461,7 +480,20 @@ void GameScene::HandleDeath()
 
     auto& transform = m_registry.GetComponent<Transform2D>(m_ball);
 
-    TweenEffects::BallOut(m_registry.GetComponent<TweenComponent>(m_ball), transform, [this]() {
+    TweenConfig<Vector2f> scaleTween;
+    scaleTween.Start = transform.Scale;
+    scaleTween.End = Vector2f{0.0f, 0.0f};
+    scaleTween.Duration = 0.5f;
+    scaleTween.Ease = EasingFunctions::EasingType::EaseInBack;
+
+    Entity ballEntity = m_ball;
+    scaleTween.Setter = [this, ballEntity](Vector2f val) {
+        if (m_registry.HasComponent<Transform2D>(ballEntity)) {
+            m_registry.GetComponent<Transform2D>(ballEntity).Scale = val;
+        }
+    };
+
+    scaleTween.OnComplete = [this]() {
         if (m_registry.HasComponent<Transform2D>(m_ball) && m_registry.HasComponent<SpriteComponent>(m_ball)) {
             const auto& t = m_registry.GetComponent<Transform2D>(m_ball);
             const auto& s = m_registry.GetComponent<SpriteComponent>(m_ball);
@@ -472,6 +504,36 @@ void GameScene::HandleDeath()
 
         if (!infiniteLives)
         {
+            if (m_registry.HasComponent<Transform2D>(m_explodingHeart) && m_registry.HasComponent<SpriteComponent>(m_explodingHeart) && m_registry.HasComponent<TweenComponent>(m_explodingHeart))
+            {
+                auto& t = m_registry.GetComponent<Transform2D>(m_explodingHeart);
+                auto& s = m_registry.GetComponent<SpriteComponent>(m_explodingHeart);
+                auto& tweenComp = m_registry.GetComponent<TweenComponent>(m_explodingHeart);
+                
+                t.Position = Vector2f{780.0f - (m_lives - 1) * 70.0f, -486.0f};
+                t.Scale = Vector2f{3.0f, 3.0f};
+                s.Tint = Colors::White;
+                
+                TweenConfig<float> config;
+                config.Start = 0.0f;
+                config.End = 1.0f;
+                config.Duration = 0.5f;
+                config.Ease = EasingFunctions::EasingType::EaseOutQuad;
+                
+                Entity heartEntity = m_explodingHeart;
+                config.Setter = [this, heartEntity](float val) {
+                    if (m_registry.HasComponent<Transform2D>(heartEntity) && m_registry.HasComponent<SpriteComponent>(heartEntity)) {
+                        auto& transform = m_registry.GetComponent<Transform2D>(heartEntity);
+                        auto& sprite = m_registry.GetComponent<SpriteComponent>(heartEntity);
+                        
+                        transform.Scale = Vector2f{3.0f + 4.0f * val, 3.0f + 4.0f * val};
+                        sprite.Tint.a = static_cast<uint8_t>(255.0f * (1.0f - val));
+                    }
+                };
+                
+                tweenComp.AddTween(config);
+            }
+
             m_lives--;
         }
 
@@ -479,7 +541,9 @@ void GameScene::HandleDeath()
         {
             ResetBallAndPaddle();
         }
-    }, 0.5f);
+    };
+
+    m_registry.GetComponent<TweenComponent>(m_ball).AddTween(scaleTween);
 }
 
 void GameScene::HandleBrickCollision(Entity entity)
@@ -567,4 +631,33 @@ void GameScene::HandlePaddleCollision()
     ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
 
     mp_context->Events.Publish(PaddleHitEvent(m_paddle, m_ball));
+}
+
+void GameScene::DrawScoreAndFlame(GameContext& context)
+{
+    m_textFeedback->OnRender();
+
+    std::string scoreStr = "Score : " + std::to_string(m_scoreManager.GetScore());
+    Vector2f scorePos{-800.0f, -510.0f};
+    context.Render.DrawText(scoreStr, m_fontId, 48.0f, Transform2D{scorePos}, Colors::White);
+
+    Vector2f scoreSize = context.Render.GetTextSize(scoreStr, m_fontId, 48.0f);
+    m_textFeedback->SetFlamePosition(Vector2f{scorePos.X + scoreSize.X + 30.0f, scorePos.Y + scoreSize.Y + 24.0f});
+}
+
+void GameScene::DrawHearts(GameContext& context)
+{
+    if (m_heartTexId)
+    {
+        for (int i = 0; i < m_lives; ++i)
+        {
+            SpriteComponent heartSprite{m_heartTexId};
+            heartSprite.Tint.a = static_cast<uint8_t>(m_heartsAlpha);
+            
+            Transform2D heartTransform;
+            heartTransform.Position = Vector2f{780.0f - (m_lives - 1 - i) * 70.0f, -486.0f};
+            heartTransform.Scale = Vector2f{3.f, 3.f};
+            context.Render.DrawSprite(heartSprite, heartTransform);
+        }
+    }
 }

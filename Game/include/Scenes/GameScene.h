@@ -51,12 +51,16 @@ private:
     void    HandlePaddleCollision();
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
+    void    DrawScoreAndFlame(GameContext& context);
+    void    DrawHearts(GameContext& context);
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
 
+    Entity  m_camera{};
     Entity  m_ball{};
     Entity  m_paddle{};
+    Entity  m_explodingHeart{};
     Entity  m_bottomWall{};
 
     uint32_t    m_shaderId = 0;
@@ -67,6 +71,7 @@ private:
     uint32_t    m_brickCrackTexId = 0;
     uint32_t    m_bounceSfxId = 0;
     uint32_t    m_fireTexId = 0;
+    uint32_t    m_heartTexId = 0;
     
     BallState   m_ballState = BallState::Spawning;
 
@@ -74,6 +79,7 @@ private:
     uint32_t    m_highScore = 0;
     int     m_lives = 3;
     int     m_brickCount = 0;
+    float   m_heartsAlpha = 0.0f;
 
     std::unique_ptr<TextFeedback> m_textFeedback;
 
