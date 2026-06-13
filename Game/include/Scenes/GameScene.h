@@ -1,6 +1,9 @@
 #pragma once
 #include "PlaylistManager.h"
+#include "ECS/Systems/ParticleSystem.h"
+#include "ECS/Systems/TweenSystem.h"
 #include "ScoreManager.h"
+#include "UI/TextFeedback.h"
 #include "Scenes/DefaultScene.h"
 #include "ECS/Entity.h"
 #include "ECS/Components/BrickComponent.h"
@@ -63,6 +66,7 @@ private:
     uint32_t    m_brickTexId = 0;
     uint32_t    m_brickCrackTexId = 0;
     uint32_t    m_bounceSfxId = 0;
+    uint32_t    m_fireTexId = 0;
     
     BallState   m_ballState = BallState::Spawning;
 
@@ -70,6 +74,8 @@ private:
     uint32_t    m_highScore = 0;
     int     m_lives = 3;
     int     m_brickCount = 0;
+
+    std::unique_ptr<TextFeedback> m_textFeedback;
 
     ILevelGenerator*    mp_levelGenerator = nullptr;
     ScoreManager       m_scoreManager{"save.dat"};

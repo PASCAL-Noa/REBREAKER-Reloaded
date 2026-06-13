@@ -86,39 +86,55 @@ void Renderer::ResetCamera()
     m_renderTexture.setView(m_renderTexture.getDefaultView());
 }
 
-void Renderer::DrawSprite(uint32_t textureId, const Transform2D& transform, Color color, BlendMode blendMode, uint32_t shaderId, uint32_t overlayTexId, float shaderValue)
+void Renderer::DrawSprite(const SpriteComponent& spriteData, const Transform2D& transform, BlendMode blendMode)
 {
-    if (sf::Texture* tex = m_resources.Get<sf::Texture>(textureId))
+    sf::Texture* tex = m_resources.Get<sf::Texture>(spriteData.TextureId);
+    if (!tex) return;
+
+    sf::Sprite sprite(*tex);
+
+    if (spriteData.TextureRect)
     {
-        sf::Sprite sprite(*tex);
-
-        sprite.setOrigin({tex->getSize().x / 2.0f, tex->getSize().y / 2.0f});
-
-        ApplyTransform(sprite, transform);
-        sprite.setColor(ToSfColor(color));
-
-        sf::RenderStates states;
-        states.blendMode = ToSfBlendMode(blendMode);
-        if (shaderId != 0)
-        {
-            sf::Shader* shader = m_resources.Get<sf::Shader>(shaderId);
-            if (shader)
-            {
-                shader->setUniform("color", sf::Glsl::Vec4(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f));
-                shader->setUniform("crack_amount", shaderValue);
-                if (overlayTexId != 0)
-                {
-                    sf::Texture* crackTex = m_resources.Get<sf::Texture>(overlayTexId);
-                    if (crackTex)
-                    {
-                        shader->setUniform("crack_texture", *crackTex);
-                    }
-                }
-                states.shader = shader;
-            }
-        }
-        m_renderTexture.draw(sprite, states);
+        sprite.setTextureRect(sf::IntRect({spriteData.TextureRect->Left, spriteData.TextureRect->Top}, {spriteData.TextureRect->Width, spriteData.TextureRect->Height}));
+        if (spriteData.Origin) 
+            sprite.setOrigin({spriteData.Origin->X, spriteData.Origin->Y});
+        else 
+            sprite.setOrigin({spriteData.TextureRect->Width / 2.0f, spriteData.TextureRect->Height / 2.0f});
     }
+    else
+    {
+        if (spriteData.Origin) 
+            sprite.setOrigin({spriteData.Origin->X, spriteData.Origin->Y});
+        else 
+            sprite.setOrigin({tex->getSize().x / 2.0f, tex->getSize().y / 2.0f});
+    }
+
+    ApplyTransform(sprite, transform);
+    sprite.setColor(ToSfColor(spriteData.Tint));
+
+    sf::RenderStates states;
+    states.blendMode = ToSfBlendMode(blendMode);
+
+    if (spriteData.Shader.ShaderId != 0)
+    {
+        sf::Shader* shader = m_resources.Get<sf::Shader>(spriteData.Shader.ShaderId);
+        if (shader)
+        {
+            shader->setUniform("color", sf::Glsl::Vec4(spriteData.Tint.r / 255.f, spriteData.Tint.g / 255.f, spriteData.Tint.b / 255.f, spriteData.Tint.a / 255.f));
+            shader->setUniform("crack_amount", spriteData.Shader.ShaderValue);
+            
+            if (spriteData.Shader.OverlayTextureId != 0)
+            {
+                if (sf::Texture* crackTex = m_resources.Get<sf::Texture>(spriteData.Shader.OverlayTextureId))
+                {
+                    shader->setUniform("crack_texture", *crackTex);
+                }
+            }
+            states.shader = shader;
+        }
+    }
+    
+    m_renderTexture.draw(sprite, states);
 }
 
 void Renderer::DrawCircle(float radius, const Transform2D& transform, Color color, BlendMode blendMode)
@@ -146,6 +162,17 @@ void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize
         sfText.setFillColor(ToSfColor(color));
         RenderItem(m_renderTexture, sfText, blendMode);
     }
+}
+
+Vector2f Renderer::GetTextSize(const std::string& text, uint32_t fontId, float fontSize) const
+{
+    if (sf::Font* font = m_resources.Get<sf::Font>(fontId))
+    {
+        sf::Text sfText(*font, text, static_cast<unsigned int>(fontSize));
+        sf::FloatRect bounds = sfText.getLocalBounds();
+        return {bounds.size.x, bounds.size.y};
+    }
+    return {0.0f, 0.0f};
 }
 
 void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType type, uint32_t textureId, BlendMode blendMode)

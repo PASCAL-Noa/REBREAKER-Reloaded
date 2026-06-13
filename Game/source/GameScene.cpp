@@ -32,6 +32,8 @@
 #include "Events/GameplayEvents.h"
 #include "ECS/Systems/GameFeelSystem.h"
 #include "ECS/Systems/TweenSystem.h"
+#include "ECS/Systems/AnimatorSystem.h"
+#include "ECS/Components/AnimatorComponent.h"
 #include "TweenEffects/TweenEffects.h"
 
 void GameScene::OnInit(GameContext& context)
@@ -56,9 +58,11 @@ void GameScene::OnInit(GameContext& context)
     m_brickTexId = context.Resources.LoadResource("Resources/sprite/brick.png");
     m_brickCrackTexId = context.Resources.LoadResource("Resources/sprite/brick_crack.png");
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
+    m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
+    m_systemManager.AddSystem<AnimatorSystem>(m_registry);
     m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
     m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
     m_systemManager.AddSystem<TweenSystem>(m_registry);
@@ -66,6 +70,8 @@ void GameScene::OnInit(GameContext& context)
     context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
         if (m_ballState != BallState::Active) return;
+
+        if (e.EntityA != m_ball && e.EntityB != m_ball) return;
 
         bool isBrick = m_registry.HasComponent<BrickComponent>(e.EntityA) ||
                        m_registry.HasComponent<BrickComponent>(e.EntityB);
@@ -102,10 +108,10 @@ void GameScene::OnInit(GameContext& context)
         }
     });
 
-    CreateWall(0.0f, -550.0f, 1600.0f, 200.0f);
-    CreateWall(-900.0f, 0.0f, 200.0f, 900.0f);
-    CreateWall(900.0f, 0.0f, 200.0f, 900.0f);
-    m_bottomWall = CreateWall(0.0f, 550.0f, 1600.0f, 200.0f);
+    CreateWall(0.0f, -550.0f, 2000.0f, 200.0f);
+    CreateWall(-900.0f, 0.0f, 200.0f, 1200.0f);
+    CreateWall(900.0f, 0.0f, 200.0f, 1200.0f);
+    m_bottomWall = CreateWall(0.0f, 550.0f, 2000.0f, 200.0f);
 
     m_ball = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_ball, Transform2D{Vector2f{0.0f, 0.0f}});
@@ -120,6 +126,9 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<RigidBody>(m_paddle, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
     m_registry.AddComponent<SpriteComponent>(m_paddle, SpriteComponent{m_paddleTexId});
     m_registry.AddComponent<TweenComponent>(m_paddle, TweenComponent{});
+
+    m_textFeedback = std::make_unique<TextFeedback>(m_registry, *mp_context, m_fontId, m_fireTexId);
+    m_textFeedback->OnInit();
 
     m_systemManager.OnInit();
 
@@ -181,6 +190,8 @@ void GameScene::OnUpdate(float dt, GameContext& context)
         
         mp_levelGenerator->Update(dt, m_registry, context);
         m_scoreManager.Update(dt);
+
+        m_textFeedback->OnUpdate(dt, m_scoreManager.GetComboMultiplier(), m_scoreManager.GetScore());
     }
 
     if (currentState != static_cast<int>(SceneState::Paused))
@@ -215,6 +226,15 @@ void GameScene::OnRender(GameContext& context)
         });
     }
 
+    m_textFeedback->OnRender();
+
+    std::string scoreStr = "Score : " + std::to_string(m_scoreManager.GetScore());
+    Vector2f scorePos{-800.0f, -510.0f};
+    context.Render.DrawText(scoreStr, m_fontId, 48.0f, Transform2D{scorePos}, Colors::White);
+
+    Vector2f scoreSize = context.Render.GetTextSize(scoreStr, m_fontId, 48.0f);
+    m_textFeedback->SetFlamePosition(Vector2f{scorePos.X + scoreSize.X + 30.0f, scorePos.Y + scoreSize.Y + 24.0f});
+
     context.Render.ResetCamera();
 
     std::string gameStateStr = "PLAY";
@@ -232,15 +252,7 @@ void GameScene::OnRender(GameContext& context)
     std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
 
     std::string stats = "HP : " + std::to_string(m_lives) +
-                        " | Score : " + std::to_string(m_scoreManager.GetScore()) +
                         " | Record : " + std::to_string(m_scoreManager.GetHighScore());
-
-    if (m_scoreManager.GetComboMultiplier() > 1)
-    {
-        stats += "\nCombo : x" + std::to_string(m_scoreManager.GetComboMultiplier()) +
-                 " (+" + std::to_string(m_scoreManager.GetComboScore()) + ") " +
-                 "[" + std::to_string(static_cast<int>(m_scoreManager.GetComboTimer())) + "s]";
-    }
 
     stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
     stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
@@ -337,7 +349,7 @@ void GameScene::FullReset()
     m_lives = 3;
     m_brickCount = 0;
 
-    m_registry.View<BrickComponent>([this](Entity e, BrickComponent&) {
+    m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
         m_registry.DestroyEntity(e);
     });
 
@@ -493,12 +505,12 @@ void GameScene::HandleBrickCollision(Entity entity)
             auto& sprite = m_registry.GetComponent<SpriteComponent>(entity);
             if (brick.MaxHitPoints > 1)
             {
-                sprite.OverlayTextureId = m_brickCrackTexId;
-                sprite.ShaderId = m_crackShaderId;
-                float ratio = (float)(brick.MaxHitPoints - brick.HitPoints) / (float)(brick.MaxHitPoints - 1);
+                sprite.Shader.OverlayTextureId = m_brickCrackTexId;
+                sprite.Shader.ShaderId = m_crackShaderId;
+                float ratio = static_cast<float>(brick.MaxHitPoints - brick.HitPoints) / static_cast<float>(brick.MaxHitPoints - 1);
                 if (ratio > 1.0f) ratio = 1.0f;
                 if (ratio < 0.0f) ratio = 0.0f;
-                sprite.ShaderValue = ratio;
+                sprite.Shader.ShaderValue = ratio;
             }
             
             if (m_registry.HasComponent<Transform2D>(entity))
@@ -510,6 +522,12 @@ void GameScene::HandleBrickCollision(Entity entity)
     }
 
     mp_context->Events.Publish(BrickHitEvent(entity, isDestroyed, brick.IsSpecial, m_scoreManager.GetComboMultiplier()));
+
+    if (m_scoreManager.GetComboMultiplier() > 1 && m_registry.HasComponent<Transform2D>(entity))
+    {
+        const auto& transform = m_registry.GetComponent<Transform2D>(entity);
+        m_textFeedback->SpawnComboText(transform.Position, m_scoreManager.GetComboMultiplier());
+    }
 
     if (isDestroyed)
     {
@@ -530,20 +548,20 @@ void GameScene::HandlePaddleCollision()
     m_scoreManager.BreakCombo();
 
     auto& ballRb = m_registry.GetComponent<RigidBody>(m_ball);
-    auto& ballTransform = m_registry.GetComponent<Transform2D>(m_ball);
-    auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
-    auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
+    const auto& ballTransform = m_registry.GetComponent<Transform2D>(m_ball);
+    const auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
+    const auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
 
-    float paddleHalfWidth = paddleCollider.Size.X * 0.5f;
-    float offset = ballTransform.Position.X - paddleTransform.Position.X;
+    const float paddleHalfWidth = paddleCollider.Size.X * 0.5f;
+    const float offset = ballTransform.Position.X - paddleTransform.Position.X;
 
     float hitFactor = offset / paddleHalfWidth;
     if (hitFactor < -1.0f) hitFactor = -1.0f;
     if (hitFactor > 1.0f) hitFactor = 1.0f;
 
-    float speed = std::sqrt(ballRb.Velocity.X * ballRb.Velocity.X + ballRb.Velocity.Y * ballRb.Velocity.Y);
-    float maxAngle = 60.0f * 3.14159265f / 180.0f;
-    float bounceAngle = hitFactor * maxAngle;
+    const float speed = std::sqrt(ballRb.Velocity.X * ballRb.Velocity.X + ballRb.Velocity.Y * ballRb.Velocity.Y);
+    constexpr float maxAngle = 60.0f * 3.14159265f / 180.0f;
+    const float bounceAngle = hitFactor * maxAngle;
 
     ballRb.Velocity.X = speed * std::sin(bounceAngle);
     ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
