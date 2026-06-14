@@ -25,6 +25,7 @@ public:
 
     void                SetCamera(const Camera2D& camera);
     void                ResetCamera();
+    Vector2f            GetLogicalViewSize() const;
 
     void                DrawSprite(const SpriteComponent& spriteData, const Transform2D& transform, BlendMode blendMode = BlendMode::Alpha);
     void                DrawCircle(float radius, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);

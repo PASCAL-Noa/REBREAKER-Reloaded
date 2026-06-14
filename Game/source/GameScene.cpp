@@ -633,29 +633,33 @@ void GameScene::HandlePaddleCollision()
     mp_context->Events.Publish(PaddleHitEvent(m_paddle, m_ball));
 }
 
-void GameScene::DrawScoreAndFlame(GameContext& context)
+void GameScene::DrawScoreAndFlame(GameContext& context) const
 {
     m_textFeedback->OnRender();
 
     std::string scoreStr = "Score : " + std::to_string(m_scoreManager.GetScore());
-    Vector2f scorePos{-800.0f, -510.0f};
+    
+    Vector2f viewSize = context.Render.GetLogicalViewSize();
+    Vector2f scorePos{-(viewSize.X / 2.0f) + 500.0f, -(viewSize.Y / 2.0f) + 290.0f};
+    
     context.Render.DrawText(scoreStr, m_fontId, 48.0f, Transform2D{scorePos}, Colors::White);
 
     Vector2f scoreSize = context.Render.GetTextSize(scoreStr, m_fontId, 48.0f);
     m_textFeedback->SetFlamePosition(Vector2f{scorePos.X + scoreSize.X + 30.0f, scorePos.Y + scoreSize.Y + 24.0f});
 }
 
-void GameScene::DrawHearts(GameContext& context)
+void GameScene::DrawHearts(GameContext& context) const
 {
     if (m_heartTexId)
     {
+        Vector2f viewSize = context.Render.GetLogicalViewSize();
         for (int i = 0; i < m_lives; ++i)
         {
             SpriteComponent heartSprite{m_heartTexId};
             heartSprite.Tint.a = static_cast<uint8_t>(m_heartsAlpha);
             
             Transform2D heartTransform;
-            heartTransform.Position = Vector2f{780.0f - (m_lives - 1 - i) * 70.0f, -486.0f};
+            heartTransform.Position = Vector2f{(viewSize.X / 2.0f) - 500.0f - (m_lives - 1 - i) * 70.0f, -(viewSize.Y / 2.0f) + 310.0f};
             heartTransform.Scale = Vector2f{3.f, 3.f};
             context.Render.DrawSprite(heartSprite, heartTransform);
         }

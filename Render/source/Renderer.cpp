@@ -49,6 +49,14 @@ Renderer::Renderer(Window& window, ResourceManager& resources) : m_window(window
 
 void Renderer::BeginDraw(Color clearColor)
 {
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    if (m_renderTexture.getSize() != winSize && winSize.x > 0 && winSize.y > 0)
+    {
+        sf::ContextSettings settings;
+        settings.antiAliasingLevel = 32;
+        (void)m_renderTexture.resize(winSize, settings);
+        m_renderTexture.setSmooth(true);
+    }
     m_renderTexture.clear(sf::Color(clearColor.r, clearColor.g, clearColor.b, clearColor.a));
 }
 
@@ -74,7 +82,12 @@ void Renderer::EndDraw(uint32_t postProcessShaderId)
 
 void Renderer::SetCamera(const Camera2D& camera)
 {
-    sf::View view = m_renderTexture.getDefaultView();
+    float targetHeight = 1600.0f;
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
+    float targetWidth = targetHeight * aspect;
+
+    sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(targetWidth, targetHeight));
     view.setCenter({camera.Position.X, camera.Position.Y});
     view.setRotation(sf::degrees(camera.Rotation));
     view.zoom(camera.Zoom);
@@ -83,7 +96,21 @@ void Renderer::SetCamera(const Camera2D& camera)
 
 void Renderer::ResetCamera()
 {
-    m_renderTexture.setView(m_renderTexture.getDefaultView());
+    float targetHeight = 1600.0f;
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
+    float targetWidth = targetHeight * aspect;
+
+    sf::View view(sf::Vector2f(targetWidth / 2.0f, targetHeight / 2.0f), sf::Vector2f(targetWidth, targetHeight));
+    m_renderTexture.setView(view);
+}
+
+Vector2f Renderer::GetLogicalViewSize() const
+{
+    float targetHeight = 1600.0f;
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
+    return Vector2f{targetHeight * aspect, targetHeight};
 }
 
 void Renderer::DrawSprite(const SpriteComponent& spriteData, const Transform2D& transform, BlendMode blendMode)

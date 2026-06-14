@@ -51,8 +51,8 @@ private:
     void    HandlePaddleCollision();
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
-    void    DrawScoreAndFlame(GameContext& context);
-    void    DrawHearts(GameContext& context);
+    void    DrawScoreAndFlame(GameContext& context) const;
+    void    DrawHearts(GameContext& context) const;
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;

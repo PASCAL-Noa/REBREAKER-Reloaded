@@ -25,7 +25,10 @@ int main()
     Debug::Init();
     Debug::Info("Engine initialized successfully.");
 
-    Window window{};
+    WindowConfig config{};
+    config.Width = 2560;
+    config.Height = 1600;
+    Window window{config};
     InputManager inputManager;
     ResourceManager resourceManager;
     Renderer renderer(window, resourceManager);
