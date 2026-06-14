@@ -8,7 +8,7 @@ class   AudioMixer;
 class   EventDispatcher;
 struct  GameData;
 class   GameRules;
-
+class   Timer;
 
 struct GameContext
 {
@@ -20,4 +20,5 @@ struct GameContext
     AudioMixer&         Audio;
     EventDispatcher&    Events;
     GameRules&          Rules;
+    Timer&              Time;
 };

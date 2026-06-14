@@ -26,6 +26,7 @@
 #include <random>
 #include <cmath>
 
+#include "Core/SceneManager.h"
 #include "ECS/Components/TweenComponent.h"
 #include "Factories/BrickFactory.h"
 #include "Generators/FileLevelGenerator.h"
@@ -34,6 +35,11 @@
 #include "ECS/Systems/TweenSystem.h"
 #include "ECS/Systems/AnimatorSystem.h"
 #include "ECS/Components/AnimatorComponent.h"
+#include "ECS/Components/UI/ButtonComponent.h"
+#include "ECS/Components/UI/CanvasComponent.h"
+#include "ECS/Components/UI/PanelComponent.h"
+#include "ECS/Components/UI/TextComponent.h"
+#include "Scenes/MenuScene.h"
 #include "TweenEffects/TweenEffects.h"
 
 void GameScene::OnInit(GameContext& context)
@@ -60,11 +66,6 @@ void GameScene::OnInit(GameContext& context)
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
     m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
-
-    m_explodingHeart = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(m_explodingHeart, Transform2D{Vector2f{0.0f, 0.0f}, 0.0f, Vector2f{0.0f, 0.0f}});
-    m_registry.AddComponent<SpriteComponent>(m_explodingHeart, SpriteComponent{m_heartTexId, Colors::Transparent});
-    m_registry.AddComponent<TweenComponent>(m_explodingHeart, TweenComponent{});
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
@@ -153,8 +154,9 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<SpriteComponent>(m_paddle, SpriteComponent{m_paddleTexId});
     m_registry.AddComponent<TweenComponent>(m_paddle, TweenComponent{});
 
+    CreateUILayout(context);
     m_textFeedback = std::make_unique<TextFeedback>(m_registry, *mp_context, m_fontId, m_fireTexId);
-    m_textFeedback->OnInit();
+    m_textFeedback->OnInit(m_uiCanvas);
 
     m_systemManager.OnInit();
 
@@ -187,6 +189,8 @@ void GameScene::OnInit(GameContext& context)
     victoryState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Space), static_cast<int>(SceneState::Playing)));
 
     mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+
+    CreatePauseMenu(context);
 }
 
 void GameScene::OnUpdate(float dt, GameContext& context)
@@ -200,6 +204,11 @@ void GameScene::OnUpdate(float dt, GameContext& context)
     }
 
     int currentState = mp_state_machine ? mp_state_machine->GetCurrentState() : static_cast<int>(SceneState::Playing);
+
+    if (m_pauseCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_pauseCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = (currentState == static_cast<int>(SceneState::Paused));
+    }
 
     if (currentState == static_cast<int>(SceneState::Playing))
     {
@@ -217,6 +226,16 @@ void GameScene::OnUpdate(float dt, GameContext& context)
         mp_levelGenerator->Update(dt, m_registry, context);
         m_scoreManager.Update(dt);
 
+        if (m_scoreTextEntity != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_scoreTextEntity) && m_registry.HasComponent<RectTransform>(m_scoreTextEntity))
+        {
+            auto& textComp = m_registry.GetComponent<TextComponent>(m_scoreTextEntity);
+            auto& textRect = m_registry.GetComponent<RectTransform>(m_scoreTextEntity);
+            textComp.Text = "Score : " + std::to_string(m_scoreManager.GetScore());
+            
+            Vector2f textSize = context.Render.GetTextSize(textComp.Text, textComp.FontId, textComp.FontSize);
+            m_textFeedback->SetFlamePosition(textRect, textSize.X + 40.0f, 50.0f);
+        }
+
         m_textFeedback->OnUpdate(dt, m_scoreManager.GetComboMultiplier(), m_scoreManager.GetScore());
     }
 
@@ -225,6 +244,8 @@ void GameScene::OnUpdate(float dt, GameContext& context)
         m_playlist.Update(context);
         m_systemManager.OnUpdate(dt);
     }
+
+    m_uiSystem.OnUpdate(dt, m_registry, context);
 }
 
 void GameScene::OnRender(GameContext& context)
@@ -252,9 +273,6 @@ void GameScene::OnRender(GameContext& context)
         });
     }
 
-    DrawScoreAndFlame(context);
-    DrawHearts(context);
-
     context.Render.ResetCamera();
 
     std::string gameStateStr = "PLAY";
@@ -278,6 +296,7 @@ void GameScene::OnRender(GameContext& context)
     stats += "\nState : " + gameStateStr;
 
     DrawDefaultUI(context, "REBREAKER", stats);
+    m_uiSystem.OnRender(m_registry, context);
 }
 
 uint32_t GameScene::GetPostProcessShader() const
@@ -367,6 +386,14 @@ void GameScene::FullReset()
     m_scoreManager.Reset();
     m_lives = 3;
     m_brickCount = 0;
+
+    for (Entity heart : m_heartEntities)
+    {
+        if (m_registry.HasComponent<RectTransform>(heart))
+        {
+            m_registry.GetComponent<RectTransform>(heart).IsActive = true;
+        }
+    }
 
     m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
         m_registry.DestroyEntity(e);
@@ -504,34 +531,51 @@ void GameScene::HandleDeath()
 
         if (!infiniteLives)
         {
-            if (m_registry.HasComponent<Transform2D>(m_explodingHeart) && m_registry.HasComponent<SpriteComponent>(m_explodingHeart) && m_registry.HasComponent<TweenComponent>(m_explodingHeart))
+            if (m_lives - 1 >= 0 && m_lives - 1 < m_heartEntities.size())
             {
-                auto& t = m_registry.GetComponent<Transform2D>(m_explodingHeart);
-                auto& s = m_registry.GetComponent<SpriteComponent>(m_explodingHeart);
-                auto& tweenComp = m_registry.GetComponent<TweenComponent>(m_explodingHeart);
+                Entity actualHeart = m_heartEntities[m_lives - 1];
                 
-                t.Position = Vector2f{780.0f - (m_lives - 1) * 70.0f, -486.0f};
-                t.Scale = Vector2f{3.0f, 3.0f};
-                s.Tint = Colors::White;
-                
-                TweenConfig<float> config;
-                config.Start = 0.0f;
-                config.End = 1.0f;
-                config.Duration = 0.5f;
-                config.Ease = EasingFunctions::EasingType::EaseOutQuad;
-                
-                Entity heartEntity = m_explodingHeart;
-                config.Setter = [this, heartEntity](float val) {
-                    if (m_registry.HasComponent<Transform2D>(heartEntity) && m_registry.HasComponent<SpriteComponent>(heartEntity)) {
-                        auto& transform = m_registry.GetComponent<Transform2D>(heartEntity);
-                        auto& sprite = m_registry.GetComponent<SpriteComponent>(heartEntity);
-                        
-                        transform.Scale = Vector2f{3.0f + 4.0f * val, 3.0f + 4.0f * val};
-                        sprite.Tint.a = static_cast<uint8_t>(255.0f * (1.0f - val));
-                    }
-                };
-                
-                tweenComp.AddTween(config);
+                // Explode animation on the specific heart
+                if (m_registry.HasComponent<RectTransform>(actualHeart) && 
+                    m_registry.HasComponent<RectTransform>(m_explodingHeart) && 
+                    m_registry.HasComponent<SpriteComponent>(m_explodingHeart) && 
+                    m_registry.HasComponent<TweenComponent>(m_explodingHeart))
+                {
+                    auto& actualTransform = m_registry.GetComponent<RectTransform>(actualHeart);
+                    auto& t = m_registry.GetComponent<RectTransform>(m_explodingHeart);
+                    auto& s = m_registry.GetComponent<SpriteComponent>(m_explodingHeart);
+                    auto& tweenComp = m_registry.GetComponent<TweenComponent>(m_explodingHeart);
+                    
+                    t.Position = actualTransform.Position;
+                    t.AnchorPoint = actualTransform.AnchorPoint;
+                    t.Parent = actualTransform.Parent;
+                    t.Size = actualTransform.Size;
+                    s.Tint = Colors::White;
+                    
+                    TweenConfig<float> config;
+                    config.Start = 0.0f;
+                    config.End = 1.0f;
+                    config.Duration = 0.5f;
+                    config.Ease = EasingFunctions::EasingType::EaseOutQuad;
+                    
+                    Entity heartEntity = m_explodingHeart;
+                    Vector2f baseSize = t.Size;
+                    
+                    config.Setter = [this, heartEntity, baseSize](float val) {
+                        if (m_registry.HasComponent<RectTransform>(heartEntity) && m_registry.HasComponent<SpriteComponent>(heartEntity)) {
+                            auto& transform = m_registry.GetComponent<RectTransform>(heartEntity);
+                            auto& sprite = m_registry.GetComponent<SpriteComponent>(heartEntity);
+                            
+                            transform.Size = Vector2f{baseSize.X + baseSize.X * 1.5f * val, baseSize.Y + baseSize.Y * 1.5f * val};
+                            sprite.Tint.a = static_cast<uint8_t>(255.0f * (1.0f - val));
+                        }
+                    };
+                    
+                    tweenComp.AddTween(config);
+                    
+                    // Hide original heart
+                    actualTransform.IsActive = false;
+                }
             }
 
             m_lives--;
@@ -590,7 +634,7 @@ void GameScene::HandleBrickCollision(Entity entity)
     if (m_scoreManager.GetComboMultiplier() > 1 && m_registry.HasComponent<Transform2D>(entity))
     {
         const auto& transform = m_registry.GetComponent<Transform2D>(entity);
-        m_textFeedback->SpawnComboText(transform.Position, m_scoreManager.GetComboMultiplier());
+        m_textFeedback->SpawnComboText(m_uiCanvas, transform.Position, m_scoreManager.GetComboMultiplier(), m_registry.GetComponent<Camera2D>(m_camera));
     }
 
     if (isDestroyed)
@@ -633,35 +677,151 @@ void GameScene::HandlePaddleCollision()
     mp_context->Events.Publish(PaddleHitEvent(m_paddle, m_ball));
 }
 
-void GameScene::DrawScoreAndFlame(GameContext& context) const
+void GameScene::CreateUILayout(GameContext& context)
 {
-    m_textFeedback->OnRender();
+    m_uiCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_uiCanvas, CanvasComponent{.IsEnabled = true});
 
-    std::string scoreStr = "Score : " + std::to_string(m_scoreManager.GetScore());
-    
-    Vector2f viewSize = context.Render.GetLogicalViewSize();
-    Vector2f scorePos{-(viewSize.X / 2.0f) + 500.0f, -(viewSize.Y / 2.0f) + 290.0f};
-    
-    context.Render.DrawText(scoreStr, m_fontId, 48.0f, Transform2D{scorePos}, Colors::White);
+    // Score Text
+    m_scoreTextEntity = m_registry.CreateEntity();
+    m_registry.AddComponent<RectTransform>(m_scoreTextEntity, RectTransform{
+        .Position = {230.0f, 130.0f},
+        .Size = {200.0f, 50.0f},
+        .AnchorPoint = Anchor::TopLeft,
+        .Parent = m_uiCanvas
+    });
+    m_registry.AddComponent<TextComponent>(m_scoreTextEntity, TextComponent{
+        .Text = "Score : 0",
+        .FontId = m_fontId,
+        .FontSize = 48.0f,
+        .Tint = Colors::White,
+        .TextCenter = false
+    });
 
-    Vector2f scoreSize = context.Render.GetTextSize(scoreStr, m_fontId, 48.0f);
-    m_textFeedback->SetFlamePosition(Vector2f{scorePos.X + scoreSize.X + 30.0f, scorePos.Y + scoreSize.Y + 24.0f});
+    // Hearts UI
+    m_heartEntities.clear();
+    for (int i = 0; i < 3; ++i)
+    {
+        Entity heart = m_registry.CreateEntity();
+        m_registry.AddComponent<RectTransform>(heart, RectTransform{
+            .Position = {-280.0f - i * 100.0f, 130.0f},
+            .Size = {80.0f, 80.0f},
+            .AnchorPoint = Anchor::TopRight,
+            .Parent = m_uiCanvas
+        });
+        m_registry.AddComponent<SpriteComponent>(heart, SpriteComponent{m_heartTexId, Colors::White});
+        m_heartEntities.push_back(heart);
+    }
+
+    m_explodingHeart = m_registry.CreateEntity();
+    m_registry.AddComponent<RectTransform>(m_explodingHeart, RectTransform{
+        .Position = {0.0f, 0.0f},
+        .Size = {40.0f, 40.0f},
+        .AnchorPoint = Anchor::TopRight,
+        .Parent = m_uiCanvas
+    });
+    m_registry.AddComponent<SpriteComponent>(m_explodingHeart, SpriteComponent{m_heartTexId, Colors::Transparent});
+    m_registry.AddComponent<TweenComponent>(m_explodingHeart, TweenComponent{});
 }
 
-void GameScene::DrawHearts(GameContext& context) const
+void GameScene::CreatePauseMenu(GameContext& context)
 {
-    if (m_heartTexId)
-    {
-        Vector2f viewSize = context.Render.GetLogicalViewSize();
-        for (int i = 0; i < m_lives; ++i)
-        {
-            SpriteComponent heartSprite{m_heartTexId};
-            heartSprite.Tint.a = static_cast<uint8_t>(m_heartsAlpha);
-            
-            Transform2D heartTransform;
-            heartTransform.Position = Vector2f{(viewSize.X / 2.0f) - 500.0f - (m_lives - 1 - i) * 70.0f, -(viewSize.Y / 2.0f) + 310.0f};
-            heartTransform.Scale = Vector2f{3.f, 3.f};
-            context.Render.DrawSprite(heartSprite, heartTransform);
+    m_pauseCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_pauseCanvas, CanvasComponent{.IsEnabled = false});
+
+    // Dark overlay background
+    Entity overlay = m_registry.CreateEntity();
+    m_registry.AddComponent<RectTransform>(overlay, RectTransform{
+        .Position = {0, 0},
+        .Size = {context.Render.GetLogicalViewSize().X * 2.0f, context.Render.GetLogicalViewSize().Y * 2.0f}, 
+        .AnchorPoint = Anchor::Center,
+        .Parent = m_pauseCanvas
+    });
+    m_registry.AddComponent<PanelComponent>(overlay, PanelComponent{.Tint = Color{0, 0, 0, 150}});
+
+    // Title
+    Entity title = m_registry.CreateEntity();
+    m_registry.AddComponent<RectTransform>(title, RectTransform{
+        .Position = {0, -200.0f},
+        .Size = {400, 100},
+        .Parent = m_pauseCanvas
+    });
+    m_registry.AddComponent<TextComponent>(title, TextComponent{
+        .Text = "PAUSE",
+        .FontId = m_fontId,
+        .FontSize = 80.0f,
+        .Tint = Colors::White
+    });
+
+    // Continue Button
+    Entity btnContinue = m_registry.CreateEntity();
+    m_registry.AddComponent<RectTransform>(btnContinue, RectTransform{
+        .Position = {0, -50.0f},
+        .Size = {300, 60},
+        .Parent = m_pauseCanvas
+    });
+    m_registry.AddComponent<PanelComponent>(btnContinue, PanelComponent{});
+    m_registry.AddComponent<ButtonComponent>(btnContinue, ButtonComponent{
+        .DefaultColor = Color{50, 50, 50, 255},
+        .HoverColor = Color{100, 100, 100, 255},
+        .PressedColor = Color{30, 30, 30, 255},
+        .OnClick = [this]() {
+            if (mp_state_machine) mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
         }
-    }
+    });
+    m_registry.AddComponent<TextComponent>(btnContinue, TextComponent{
+        .Text = "CONTINUER",
+        .FontId = m_fontId,
+        .FontSize = 30.0f,
+        .Tint = Colors::White,
+        .Offset = {0.0f, -10.0f}
+    });
+
+    // Options Button
+    Entity btnOptions = m_registry.CreateEntity();
+    m_registry.AddComponent<RectTransform>(btnOptions, RectTransform{
+        .Position = {0, 50.0f},
+        .Size = {300, 60},
+        .Parent = m_pauseCanvas
+    });
+    m_registry.AddComponent<PanelComponent>(btnOptions, PanelComponent{});
+    m_registry.AddComponent<ButtonComponent>(btnOptions, ButtonComponent{
+        .DefaultColor = Color{50, 50, 50, 255},
+        .HoverColor = Color{100, 100, 100, 255},
+        .PressedColor = Color{30, 30, 30, 255},
+        .OnClick = []() {
+            // TODO: Toggle Options Canvas
+        }
+    });
+    m_registry.AddComponent<TextComponent>(btnOptions, TextComponent{
+        .Text = "OPTIONS",
+        .FontId = m_fontId,
+        .FontSize = 30.0f,
+        .Tint = Colors::White,
+        .Offset = {0.0f, -10.0f}
+    });
+
+    // Quit Button
+    Entity btnQuit = m_registry.CreateEntity();
+    m_registry.AddComponent<RectTransform>(btnQuit, RectTransform{
+        .Position = {0, 150.0f},
+        .Size = {300, 60},
+        .Parent = m_pauseCanvas
+    });
+    m_registry.AddComponent<PanelComponent>(btnQuit, PanelComponent{});
+    m_registry.AddComponent<ButtonComponent>(btnQuit, ButtonComponent{
+        .DefaultColor = Color{50, 50, 50, 255},
+        .HoverColor = Color{100, 100, 100, 255},
+        .PressedColor = Color{30, 30, 30, 255},
+        .OnClick = [this]() {
+            if (mp_context) mp_context->Scenes.LoadScene<MenuScene>();
+        }
+    });
+    m_registry.AddComponent<TextComponent>(btnQuit, TextComponent{
+        .Text = "QUITTER",
+        .FontId = m_fontId,
+        .FontSize = 30.0f,
+        .Tint = Colors::White,
+        .Offset = {0.0f, -10.0f}
+    });
 }

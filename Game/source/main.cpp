@@ -28,6 +28,7 @@ int main()
     WindowConfig config{};
     config.Width = 2560;
     config.Height = 1600;
+    config.Mode = WindowMode::Windowed;
     Window window{config};
     InputManager inputManager;
     ResourceManager resourceManager;
@@ -38,12 +39,11 @@ int main()
     GameData gameData;
     SceneManager sceneManager;
     GameRules rules;
+    Timer time(window.GetConfig().VSync ? 0 : window.GetConfig().MaxFPS);
 
-    GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager, audioMixer, eventDispatcher, rules };
+    GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager, audioMixer, eventDispatcher, rules, time };
 
     sceneManager.LoadScene<MenuScene>();
-
-    Timer time(window.GetConfig().VSync ? 0 : window.GetConfig().MaxFPS);
 
     while (window.IsOpen())
     {

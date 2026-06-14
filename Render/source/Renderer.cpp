@@ -65,6 +65,10 @@ void Renderer::EndDraw(uint32_t postProcessShaderId)
     m_renderTexture.display();
 
     m_window.Clear();
+
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    m_window.GetNative().setView(sf::View(sf::FloatRect({0.f, 0.f}, {static_cast<float>(winSize.x), static_cast<float>(winSize.y)})));
+    
     sf::Sprite renderSprite(m_renderTexture.getTexture());
 
     if (postProcessShaderId != 0 && m_resources.Get<sf::Shader>(postProcessShaderId) != nullptr)
@@ -111,6 +115,18 @@ Vector2f Renderer::GetLogicalViewSize() const
     sf::Vector2u winSize = m_window.GetNative().getSize();
     float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
     return Vector2f{targetHeight * aspect, targetHeight};
+}
+
+Vector2f Renderer::MapPixelToCoords(const Vector2f& pixelPos) const
+{
+    sf::Vector2f mapped = m_renderTexture.mapPixelToCoords(sf::Vector2i(static_cast<int>(pixelPos.X), static_cast<int>(pixelPos.Y)));
+    return Vector2f{mapped.x, mapped.y};
+}
+
+Vector2f Renderer::MapCoordsToPixel(const Vector2f& coords) const
+{
+    sf::Vector2i mapped = m_renderTexture.mapCoordsToPixel(sf::Vector2f(coords.X, coords.Y));
+    return Vector2f{static_cast<float>(mapped.x), static_cast<float>(mapped.y)};
 }
 
 void Renderer::DrawSprite(const SpriteComponent& spriteData, const Transform2D& transform, BlendMode blendMode)
@@ -167,6 +183,7 @@ void Renderer::DrawSprite(const SpriteComponent& spriteData, const Transform2D& 
 void Renderer::DrawCircle(float radius, const Transform2D& transform, Color color, BlendMode blendMode)
 {
     sf::CircleShape circle(radius);
+    circle.setOrigin({radius, radius});
     ApplyTransform(circle, transform);
     circle.setFillColor(ToSfColor(color));
     RenderItem(m_renderTexture, circle, blendMode);
@@ -175,6 +192,7 @@ void Renderer::DrawCircle(float radius, const Transform2D& transform, Color colo
 void Renderer::DrawRectangle(float width, float height, const Transform2D& transform, Color color, BlendMode blendMode)
 {
     sf::RectangleShape rect({width, height});
+    rect.setOrigin({width / 2.0f, height / 2.0f});
     ApplyTransform(rect, transform);
     rect.setFillColor(ToSfColor(color));
     RenderItem(m_renderTexture, rect, blendMode);

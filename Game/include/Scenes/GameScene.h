@@ -1,5 +1,6 @@
 #pragma once
 #include "PlaylistManager.h"
+#include "../../../Engine/include/ECS/Systems/UISystem.h"
 #include "ECS/Systems/ParticleSystem.h"
 #include "ECS/Systems/TweenSystem.h"
 #include "ScoreManager.h"
@@ -51,8 +52,8 @@ private:
     void    HandlePaddleCollision();
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
-    void    DrawScoreAndFlame(GameContext& context) const;
-    void    DrawHearts(GameContext& context) const;
+    void    CreateUILayout(GameContext& context);
+    void    CreatePauseMenu(GameContext& context);
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
@@ -73,6 +74,12 @@ private:
     uint32_t    m_fireTexId = 0;
     uint32_t    m_heartTexId = 0;
     
+    UISystem        m_uiSystem;
+    Entity          m_uiCanvas = NULL_ENTITY;
+    Entity          m_pauseCanvas = NULL_ENTITY;
+    Entity          m_scoreTextEntity = NULL_ENTITY;
+    std::vector<Entity> m_heartEntities;
+
     BallState   m_ballState = BallState::Spawning;
 
     uint32_t    m_score = 0;

@@ -10,6 +10,7 @@
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleStateMachine.h"
 #include "Scenes/SampleTween.h"
+#include "Scenes/SampleUI.h"
 
 void MenuScene::OnInit(GameContext& context)
 {
@@ -49,6 +50,11 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     {
         context.Scenes.LoadScene<SampleTween>();
     }
+
+    if (context.Input.IsKeyDown(KeyCode::Num7))
+    {
+        context.Scenes.LoadScene<SampleUI>();
+    }
 }
 
 void MenuScene::OnRender(GameContext& context)
@@ -63,4 +69,5 @@ void MenuScene::OnRender(GameContext& context)
     context.Render.DrawText("Press '4' for Game", m_fontId, 32.0f, Transform2D{200.0f, 450.0f}, Colors::Green);
     context.Render.DrawText("Press '5' for StateMachine", m_fontId, 32.0f, Transform2D{200.0f, 500.0f}, Colors::White);
     context.Render.DrawText("Press '6' for Tween", m_fontId, 32.0f, Transform2D{200.0f, 550.0f}, Colors::White);
+    context.Render.DrawText("Press '7' for UI", m_fontId, 32.0f, Transform2D{200.0f, 600.0f}, Colors::White);
 }

@@ -91,8 +91,16 @@ public:
         SparseSet<T1>* primaryPool = GetPool<T1>();
         if (!primaryPool) return;
 
-        for (Entity entity : primaryPool->GetEntities())
+        auto& entities = primaryPool->GetEntities();
+        for (int i = static_cast<int>(entities.size()) - 1; i >= 0; --i)
         {
+            if (i >= static_cast<int>(entities.size())) 
+            {
+                i = static_cast<int>(entities.size()) - 1;
+                if (i < 0) break;
+            }
+
+            Entity entity = entities[i];
             if ((HasComponent<Tn>(entity) && ...))
             {
                 func(entity, primaryPool->Get(entity), GetComponent<Tn>(entity)...);

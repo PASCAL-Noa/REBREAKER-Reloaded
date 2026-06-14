@@ -50,3 +50,13 @@ bool InputManager::IsMouseButtonRelease(const MouseButton button) const
     const size_t index = static_cast<size_t>(button);
     return !m_currentMouse[index] && m_previousMouse[index];
 }
+
+void InputManager::SetMousePosition(float x, float y)
+{
+    m_mousePosition = {x, y};
+}
+
+const std::pair<float, float>& InputManager::GetMousePosition() const
+{
+    return m_mousePosition;
+}

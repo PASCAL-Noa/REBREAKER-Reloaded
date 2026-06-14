@@ -62,6 +62,9 @@ bool Window::PollEvents(InputManager& input)
             handleMouse(e->button, false);
     }
 
+    sf::Vector2i mousePos = sf::Mouse::getPosition(m_window);
+    input.SetMousePosition(static_cast<float>(mousePos.x), static_cast<float>(mousePos.y));
+
     return true;
 }
 

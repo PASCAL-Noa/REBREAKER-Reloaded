@@ -40,6 +40,9 @@ public:
     [[nodiscard]] bool IsMouseButtonPress(MouseButton button) const;
     [[nodiscard]] bool IsMouseButtonRelease(MouseButton button) const;
 
+    void SetMousePosition(float x, float y);
+    [[nodiscard]] const std::pair<float, float>& GetMousePosition() const;
+
 private:
     static constexpr size_t KEY_COUNT = static_cast<size_t>(KeyCode::Count);
     static constexpr size_t MOUSE_COUNT = static_cast<size_t>(MouseButton::Count);
@@ -49,4 +52,6 @@ private:
 
     std::array<bool, MOUSE_COUNT>   m_currentMouse{false};
     std::array<bool, MOUSE_COUNT>   m_previousMouse{false};
+    
+    std::pair<float, float> m_mousePosition{0.0f, 0.0f};
 };

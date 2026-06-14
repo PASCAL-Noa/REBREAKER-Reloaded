@@ -8,15 +8,29 @@ TweenSystem::TweenSystem(Registry& registry) : System(registry) {}
 
 void TweenSystem::OnUpdate(float dt)
 {
-    m_registry.View<TweenComponent>([dt](Entity, TweenComponent& tweenComp)
+    m_registry.View<TweenComponent>([this, dt](Entity entity, TweenComponent& tweenComp)
     {
-        for (int i = static_cast<int>(tweenComp.ActiveTweens.size()) - 1; i >= 0; --i)
+        auto tweensCopy = tweenComp.ActiveTweens;
+
+        for (int i = static_cast<int>(tweensCopy.size()) - 1; i >= 0; --i)
         {
-            tweenComp.ActiveTweens[i]->Update(dt);
+            if (!m_registry.HasComponent<TweenComponent>(entity)) {
+                break;
+            }
+
+            tweensCopy[i]->Update(dt);
             
-            if (tweenComp.ActiveTweens[i]->IsFinished())
+            if (!m_registry.HasComponent<TweenComponent>(entity)) {
+                break;
+            }
+
+            if (tweensCopy[i]->IsFinished())
             {
-                tweenComp.ActiveTweens.erase(tweenComp.ActiveTweens.begin() + i);
+                auto& realComp = m_registry.GetComponent<TweenComponent>(entity);
+                auto it = std::find(realComp.ActiveTweens.begin(), realComp.ActiveTweens.end(), tweensCopy[i]);
+                if (it != realComp.ActiveTweens.end()) {
+                    realComp.ActiveTweens.erase(it);
+                }
             }
         }
     });
