@@ -53,7 +53,9 @@ private:
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
     void    CreateUILayout(GameContext& context);
-    void    CreatePauseMenu(GameContext& context);
+    void    CreatePauseMenu(const GameContext& context);
+    void    CreateSettingsMenu(const GameContext& context);
+    void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
@@ -77,8 +79,11 @@ private:
     UISystem        m_uiSystem;
     Entity          m_uiCanvas = NULL_ENTITY;
     Entity          m_pauseCanvas = NULL_ENTITY;
+    Entity          m_settingsCanvas = NULL_ENTITY;
     Entity          m_scoreTextEntity = NULL_ENTITY;
     std::vector<Entity> m_heartEntities;
+    std::vector<Entity> m_sfxVolumeBars;
+    std::vector<Entity> m_musicVolumeBars;
 
     BallState   m_ballState = BallState::Spawning;
 

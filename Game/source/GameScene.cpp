@@ -28,8 +28,9 @@
 
 #include "Core/SceneManager.h"
 #include "ECS/Components/TweenComponent.h"
-#include "Factories/BrickFactory.h"
-#include "Generators/FileLevelGenerator.h"
+#include "StateMachine/StateMachine.h"
+#include "Generators/ILevelGenerator.h"
+#include "UI/UIFactory.h"
 #include "Events/GameplayEvents.h"
 #include "ECS/Systems/GameFeelSystem.h"
 #include "ECS/Systems/TweenSystem.h"
@@ -39,6 +40,7 @@
 #include "ECS/Components/UI/CanvasComponent.h"
 #include "ECS/Components/UI/PanelComponent.h"
 #include "ECS/Components/UI/TextComponent.h"
+#include "Generators/FileLevelGenerator.h"
 #include "Scenes/MenuScene.h"
 #include "TweenEffects/TweenEffects.h"
 
@@ -191,9 +193,10 @@ void GameScene::OnInit(GameContext& context)
     mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
 
     CreatePauseMenu(context);
+    CreateSettingsMenu(context);
 }
 
-void GameScene::OnUpdate(float dt, GameContext& context)
+void GameScene::OnUpdate(const float dt, GameContext& context)
 {
     DefaultScene::OnUpdate(dt, context);
     mp_context = &context;
@@ -203,11 +206,22 @@ void GameScene::OnUpdate(float dt, GameContext& context)
         mp_state_machine->Update();
     }
 
-    int currentState = mp_state_machine ? mp_state_machine->GetCurrentState() : static_cast<int>(SceneState::Playing);
+    const int currentState = mp_state_machine ? mp_state_machine->GetCurrentState() : static_cast<int>(SceneState::Playing);
 
     if (m_pauseCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_pauseCanvas))
     {
-        m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = (currentState == static_cast<int>(SceneState::Paused));
+        bool isSettingsOpen = false;
+        if (m_settingsCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_settingsCanvas))
+        {
+            isSettingsOpen = m_registry.GetComponent<CanvasComponent>(m_settingsCanvas).IsEnabled;
+        }
+
+        m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = (currentState == static_cast<int>(SceneState::Paused) && !isSettingsOpen);
+        
+        if (currentState != static_cast<int>(SceneState::Paused) && m_settingsCanvas != NULL_ENTITY)
+        {
+            m_registry.GetComponent<CanvasComponent>(m_settingsCanvas).IsEnabled = false;
+        }
     }
 
     if (currentState == static_cast<int>(SceneState::Playing))
@@ -245,7 +259,7 @@ void GameScene::OnUpdate(float dt, GameContext& context)
         m_systemManager.OnUpdate(dt);
     }
 
-    m_uiSystem.OnUpdate(dt, m_registry, context);
+    UISystem::OnUpdate(dt, m_registry, context);
 }
 
 void GameScene::OnRender(GameContext& context)
@@ -259,11 +273,11 @@ void GameScene::OnRender(GameContext& context)
     context.Render.DrawLine(Vector2f{800.0f, -450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
     context.Render.DrawLine(Vector2f{-800.0f, 450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
 
-    bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
+    const bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
     if (showDebug)
     {
         m_registry.View<Transform2D, BoxCollider>([&](Entity, const Transform2D& t, const BoxCollider& b) {
-            Color color = b.IsColliding ? Colors::Red : Colors::Green;
+            const Color color = b.IsColliding ? Colors::Red : Colors::Green;
             context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, color, -2.0f);
         });
 
@@ -296,7 +310,7 @@ void GameScene::OnRender(GameContext& context)
     stats += "\nState : " + gameStateStr;
 
     DrawDefaultUI(context, "REBREAKER", stats);
-    m_uiSystem.OnRender(m_registry, context);
+    UISystem::OnRender(m_registry, context);
 }
 
 uint32_t GameScene::GetPostProcessShader() const
@@ -308,7 +322,7 @@ uint32_t GameScene::GetPostProcessShader() const
     return 0;
 }
 
-Entity GameScene::CreateWall(float x, float y, float w, float h)
+Entity GameScene::CreateWall(const float x, const float y, const float w, const float h)
 {
     Entity wall = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(wall, Transform2D{Vector2f{x, y}});
@@ -343,7 +357,7 @@ void GameScene::SpawnBleedParticles(const Vector2f& position)
     }
 }
 
-void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& color, int count)
+void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& color, const int count)
 {
     static std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> velDistX(-200.0f, 200.0f);
@@ -403,7 +417,7 @@ void GameScene::FullReset()
     ResetBallAndPaddle();
 }
 
-void GameScene::HandleInput(float dt, const GameContext& context)
+void GameScene::HandleInput(const float dt, const GameContext& context)
 {
     auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
     constexpr float speed = 700.0f;
@@ -534,8 +548,7 @@ void GameScene::HandleDeath()
             if (m_lives - 1 >= 0 && m_lives - 1 < m_heartEntities.size())
             {
                 Entity actualHeart = m_heartEntities[m_lives - 1];
-                
-                // Explode animation on the specific heart
+
                 if (m_registry.HasComponent<RectTransform>(actualHeart) && 
                     m_registry.HasComponent<RectTransform>(m_explodingHeart) && 
                     m_registry.HasComponent<SpriteComponent>(m_explodingHeart) && 
@@ -572,8 +585,6 @@ void GameScene::HandleDeath()
                     };
                     
                     tweenComp.AddTween(config);
-                    
-                    // Hide original heart
                     actualTransform.IsActive = false;
                 }
             }
@@ -683,18 +694,12 @@ void GameScene::CreateUILayout(GameContext& context)
     m_registry.AddComponent<CanvasComponent>(m_uiCanvas, CanvasComponent{.IsEnabled = true});
 
     // Score Text
-    m_scoreTextEntity = m_registry.CreateEntity();
-    m_registry.AddComponent<RectTransform>(m_scoreTextEntity, RectTransform{
-        .Position = {230.0f, 130.0f},
-        .Size = {200.0f, 50.0f},
-        .AnchorPoint = Anchor::TopLeft,
-        .Parent = m_uiCanvas
-    });
-    m_registry.AddComponent<TextComponent>(m_scoreTextEntity, TextComponent{
+    m_scoreTextEntity = UIFactory::CreateText(m_registry, m_uiCanvas, TextDescriptor{
         .Text = "Score : 0",
+        .Position = {330.0f, 130.0f},
         .FontId = m_fontId,
         .FontSize = 48.0f,
-        .Tint = Colors::White,
+        .AnchorPoint = Anchor::TopLeft,
         .TextCenter = false
     });
 
@@ -704,7 +709,7 @@ void GameScene::CreateUILayout(GameContext& context)
     {
         Entity heart = m_registry.CreateEntity();
         m_registry.AddComponent<RectTransform>(heart, RectTransform{
-            .Position = {-280.0f - i * 100.0f, 130.0f},
+            .Position = {-380.0f - i * 100.0f, 130.0f},
             .Size = {80.0f, 80.0f},
             .AnchorPoint = Anchor::TopRight,
             .Parent = m_uiCanvas
@@ -724,104 +729,151 @@ void GameScene::CreateUILayout(GameContext& context)
     m_registry.AddComponent<TweenComponent>(m_explodingHeart, TweenComponent{});
 }
 
-void GameScene::CreatePauseMenu(GameContext& context)
+void GameScene::CreatePauseMenu(const GameContext& context)
 {
     m_pauseCanvas = m_registry.CreateEntity();
     m_registry.AddComponent<CanvasComponent>(m_pauseCanvas, CanvasComponent{.IsEnabled = false});
 
-    // Dark overlay background
-    Entity overlay = m_registry.CreateEntity();
-    m_registry.AddComponent<RectTransform>(overlay, RectTransform{
-        .Position = {0, 0},
-        .Size = {context.Render.GetLogicalViewSize().X * 2.0f, context.Render.GetLogicalViewSize().Y * 2.0f}, 
-        .AnchorPoint = Anchor::Center,
-        .Parent = m_pauseCanvas
-    });
-    m_registry.AddComponent<PanelComponent>(overlay, PanelComponent{.Tint = Color{0, 0, 0, 150}});
-
     // Title
-    Entity title = m_registry.CreateEntity();
-    m_registry.AddComponent<RectTransform>(title, RectTransform{
-        .Position = {0, -200.0f},
-        .Size = {400, 100},
-        .Parent = m_pauseCanvas
-    });
-    m_registry.AddComponent<TextComponent>(title, TextComponent{
+    UIFactory::CreateText(m_registry, m_pauseCanvas, TextDescriptor{
         .Text = "PAUSE",
+        .Position = {0, -200.0f},
         .FontId = m_fontId,
-        .FontSize = 80.0f,
-        .Tint = Colors::White
+        .FontSize = 80.0f
     });
 
     // Continue Button
-    Entity btnContinue = m_registry.CreateEntity();
-    m_registry.AddComponent<RectTransform>(btnContinue, RectTransform{
-        .Position = {0, -50.0f},
-        .Size = {300, 60},
-        .Parent = m_pauseCanvas
-    });
-    m_registry.AddComponent<PanelComponent>(btnContinue, PanelComponent{});
-    m_registry.AddComponent<ButtonComponent>(btnContinue, ButtonComponent{
-        .DefaultColor = Color{50, 50, 50, 255},
-        .HoverColor = Color{100, 100, 100, 255},
-        .PressedColor = Color{30, 30, 30, 255},
+    UIFactory::CreateButton(m_registry, m_pauseCanvas, ButtonDescriptor{
+        .Text = "CONTINUE",
         .OnClick = [this]() {
             if (mp_state_machine) mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
-        }
-    });
-    m_registry.AddComponent<TextComponent>(btnContinue, TextComponent{
-        .Text = "CONTINUER",
-        .FontId = m_fontId,
-        .FontSize = 30.0f,
-        .Tint = Colors::White,
-        .Offset = {0.0f, -10.0f}
+        },
+        .Position = {0, -50.0f},
+        .FontId = m_fontId
     });
 
     // Options Button
-    Entity btnOptions = m_registry.CreateEntity();
-    m_registry.AddComponent<RectTransform>(btnOptions, RectTransform{
-        .Position = {0, 50.0f},
-        .Size = {300, 60},
-        .Parent = m_pauseCanvas
-    });
-    m_registry.AddComponent<PanelComponent>(btnOptions, PanelComponent{});
-    m_registry.AddComponent<ButtonComponent>(btnOptions, ButtonComponent{
-        .DefaultColor = Color{50, 50, 50, 255},
-        .HoverColor = Color{100, 100, 100, 255},
-        .PressedColor = Color{30, 30, 30, 255},
-        .OnClick = []() {
-            // TODO: Toggle Options Canvas
-        }
-    });
-    m_registry.AddComponent<TextComponent>(btnOptions, TextComponent{
+    UIFactory::CreateButton(m_registry, m_pauseCanvas, ButtonDescriptor{
         .Text = "OPTIONS",
-        .FontId = m_fontId,
-        .FontSize = 30.0f,
-        .Tint = Colors::White,
-        .Offset = {0.0f, -10.0f}
+        .OnClick = [this]() {
+            auto& pauseCanvas = m_registry.GetComponent<CanvasComponent>(m_pauseCanvas);
+            pauseCanvas.IsEnabled = false;
+            auto& settingsCanvas = m_registry.GetComponent<CanvasComponent>(m_settingsCanvas);
+            settingsCanvas.IsEnabled = true;
+        },
+        .Position = {0, 50.0f},
+        .FontId = m_fontId
     });
 
     // Quit Button
-    Entity btnQuit = m_registry.CreateEntity();
-    m_registry.AddComponent<RectTransform>(btnQuit, RectTransform{
-        .Position = {0, 150.0f},
-        .Size = {300, 60},
-        .Parent = m_pauseCanvas
-    });
-    m_registry.AddComponent<PanelComponent>(btnQuit, PanelComponent{});
-    m_registry.AddComponent<ButtonComponent>(btnQuit, ButtonComponent{
-        .DefaultColor = Color{50, 50, 50, 255},
-        .HoverColor = Color{100, 100, 100, 255},
-        .PressedColor = Color{30, 30, 30, 255},
+    UIFactory::CreateButton(m_registry, m_pauseCanvas, ButtonDescriptor{
+        .Text = "QUIT",
         .OnClick = [this]() {
             if (mp_context) mp_context->Scenes.LoadScene<MenuScene>();
-        }
+        },
+        .Position = {0, 150.0f},
+        .FontId = m_fontId
     });
-    m_registry.AddComponent<TextComponent>(btnQuit, TextComponent{
-        .Text = "QUITTER",
-        .FontId = m_fontId,
-        .FontSize = 30.0f,
-        .Tint = Colors::White,
-        .Offset = {0.0f, -10.0f}
+
+    // Dark overlay background
+    UIFactory::CreatePanel(m_registry, m_pauseCanvas, PanelDescriptor{
+        .Position = {0, 0},
+        .Size = {context.Render.GetLogicalViewSize().X * 2.0f, context.Render.GetLogicalViewSize().Y * 2.0f},
+        .Tint = Color{0, 0, 0, 200},
+        .AnchorPoint = Anchor::Center
     });
 }
+
+void GameScene::UpdateVolumeBars(const std::vector<Entity>& bars, float volume)
+{
+    for (size_t i = 0; i < bars.size(); ++i)
+    {
+        if (m_registry.HasComponent<PanelComponent>(bars[i]))
+        {
+            auto& panel = m_registry.GetComponent<PanelComponent>(bars[i]);
+            if ((i * 10.0f) < volume)
+                panel.Tint.a = 255;
+            else
+                panel.Tint.a = 50;
+        }
+    }
+}
+
+void GameScene::CreateSettingsMenu(const GameContext& context)
+{
+    m_settingsCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_settingsCanvas, CanvasComponent{.IsEnabled = false});
+
+    // Title
+    UIFactory::CreateText(m_registry, m_settingsCanvas, TextDescriptor{
+        .Text = "SETTINGS",
+        .Position = {0, -250.0f},
+        .FontId = m_fontId,
+        .FontSize = 60.0f
+    });
+
+    // Audio
+    UIFactory::CreateVolumeControl(m_registry, m_settingsCanvas, VolumeControlDescriptor{
+        .Label = "SFX",
+        .OnMinus = [&]() {
+            float vol = std::max(0.0f, context.Audio.GetSfxVolume() - 10.0f);
+            context.Audio.SetSfxVolume(vol);
+            context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
+            UpdateVolumeBars(m_sfxVolumeBars, vol);
+        },
+        .OnPlus = [&]() {
+            float vol = std::min(100.0f, context.Audio.GetSfxVolume() + 10.0f);
+            context.Audio.SetSfxVolume(vol);
+            context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
+            UpdateVolumeBars(m_sfxVolumeBars, vol);
+        },
+        .BarsOut = &m_sfxVolumeBars,
+        .Position = {0.f, -50.0f},
+        .FontId = m_fontId
+    });
+
+    UIFactory::CreateVolumeControl(m_registry, m_settingsCanvas, VolumeControlDescriptor{
+        .Label = "MUSIC",
+        .OnMinus = [&]() {
+            float vol = std::max(0.0f, context.Audio.GetMusicVolume() - 10.0f);
+            context.Audio.SetMusicVolume(vol);
+            UpdateVolumeBars(m_musicVolumeBars, vol);
+        },
+        .OnPlus = [&]() {
+            float vol = std::min(100.0f, context.Audio.GetMusicVolume() + 10.0f);
+            context.Audio.SetMusicVolume(vol);
+            UpdateVolumeBars(m_musicVolumeBars, vol);
+        },
+        .BarsOut = &m_musicVolumeBars,
+        .Position = {0.f, 50.0f},
+        .FontId = m_fontId
+    });
+
+    // Initialize bars
+    UpdateVolumeBars(m_sfxVolumeBars, context.Audio.GetSfxVolume());
+    UpdateVolumeBars(m_musicVolumeBars, context.Audio.GetMusicVolume());
+
+    // Back Button
+    UIFactory::CreateButton(m_registry, m_settingsCanvas, ButtonDescriptor{
+        .Text = "RETOUR",
+        .OnClick = [this]() {
+            auto& settingsCanvas = m_registry.GetComponent<CanvasComponent>(m_settingsCanvas);
+            settingsCanvas.IsEnabled = false;
+            auto& pauseCanvas = m_registry.GetComponent<CanvasComponent>(m_pauseCanvas);
+            pauseCanvas.IsEnabled = true;
+        },
+        .Position = {0, 200.0f},
+        .DefaultColor = Colors::Crimson,
+        .HoverColor = Colors::LightCoral,
+        .PressedColor = Colors::DarkRed,
+        .FontId = m_fontId
+    });
+
+    // Background overlay
+    UIFactory::CreatePanel(m_registry, m_settingsCanvas, PanelDescriptor{
+        .Position = {0, 0},
+        .Size = {context.Render.GetLogicalViewSize().X * 2.0f, context.Render.GetLogicalViewSize().Y * 2.0f},
+        .Tint = Color{0, 0, 0, 200}
+    });
+}
+

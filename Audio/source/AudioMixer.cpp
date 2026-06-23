@@ -100,3 +100,13 @@ bool AudioMixer::IsMusicPlaying() const
 {
     return mp_impl->music.getStatus() == sf::SoundSource::Status::Playing;
 }
+
+float AudioMixer::GetSfxVolume() const
+{
+    return mp_impl->sfxVolume;
+}
+
+float AudioMixer::GetMusicVolume() const
+{
+    return mp_impl->musicVolume;
+}
