@@ -28,7 +28,7 @@ int main()
     WindowConfig config{};
     config.Width = 2560;
     config.Height = 1600;
-    config.Mode = WindowMode::Windowed;
+    config.Mode = WindowMode::Fullscreen;
     Window window{config};
     InputManager inputManager;
     ResourceManager resourceManager;

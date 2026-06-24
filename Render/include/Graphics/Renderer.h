@@ -26,6 +26,9 @@ public:
     void                SetCamera(const Camera2D& camera);
     void                ResetCamera();
 
+    Window&             GetWindow() { return m_window; }
+    const Window&       GetWindow() const { return m_window; }
+
     [[nodiscard]] Vector2f  GetLogicalViewSize() const;
     [[nodiscard]] Vector2f  MapPixelToCoords(const Vector2f& pixelPos) const;
     [[nodiscard]] Vector2f  MapCoordsToPixel(const Vector2f& coords) const;

@@ -23,9 +23,11 @@
 #include "Actions/ResetGameAction.h"
 #include "AudioMixer.h"
 #include <string>
+#include <algorithm>
 #include <random>
 #include <cmath>
 
+#include "Core/Debug.h"
 #include "Core/SceneManager.h"
 #include "ECS/Components/TweenComponent.h"
 #include "StateMachine/StateMachine.h"
@@ -193,7 +195,12 @@ void GameScene::OnInit(GameContext& context)
     mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
 
     CreatePauseMenu(context);
-    CreateSettingsMenu(context);
+    CreateAudioTab(context);
+    CreateRenderTab(context);
+    CreateInputsTab(context);
+    CreateGamerulesTab(context);
+    CreateSettingsLayout(context);
+
 }
 
 void GameScene::OnUpdate(const float dt, GameContext& context)
@@ -211,16 +218,27 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     if (m_pauseCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_pauseCanvas))
     {
         bool isSettingsOpen = false;
-        if (m_settingsCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_settingsCanvas))
+        if (m_settingsLayoutCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_settingsLayoutCanvas))
         {
-            isSettingsOpen = m_registry.GetComponent<CanvasComponent>(m_settingsCanvas).IsEnabled;
+            isSettingsOpen = m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled;
         }
 
         m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = (currentState == static_cast<int>(SceneState::Paused) && !isSettingsOpen);
         
-        if (currentState != static_cast<int>(SceneState::Paused) && m_settingsCanvas != NULL_ENTITY)
+        if (currentState != static_cast<int>(SceneState::Paused) && m_settingsLayoutCanvas != NULL_ENTITY)
         {
-            m_registry.GetComponent<CanvasComponent>(m_settingsCanvas).IsEnabled = false;
+            m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled = false;
+            if (m_activeTabCanvas != NULL_ENTITY) {
+                m_registry.GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
+                m_activeTabCanvas = NULL_ENTITY;
+            }
+        }
+    }
+
+    if (m_cheatTimer > 0.0f) {
+        m_cheatTimer -= dt;
+        if (m_cheatTimer <= 0.0f && m_cheatTextEntity != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_cheatTextEntity)) {
+            m_registry.GetComponent<RectTransform>(m_cheatTextEntity).IsActive = false;
         }
     }
 
@@ -419,6 +437,8 @@ void GameScene::FullReset()
 
 void GameScene::HandleInput(const float dt, const GameContext& context)
 {
+    CheckKonamiCode(context);
+
     auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
     constexpr float speed = 700.0f;
 
@@ -758,7 +778,7 @@ void GameScene::CreatePauseMenu(const GameContext& context)
         .OnClick = [this]() {
             auto& pauseCanvas = m_registry.GetComponent<CanvasComponent>(m_pauseCanvas);
             pauseCanvas.IsEnabled = false;
-            auto& settingsCanvas = m_registry.GetComponent<CanvasComponent>(m_settingsCanvas);
+            auto& settingsCanvas = m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas);
             settingsCanvas.IsEnabled = true;
         },
         .Position = {0, 50.0f},
@@ -799,21 +819,124 @@ void GameScene::UpdateVolumeBars(const std::vector<Entity>& bars, float volume)
     }
 }
 
-void GameScene::CreateSettingsMenu(const GameContext& context)
+void GameScene::CreateSettingsLayout(const GameContext& context)
 {
-    m_settingsCanvas = m_registry.CreateEntity();
-    m_registry.AddComponent<CanvasComponent>(m_settingsCanvas, CanvasComponent{.IsEnabled = false});
+    float viewX = context.Render.GetLogicalViewSize().X - 300;
+    float viewY = context.Render.GetLogicalViewSize().Y - 350;
+
+    float leftPanelWidth = viewX * 0.25f;
+    float leftPanelX = -viewX * 0.375f;
+
+    m_settingsLayoutCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_settingsLayoutCanvas, CanvasComponent{.IsEnabled = false});
 
     // Title
-    UIFactory::CreateText(m_registry, m_settingsCanvas, TextDescriptor{
+    UIFactory::CreateText(m_registry, m_settingsLayoutCanvas, TextDescriptor{
         .Text = "SETTINGS",
-        .Position = {0, -250.0f},
+        .Position = {leftPanelX, -viewY * 0.3f},
         .FontId = m_fontId,
-        .FontSize = 60.0f
+        .FontSize = 50.0f
     });
 
-    // Audio
-    UIFactory::CreateVolumeControl(m_registry, m_settingsCanvas, VolumeControlDescriptor{
+    // 4 Tab Buttons
+    float startY = -viewY * 0.15f;
+    float stepY = viewY * 0.08f;
+
+    UIFactory::CreateButton(m_registry, m_settingsLayoutCanvas, ButtonDescriptor{
+        .Text = "AUDIO",
+        .OnClick = [this]() { OpenSettingsTab(m_audioCanvas); },
+        .Position = {leftPanelX, startY},
+        .Size = {leftPanelWidth * 0.8f, 60.0f},
+        .FontId = m_fontId
+    });
+
+    UIFactory::CreateButton(m_registry, m_settingsLayoutCanvas, ButtonDescriptor{
+        .Text = "RENDER",
+        .OnClick = [this]() { OpenSettingsTab(m_renderCanvas); },
+        .Position = {leftPanelX, startY + stepY},
+        .Size = {leftPanelWidth * 0.8f, 60.0f},
+        .FontId = m_fontId
+    });
+
+    UIFactory::CreateButton(m_registry, m_settingsLayoutCanvas, ButtonDescriptor{
+        .Text = "INPUTS",
+        .OnClick = [this]() { OpenSettingsTab(m_inputsCanvas); },
+        .Position = {leftPanelX, startY + stepY * 2.0f},
+        .Size = {leftPanelWidth * 0.8f, 60.0f},
+        .FontId = m_fontId
+    });
+
+    UIFactory::CreateButton(m_registry, m_settingsLayoutCanvas, ButtonDescriptor{
+        .Text = "GAMERULES",
+        .OnClick = [this]() { OpenSettingsTab(m_gamerulesCanvas); },
+        .Position = {leftPanelX, startY + stepY * 3.0f},
+        .Size = {leftPanelWidth * 0.8f, 60.0f},
+        .FontId = m_fontId
+    });
+
+    // Back Button
+    UIFactory::CreateButton(m_registry, m_settingsLayoutCanvas, ButtonDescriptor{
+        .Text = "RETOUR",
+        .OnClick = [this]() {
+            m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled = false;
+            if (m_activeTabCanvas != NULL_ENTITY) {
+                m_registry.GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
+                m_activeTabCanvas = NULL_ENTITY;
+            }
+            m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = true;
+        },
+        .Position = {leftPanelX, viewY * 0.4f},
+        .Size = {leftPanelWidth * 0.8f, 60.0f},
+        .DefaultColor = Colors::Crimson,
+        .HoverColor = Colors::LightCoral,
+        .PressedColor = Colors::DarkRed,
+        .FontId = m_fontId
+    });
+
+    // Cheat Text (Hidden by default)
+    m_cheatTextEntity = UIFactory::CreateText(m_registry, m_settingsLayoutCanvas, TextDescriptor{
+        .Text = "CHEAT UNLOCKED!",
+        .Position = {0.0f, viewY * 0.45f},
+        .FontId = m_fontId,
+        .FontSize = 40.0f,
+        .Tint = Colors::Yellow
+    });
+
+    m_registry.GetComponent<RectTransform>(m_cheatTextEntity).IsActive = false;
+
+    UIFactory::CreatePanel(m_registry, m_settingsLayoutCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {viewX + 300, viewY + 350},
+        .Tint = Color{0, 0, 0, 200}
+    });
+
+    // Left Tabs Panel
+    UIFactory::CreatePanel(m_registry, m_settingsLayoutCanvas, PanelDescriptor{
+        .Position = {leftPanelX, 0.0f},
+        .Size = {leftPanelWidth, viewY - 50},
+        .Tint = Color{30, 200, 30, 255}
+    });
+}
+
+void GameScene::CreateAudioTab(const GameContext& context)
+{
+    float viewX = context.Render.GetLogicalViewSize().X;
+    float viewY = context.Render.GetLogicalViewSize().Y;
+    float rightPanelWidth = viewX * 0.75f;
+    float rightPanelX = viewX * 0.125f;
+
+    m_audioCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_audioCanvas, CanvasComponent{.IsEnabled = false});
+    m_registry.AddComponent<TweenComponent>(m_audioCanvas, TweenComponent{});
+
+    UIFactory::CreateText(m_registry, m_audioCanvas, TextDescriptor{
+        .Text = "AUDIO SETTINGS",
+        .Position = {rightPanelX, -viewY * 0.2f},
+        .FontId = m_fontId,
+        .FontSize = 40.0f
+    });
+
+    UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "SFX",
         .OnMinus = [&]() {
             float vol = std::max(0.0f, context.Audio.GetSfxVolume() - 10.0f);
@@ -828,11 +951,11 @@ void GameScene::CreateSettingsMenu(const GameContext& context)
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .BarsOut = &m_sfxVolumeBars,
-        .Position = {0.f, -50.0f},
+        .Position = {rightPanelX, -viewY * 0.1f + 20.f},
         .FontId = m_fontId
     });
 
-    UIFactory::CreateVolumeControl(m_registry, m_settingsCanvas, VolumeControlDescriptor{
+    UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "MUSIC",
         .OnMinus = [&]() {
             float vol = std::max(0.0f, context.Audio.GetMusicVolume() - 10.0f);
@@ -845,35 +968,250 @@ void GameScene::CreateSettingsMenu(const GameContext& context)
             UpdateVolumeBars(m_musicVolumeBars, vol);
         },
         .BarsOut = &m_musicVolumeBars,
-        .Position = {0.f, 50.0f},
+        .Position = {rightPanelX, viewY * 0.1f - 50.f},
         .FontId = m_fontId
     });
 
-    // Initialize bars
     UpdateVolumeBars(m_sfxVolumeBars, context.Audio.GetSfxVolume());
     UpdateVolumeBars(m_musicVolumeBars, context.Audio.GetMusicVolume());
 
-    // Back Button
-    UIFactory::CreateButton(m_registry, m_settingsCanvas, ButtonDescriptor{
-        .Text = "RETOUR",
-        .OnClick = [this]() {
-            auto& settingsCanvas = m_registry.GetComponent<CanvasComponent>(m_settingsCanvas);
-            settingsCanvas.IsEnabled = false;
-            auto& pauseCanvas = m_registry.GetComponent<CanvasComponent>(m_pauseCanvas);
-            pauseCanvas.IsEnabled = true;
+    UIFactory::CreatePanel(m_registry, m_audioCanvas, PanelDescriptor{
+        .Position = {rightPanelX, 0.0f},
+        .Size = {rightPanelWidth, viewY},
+        .Tint = Colors::Transparent
+    });
+}
+
+void GameScene::CreateRenderTab(const GameContext& context)
+{
+    float viewX = context.Render.GetLogicalViewSize().X;
+    float viewY = context.Render.GetLogicalViewSize().Y;
+    float rightPanelWidth = viewX * 0.75f;
+    float rightPanelX = viewX * 0.125f;
+
+    m_renderCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_renderCanvas, CanvasComponent{.IsEnabled = false});
+    m_registry.AddComponent<TweenComponent>(m_renderCanvas, TweenComponent{});
+
+    UIFactory::CreateText(m_registry, m_renderCanvas, TextDescriptor{
+        .Text = "RENDER SETTINGS",
+        .Position = {rightPanelX, -viewY * 0.2f},
+        .FontId = m_fontId,
+        .FontSize = 40.0f
+    });
+
+    bool isFullscreen = context.Render.GetWindow().GetConfig().Mode == WindowMode::Fullscreen;
+    std::string fsText = isFullscreen ? "FULL-SCREEN: ON" : "FULL-SCREEN: OFF";
+    
+    m_fsBtn = UIFactory::CreateButton(m_registry, m_renderCanvas, ButtonDescriptor{
+        .Text = fsText,
+        .OnClick = [&context, this]() {
+            WindowConfig config = context.Render.GetWindow().GetConfig();
+            if (config.Mode == WindowMode::Fullscreen) {
+                config.Mode = WindowMode::Windowed;
+                if (m_registry.HasComponent<TextComponent>(m_fsBtn)) {
+                    m_registry.GetComponent<TextComponent>(m_fsBtn).Text = "FULL-SCREEN: OFF";
+                }
+            } else {
+                config.Mode = WindowMode::Fullscreen;
+                if (m_registry.HasComponent<TextComponent>(m_fsBtn)) {
+                    m_registry.GetComponent<TextComponent>(m_fsBtn).Text = "FULL-SCREEN: ON";
+                }
+            }
+            context.Render.GetWindow().ApplyConfig(config);
         },
-        .Position = {0, 200.0f},
-        .DefaultColor = Colors::Crimson,
-        .HoverColor = Colors::LightCoral,
-        .PressedColor = Colors::DarkRed,
+        .Position = {rightPanelX - 250.0f, -viewY * 0.1f},
+        .Size = {400.0f, 60.0f},
         .FontId = m_fontId
     });
 
-    // Background overlay
-    UIFactory::CreatePanel(m_registry, m_settingsCanvas, PanelDescriptor{
-        .Position = {0, 0},
-        .Size = {context.Render.GetLogicalViewSize().X * 2.0f, context.Render.GetLogicalViewSize().Y * 2.0f},
-        .Tint = Color{0, 0, 0, 200}
+    std::vector<Resolution> uniqueModes = Window::GetSupportedResolutions();
+    std::vector<std::string> options;
+    
+    for (const auto& res : uniqueModes) {
+        options.push_back(std::to_string(res.Width) + "x" + std::to_string(res.Height));
+    }
+
+    std::string currentRes = std::to_string(context.Render.GetWindow().GetConfig().Width) + "x" + std::to_string(context.Render.GetWindow().GetConfig().Height);
+
+    UIFactory::CreateDropdown(m_registry, m_renderCanvas, DropdownDescriptor{
+        .DefaultText = currentRes,
+        .Options = options,
+        .OnSelect = [&context, uniqueModes](int index, const std::string& text) {
+            WindowConfig config = context.Render.GetWindow().GetConfig();
+            config.Width = uniqueModes[index].Width;
+            config.Height = uniqueModes[index].Height;
+            context.Render.GetWindow().ApplyConfig(config);
+        },
+        .Position = {rightPanelX + 250.0f, -viewY * 0.1f},
+        .Size = {400.0f, 60.0f},
+        .FontId = m_fontId,
     });
+    
+    UIFactory::CreateButton(m_registry, m_renderCanvas, ButtonDescriptor{
+        .Text = "SHADER",
+        // Todo OnClick -> Shader On/Off modifier depuis les gamerules
+        .Position = {rightPanelX - 150.0f, viewY * 0.1f},
+        .Size = {200.0f, 60.0f},
+        .FontId = m_fontId
+    });
+    
+    UIFactory::CreateButton(m_registry, m_renderCanvas, ButtonDescriptor{
+        .Text = "PARTICLES",
+        // Todo OnClick -> Partcles On/Off modifier depuis les gamerules
+        .Position = {rightPanelX + 150.0f, viewY * 0.1f},
+        .Size = {200.0f, 60.0f},
+        .FontId = m_fontId
+    });
+
+    UIFactory::CreatePanel(m_registry, m_renderCanvas, PanelDescriptor{
+       .Position = {rightPanelX, 0.0f},
+       .Size = {rightPanelWidth, viewY},
+        .Tint = Colors::Transparent
+    });
+}
+
+void GameScene::CreateInputsTab(const GameContext& context)
+{
+    float viewX = context.Render.GetLogicalViewSize().X;
+    float viewY = context.Render.GetLogicalViewSize().Y;
+    float rightPanelWidth = viewX * 0.75f;
+    float rightPanelX = viewX * 0.125f;
+
+    m_inputsCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_inputsCanvas, CanvasComponent{.IsEnabled = false});
+    m_registry.AddComponent<TweenComponent>(m_inputsCanvas, TweenComponent{});
+
+    UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
+        .Text = "INPUTS",
+        .Position = {rightPanelX, -viewY * 0.2f},
+        .FontId = m_fontId,
+        .FontSize = 40.0f
+    });
+
+    UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "Left: Q",
+        .Position = {rightPanelX, -viewY * 0.1f},
+        .FontId = m_fontId
+    });
+    
+    UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "Right: D",
+        .Position = {rightPanelX, viewY * 0.1f - 200.f},
+        .FontId = m_fontId
+    });
+
+    UIFactory::CreatePanel(m_registry, m_inputsCanvas, PanelDescriptor{
+        .Position = {rightPanelX, 0.0f},
+        .Size = {rightPanelWidth, viewY},
+        .Tint = Colors::Transparent
+    });
+}
+
+void GameScene::CreateGamerulesTab(const GameContext& context)
+{
+    float viewX = context.Render.GetLogicalViewSize().X;
+    float viewY = context.Render.GetLogicalViewSize().Y;
+    float rightPanelWidth = viewX * 0.75f;
+    float rightPanelX = viewX * 0.125f;
+
+    m_gamerulesCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_gamerulesCanvas, CanvasComponent{.IsEnabled = false});
+    m_registry.AddComponent<TweenComponent>(m_gamerulesCanvas, TweenComponent{});
+
+    UIFactory::CreateText(m_registry, m_gamerulesCanvas, TextDescriptor{
+        .Text = "GAMERULES",
+        .Position = {rightPanelX, -viewY * 0.2f},
+        .FontId = m_fontId,
+        .FontSize = 40.0f
+    });
+
+    UIFactory::CreateButton(m_registry, m_gamerulesCanvas, ButtonDescriptor{
+        .Text = "Difficulty",
+        .Position = {rightPanelX, -viewY * 0.1f},
+        .FontId = m_fontId
+    });
+    
+    UIFactory::CreatePanel(m_registry, m_gamerulesCanvas, PanelDescriptor{
+      .Position = {rightPanelX, 0.0f},
+      .Size = {rightPanelWidth, viewY},
+      .Tint = Colors::Transparent
+    });
+}
+
+void GameScene::OpenSettingsTab(Entity targetCanvas)
+{
+    if (m_activeTabCanvas == targetCanvas) {
+        m_registry.GetComponent<CanvasComponent>(targetCanvas).IsEnabled = false;
+        m_activeTabCanvas = NULL_ENTITY;
+        return;
+    }
+
+    if (m_activeTabCanvas != NULL_ENTITY) {
+        m_registry.GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
+    }
+
+    m_activeTabCanvas = targetCanvas;
+    m_registry.GetComponent<CanvasComponent>(targetCanvas).IsEnabled = true;
+
+    if (m_registry.HasComponent<TweenComponent>(targetCanvas))
+    {
+        auto& tweenComp = m_registry.GetComponent<TweenComponent>(targetCanvas);
+        tweenComp.Clear();
+        
+        m_registry.View<RectTransform>([&](Entity e, RectTransform& rect) {
+            if (rect.Parent == targetCanvas) {
+                Vector2f originalPos = rect.Position;
+                Vector2f startPos = {originalPos.X, originalPos.Y - 50.0f};
+                
+                tweenComp.AddTween(TweenConfig<Vector2f>{
+                    .Start = startPos,
+                    .End = originalPos,
+                    .Duration = 0.25f,
+                    .Setter = [this, e](Vector2f pos) {
+                        if (m_registry.HasComponent<RectTransform>(e)) {
+                            m_registry.GetComponent<RectTransform>(e).Position = pos;
+                        }
+                    },
+                    .Ease = EasingFunctions::EasingType::EaseOutQuad
+                });
+            }
+        });
+    }
+}
+
+void GameScene::CheckKonamiCode(const GameContext& context)
+{
+    if (m_konamiSequence.empty()) return;
+
+    if (context.Input.IsKeyPress(m_konamiSequence[m_konamiIndex]))
+    {
+        m_konamiIndex++;
+        if (m_konamiIndex >= m_konamiSequence.size())
+        {
+            m_konamiIndex = 0;
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
+            
+            if (m_cheatTextEntity != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_cheatTextEntity))
+            {
+                m_registry.GetComponent<RectTransform>(m_cheatTextEntity).IsActive = true;
+                m_cheatTimer = 5.0f;
+            }
+        }
+    }
+    else
+    {
+        for (int i = 0; i < static_cast<int>(KeyCode::Count); ++i)
+        {
+            if (context.Input.IsKeyPress(static_cast<KeyCode>(i)))
+            {
+                m_konamiIndex = 0;
+                if (context.Input.IsKeyPress(m_konamiSequence[0])) {
+                    m_konamiIndex = 1;
+                }
+                break;
+            }
+        }
+    }
 }
 

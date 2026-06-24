@@ -13,6 +13,7 @@ struct PanelDescriptor
     Vector2f    Size = {100.0f, 100.0f};
     Color       Tint = Colors::White;
     Anchor  AnchorPoint = Anchor::Center;
+    uint32_t    TextureId = 0;
 };
 
 struct TextDescriptor
@@ -42,6 +43,7 @@ struct ButtonDescriptor
     uint32_t    FontId = 0;
     float   FontSize = 30.0f;
     Anchor  AnchorPoint  = Anchor::Center;
+    uint32_t    TextureId = 0;
     uint8_t     _padding[4] = {0};
 };
 
@@ -56,6 +58,24 @@ struct VolumeControlDescriptor
     uint8_t     _padding[4] = {0};
 };
 
+struct DropdownDescriptor
+{
+    std::string     DefaultText = "";
+    std::vector<std::string> Options;
+    std::function<void(int index, const std::string& text)> OnSelect = nullptr;
+    Vector2f    Position = {0.0f, 0.0f};
+    Vector2f    Size = {300.0f, 60.0f};
+    Color   DefaultColor = Color{50, 50, 50, 255};
+    Color   HoverColor   = Color{100, 100, 100, 255};
+    Color   PressedColor = Color{30, 30, 30, 255};
+    Color   TextColor    = Colors::White;
+    uint32_t    FontId = 0;
+    float   FontSize = 30.0f;
+    Anchor  AnchorPoint  = Anchor::Center;
+    uint32_t    TextureId = 0;
+    uint8_t     _padding[8] = {0};
+};
+
 class UIFactory
 {
 public:
@@ -65,4 +85,5 @@ public:
     
     // Complex Widgets
     static void     CreateVolumeControl(Registry& registry, Entity parent, const VolumeControlDescriptor& desc);
+    static Entity   CreateDropdown(Registry& registry, Entity parent, const DropdownDescriptor& desc);
 };

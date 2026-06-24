@@ -21,6 +21,8 @@ public:
 
     const WindowConfig& GetConfig() const;
     sf::RenderWindow&   GetNative();
+
+    static std::vector<Resolution> GetSupportedResolutions();
     void                SetVSync(bool enabled);
 
 private:

@@ -38,7 +38,7 @@ public:
     void    OnDestroy(GameContext& context) override;
     [[nodiscard]] uint32_t  GetPostProcessShader() const override;
 
-    [[nodiscard]] const GameContext* GetContext() const { return mp_context; }
+    [[nodiscard]] const GameContext*    GetContext() const { return mp_context; }
     [[nodiscard]] int     GetLives() const { return m_lives; }
     [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
     void    FullReset();
@@ -47,15 +47,25 @@ private:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
     void    ResetBallAndPaddle();
+
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity);
     void    HandlePaddleCollision();
+
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
+
     void    CreateUILayout(GameContext& context);
     void    CreatePauseMenu(const GameContext& context);
-    void    CreateSettingsMenu(const GameContext& context);
+    void    CreateSettingsLayout(const GameContext& context);
+    void    CreateAudioTab(const GameContext& context);
+    void    CreateRenderTab(const GameContext& context);
+    void    CreateInputsTab(const GameContext& context);
+    void    CreateGamerulesTab(const GameContext& context);
+    void    OpenSettingsTab(Entity targetCanvas);
+
     void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
+    void    CheckKonamiCode(const GameContext& context);
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
@@ -79,11 +89,28 @@ private:
     UISystem        m_uiSystem;
     Entity          m_uiCanvas = NULL_ENTITY;
     Entity          m_pauseCanvas = NULL_ENTITY;
-    Entity          m_settingsCanvas = NULL_ENTITY;
+    Entity          m_settingsLayoutCanvas = NULL_ENTITY;
+    Entity          m_audioCanvas = NULL_ENTITY;
+    Entity          m_renderCanvas = NULL_ENTITY;
+    Entity          m_inputsCanvas = NULL_ENTITY;
+    Entity          m_gamerulesCanvas = NULL_ENTITY;
+    Entity          m_activeTabCanvas = NULL_ENTITY;
+
     Entity          m_scoreTextEntity = NULL_ENTITY;
+
     std::vector<Entity> m_heartEntities;
     std::vector<Entity> m_sfxVolumeBars;
     std::vector<Entity> m_musicVolumeBars;
+
+    std::vector<KeyCode> m_konamiSequence = {
+        KeyCode::Up, KeyCode::Up, KeyCode::Down, KeyCode::Down,
+        KeyCode::Left, KeyCode::Right, KeyCode::Left, KeyCode::Right,
+        KeyCode::B, KeyCode::A
+    };
+    int             m_konamiIndex = 0;
+
+    Entity          m_cheatTextEntity = NULL_ENTITY;
+    float           m_cheatTimer = 0.0f;
 
     BallState   m_ballState = BallState::Spawning;
 
@@ -92,6 +119,9 @@ private:
     int     m_lives = 3;
     int     m_brickCount = 0;
     float   m_heartsAlpha = 0.0f;
+    Entity  m_fsBtn = NULL_ENTITY;
+    Entity  m_shaderBtn = NULL_ENTITY;
+    Entity  m_particlesBtn = NULL_ENTITY;
 
     std::unique_ptr<TextFeedback> m_textFeedback;
 

@@ -8,6 +8,12 @@ enum class WindowMode
     Borderless
 };
 
+struct Resolution
+{
+    unsigned int Width = 0;
+    unsigned int Height = 0;
+};
+
 struct WindowConfig
 {
     unsigned int    Width   =  2560;

@@ -15,6 +15,7 @@ namespace Rule
     enum class Graphics : uint32_t
     {
         EnableShader = 0x1000,
+        EnableParticles,
         Fullscreen
     };
 
