@@ -927,12 +927,16 @@ void GameScene::CreateAudioTab(const GameContext& context)
         .OnMinus = [&]() {
             float vol = std::max(0.0f, context.Audio.GetSfxVolume() - 10.0f);
             context.Audio.SetSfxVolume(vol);
+            PlayerPrefs::SetFloat("SfxVolume", vol);
+            PlayerPrefs::Save();
             context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .OnPlus = [&]() {
             float vol = std::min(100.0f, context.Audio.GetSfxVolume() + 10.0f);
             context.Audio.SetSfxVolume(vol);
+            PlayerPrefs::SetFloat("SfxVolume", vol);
+            PlayerPrefs::Save();
             context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
@@ -946,11 +950,15 @@ void GameScene::CreateAudioTab(const GameContext& context)
         .OnMinus = [&]() {
             float vol = std::max(0.0f, context.Audio.GetMusicVolume() - 10.0f);
             context.Audio.SetMusicVolume(vol);
+            PlayerPrefs::SetFloat("MusicVolume", vol);
+            PlayerPrefs::Save();
             UpdateVolumeBars(m_musicVolumeBars, vol);
         },
         .OnPlus = [&]() {
             float vol = std::min(100.0f, context.Audio.GetMusicVolume() + 10.0f);
             context.Audio.SetMusicVolume(vol);
+            PlayerPrefs::SetFloat("MusicVolume", vol);
+            PlayerPrefs::Save();
             UpdateVolumeBars(m_musicVolumeBars, vol);
         },
         .BarsOut = &m_musicVolumeBars,

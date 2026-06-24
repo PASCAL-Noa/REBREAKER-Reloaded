@@ -37,6 +37,12 @@ int main()
     ResourceManager resourceManager;
     Renderer renderer(window, resourceManager);
     AudioMixer audioMixer(resourceManager);
+    
+    float sfxVol = PlayerPrefs::GetFloat("SfxVolume", 100.0f);
+    float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
+    audioMixer.SetSfxVolume(sfxVol);
+    audioMixer.SetMusicVolume(musicVol);
+
     EventDispatcher eventDispatcher;
 
     GameData gameData;
@@ -47,8 +53,7 @@ int main()
     GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager, audioMixer, eventDispatcher, rules, time };
     
     CheatManager cheatManager(context);
-    
-    // Globally register rules so they are available in MenuScene and loaded from PlayerPrefs
+
     context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", true, RuleAccess::Public);
     context.Rules.RegisterRule(Rule::Graphics::EnableParticles, "Toggle Particles", true, RuleAccess::Public);
     context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toggle Hitbox", false, RuleAccess::Private);
