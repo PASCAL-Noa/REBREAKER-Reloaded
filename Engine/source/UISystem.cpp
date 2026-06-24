@@ -197,7 +197,7 @@ void UISystem::OnUpdate(float dt, Registry& registry, const GameContext& context
     UpdateDropdowns(registry, context, logicalMousePos, viewSize);
 }
 
-void UISystem::RenderPanelAndButton(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform)
+void UISystem::RenderPanel(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform)
 {
     if (!registry.HasComponent<PanelComponent>(entity)) return;
 
@@ -205,31 +205,57 @@ void UISystem::RenderPanelAndButton(Registry& registry, const GameContext& conte
     Color tint = panel.Tint;
     uint32_t tex = panel.TextureId;
 
-    if (registry.HasComponent<ButtonComponent>(entity))
+    if (tex != 0)
     {
-        const auto& button = registry.GetComponent<ButtonComponent>(entity);
-        if (button.State == ButtonState::Hovered)
+        SpriteComponent sprite{tex};
+        sprite.Tint = tint;
+
+        Vector2f texSize = context.Render.GetTextureSize(tex);
+        if (texSize.X > 0 && texSize.Y > 0)
         {
-            tint = button.HoverColor;
-            if (button.HoverTextureId)
-                tex = button.HoverTextureId;
-            else if (button.DefaultTextureId)
-                tex = button.DefaultTextureId;
+            drawTransform.Scale = Vector2f{transform.Size.X / texSize.X, transform.Size.Y / texSize.Y};
         }
-        else if (button.State == ButtonState::Pressed)
-        {
-            tint = button.PressedColor;
-            if (button.PressedTextureId)
-                tex = button.PressedTextureId;
-            else if (button.DefaultTextureId)
-                tex = button.DefaultTextureId;
-        }
-        else
-        {
-            tint = button.DefaultColor;
-            if (button.DefaultTextureId)
-                tex = button.DefaultTextureId;
-        }
+        context.Render.DrawSprite(sprite, drawTransform);
+        drawTransform.Scale = Vector2f{1.0f, 1.0f};
+    }
+    else
+    {
+        context.Render.DrawRectangle(transform.Size.X, transform.Size.Y, drawTransform, tint);
+    }
+}
+
+void UISystem::RenderButton(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform)
+{
+    if (!registry.HasComponent<ButtonComponent>(entity)) return;
+
+    if (!registry.HasComponent<PanelComponent>(entity)) return;
+    const auto& panel = registry.GetComponent<PanelComponent>(entity);
+    
+    const auto& button = registry.GetComponent<ButtonComponent>(entity);
+    Color tint = panel.Tint;
+    uint32_t tex = panel.TextureId;
+
+    if (button.State == ButtonState::Hovered)
+    {
+        tint = button.HoverColor;
+        if (button.HoverTextureId)
+            tex = button.HoverTextureId;
+        else if (button.DefaultTextureId)
+            tex = button.DefaultTextureId;
+    }
+    else if (button.State == ButtonState::Pressed)
+    {
+        tint = button.PressedColor;
+        if (button.PressedTextureId)
+            tex = button.PressedTextureId;
+        else if (button.DefaultTextureId)
+            tex = button.DefaultTextureId;
+    }
+    else
+    {
+        tint = button.DefaultColor;
+        if (button.DefaultTextureId)
+            tex = button.DefaultTextureId;
     }
 
     if (tex != 0)
@@ -305,7 +331,15 @@ void UISystem::OnRender(Registry& registry, const GameContext& context)
         const Vector2f absolutePos = GetAbsolutePosition(registry, entity, transform, viewSize);
         Transform2D drawTransform{absolutePos};
 
-        RenderPanelAndButton(registry, context, entity, transform, drawTransform);
+        if (registry.HasComponent<ButtonComponent>(entity))
+        {
+            RenderButton(registry, context, entity, transform, drawTransform);
+        }
+        else if (registry.HasComponent<PanelComponent>(entity))
+        {
+            RenderPanel(registry, context, entity, transform, drawTransform);
+        }
+        
         RenderSprite(registry, context, entity, transform, drawTransform);
         RenderText(registry, context, entity, absolutePos);
     });

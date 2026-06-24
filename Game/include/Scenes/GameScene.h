@@ -65,7 +65,7 @@ private:
     void    OpenSettingsTab(Entity targetCanvas);
 
     void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
-    void    CheckKonamiCode(const GameContext& context);
+
 
     StateMachine<GameScene>*    mp_state_machine = nullptr;
     GameContext*    mp_context = nullptr;
@@ -85,6 +85,7 @@ private:
     uint32_t    m_bounceSfxId = 0;
     uint32_t    m_fireTexId = 0;
     uint32_t    m_heartTexId = 0;
+
     
     UISystem        m_uiSystem;
     Entity          m_uiCanvas = NULL_ENTITY;
@@ -101,16 +102,6 @@ private:
     std::vector<Entity> m_heartEntities;
     std::vector<Entity> m_sfxVolumeBars;
     std::vector<Entity> m_musicVolumeBars;
-
-    std::vector<KeyCode> m_konamiSequence = {
-        KeyCode::Up, KeyCode::Up, KeyCode::Down, KeyCode::Down,
-        KeyCode::Left, KeyCode::Right, KeyCode::Left, KeyCode::Right,
-        KeyCode::B, KeyCode::A
-    };
-    int             m_konamiIndex = 0;
-
-    Entity          m_cheatTextEntity = NULL_ENTITY;
-    float           m_cheatTimer = 0.0f;
 
     BallState   m_ballState = BallState::Spawning;
 
@@ -129,4 +120,5 @@ private:
     ScoreManager       m_scoreManager{"save.dat"};
     uint32_t    m_combo = 0;
     PlaylistManager     m_playlist;
+    float m_cheatTimer;
 };

@@ -51,12 +51,6 @@ void GameScene::OnInit(GameContext& context)
     DefaultScene::OnInit(context);
     mp_context = &context;
 
-    context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", true, RuleAccess::Public);
-    context.Rules.RegisterRule(Rule::Graphics::EnableParticles, "Toggle Particles", true, RuleAccess::Public);
-    context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toggle Hitbox", false, RuleAccess::Private);
-    context.Rules.RegisterRule(Rule::Gameplay::Invincible, "God mod", false, RuleAccess::Private);
-    context.Rules.RegisterRule(Rule::Gameplay::InfiniteLives, "Infinite lives", false, RuleAccess::Private);
-
     auto& camera = m_registry.GetComponent<Camera2D>(m_camera);
     context.Render.SetCamera(camera);
 
@@ -71,6 +65,8 @@ void GameScene::OnInit(GameContext& context)
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
     m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
+
+
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
@@ -236,13 +232,8 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         }
     }
 
-    if (m_cheatTimer > 0.0f) {
-        m_cheatTimer -= dt;
-        if (m_cheatTimer <= 0.0f && m_cheatTextEntity != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_cheatTextEntity)) {
-            m_registry.GetComponent<RectTransform>(m_cheatTextEntity).IsActive = false;
-        }
-    }
-
+    UISystem::OnUpdate(dt, m_registry, context);
+    
     if (currentState == static_cast<int>(SceneState::Playing))
     {
         HandleInput(dt, context);
@@ -446,8 +437,6 @@ void GameScene::FullReset()
 
 void GameScene::HandleInput(const float dt, const GameContext& context)
 {
-    CheckKonamiCode(context);
-
     auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
     constexpr float speed = 700.0f;
 
@@ -456,7 +445,6 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
         bool shader = context.Rules.GetRule(Rule::Graphics::EnableShader);
         context.Rules.SetRule(Rule::Graphics::EnableShader, !shader);
     }
-
     if (context.Input.IsKeyPress(KeyCode::G))
     {
         const bool debug = context.Rules.GetRule(Rule::Debug::ShowCollider);
@@ -902,17 +890,6 @@ void GameScene::CreateSettingsLayout(const GameContext& context)
         .FontId = m_fontId
     });
 
-    // Cheat Text (Hidden by default)
-    m_cheatTextEntity = UIFactory::CreateText(m_registry, m_settingsLayoutCanvas, TextDescriptor{
-        .Text = "CHEAT UNLOCKED!",
-        .Position = {0.0f, viewY * 0.45f},
-        .FontId = m_fontId,
-        .FontSize = 40.0f,
-        .Tint = Colors::Yellow
-    });
-
-    m_registry.GetComponent<RectTransform>(m_cheatTextEntity).IsActive = false;
-
     UIFactory::CreatePanel(m_registry, m_settingsLayoutCanvas, PanelDescriptor{
         .Position = {0.0f, 0.0f},
         .Size = {viewX + 300, viewY + 350},
@@ -1205,38 +1182,5 @@ void GameScene::OpenSettingsTab(Entity targetCanvas)
     }
 }
 
-void GameScene::CheckKonamiCode(const GameContext& context)
-{
-    if (m_konamiSequence.empty()) return;
 
-    if (context.Input.IsKeyPress(m_konamiSequence[m_konamiIndex]))
-    {
-        m_konamiIndex++;
-        if (m_konamiIndex >= m_konamiSequence.size())
-        {
-            m_konamiIndex = 0;
-            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
-            
-            if (m_cheatTextEntity != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_cheatTextEntity))
-            {
-                m_registry.GetComponent<RectTransform>(m_cheatTextEntity).IsActive = true;
-                m_cheatTimer = 5.0f;
-            }
-        }
-    }
-    else
-    {
-        for (int i = 0; i < static_cast<int>(KeyCode::Count); ++i)
-        {
-            if (context.Input.IsKeyPress(static_cast<KeyCode>(i)))
-            {
-                m_konamiIndex = 0;
-                if (context.Input.IsKeyPress(m_konamiSequence[0])) {
-                    m_konamiIndex = 1;
-                }
-                break;
-            }
-        }
-    }
-}
 

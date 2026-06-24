@@ -1,4 +1,5 @@
 #include "Core/GameRules.h"
+#include "Core/PlayerPrefs.h"
 #ifdef _WIN32
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
@@ -19,10 +20,12 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #include "Core/Timer.h"
 #include "Core/Debug.h"
 #include "AudioMixer.h"
+#include "CheatManager.h"
 
 int main()
 {
     Debug::Init();
+    PlayerPrefs::Load();
     Debug::Info("Engine initialized successfully.");
 
     WindowConfig config{};
@@ -42,6 +45,15 @@ int main()
     Timer time(window.GetConfig().VSync ? 0 : window.GetConfig().MaxFPS);
 
     GameContext context{ inputManager, renderer, resourceManager, gameData, sceneManager, audioMixer, eventDispatcher, rules, time };
+    
+    CheatManager cheatManager(context);
+    
+    // Globally register rules so they are available in MenuScene and loaded from PlayerPrefs
+    context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", true, RuleAccess::Public);
+    context.Rules.RegisterRule(Rule::Graphics::EnableParticles, "Toggle Particles", true, RuleAccess::Public);
+    context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toggle Hitbox", false, RuleAccess::Private);
+    context.Rules.RegisterRule(Rule::Gameplay::Invincible, "God mod", false, RuleAccess::Private);
+    context.Rules.RegisterRule(Rule::Gameplay::InfiniteLives, "Infinite lives", false, RuleAccess::Private);
 
     sceneManager.LoadScene<MenuScene>();
 
@@ -53,10 +65,15 @@ int main()
         inputManager.Update();
         if (!window.PollEvents(inputManager)) break;
 
+        cheatManager.Update(time.GetDeltaTime(), context);
+
         sceneManager.Update(time.GetDeltaTime(), context);
 
         renderer.BeginDraw(sceneManager.GetClearColor());
         sceneManager.Render(context);
+        
+        cheatManager.Render(renderer);
+
         renderer.EndDraw(sceneManager.GetPostProcessShader());
     }
 

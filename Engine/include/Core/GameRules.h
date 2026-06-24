@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <vector>
 #include <cstdint>
+#include "PlayerPrefs.h"
 
 enum class RuleAccess : uint8_t
 {
@@ -48,7 +49,9 @@ public:
     {
         uint32_t rawId = static_cast<uint32_t>(id);
         uint32_t category = rawId & 0xF000;
-        m_rules[rawId] = { name, defaultValue, access, category };
+        
+        bool actualValue = PlayerPrefs::GetBool(name, defaultValue);
+        m_rules[rawId] = { name, actualValue, access, category };
     }
 
     template<typename E>
@@ -59,6 +62,8 @@ public:
         if (it != m_rules.end())
         {
             it->second.Value = value;
+            PlayerPrefs::SetBool(it->second.DisplayName, value);
+            PlayerPrefs::Save();
         }
     }
 

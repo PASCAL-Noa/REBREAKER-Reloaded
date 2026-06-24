@@ -155,7 +155,7 @@ Entity UIFactory::CreateDropdown(Registry& registry, Entity parent, const Dropdo
     Entity menuCanvas = registry.CreateEntity();
     registry.AddComponent<CanvasComponent>(menuCanvas, CanvasComponent{.IsEnabled = false});
     registry.AddComponent<RectTransform>(menuCanvas, RectTransform{
-        .Position = {0.0f, desc.Size.Y / 2.0f},
+        .Position = {0.0f, menuHeight / 2.0f},
         .Size = {desc.Size.X, menuHeight},
         .AnchorPoint = Anchor::BottomCenter,
         .Parent = dropdownHead
@@ -163,14 +163,14 @@ Entity UIFactory::CreateDropdown(Registry& registry, Entity parent, const Dropdo
 
     registry.GetComponent<RectTransform>(menuCanvas).AnchorPoint = Anchor::BottomCenter;
 
-    // Invisible blocker button to close the dropdown when clicking outside
     CreateButton(registry, menuCanvas, ButtonDescriptor{
         .Text = "",
         .OnClick = [&registry, menuCanvas, dropdownHead]() {
-            if (registry.HasComponent<CanvasComponent>(menuCanvas)) {
+            if (registry.HasComponent<CanvasComponent>(menuCanvas))
+            {
                 if (registry.HasComponent<ButtonComponent>(dropdownHead) &&
                     registry.GetComponent<ButtonComponent>(dropdownHead).State == ButtonState::Pressed) {
-                    return; // Let the dropdown head toggle handle it
+                    return;
                 }
                 registry.GetComponent<CanvasComponent>(menuCanvas).IsEnabled = false;
             }
