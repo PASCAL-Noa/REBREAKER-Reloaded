@@ -79,17 +79,17 @@ void UIFactory::CreateVolumeControl(Registry& registry, Entity parent, const Vol
     // Label
     CreateText(registry, parent, TextDescriptor{
         .Text = desc.Label,
-        .Position = {desc.Position.X, desc.Position.Y - 50.0f},
+        .Position = {desc.Position.X * 0.1f - 200.f, desc.Position.Y - 10.0f},
         .FontId = desc.FontId,
-        .FontSize = 30.0f
+        .FontSize = 34.0f
     });
 
     // Minus button
     CreateButton(registry, parent, ButtonDescriptor{
         .Text = "-",
         .OnClick = desc.OnMinus,
-        .Position = {desc.Position.X - 165.0f, desc.Position.Y},
-        .Size = {40.0f, 40.0f},
+        .Position = {desc.Position.X - 190.0f, desc.Position.Y},
+        .Size = {60.0f, 60.0f},
         .TextOffset = {-2.0f, -24.0f},
         .FontId = desc.FontId,
         .FontSize = 40.0f
@@ -106,16 +106,16 @@ void UIFactory::CreateVolumeControl(Registry& registry, Entity parent, const Vol
         if (desc.BarsOut)
         {
             desc.BarsOut->push_back(CreatePanel(registry, parent, PanelDescriptor{
-                .Position = {desc.Position.X - 115.0f + (i * 25.0f), desc.Position.Y},
-                .Size = {15.0f, 30.0f},
+                .Position = {desc.Position.X - 115.0f + (i * 65.0f), desc.Position.Y},
+                .Size = {45.0f, 70.0f},
                 .Tint = barColor
             }));
         }
         else
         {
             CreatePanel(registry, parent, PanelDescriptor{
-                .Position = {desc.Position.X - 115.0f + (i * 25.0f), desc.Position.Y},
-                .Size = {15.0f, 30.0f},
+                .Position = {desc.Position.X - 115.0f + (i * 65.0f), desc.Position.Y},
+                .Size = {45.0f, 70.0f},
                 .Tint = barColor
             });
         }
@@ -125,8 +125,8 @@ void UIFactory::CreateVolumeControl(Registry& registry, Entity parent, const Vol
     CreateButton(registry, parent, ButtonDescriptor{
         .Text = "+",
         .OnClick = desc.OnPlus,
-        .Position = {desc.Position.X + 165.0f, desc.Position.Y},
-        .Size = {40.0f, 40.0f},
+        .Position = {desc.Position.X + 545.0f, desc.Position.Y},
+        .Size = {60.0f, 60.0f},
         .TextOffset = {-2.0f, -20.0f},
         .FontId = desc.FontId,
         .FontSize = 40.0f

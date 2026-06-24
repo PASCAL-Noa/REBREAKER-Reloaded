@@ -834,7 +834,7 @@ void GameScene::CreateSettingsLayout(const GameContext& context)
     float viewY = context.Render.GetLogicalViewSize().Y - 350;
 
     float leftPanelWidth = viewX * 0.25f;
-    float leftPanelX = -viewX * 0.375f;
+    float leftPanelX = -viewX * 0.375f + 200.f;
 
     m_settingsLayoutCanvas = m_registry.CreateEntity();
     m_registry.AddComponent<CanvasComponent>(m_settingsLayoutCanvas, CanvasComponent{.IsEnabled = false});
@@ -923,7 +923,7 @@ void GameScene::CreateSettingsLayout(const GameContext& context)
     UIFactory::CreatePanel(m_registry, m_settingsLayoutCanvas, PanelDescriptor{
         .Position = {leftPanelX, 0.0f},
         .Size = {leftPanelWidth, viewY - 50},
-        .Tint = Color{30, 200, 30, 255}
+        .Tint = Colors::Transparent
     });
 }
 
@@ -960,7 +960,7 @@ void GameScene::CreateAudioTab(const GameContext& context)
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .BarsOut = &m_sfxVolumeBars,
-        .Position = {rightPanelX, -viewY * 0.1f + 20.f},
+        .Position = {rightPanelX * 0.5f, -viewY * 0.1f + 20.f},
         .FontId = m_fontId
     });
 
@@ -977,7 +977,7 @@ void GameScene::CreateAudioTab(const GameContext& context)
             UpdateVolumeBars(m_musicVolumeBars, vol);
         },
         .BarsOut = &m_musicVolumeBars,
-        .Position = {rightPanelX, viewY * 0.1f - 50.f},
+        .Position = {rightPanelX * 0.5f, viewY * 0.1f - 50.f},
         .FontId = m_fontId
     });
 
