@@ -51,7 +51,8 @@ void GameScene::OnInit(GameContext& context)
     DefaultScene::OnInit(context);
     mp_context = &context;
 
-    context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", false, RuleAccess::Public);
+    context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", true, RuleAccess::Public);
+    context.Rules.RegisterRule(Rule::Graphics::EnableParticles, "Toggle Particles", true, RuleAccess::Public);
     context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toggle Hitbox", false, RuleAccess::Private);
     context.Rules.RegisterRule(Rule::Gameplay::Invincible, "God mod", false, RuleAccess::Private);
     context.Rules.RegisterRule(Rule::Gameplay::InfiniteLives, "Infinite lives", false, RuleAccess::Private);
@@ -352,6 +353,10 @@ Entity GameScene::CreateWall(const float x, const float y, const float w, const 
 
 void GameScene::SpawnBleedParticles(const Vector2f& position)
 {
+    if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
+        return;
+    }
+
     static std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     
@@ -377,6 +382,10 @@ void GameScene::SpawnBleedParticles(const Vector2f& position)
 
 void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& color, const int count)
 {
+    if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
+        return;
+    }
+
     static std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> velDistX(-200.0f, 200.0f);
     std::uniform_real_distribution<float> velDistY(-200.0f, 200.0f);
@@ -1048,19 +1057,35 @@ void GameScene::CreateRenderTab(const GameContext& context)
         .FontId = m_fontId,
     });
     
-    UIFactory::CreateButton(m_registry, m_renderCanvas, ButtonDescriptor{
-        .Text = "SHADER",
-        // Todo OnClick -> Shader On/Off modifier depuis les gamerules
-        .Position = {rightPanelX - 150.0f, viewY * 0.1f},
-        .Size = {200.0f, 60.0f},
+    bool isShader = context.Rules.GetRule(Rule::Graphics::EnableShader);
+    std::string shaderText = isShader ? "SHADER: ON" : "SHADER: OFF";
+    m_shaderBtn = UIFactory::CreateButton(m_registry, m_renderCanvas, ButtonDescriptor{
+        .Text = shaderText,
+        .OnClick = [&context, this]() {
+            bool state = context.Rules.GetRule(Rule::Graphics::EnableShader);
+            context.Rules.SetRule(Rule::Graphics::EnableShader, !state);
+            if (m_registry.HasComponent<TextComponent>(m_shaderBtn)) {
+                m_registry.GetComponent<TextComponent>(m_shaderBtn).Text = !state ? "SHADER: ON" : "SHADER: OFF";
+            }
+        },
+        .Position = {rightPanelX - 250.0f, viewY * 0.1f},
+        .Size = {400.0f, 60.0f},
         .FontId = m_fontId
     });
     
-    UIFactory::CreateButton(m_registry, m_renderCanvas, ButtonDescriptor{
-        .Text = "PARTICLES",
-        // Todo OnClick -> Partcles On/Off modifier depuis les gamerules
-        .Position = {rightPanelX + 150.0f, viewY * 0.1f},
-        .Size = {200.0f, 60.0f},
+    bool isParticles = context.Rules.GetRule(Rule::Graphics::EnableParticles);
+    std::string particlesText = isParticles ? "PARTICLES: ON" : "PARTICLES: OFF";
+    m_particlesBtn = UIFactory::CreateButton(m_registry, m_renderCanvas, ButtonDescriptor{
+        .Text = particlesText,
+        .OnClick = [&context, this]() {
+            bool state = context.Rules.GetRule(Rule::Graphics::EnableParticles);
+            context.Rules.SetRule(Rule::Graphics::EnableParticles, !state);
+            if (m_registry.HasComponent<TextComponent>(m_particlesBtn)) {
+                m_registry.GetComponent<TextComponent>(m_particlesBtn).Text = !state ? "PARTICLES: ON" : "PARTICLES: OFF";
+            }
+        },
+        .Position = {rightPanelX + 250.0f, viewY * 0.1f},
+        .Size = {400.0f, 60.0f},
         .FontId = m_fontId
     });
 
