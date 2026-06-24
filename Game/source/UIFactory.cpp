@@ -3,6 +3,7 @@
 #include "ECS/Components/UI/TextComponent.h"
 #include "ECS/Components/UI/ButtonComponent.h"
 #include "ECS/Components/UI/CanvasComponent.h"
+#include "ECS/Components/UI/DropdownComponent.h"
 
 Entity UIFactory::CreatePanel(Registry& registry, Entity parent, const PanelDescriptor& desc)
 {
@@ -134,6 +135,9 @@ void UIFactory::CreateVolumeControl(Registry& registry, Entity parent, const Vol
 
 Entity UIFactory::CreateDropdown(Registry& registry, Entity parent, const DropdownDescriptor& desc)
 {
+    size_t displayCount = std::min(static_cast<size_t>(5), desc.Options.size());
+    float menuHeight = desc.Size.Y * displayCount;
+
     Entity dropdownHead = CreateButton(registry, parent, ButtonDescriptor{
         .Text = desc.DefaultText,
         .Position = desc.Position,
@@ -152,28 +156,47 @@ Entity UIFactory::CreateDropdown(Registry& registry, Entity parent, const Dropdo
     registry.AddComponent<CanvasComponent>(menuCanvas, CanvasComponent{.IsEnabled = false});
     registry.AddComponent<RectTransform>(menuCanvas, RectTransform{
         .Position = {0.0f, desc.Size.Y / 2.0f},
-        .Size = {desc.Size.X, desc.Size.Y * desc.Options.size()},
+        .Size = {desc.Size.X, menuHeight},
         .AnchorPoint = Anchor::BottomCenter,
         .Parent = dropdownHead
     });
 
     registry.GetComponent<RectTransform>(menuCanvas).AnchorPoint = Anchor::BottomCenter;
 
-    auto onSelect = desc.OnSelect;
-    for (size_t i = 0; i < desc.Options.size(); ++i)
+    // Invisible blocker button to close the dropdown when clicking outside
+    CreateButton(registry, menuCanvas, ButtonDescriptor{
+        .Text = "",
+        .OnClick = [&registry, menuCanvas, dropdownHead]() {
+            if (registry.HasComponent<CanvasComponent>(menuCanvas)) {
+                if (registry.HasComponent<ButtonComponent>(dropdownHead) &&
+                    registry.GetComponent<ButtonComponent>(dropdownHead).State == ButtonState::Pressed) {
+                    return; // Let the dropdown head toggle handle it
+                }
+                registry.GetComponent<CanvasComponent>(menuCanvas).IsEnabled = false;
+            }
+        },
+        .Position = {0.0f, 0.0f},
+        .Size = {8000.0f, 8000.0f},
+        .DefaultColor = Colors::Transparent,
+        .HoverColor = Colors::Transparent,
+        .PressedColor = Colors::Transparent,
+        .AnchorPoint = Anchor::Center
+    });
+
+    DropdownComponent dropdownComp;
+    dropdownComp.MaxVisible = 5;
+    dropdownComp.Options = desc.Options;
+    dropdownComp.HeadButton = dropdownHead;
+    dropdownComp.OnSelect = desc.OnSelect;
+
+    for (size_t i = 0; i < displayCount; ++i)
     {
         float yPos = desc.Size.Y * i + desc.Size.Y / 2.0f;
         std::string optionText = desc.Options[i];
 
-        CreateButton(registry, menuCanvas, ButtonDescriptor{
+        Entity btn = CreateButton(registry, menuCanvas, ButtonDescriptor{
             .Text = optionText,
-            .OnClick = [&registry, dropdownHead, menuCanvas, onSelect, i, optionText]() {
-                if (onSelect) onSelect(static_cast<int>(i), optionText);
-                if (registry.HasComponent<TextComponent>(dropdownHead)) {
-                    registry.GetComponent<TextComponent>(dropdownHead).Text = optionText;
-                }
-                registry.GetComponent<CanvasComponent>(menuCanvas).IsEnabled = false;
-            },
+            .OnClick = nullptr,
             .Position = {0.0f, yPos},
             .Size = {desc.Size.X, desc.Size.Y},
             .DefaultColor = Color{40, 40, 40, 255},
@@ -184,11 +207,51 @@ Entity UIFactory::CreateDropdown(Registry& registry, Entity parent, const Dropdo
             .FontSize = desc.FontSize * 0.8f,
             .AnchorPoint = Anchor::TopCenter
         });
+        dropdownComp.OptionButtons.push_back(btn);
     }
     
+    // Initial setup of buttons
+    for (size_t i = 0; i < dropdownComp.OptionButtons.size(); ++i) {
+        int index = dropdownComp.ScrollOffset + i;
+        if (index < dropdownComp.Options.size()) {
+            registry.GetComponent<TextComponent>(dropdownComp.OptionButtons[i]).Text = dropdownComp.Options[index];
+            auto optionText = dropdownComp.Options[index];
+            auto onSelect = dropdownComp.OnSelect;
+            registry.GetComponent<ButtonComponent>(dropdownComp.OptionButtons[i]).OnClick = [&registry, dropdownHead, menuCanvas, onSelect, index, optionText]() {
+                if (onSelect) onSelect(index, optionText);
+                if (registry.HasComponent<TextComponent>(dropdownHead)) {
+                    registry.GetComponent<TextComponent>(dropdownHead).Text = optionText;
+                }
+                registry.GetComponent<CanvasComponent>(menuCanvas).IsEnabled = false;
+            };
+        }
+    }
+
+    if (desc.Options.size() > displayCount) {
+        // Create Scrollbar background
+        CreatePanel(registry, menuCanvas, PanelDescriptor{
+            .Position = {desc.Size.X / 2.0f + 10.0f, menuHeight / 2.0f},
+            .Size = {8.0f, menuHeight},
+            .Tint = Color{30, 30, 30, 200},
+            .AnchorPoint = Anchor::TopCenter
+        });
+        
+        // Create Scrollbar fill
+        float fillHeight = menuHeight * ((float)displayCount / desc.Options.size());
+        Entity scrollFill = CreatePanel(registry, menuCanvas, PanelDescriptor{
+            .Position = {desc.Size.X / 2.0f + 10.0f, fillHeight / 2.0f},
+            .Size = {8.0f, fillHeight},
+            .Tint = Color{150, 150, 150, 255},
+            .AnchorPoint = Anchor::TopCenter
+        });
+        dropdownComp.ScrollbarFill = scrollFill;
+    }
+
+    registry.AddComponent<DropdownComponent>(menuCanvas, dropdownComp);
+
     CreatePanel(registry, menuCanvas, PanelDescriptor{
-        .Position = {0.0f, (desc.Size.Y * desc.Options.size()) / 2.0f},
-        .Size = {desc.Size.X, desc.Size.Y * desc.Options.size()},
+        .Position = {0.0f, menuHeight / 2.0f},
+        .Size = {desc.Size.X, menuHeight},
         .Tint = Color{20, 20, 20, 240},
         .AnchorPoint = Anchor::TopCenter
     });

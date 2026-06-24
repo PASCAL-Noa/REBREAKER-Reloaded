@@ -4,6 +4,7 @@ void InputManager::Update()
 {
     m_previousKeys = m_currentKeys;
     m_previousMouse = m_currentMouse;
+    m_mouseWheelDelta = 0.0f;
 }
 
 void InputManager::SetKeyState(const KeyCode key, const bool isDown)
@@ -51,12 +52,23 @@ bool InputManager::IsMouseButtonRelease(const MouseButton button) const
     return !m_currentMouse[index] && m_previousMouse[index];
 }
 
-void InputManager::SetMousePosition(float x, float y)
+void InputManager::SetMousePosition(const float x, const float y)
 {
-    m_mousePosition = {x, y};
+    m_mousePosition.first = x;
+    m_mousePosition.second = y;
 }
 
 const std::pair<float, float>& InputManager::GetMousePosition() const
 {
     return m_mousePosition;
+}
+
+void InputManager::SetMouseWheelDelta(float delta)
+{
+    m_mouseWheelDelta = delta;
+}
+
+float InputManager::GetMouseWheelDelta() const
+{
+    return m_mouseWheelDelta;
 }
