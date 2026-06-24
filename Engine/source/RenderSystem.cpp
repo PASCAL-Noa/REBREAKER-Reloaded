@@ -7,14 +7,11 @@
 #include "ECS/Components/CircleCollider.h"
 #include "Graphics/Renderer.h"
 
-RenderSystem::RenderSystem(Registry& registry, Renderer& renderer)
-    : System(registry), m_renderer(renderer)
-{
-}
+RenderSystem::RenderSystem(Registry& registry, Renderer& renderer) : System(registry), m_renderer(renderer) {}
 
 void RenderSystem::OnRender()
 {
-    m_registry.View<Transform2D, SpriteComponent>([this](Entity e, Transform2D& transform, SpriteComponent& sprite)
+    m_registry.View<Transform2D, SpriteComponent>([this](const Entity e, const Transform2D& transform, const SpriteComponent& sprite)
     {
         float scaleX = transform.Scale.X;
         float scaleY = transform.Scale.Y;
@@ -41,7 +38,7 @@ void RenderSystem::OnRender()
         Transform2D renderTransform = transform;
         renderTransform.Scale = {scaleX, scaleY};
 
-        m_renderer.DrawSprite(sprite.TextureId, renderTransform, sprite.Tint, BlendMode::Alpha, sprite.ShaderId, sprite.OverlayTextureId, sprite.ShaderValue);
+        m_renderer.DrawSprite(sprite, renderTransform, BlendMode::Alpha);
     });
 }
 

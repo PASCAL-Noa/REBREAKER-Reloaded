@@ -55,3 +55,9 @@ uint32_t SceneManager::GetPostProcessShader() const
     return m_currentScene ? m_currentScene->GetPostProcessShader() : 0;
 }
 
+Color SceneManager::GetClearColor() const
+{
+    return m_currentScene ? m_currentScene->GetClearColor() : Colors::Black;
+}
+
+

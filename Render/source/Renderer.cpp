@@ -47,9 +47,17 @@ Renderer::Renderer(Window& window, ResourceManager& resources) : m_window(window
     m_renderTexture.setSmooth(true);
 }
 
-void Renderer::BeginDraw()
+void Renderer::BeginDraw(Color clearColor)
 {
-    m_renderTexture.clear();
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    if (m_renderTexture.getSize() != winSize && winSize.x > 0 && winSize.y > 0)
+    {
+        sf::ContextSettings settings;
+        settings.antiAliasingLevel = 32;
+        (void)m_renderTexture.resize(winSize, settings);
+        m_renderTexture.setSmooth(true);
+    }
+    m_renderTexture.clear(sf::Color(clearColor.r, clearColor.g, clearColor.b, clearColor.a));
 }
 
 void Renderer::EndDraw(uint32_t postProcessShaderId)
@@ -57,6 +65,10 @@ void Renderer::EndDraw(uint32_t postProcessShaderId)
     m_renderTexture.display();
 
     m_window.Clear();
+
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    m_window.GetNative().setView(sf::View(sf::FloatRect({0.f, 0.f}, {static_cast<float>(winSize.x), static_cast<float>(winSize.y)})));
+    
     sf::Sprite renderSprite(m_renderTexture.getTexture());
 
     if (postProcessShaderId != 0 && m_resources.Get<sf::Shader>(postProcessShaderId) != nullptr)
@@ -74,7 +86,12 @@ void Renderer::EndDraw(uint32_t postProcessShaderId)
 
 void Renderer::SetCamera(const Camera2D& camera)
 {
-    sf::View view = m_renderTexture.getDefaultView();
+    float targetHeight = 1600.0f;
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
+    float targetWidth = targetHeight * aspect;
+
+    sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(targetWidth, targetHeight));
     view.setCenter({camera.Position.X, camera.Position.Y});
     view.setRotation(sf::degrees(camera.Rotation));
     view.zoom(camera.Zoom);
@@ -83,47 +100,90 @@ void Renderer::SetCamera(const Camera2D& camera)
 
 void Renderer::ResetCamera()
 {
-    m_renderTexture.setView(m_renderTexture.getDefaultView());
+    float targetHeight = 1600.0f;
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
+    float targetWidth = targetHeight * aspect;
+
+    sf::View view(sf::Vector2f(targetWidth / 2.0f, targetHeight / 2.0f), sf::Vector2f(targetWidth, targetHeight));
+    m_renderTexture.setView(view);
 }
 
-void Renderer::DrawSprite(uint32_t textureId, const Transform2D& transform, Color color, BlendMode blendMode, uint32_t shaderId, uint32_t overlayTexId, float shaderValue)
+Vector2f Renderer::GetLogicalViewSize() const
 {
-    if (sf::Texture* tex = m_resources.Get<sf::Texture>(textureId))
+    float targetHeight = 1600.0f;
+    sf::Vector2u winSize = m_window.GetNative().getSize();
+    float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
+    return Vector2f{targetHeight * aspect, targetHeight};
+}
+
+Vector2f Renderer::MapPixelToCoords(const Vector2f& pixelPos) const
+{
+    sf::Vector2f mapped = m_renderTexture.mapPixelToCoords(sf::Vector2i(static_cast<int>(pixelPos.X), static_cast<int>(pixelPos.Y)));
+    return Vector2f{mapped.x, mapped.y};
+}
+
+Vector2f Renderer::MapCoordsToPixel(const Vector2f& coords) const
+{
+    sf::Vector2i mapped = m_renderTexture.mapCoordsToPixel(sf::Vector2f(coords.X, coords.Y));
+    return Vector2f{static_cast<float>(mapped.x), static_cast<float>(mapped.y)};
+}
+
+void Renderer::DrawSprite(const SpriteComponent& spriteData, const Transform2D& transform, BlendMode blendMode)
+{
+    sf::Texture* tex = m_resources.Get<sf::Texture>(spriteData.TextureId);
+    if (!tex) return;
+
+    sf::Sprite sprite(*tex);
+
+    if (spriteData.TextureRect)
     {
-        sf::Sprite sprite(*tex);
-
-        sprite.setOrigin({tex->getSize().x / 2.0f, tex->getSize().y / 2.0f});
-
-        ApplyTransform(sprite, transform);
-        sprite.setColor(ToSfColor(color));
-
-        sf::RenderStates states;
-        states.blendMode = ToSfBlendMode(blendMode);
-        if (shaderId != 0)
-        {
-            sf::Shader* shader = m_resources.Get<sf::Shader>(shaderId);
-            if (shader)
-            {
-                shader->setUniform("color", sf::Glsl::Vec4(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f));
-                shader->setUniform("crack_amount", shaderValue);
-                if (overlayTexId != 0)
-                {
-                    sf::Texture* crackTex = m_resources.Get<sf::Texture>(overlayTexId);
-                    if (crackTex)
-                    {
-                        shader->setUniform("crack_texture", *crackTex);
-                    }
-                }
-                states.shader = shader;
-            }
-        }
-        m_renderTexture.draw(sprite, states);
+        sprite.setTextureRect(sf::IntRect({spriteData.TextureRect->Left, spriteData.TextureRect->Top}, {spriteData.TextureRect->Width, spriteData.TextureRect->Height}));
+        if (spriteData.Origin) 
+            sprite.setOrigin({spriteData.Origin->X, spriteData.Origin->Y});
+        else 
+            sprite.setOrigin({spriteData.TextureRect->Width / 2.0f, spriteData.TextureRect->Height / 2.0f});
     }
+    else
+    {
+        if (spriteData.Origin) 
+            sprite.setOrigin({spriteData.Origin->X, spriteData.Origin->Y});
+        else 
+            sprite.setOrigin({tex->getSize().x / 2.0f, tex->getSize().y / 2.0f});
+    }
+
+    ApplyTransform(sprite, transform);
+    sprite.setColor(ToSfColor(spriteData.Tint));
+
+    sf::RenderStates states;
+    states.blendMode = ToSfBlendMode(blendMode);
+
+    if (spriteData.Shader.ShaderId != 0)
+    {
+        sf::Shader* shader = m_resources.Get<sf::Shader>(spriteData.Shader.ShaderId);
+        if (shader)
+        {
+            shader->setUniform("color", sf::Glsl::Vec4(spriteData.Tint.r / 255.f, spriteData.Tint.g / 255.f, spriteData.Tint.b / 255.f, spriteData.Tint.a / 255.f));
+            shader->setUniform("crack_amount", spriteData.Shader.ShaderValue);
+            
+            if (spriteData.Shader.OverlayTextureId != 0)
+            {
+                if (sf::Texture* crackTex = m_resources.Get<sf::Texture>(spriteData.Shader.OverlayTextureId))
+                {
+                    shader->setUniform("crack_texture", *crackTex);
+                }
+            }
+            states.shader = shader;
+        }
+    }
+    
+    m_renderTexture.draw(sprite, states);
 }
 
 void Renderer::DrawCircle(float radius, const Transform2D& transform, Color color, BlendMode blendMode)
 {
     sf::CircleShape circle(radius);
+    circle.setOrigin({radius, radius});
     ApplyTransform(circle, transform);
     circle.setFillColor(ToSfColor(color));
     RenderItem(m_renderTexture, circle, blendMode);
@@ -132,6 +192,7 @@ void Renderer::DrawCircle(float radius, const Transform2D& transform, Color colo
 void Renderer::DrawRectangle(float width, float height, const Transform2D& transform, Color color, BlendMode blendMode)
 {
     sf::RectangleShape rect({width, height});
+    rect.setOrigin({width / 2.0f, height / 2.0f});
     ApplyTransform(rect, transform);
     rect.setFillColor(ToSfColor(color));
     RenderItem(m_renderTexture, rect, blendMode);
@@ -146,6 +207,17 @@ void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize
         sfText.setFillColor(ToSfColor(color));
         RenderItem(m_renderTexture, sfText, blendMode);
     }
+}
+
+Vector2f Renderer::GetTextSize(const std::string& text, uint32_t fontId, float fontSize) const
+{
+    if (sf::Font* font = m_resources.Get<sf::Font>(fontId))
+    {
+        sf::Text sfText(*font, text, static_cast<unsigned int>(fontSize));
+        sf::FloatRect bounds = sfText.getLocalBounds();
+        return {bounds.size.x, bounds.size.y};
+    }
+    return {0.0f, 0.0f};
 }
 
 void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType type, uint32_t textureId, BlendMode blendMode)

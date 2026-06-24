@@ -1,0 +1,268 @@
+#include "UI/UIFactory.h"
+#include "ECS/Components/UI/PanelComponent.h"
+#include "ECS/Components/UI/TextComponent.h"
+#include "ECS/Components/UI/ButtonComponent.h"
+#include "ECS/Components/UI/CanvasComponent.h"
+#include "ECS/Components/UI/DropdownComponent.h"
+
+Entity UIFactory::CreatePanel(Registry& registry, Entity parent, const PanelDescriptor& desc)
+{
+    Entity entity = registry.CreateEntity();
+    registry.AddComponent<RectTransform>(entity, RectTransform{
+        .Position = desc.Position,
+        .Size = desc.Size,
+        .AnchorPoint = desc.AnchorPoint,
+        .Parent = parent
+    });
+    registry.AddComponent<PanelComponent>(entity, PanelComponent{
+        .Tint = desc.Tint,
+        .TextureId = desc.TextureId
+    });
+    return entity;
+}
+
+Entity UIFactory::CreateText(Registry& registry, Entity parent, const TextDescriptor& desc)
+{
+    Entity entity = registry.CreateEntity();
+    registry.AddComponent<RectTransform>(entity, RectTransform{
+        .Position = desc.Position,
+        .Size = {0.0f, 0.0f}, // Text generally auto-sizes or doesn't need strict Rect bounds unless word-wrapping
+        .AnchorPoint = desc.AnchorPoint,
+        .Parent = parent
+    });
+    registry.AddComponent<TextComponent>(entity, TextComponent{
+        .Text = desc.Text,
+        .FontId = desc.FontId,
+        .FontSize = desc.FontSize,
+        .Tint = desc.Tint,
+        .TextCenter = desc.TextCenter,
+        .Offset = desc.Offset
+    });
+    return entity;
+}
+
+Entity UIFactory::CreateButton(Registry& registry, Entity parent, const ButtonDescriptor& desc)
+{
+    Entity entity = registry.CreateEntity();
+    registry.AddComponent<RectTransform>(entity, RectTransform{
+        .Position = desc.Position,
+        .Size = desc.Size,
+        .AnchorPoint = desc.AnchorPoint,
+        .Parent = parent
+    });
+    registry.AddComponent<PanelComponent>(entity, PanelComponent{
+        .TextureId = desc.TextureId
+    });
+    registry.AddComponent<ButtonComponent>(entity, ButtonComponent{
+        .DefaultColor = desc.DefaultColor,
+        .HoverColor = desc.HoverColor,
+        .PressedColor = desc.PressedColor,
+        .OnClick = desc.OnClick
+    });
+    
+    if (!desc.Text.empty())
+    {
+        registry.AddComponent<TextComponent>(entity, TextComponent{
+            .Text = desc.Text,
+            .FontId = desc.FontId,
+            .FontSize = desc.FontSize,
+            .Tint = desc.TextColor,
+            .Offset = desc.TextOffset
+        });
+    }
+    
+    return entity;
+}
+
+void UIFactory::CreateVolumeControl(Registry& registry, Entity parent, const VolumeControlDescriptor& desc)
+{
+    // Label
+    CreateText(registry, parent, TextDescriptor{
+        .Text = desc.Label,
+        .Position = {desc.Position.X * 0.1f - 200.f, desc.Position.Y - 10.0f},
+        .FontId = desc.FontId,
+        .FontSize = 34.0f
+    });
+
+    // Minus button
+    CreateButton(registry, parent, ButtonDescriptor{
+        .Text = "-",
+        .OnClick = desc.OnMinus,
+        .Position = {desc.Position.X - 190.0f, desc.Position.Y},
+        .Size = {60.0f, 60.0f},
+        .TextOffset = {-2.0f, -24.0f},
+        .FontId = desc.FontId,
+        .FontSize = 40.0f
+    });
+
+    // Bars
+    for (int i = 0; i < 10; ++i)
+    {
+        Color barColor = Colors::Green;
+        if (i >= 5 && i < 8) barColor = Colors::Yellow;
+        else if (i == 8) barColor = Colors::Orange;
+        else if (i == 9) barColor = Colors::Red;
+
+        if (desc.BarsOut)
+        {
+            desc.BarsOut->push_back(CreatePanel(registry, parent, PanelDescriptor{
+                .Position = {desc.Position.X - 115.0f + (i * 65.0f), desc.Position.Y},
+                .Size = {45.0f, 70.0f},
+                .Tint = barColor
+            }));
+        }
+        else
+        {
+            CreatePanel(registry, parent, PanelDescriptor{
+                .Position = {desc.Position.X - 115.0f + (i * 65.0f), desc.Position.Y},
+                .Size = {45.0f, 70.0f},
+                .Tint = barColor
+            });
+        }
+    }
+
+    // Plus button
+    CreateButton(registry, parent, ButtonDescriptor{
+        .Text = "+",
+        .OnClick = desc.OnPlus,
+        .Position = {desc.Position.X + 545.0f, desc.Position.Y},
+        .Size = {60.0f, 60.0f},
+        .TextOffset = {-2.0f, -20.0f},
+        .FontId = desc.FontId,
+        .FontSize = 40.0f
+    });
+}
+
+Entity UIFactory::CreateDropdown(Registry& registry, Entity parent, const DropdownDescriptor& desc)
+{
+    size_t displayCount = std::min(static_cast<size_t>(5), desc.Options.size());
+    float menuHeight = desc.Size.Y * displayCount;
+
+    Entity dropdownHead = CreateButton(registry, parent, ButtonDescriptor{
+        .Text = desc.DefaultText,
+        .Position = desc.Position,
+        .Size = desc.Size,
+        .DefaultColor = desc.DefaultColor,
+        .HoverColor = desc.HoverColor,
+        .PressedColor = desc.PressedColor,
+        .TextColor = desc.TextColor,
+        .FontId = desc.FontId,
+        .FontSize = desc.FontSize,
+        .AnchorPoint = desc.AnchorPoint,
+        .TextureId = desc.TextureId
+    });
+
+    Entity menuCanvas = registry.CreateEntity();
+    registry.AddComponent<CanvasComponent>(menuCanvas, CanvasComponent{.IsEnabled = false});
+    registry.AddComponent<RectTransform>(menuCanvas, RectTransform{
+        .Position = {0.0f, menuHeight / 2.0f},
+        .Size = {desc.Size.X, menuHeight},
+        .AnchorPoint = Anchor::BottomCenter,
+        .Parent = dropdownHead
+    });
+
+    registry.GetComponent<RectTransform>(menuCanvas).AnchorPoint = Anchor::BottomCenter;
+
+    CreateButton(registry, menuCanvas, ButtonDescriptor{
+        .Text = "",
+        .OnClick = [&registry, menuCanvas, dropdownHead]() {
+            if (registry.HasComponent<CanvasComponent>(menuCanvas))
+            {
+                if (registry.HasComponent<ButtonComponent>(dropdownHead) &&
+                    registry.GetComponent<ButtonComponent>(dropdownHead).State == ButtonState::Pressed) {
+                    return;
+                }
+                registry.GetComponent<CanvasComponent>(menuCanvas).IsEnabled = false;
+            }
+        },
+        .Position = {0.0f, 0.0f},
+        .Size = {8000.0f, 8000.0f},
+        .DefaultColor = Colors::Transparent,
+        .HoverColor = Colors::Transparent,
+        .PressedColor = Colors::Transparent,
+        .AnchorPoint = Anchor::Center
+    });
+
+    DropdownComponent dropdownComp;
+    dropdownComp.MaxVisible = 5;
+    dropdownComp.Options = desc.Options;
+    dropdownComp.HeadButton = dropdownHead;
+    dropdownComp.OnSelect = desc.OnSelect;
+
+    for (size_t i = 0; i < displayCount; ++i)
+    {
+        float yPos = desc.Size.Y * i + desc.Size.Y / 2.0f;
+        std::string optionText = desc.Options[i];
+
+        Entity btn = CreateButton(registry, menuCanvas, ButtonDescriptor{
+            .Text = optionText,
+            .OnClick = nullptr,
+            .Position = {0.0f, yPos},
+            .Size = {desc.Size.X, desc.Size.Y},
+            .DefaultColor = Color{40, 40, 40, 255},
+            .HoverColor = Color{80, 80, 80, 255},
+            .PressedColor = Color{20, 20, 20, 255},
+            .TextColor = Colors::White,
+            .FontId = desc.FontId,
+            .FontSize = desc.FontSize * 0.8f,
+            .AnchorPoint = Anchor::TopCenter
+        });
+        dropdownComp.OptionButtons.push_back(btn);
+    }
+    
+    // Initial setup of buttons
+    for (size_t i = 0; i < dropdownComp.OptionButtons.size(); ++i) {
+        int index = dropdownComp.ScrollOffset + i;
+        if (index < dropdownComp.Options.size()) {
+            registry.GetComponent<TextComponent>(dropdownComp.OptionButtons[i]).Text = dropdownComp.Options[index];
+            auto optionText = dropdownComp.Options[index];
+            auto onSelect = dropdownComp.OnSelect;
+            registry.GetComponent<ButtonComponent>(dropdownComp.OptionButtons[i]).OnClick = [&registry, dropdownHead, menuCanvas, onSelect, index, optionText]() {
+                if (onSelect) onSelect(index, optionText);
+                if (registry.HasComponent<TextComponent>(dropdownHead)) {
+                    registry.GetComponent<TextComponent>(dropdownHead).Text = optionText;
+                }
+                registry.GetComponent<CanvasComponent>(menuCanvas).IsEnabled = false;
+            };
+        }
+    }
+
+    if (desc.Options.size() > displayCount) {
+        // Create Scrollbar background
+        CreatePanel(registry, menuCanvas, PanelDescriptor{
+            .Position = {desc.Size.X / 2.0f + 10.0f, menuHeight / 2.0f},
+            .Size = {8.0f, menuHeight},
+            .Tint = Color{30, 30, 30, 200},
+            .AnchorPoint = Anchor::TopCenter
+        });
+        
+        // Create Scrollbar fill
+        float fillHeight = menuHeight * ((float)displayCount / desc.Options.size());
+        Entity scrollFill = CreatePanel(registry, menuCanvas, PanelDescriptor{
+            .Position = {desc.Size.X / 2.0f + 10.0f, fillHeight / 2.0f},
+            .Size = {8.0f, fillHeight},
+            .Tint = Color{150, 150, 150, 255},
+            .AnchorPoint = Anchor::TopCenter
+        });
+        dropdownComp.ScrollbarFill = scrollFill;
+    }
+
+    registry.AddComponent<DropdownComponent>(menuCanvas, dropdownComp);
+
+    CreatePanel(registry, menuCanvas, PanelDescriptor{
+        .Position = {0.0f, menuHeight / 2.0f},
+        .Size = {desc.Size.X, menuHeight},
+        .Tint = Color{20, 20, 20, 240},
+        .AnchorPoint = Anchor::TopCenter
+    });
+
+    // Toggle menu
+    registry.GetComponent<ButtonComponent>(dropdownHead).OnClick = [&registry, menuCanvas]() {
+        if (registry.HasComponent<CanvasComponent>(menuCanvas)) {
+            auto& canvas = registry.GetComponent<CanvasComponent>(menuCanvas);
+            canvas.IsEnabled = !canvas.IsEnabled;
+        }
+    };
+
+    return dropdownHead;
+}

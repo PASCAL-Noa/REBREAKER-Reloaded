@@ -11,6 +11,7 @@ public:
     void    OnUpdate(float dt, GameContext& context) override;
     void    OnRender(GameContext& context) override;
     void    OnDestroy(GameContext& context) override;
+    [[nodiscard]] Color     GetClearColor() const override { return m_bgColor; }
 
 protected:
     void    DrawDefaultUI(const GameContext& context, const std::string& sceneName, const std::string& instructions) const;
@@ -22,4 +23,5 @@ protected:
     GameContext*    mp_context = nullptr;
     Entity     m_camera{};
     uint32_t     m_fontId = 0;
+    Color      m_bgColor{Colors::Black};
 };

@@ -1,5 +1,6 @@
 #pragma once
 #include "Scene.h"
+#include "Data/Color.h"
 
 class SceneManager
 {
@@ -17,6 +18,7 @@ public:
     void Render(GameContext& context) const;
 
     [[nodiscard]] uint32_t GetPostProcessShader() const;
+    [[nodiscard]] Color GetClearColor() const;
 
 private:
     Scene* m_currentScene = nullptr;

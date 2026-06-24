@@ -60,7 +60,12 @@ bool Window::PollEvents(InputManager& input)
             handleMouse(e->button, true);
         else if (const auto* e = event->getIf<sf::Event::MouseButtonReleased>())
             handleMouse(e->button, false);
+        else if (const auto* e = event->getIf<sf::Event::MouseWheelScrolled>())
+            input.SetMouseWheelDelta(e->delta);
     }
+
+    sf::Vector2i mousePos = sf::Mouse::getPosition(m_window);
+    input.SetMousePosition(static_cast<float>(mousePos.x), static_cast<float>(mousePos.y));
 
     return true;
 }
@@ -112,4 +117,32 @@ void Window::SetVSync(bool enabled)
         m_window.setFramerateLimit(0);
     }
     m_window.setVerticalSyncEnabled(enabled);
+}
+
+std::vector<Resolution> Window::GetSupportedResolutions()
+{
+    std::vector<Resolution> resolutions;
+    std::vector<sf::VideoMode> modes = sf::VideoMode::getFullscreenModes();
+    
+    for (const auto& mode : modes)
+    {
+        if (mode.bitsPerPixel != 32) continue;
+        
+        bool duplicate = false;
+        for (const auto& r : resolutions)
+        {
+            if (r.Width == mode.size.x && r.Height == mode.size.y)
+            {
+                duplicate = true;
+                break;
+            }
+        }
+        
+        if (!duplicate)
+        {
+            resolutions.push_back(Resolution{mode.size.x, mode.size.y});
+        }
+    }
+    
+    return resolutions;
 }

@@ -3,6 +3,8 @@
 #include "Resources/ResourceManager.h"
 #include "Data/Color.h"
 #include "ECS/Components/Transform2D.h"
+#include "ECS/Components/Transform2D.h"
+#include "Math/Rect.h"
 #include <string>
 
 #include "Data/BlendMode.h"
@@ -10,19 +12,28 @@
 #include "Data/PrimitiveType.h"
 #include "Data/Vertex.h"
 
+#include "ECS/Components/SpriteComponent.h"
+
 class Renderer
 {
 public:
     Renderer(Window& window, ResourceManager& resources);
     ~Renderer() = default;
 
-    void                BeginDraw();
+    void                BeginDraw(Color clearColor = Colors::Black);
     void                EndDraw(uint32_t postProcessShaderId = 0);
 
     void                SetCamera(const Camera2D& camera);
     void                ResetCamera();
 
-    void                DrawSprite(uint32_t textureId, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha, uint32_t shaderId = 0, uint32_t overlayTexId = 0, float shaderValue = 0.0f);
+    Window&             GetWindow() { return m_window; }
+    const Window&       GetWindow() const { return m_window; }
+
+    [[nodiscard]] Vector2f  GetLogicalViewSize() const;
+    [[nodiscard]] Vector2f  MapPixelToCoords(const Vector2f& pixelPos) const;
+    [[nodiscard]] Vector2f  MapCoordsToPixel(const Vector2f& coords) const;
+
+    void                DrawSprite(const SpriteComponent& spriteData, const Transform2D& transform, BlendMode blendMode = BlendMode::Alpha);
     void                DrawCircle(float radius, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
     void                DrawRectangle(float width, float height, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
     void                DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color = Colors::White, BlendMode blendMode = BlendMode::Alpha);
@@ -31,6 +42,7 @@ public:
     void                DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness = 2.0f);
     void                DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, float thickness = 1.0f);
     Vector2f            GetTextureSize(uint32_t textureId) const;
+    Vector2f            GetTextSize(const std::string& text, uint32_t fontId, float fontSize) const;
 
 private:
     Window&             m_window;
