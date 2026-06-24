@@ -50,7 +50,10 @@ public:
         uint32_t rawId = static_cast<uint32_t>(id);
         uint32_t category = rawId & 0xF000;
         
-        bool actualValue = PlayerPrefs::GetBool(name, defaultValue);
+        bool actualValue = defaultValue;
+        if (access == RuleAccess::Public) {
+            actualValue = PlayerPrefs::GetBool(name, defaultValue);
+        }
         m_rules[rawId] = { name, actualValue, access, category };
     }
 
@@ -62,8 +65,10 @@ public:
         if (it != m_rules.end())
         {
             it->second.Value = value;
-            PlayerPrefs::SetBool(it->second.DisplayName, value);
-            PlayerPrefs::Save();
+            if (it->second.Access == RuleAccess::Public) {
+                PlayerPrefs::SetBool(it->second.DisplayName, value);
+                PlayerPrefs::Save();
+            }
         }
     }
 
