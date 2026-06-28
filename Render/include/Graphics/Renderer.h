@@ -41,6 +41,7 @@ public:
     void                DrawRectangleOutline(float width, float height, const Transform2D& transform, Color color, float thickness = 2.0f);
     void                DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness = 2.0f);
     void                DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, float thickness = 1.0f);
+    void                DrawScannerEffect(float width, float height, const Transform2D& transform, Color color, float time, uint32_t shaderId);
     Vector2f            GetTextureSize(uint32_t textureId) const;
     Vector2f            GetTextSize(const std::string& text, uint32_t fontId, float fontSize) const;
 

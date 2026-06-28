@@ -62,6 +62,7 @@ private:
     void    CreateRenderTab(const GameContext& context);
     void    CreateInputsTab(const GameContext& context);
     void    CreateGamerulesTab(const GameContext& context);
+    void    CreateCheatsTab(const GameContext& context);
     void    OpenSettingsTab(Entity targetCanvas);
 
     void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
@@ -95,6 +96,7 @@ private:
     Entity          m_renderCanvas = NULL_ENTITY;
     Entity          m_inputsCanvas = NULL_ENTITY;
     Entity          m_gamerulesCanvas = NULL_ENTITY;
+    Entity          m_cheatsCanvas = NULL_ENTITY;
     Entity          m_activeTabCanvas = NULL_ENTITY;
 
     Entity          m_scoreTextEntity = NULL_ENTITY;
@@ -113,6 +115,7 @@ private:
     Entity  m_fsBtn = NULL_ENTITY;
     Entity  m_shaderBtn = NULL_ENTITY;
     Entity  m_particlesBtn = NULL_ENTITY;
+    Entity  m_cheatsTabBtn = NULL_ENTITY;
 
     std::unique_ptr<TextFeedback> m_textFeedback;
 

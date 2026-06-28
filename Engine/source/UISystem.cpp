@@ -6,6 +6,7 @@
 #include "ECS/Components/UI/DropdownComponent.h"
 #include "ECS/Components/UI/PanelComponent.h"
 #include "ECS/Components/UI/TextComponent.h"
+#include "ECS/Components/UI/TextInputComponent.h"
 #include "Graphics/Renderer.h"
 
 Vector2f UISystem::GetAbsolutePosition(Registry& registry, Entity entity, const RectTransform& transform, const Vector2f& viewSize)
@@ -195,6 +196,7 @@ void UISystem::OnUpdate(float dt, Registry& registry, const GameContext& context
 
     UpdateButtons(registry, context, logicalMousePos, viewSize);
     UpdateDropdowns(registry, context, logicalMousePos, viewSize);
+    UpdateTextInputs(registry, context, logicalMousePos, viewSize);
 }
 
 void UISystem::RenderPanel(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform)
@@ -319,6 +321,83 @@ void UISystem::RenderText(Registry& registry, const GameContext& context, Entity
     }
 }
 
+void UISystem::UpdateTextInputs(Registry& registry, const GameContext& context, const Vector2f& logicalMousePos, const Vector2f& viewSize)
+{
+    const bool isLeftMousePress = context.Input.IsMouseButtonPress(MouseButton::Left);
+    const std::string& enteredText = context.Input.GetEnteredText();
+    const bool isBackspace = context.Input.IsKeyPress(KeyCode::Backspace);
+    const bool isEnter = context.Input.IsKeyPress(KeyCode::Enter);
+
+    registry.View<RectTransform, TextInputComponent>([&](const Entity entity, const RectTransform& transform, TextInputComponent& textInput)
+    {
+        if (!transform.IsActive || !IsParentEnabled(registry, transform.Parent)) return;
+
+        Vector2f absolutePos = GetAbsolutePosition(registry, entity, transform, viewSize);
+        bool isHovered = IsPointInsideRect(logicalMousePos, absolutePos, transform.Size);
+
+        if (isLeftMousePress)
+        {
+            textInput.IsFocused = isHovered;
+        }
+
+        if (textInput.IsFocused)
+        {
+            if (isBackspace && !textInput.Text.empty())
+            {
+                textInput.Text.pop_back();
+            }
+            else if (isEnter)
+            {
+                if (textInput.OnSubmit)
+                    textInput.OnSubmit(textInput.Text);
+                textInput.Text.clear();
+            }
+            else if (!enteredText.empty() && textInput.Text.size() < textInput.MaxLength)
+            {
+                textInput.Text += enteredText;
+                if (textInput.Text.size() > textInput.MaxLength) {
+                    textInput.Text = textInput.Text.substr(0, textInput.MaxLength);
+                }
+            }
+        }
+    });
+}
+
+void UISystem::RenderTextInput(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform, const Vector2f& absolutePos)
+{
+    if (!registry.HasComponent<TextInputComponent>(entity)) return;
+
+    const auto& textInput = registry.GetComponent<TextInputComponent>(entity);
+    Color tint = textInput.IsFocused ? textInput.FocusedColor : textInput.DefaultColor;
+
+    context.Render.DrawRectangle(transform.Size.X, transform.Size.Y, drawTransform, tint);
+    
+    std::string displayText = textInput.Text;
+    Color textColor = textInput.TextColor;
+
+    if (displayText.empty() && !textInput.IsFocused)
+    {
+        displayText = textInput.Placeholder;
+        textColor = Color{150, 150, 150, 255}; 
+    }
+    else if (textInput.IsFocused)
+    {
+        static int frameCount = 0;
+        frameCount++;
+        if ((frameCount / 30) % 2 == 0)
+        {
+            displayText += "_";
+        }
+    }
+
+    Transform2D textTransform = drawTransform;
+    Vector2f textSize = context.Render.GetTextSize(displayText, textInput.FontId, textInput.FontSize);
+    textTransform.Position.X -= textSize.X / 2.0f; 
+    textTransform.Position.Y -= textInput.FontSize / 1.5f;
+    
+    context.Render.DrawText(displayText, textInput.FontId, textInput.FontSize, textTransform, textColor);
+}
+
 void UISystem::OnRender(Registry& registry, const GameContext& context)
 {
     context.Render.ResetCamera();
@@ -342,5 +421,6 @@ void UISystem::OnRender(Registry& registry, const GameContext& context)
         
         RenderSprite(registry, context, entity, transform, drawTransform);
         RenderText(registry, context, entity, absolutePos);
+        RenderTextInput(registry, context, entity, transform, drawTransform, absolutePos);
     });
 }

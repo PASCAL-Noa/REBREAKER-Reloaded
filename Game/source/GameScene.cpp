@@ -17,6 +17,7 @@
 #include "Graphics/Renderer.h"
 #include "Events/EventDispatcher.h"
 #include "Events/CollisionEvent.h"
+#include "Events/CheatSubmitEvent.h"
 #include "StateMachine/Transition.h"
 #include "Conditions/KeyPressCondition.h"
 #include "Conditions/GameConditions.h"
@@ -196,6 +197,7 @@ void GameScene::OnInit(GameContext& context)
     CreateRenderTab(context);
     CreateInputsTab(context);
     CreateGamerulesTab(context);
+    CreateCheatsTab(context);
     CreateSettingsLayout(context);
 
 }
@@ -221,6 +223,11 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         }
 
         m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = (currentState == static_cast<int>(SceneState::Paused) && !isSettingsOpen);
+        
+        if (m_cheatsTabBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_cheatsTabBtn))
+        {
+            m_registry.GetComponent<RectTransform>(m_cheatsTabBtn).IsActive = context.Rules.GetRule(Rule::Gameplay::CheatsUnlocked);
+        }
         
         if (currentState != static_cast<int>(SceneState::Paused) && m_settingsLayoutCanvas != NULL_ENTITY)
         {
@@ -268,8 +275,6 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         m_playlist.Update(context);
         m_systemManager.OnUpdate(dt);
     }
-
-    UISystem::OnUpdate(dt, m_registry, context);
 }
 
 void GameScene::OnRender(GameContext& context)
@@ -871,6 +876,14 @@ void GameScene::CreateSettingsLayout(const GameContext& context)
         .FontId = m_fontId
     });
 
+    m_cheatsTabBtn = UIFactory::CreateButton(m_registry, m_settingsLayoutCanvas, ButtonDescriptor{
+        .Text = "CHEATS",
+        .OnClick = [this]() { OpenSettingsTab(m_cheatsCanvas); },
+        .Position = {leftPanelX, startY + stepY * 4.0f},
+        .Size = {leftPanelWidth * 0.8f, 60.0f},
+        .FontId = m_fontId
+    });
+
     // Back Button
     UIFactory::CreateButton(m_registry, m_settingsLayoutCanvas, ButtonDescriptor{
         .Text = "RETOUR",
@@ -1146,6 +1159,42 @@ void GameScene::CreateGamerulesTab(const GameContext& context)
       .Position = {rightPanelX, 0.0f},
       .Size = {rightPanelWidth, viewY},
       .Tint = Colors::Transparent
+    });
+}
+
+void GameScene::CreateCheatsTab(const GameContext& context)
+{
+    float viewX = context.Render.GetLogicalViewSize().X;
+    float viewY = context.Render.GetLogicalViewSize().Y;
+    float rightPanelWidth = viewX * 0.75f;
+    float rightPanelX = viewX * 0.125f;
+
+    m_cheatsCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_cheatsCanvas, CanvasComponent{.IsEnabled = false});
+    m_registry.AddComponent<TweenComponent>(m_cheatsCanvas, TweenComponent{});
+
+    UIFactory::CreateText(m_registry, m_cheatsCanvas, TextDescriptor{
+        .Text = "CHEATS",
+        .Position = {rightPanelX, -viewY * 0.2f},
+        .FontId = m_fontId,
+        .FontSize = 40.0f
+    });
+
+    UIFactory::CreateTextInput(m_registry, m_cheatsCanvas, TextInputDescriptor{
+        .Placeholder = "Enter Cheat Code...",
+        .OnSubmit = [&context](const std::string& code) {
+            context.Events.Publish(CheatSubmitEvent(code));
+        },
+        .Position = {rightPanelX, 0.0f},
+        .Size = {600.0f, 60.0f},
+        .FontId = m_fontId,
+        .FontSize = 40.0f
+    });
+
+    UIFactory::CreatePanel(m_registry, m_cheatsCanvas, PanelDescriptor{
+        .Position = {rightPanelX, 0.0f},
+        .Size = {rightPanelWidth, viewY},
+        .Tint = Colors::Transparent
     });
 }
 

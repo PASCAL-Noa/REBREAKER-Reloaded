@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <array>
+#include <string>
 
 enum class KeyCode : uint8_t
 {
@@ -46,6 +47,9 @@ public:
     void SetMouseWheelDelta(float delta);
     [[nodiscard]] float GetMouseWheelDelta() const;
 
+    void AppendEnteredText(uint32_t unicode);
+    [[nodiscard]] const std::string& GetEnteredText() const;
+
 private:
     static constexpr size_t KEY_COUNT = static_cast<size_t>(KeyCode::Count);
     static constexpr size_t MOUSE_COUNT = static_cast<size_t>(MouseButton::Count);
@@ -55,7 +59,7 @@ private:
 
     std::array<bool, MOUSE_COUNT>   m_currentMouse{false};
     std::array<bool, MOUSE_COUNT>   m_previousMouse{false};
-    
     std::pair<float, float> m_mousePosition{0.0f, 0.0f};
     float m_mouseWheelDelta = 0.0f;
+    std::string m_enteredText;
 };

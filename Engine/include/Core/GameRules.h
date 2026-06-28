@@ -23,7 +23,8 @@ namespace Rule
     enum class Gameplay : uint32_t
     {
         Invincible = 0x2000,
-        InfiniteLives
+        InfiniteLives,
+        CheatsUnlocked
     };
 
     enum class Debug : uint32_t
