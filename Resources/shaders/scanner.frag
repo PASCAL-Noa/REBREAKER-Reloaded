@@ -37,7 +37,7 @@ void main()
     intensity *= scanlines;
 
     vec4 finalColor = u_color;
-    finalColor.rgb *= intensity * 1.5; 
+    finalColor.rgb *= intensity * 1.5;
     finalColor.a *= intensity;
     
     gl_FragColor = finalColor;

@@ -27,7 +27,10 @@ void Timer::Update()
         elapsed = currentTime - m_lastTime;
     }
 
-    m_deltaTime = elapsed.count();
+    float dt = elapsed.count();
+    if (dt > 0.1f) dt = 0.1f;
+
+    m_deltaTime = dt;
     m_lastTime = currentTime;
 
     m_frameCount++;

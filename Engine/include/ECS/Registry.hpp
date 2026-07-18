@@ -34,20 +34,27 @@ public:
     {
         if (!m_freeEntities.empty())
         {
-            Entity entity = m_freeEntities.front();
+            uint32_t index = m_freeEntities.front();
             m_freeEntities.pop();
-            return entity;
+            return MakeEntity(index, m_entityVersions[index]);
         }
-        return m_entityCount++;
+        uint32_t index = m_entityCount++;
+        m_entityVersions.push_back(1);
+        return MakeEntity(index, m_entityVersions[index]);
     }
 
     void DestroyEntity(Entity entity)
     {
+        uint32_t index = GetEntityIndex(entity);
+        if (index >= m_entityVersions.size() || GetEntityVersion(entity) != m_entityVersions[index]) return;
+
         for (ISparseSet* pool : m_pools)
         {
             if (pool) pool->Remove(entity);
         }
-        m_freeEntities.push(entity);
+        
+        m_entityVersions[index]++;
+        m_freeEntities.push(index);
     }
 
     size_t GetActiveEntityCount() const
@@ -58,14 +65,23 @@ public:
     template <typename T, typename... Args>
     T& AddComponent(Entity entity, Args&&... args)
     {
+        uint32_t index = GetEntityIndex(entity);
+        assert(index < m_entityVersions.size() && GetEntityVersion(entity) == m_entityVersions[index] && "Entity is invalid!");
+
         SparseSet<T>* pool = GetOrCreatePool<T>();
-        pool->Insert(entity, T(std::forward<Args>(args)...));
+        if (!pool->Contains(entity))
+        {
+            pool->Insert(entity, T(std::forward<Args>(args)...));
+        }
         return pool->Get(entity);
     }
 
     template <typename T>
     void RemoveComponent(Entity entity)
     {
+        uint32_t index = GetEntityIndex(entity);
+        assert(index < m_entityVersions.size() && GetEntityVersion(entity) == m_entityVersions[index] && "Entity is invalid!");
+
         if (SparseSet<T>* pool = GetPool<T>())
         {
             pool->Remove(entity);
@@ -129,6 +145,7 @@ private:
     }
 
     std::vector<ISparseSet*> m_pools;
-    std::queue<Entity> m_freeEntities;
-    Entity m_entityCount = 0;
+    size_t m_entityCount = 0;
+    std::vector<uint32_t> m_entityVersions;
+    std::queue<uint32_t> m_freeEntities;
 };

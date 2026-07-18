@@ -2,6 +2,8 @@
 #include "Scene.h"
 #include "Data/Color.h"
 
+#include <memory>
+
 class SceneManager
 {
 public:
@@ -21,13 +23,12 @@ public:
     [[nodiscard]] Color GetClearColor() const;
 
 private:
-    Scene* m_currentScene = nullptr;
-    Scene* m_nextScene = nullptr;
+    std::unique_ptr<Scene> m_currentScene = nullptr;
+    std::unique_ptr<Scene> m_nextScene = nullptr;
 };
 
 template <typename T, typename ... Args>
 void SceneManager::LoadScene(Args&&... args)
 {
-    if (m_nextScene) delete m_nextScene;
-    m_nextScene = new T(std::forward<Args>(args)...);
+    m_nextScene = std::make_unique<T>(std::forward<Args>(args)...);
 }

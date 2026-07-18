@@ -2,8 +2,7 @@
 
 SceneManager::~SceneManager()
 {
-    delete m_currentScene;
-    delete m_nextScene;
+
 }
 
 void SceneManager::Shutdown(GameContext& context)
@@ -11,13 +10,11 @@ void SceneManager::Shutdown(GameContext& context)
     if (m_currentScene)
     {
         m_currentScene->OnDestroy(context);
-        delete m_currentScene;
-        m_currentScene = nullptr;
+        m_currentScene.reset();
     }
     if (m_nextScene)
     {
-        delete m_nextScene;
-        m_nextScene = nullptr;
+        m_nextScene.reset();
     }
 }
 
@@ -28,10 +25,8 @@ void SceneManager::Update(float dt, GameContext& context)
         if (m_currentScene)
         {
             m_currentScene->OnDestroy(context);
-            delete m_currentScene;
         }
-        m_currentScene = m_nextScene;
-        m_nextScene = nullptr;
+        m_currentScene = std::move(m_nextScene);
 
         m_currentScene->OnInit(context);
     }
