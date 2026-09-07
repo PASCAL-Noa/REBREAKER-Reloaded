@@ -95,7 +95,7 @@ void GameScene::OnInit(GameContext& context)
     };
     camTween.AddTween(alphaTween);
 
-    context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
+    m_collisionSubId = context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
         if (m_ballState != BallState::Active) return;
 
@@ -162,7 +162,7 @@ void GameScene::OnInit(GameContext& context)
 
     m_systemManager.OnInit();
 
-    mp_levelGenerator = new FileLevelGenerator("Resources/levels/level01.txt");
+    mp_levelGenerator = std::make_unique<FileLevelGenerator>("Resources/levels/level01.txt");
     m_brickCount = mp_levelGenerator->Generate(m_registry, context, m_brickTexId);
     ResetBallAndPaddle();
 
@@ -170,9 +170,9 @@ void GameScene::OnInit(GameContext& context)
     m_playlist.AddTrack(context, "Resources/audio/music/Game-2.ogg");
     m_playlist.AddTrack(context, "Resources/audio/music/Game-3.ogg");
     m_playlist.AddTrack(context, "Resources/audio/music/Game-4.ogg");
-    m_playlist.PlayNext(context);
+    m_lives = PlayerPrefs::GetInt("Lives", 3);
 
-    mp_state_machine = new StateMachine<GameScene>(this, 4);
+    mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 4);
 
     State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
     playingState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Paused)));
@@ -408,13 +408,11 @@ void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& c
 
 void GameScene::OnDestroy(GameContext& context)
 {
-    delete mp_state_machine;
-    mp_state_machine = nullptr;
+    m_textFeedback.reset();
+    mp_state_machine.reset();
+    mp_levelGenerator.reset();
 
-    delete mp_levelGenerator;
-    mp_levelGenerator = nullptr;
-
-    context.Events.Clear();
+    context.Events.Unsubscribe(GetEventId<CollisionEvent>(), m_collisionSubId);
     DefaultScene::OnDestroy(context);
 }
 

@@ -5,12 +5,14 @@
 #include <string>
 #include "Core/InputManager.h"
 #include "Core/GameContext.h"
+#include "Events/EventDispatcher.h"
 #include "Graphics/Renderer.h"
 
 class CheatManager
 {
 public:
     CheatManager(const GameContext& context);
+    ~CheatManager();
     
     void Update(float dt, const GameContext& context);
     void Render(Renderer& renderer) const;
@@ -31,4 +33,7 @@ private:
     bool m_cheatTabUnlocked = false;
     bool m_cheatWasActivated = false;
     std::string m_activeCheatName = "";
+    
+    EventDispatcher::SubscriptionID m_cheatSubId = 0;
+    const GameContext* mp_context = nullptr;
 };

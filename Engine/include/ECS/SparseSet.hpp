@@ -15,27 +15,30 @@ public:
 
     void Insert(Entity entity, const T& component)
     {
-        assert(entity < MAX_ENTITIES);
+        uint32_t index = GetEntityIndex(entity);
+        assert(index < MAX_ENTITIES);
         if (Contains(entity)) return;
 
-        m_sparse[entity] = m_dense.size();
+        m_sparse[index] = m_dense.size();
         m_dense.push_back(component);
         m_entities.push_back(entity);
     }
 
     void Remove(Entity entity) override
     {
-        assert(entity < MAX_ENTITIES);
+        uint32_t index = GetEntityIndex(entity);
+        assert(index < MAX_ENTITIES);
         if (!Contains(entity)) return;
 
-        size_t indexOfRemoved = m_sparse[entity];
+        size_t indexOfRemoved = m_sparse[index];
         size_t indexOfLast = m_dense.size() - 1;
         Entity entityOfLast = m_entities[indexOfLast];
+        uint32_t indexOfLastEntity = GetEntityIndex(entityOfLast);
 
         m_dense[indexOfRemoved] = m_dense[indexOfLast];
         m_entities[indexOfRemoved] = entityOfLast;
-        m_sparse[entityOfLast] = indexOfRemoved;
-        m_sparse[entity] = npos;
+        m_sparse[indexOfLastEntity] = indexOfRemoved;
+        m_sparse[index] = npos;
 
         m_dense.pop_back();
         m_entities.pop_back();
@@ -44,12 +47,14 @@ public:
     T& Get(Entity entity)
     {
         assert(Contains(entity));
-        return m_dense[m_sparse[entity]];
+        return m_dense[m_sparse[GetEntityIndex(entity)]];
     }
 
     bool Contains(Entity entity) const
     {
-        return entity < MAX_ENTITIES && m_sparse[entity] != npos;
+        uint32_t index = GetEntityIndex(entity);
+        if (index >= MAX_ENTITIES || m_sparse[index] == npos) return false;
+        return m_entities[m_sparse[index]] == entity; // Check full entity including version
     }
 
     std::vector<T>& GetDense()

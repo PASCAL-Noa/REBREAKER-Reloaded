@@ -61,17 +61,27 @@ std::string PlayerPrefs::GetString(const std::string& key, const std::string& de
     return defaultValue;
 }
 
+#include <filesystem>
+
 void PlayerPrefs::Save()
 {
-    std::ofstream file(s_FilePath);
+    std::string tmpFilePath = s_FilePath + ".tmp";
+    std::ofstream file(tmpFilePath);
     if (file.is_open())
     {
         file << s_Data.dump(4);
         file.close();
+
+        std::error_code ec;
+        std::filesystem::rename(tmpFilePath, s_FilePath, ec);
+        if (ec)
+        {
+            std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
+        }
     }
     else
     {
-        std::cerr << "Failed to save PlayerPrefs to " << s_FilePath << std::endl;
+        std::cerr << "Failed to open temporary file for PlayerPrefs: " << tmpFilePath << std::endl;
     }
 }
 

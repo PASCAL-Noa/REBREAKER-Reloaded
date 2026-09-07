@@ -8,6 +8,7 @@
 #include "Math/EasingFunctions.h"
 
 CheatManager::CheatManager(const GameContext& context)
+    : mp_context(&context)
 {
     m_konamiSequence = {
         KeyCode::Up, KeyCode::Up, KeyCode::Down, KeyCode::Down,
@@ -20,9 +21,17 @@ CheatManager::CheatManager(const GameContext& context)
     m_fontId = context.Resources.LoadResource("Resources/font/vt323.ttf");
     m_scannerShaderId = context.Resources.LoadResource("Resources/shaders/scanner.frag");
 
-    context.Events.Subscribe<CheatSubmitEvent>([this, &context](const CheatSubmitEvent& e) {
+    m_cheatSubId = context.Events.Subscribe<CheatSubmitEvent>([this, &context](const CheatSubmitEvent& e) {
         TryCheat(e.CheatCode, context);
     });
+}
+
+CheatManager::~CheatManager()
+{
+    if (mp_context)
+    {
+        const_cast<GameContext*>(mp_context)->Events.Unsubscribe(GetEventId<CheatSubmitEvent>(), m_cheatSubId);
+    }
 }
 
 void CheatManager::Update(float dt, const GameContext& context)

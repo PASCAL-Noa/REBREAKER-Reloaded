@@ -8,6 +8,7 @@
 #include "Scenes/DefaultScene.h"
 #include "ECS/Entity.h"
 #include "ECS/Components/BrickComponent.h"
+#include "Events/EventDispatcher.h"
 #include "StateMachine/StateMachine.h"
 #include "Generators/ILevelGenerator.h"
 
@@ -68,10 +69,7 @@ private:
     void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
 
 
-    StateMachine<GameScene>*    mp_state_machine = nullptr;
-    GameContext*    mp_context = nullptr;
-
-    Entity  m_camera{};
+    std::unique_ptr<StateMachine<GameScene>> mp_state_machine;
     Entity  m_ball{};
     Entity  m_paddle{};
     Entity  m_explodingHeart{};
@@ -119,9 +117,12 @@ private:
 
     std::unique_ptr<TextFeedback> m_textFeedback;
 
-    ILevelGenerator*    mp_levelGenerator = nullptr;
+    std::unique_ptr<ILevelGenerator> mp_levelGenerator;
     ScoreManager       m_scoreManager{"save.dat"};
     uint32_t    m_combo = 0;
     PlaylistManager     m_playlist;
     float m_cheatTimer;
+
+    EventDispatcher::SubscriptionID m_collisionSubId = 0;
+    EventDispatcher::SubscriptionID m_uiEventSubId = 0;
 };
