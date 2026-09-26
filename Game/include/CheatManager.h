@@ -11,7 +11,7 @@
 class CheatManager
 {
 public:
-    CheatManager(const GameContext& context);
+    CheatManager(GameContext& context);
     ~CheatManager();
     
     void Update(float dt, const GameContext& context);
@@ -35,5 +35,5 @@ private:
     std::string m_activeCheatName = "";
     
     EventDispatcher::SubscriptionID m_cheatSubId = 0;
-    const GameContext* mp_context = nullptr;
+    GameContext* mp_context = nullptr;
 };

@@ -2,6 +2,8 @@
 #include "Entity.h"
 #include "ISparseSet.h"
 #include "SparseSet.hpp"
+
+#include "CommandBuffer.h"
 #include <vector>
 #include <queue>
 
@@ -30,6 +32,11 @@ public:
         }
     }
 
+    Registry(const Registry&) = delete;
+    Registry& operator=(const Registry&) = delete;
+    Registry(Registry&&) noexcept = default;
+    Registry& operator=(Registry&&) noexcept = default;
+
     Entity CreateEntity()
     {
         if (!m_freeEntities.empty())
@@ -48,6 +55,11 @@ public:
         uint32_t index = GetEntityIndex(entity);
         if (index >= m_entityVersions.size() || GetEntityVersion(entity) != m_entityVersions[index]) return;
 
+        if (index < m_pendingDestroy.size())
+        {
+            m_pendingDestroy[index] = false;
+        }
+
         for (ISparseSet* pool : m_pools)
         {
             if (pool) pool->Remove(entity);
@@ -55,6 +67,62 @@ public:
         
         m_entityVersions[index]++;
         m_freeEntities.push(index);
+    }
+
+    void DestroyEntityDeferred(Entity entity)
+    {
+        uint32_t index = GetEntityIndex(entity);
+        if (index >= m_entityVersions.size() || GetEntityVersion(entity) != m_entityVersions[index]) return;
+
+        if (index >= m_pendingDestroy.size())
+        {
+            m_pendingDestroy.resize(index + 1, false);
+        }
+
+        if (m_pendingDestroy[index]) return;
+
+        m_pendingDestroy[index] = true;
+        m_deferredDestroyList.push_back(entity);
+        m_commandBuffer.DestroyEntity(entity);
+    }
+
+    [[nodiscard]] bool IsPendingDestroy(Entity entity) const
+    {
+        uint32_t index = GetEntityIndex(entity);
+        if (index >= m_pendingDestroy.size()) return false;
+        return m_pendingDestroy[index];
+    }
+
+    template <typename T, typename... Args>
+    void AddComponentDeferred(Entity entity, Args&&... args)
+    {
+        m_commandBuffer.AddComponent<T>(entity, std::forward<Args>(args)...);
+    }
+
+    template <typename T>
+    void RemoveComponentDeferred(Entity entity)
+    {
+        m_commandBuffer.RemoveComponent<T>(entity);
+    }
+
+    CommandBuffer& GetCommandBuffer()
+    {
+        return m_commandBuffer;
+    }
+
+    void ProcessDeferredCommands()
+    {
+        for (Entity e : m_deferredDestroyList)
+        {
+            uint32_t index = GetEntityIndex(e);
+            if (index < m_pendingDestroy.size())
+            {
+                m_pendingDestroy[index] = false;
+            }
+        }
+        m_deferredDestroyList.clear();
+
+        m_commandBuffer.Execute(*this);
     }
 
     size_t GetActiveEntityCount() const
@@ -117,6 +185,8 @@ public:
             }
 
             Entity entity = entities[i];
+            if (IsPendingDestroy(entity)) continue;
+
             if ((HasComponent<Tn>(entity) && ...))
             {
                 func(entity, primaryPool->Get(entity), GetComponent<Tn>(entity)...);
@@ -148,4 +218,10 @@ private:
     size_t m_entityCount = 0;
     std::vector<uint32_t> m_entityVersions;
     std::queue<uint32_t> m_freeEntities;
+
+    CommandBuffer m_commandBuffer;
+    std::vector<bool> m_pendingDestroy;
+    std::vector<Entity> m_deferredDestroyList;
 };
+
+#include "CommandBuffer.inl"

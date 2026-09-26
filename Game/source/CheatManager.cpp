@@ -7,7 +7,7 @@
 #include "Events/EventDispatcher.h"
 #include "Math/EasingFunctions.h"
 
-CheatManager::CheatManager(const GameContext& context)
+CheatManager::CheatManager(GameContext& context)
     : mp_context(&context)
 {
     m_konamiSequence = {
@@ -30,7 +30,7 @@ CheatManager::~CheatManager()
 {
     if (mp_context)
     {
-        const_cast<GameContext*>(mp_context)->Events.Unsubscribe(GetEventId<CheatSubmitEvent>(), m_cheatSubId);
+        mp_context->Events.Unsubscribe(GetEventId<CheatSubmitEvent>(), m_cheatSubId);
     }
 }
 

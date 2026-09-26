@@ -18,6 +18,7 @@ void PhysicsSystem::OnUpdate(float dt)
     CheckAABBCollisions();
     CheckCircleAABBCollisions();
     CheckCircleCollisions();
+    m_registry.ProcessDeferredCommands();
 }
 
 void PhysicsSystem::ResetColliders() const

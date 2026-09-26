@@ -1,5 +1,6 @@
 #pragma once
 #include "Scenes/DefaultScene.h"
+#include "Events/EventDispatcher.h"
 #include <cstdint>
 
 class SandBox : public DefaultScene
@@ -23,4 +24,6 @@ private:
     Entity      m_player = 0;
     uint32_t    m_bounceSfxId = 0;
     uint32_t    m_debugTexId = 0;
+
+    EventDispatcher::SubscriptionID m_collisionSubId = 0;
 };

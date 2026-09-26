@@ -275,6 +275,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         m_playlist.Update(context);
         m_systemManager.OnUpdate(dt);
     }
+    m_registry.ProcessDeferredCommands();
 }
 
 void GameScene::OnRender(GameContext& context)
@@ -412,7 +413,11 @@ void GameScene::OnDestroy(GameContext& context)
     mp_state_machine.reset();
     mp_levelGenerator.reset();
 
-    context.Events.Unsubscribe(GetEventId<CollisionEvent>(), m_collisionSubId);
+    if (m_collisionSubId != 0)
+    {
+        context.Events.Unsubscribe(GetEventId<CollisionEvent>(), m_collisionSubId);
+        m_collisionSubId = 0;
+    }
     DefaultScene::OnDestroy(context);
 }
 
@@ -431,8 +436,9 @@ void GameScene::FullReset()
     }
 
     m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
-        m_registry.DestroyEntity(e);
+        m_registry.DestroyEntityDeferred(e);
     });
+    m_registry.ProcessDeferredCommands();
 
     m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
     ResetBallAndPaddle();
@@ -623,6 +629,7 @@ void GameScene::HandleDeath()
 
 void GameScene::HandleBrickCollision(Entity entity)
 {
+    if (m_registry.IsPendingDestroy(entity)) return;
     if (!m_registry.HasComponent<BrickComponent>(entity)) return;
 
     auto& brick = m_registry.GetComponent<BrickComponent>(entity);
@@ -678,7 +685,7 @@ void GameScene::HandleBrickCollision(Entity entity)
             SpawnExplosionParticles(transform.Position, sprite.Tint);
         }
         
-        m_registry.DestroyEntity(entity);
+        m_registry.DestroyEntityDeferred(entity);
     }
 }
 
