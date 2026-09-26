@@ -62,6 +62,8 @@ bool Window::PollEvents(InputManager& input)
             handleMouse(e->button, false);
         else if (const auto* e = event->getIf<sf::Event::MouseWheelScrolled>())
             input.SetMouseWheelDelta(e->delta);
+        else if (const auto* e = event->getIf<sf::Event::TextEntered>())
+            input.AppendEnteredText(e->unicode);
     }
 
     sf::Vector2i mousePos = sf::Mouse::getPosition(m_window);

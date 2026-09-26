@@ -141,7 +141,7 @@ void TextFeedback::SpawnComboText(Entity canvasParent, const Vector2f& worldPosi
         }
     };
     fadeTween.OnComplete = [reg, ft]() {
-        reg->DestroyEntity(ft);
+        reg->DestroyEntityDeferred(ft);
     };
     
     tweenComp.AddTween(moveTween);

@@ -4,6 +4,7 @@
 #include "ECS/Components/UI/ButtonComponent.h"
 #include "ECS/Components/UI/CanvasComponent.h"
 #include "ECS/Components/UI/DropdownComponent.h"
+#include "ECS/Components/UI/TextInputComponent.h"
 
 Entity UIFactory::CreatePanel(Registry& registry, Entity parent, const PanelDescriptor& desc)
 {
@@ -265,4 +266,30 @@ Entity UIFactory::CreateDropdown(Registry& registry, Entity parent, const Dropdo
     };
 
     return dropdownHead;
+}
+
+Entity UIFactory::CreateTextInput(Registry& registry, Entity parent, const TextInputDescriptor& desc)
+{
+    Entity entity = registry.CreateEntity();
+    registry.AddComponent<RectTransform>(entity, RectTransform{
+        .Position = desc.Position,
+        .Size = desc.Size,
+        .AnchorPoint = desc.AnchorPoint,
+        .Parent = parent
+    });
+    
+    registry.AddComponent<TextInputComponent>(entity, TextInputComponent{
+        .Text = "",
+        .Placeholder = desc.Placeholder,
+        .IsFocused = false,
+        .DefaultColor = desc.DefaultColor,
+        .FocusedColor = desc.FocusedColor,
+        .TextColor = desc.TextColor,
+        .OnSubmit = desc.OnSubmit,
+        .MaxLength = desc.MaxLength,
+        .FontId = desc.FontId,
+        .FontSize = desc.FontSize
+    });
+
+    return entity;
 }

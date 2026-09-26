@@ -20,7 +20,7 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_sfxPowerUp = context.Resources.LoadResource("Resources/audio/sfx/powerup.wav");
     m_sfxCombo = context.Resources.LoadResource("Resources/audio/sfx/combo.wav");
 
-    m_context.Events.Subscribe<BrickHitEvent>([this](const BrickHitEvent& e)
+    m_brickHitSubId = m_context.Events.Subscribe<BrickHitEvent>([this](const BrickHitEvent& e)
     {
         float pitch = 1.0f + (e.Combo * 0.05f);
 
@@ -48,12 +48,12 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
         }
     });
 
-    m_context.Events.Subscribe<PaddleHitEvent>([this](const PaddleHitEvent& e)
+    m_paddleHitSubId = m_context.Events.Subscribe<PaddleHitEvent>([this](const PaddleHitEvent& e)
     {
         m_context.Audio.PlaySfx(m_sfxPaddleHit, 80.0f);
     });
 
-    m_context.Events.Subscribe<BallDeathEvent>([this](const BallDeathEvent& e)
+    m_ballDeathSubId = m_context.Events.Subscribe<BallDeathEvent>([this](const BallDeathEvent& e)
     {
         m_context.Audio.PlaySfx(m_sfxBallDeath, 80.0f);
         m_registry.View<Camera2D, TweenComponent>([&](Entity, Camera2D& cam, TweenComponent& tween) {
@@ -62,6 +62,12 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     });
 }
 
+GameFeelSystem::~GameFeelSystem()
+{
+    m_context.Events.Unsubscribe(GetEventId<BrickHitEvent>(), m_brickHitSubId);
+    m_context.Events.Unsubscribe(GetEventId<PaddleHitEvent>(), m_paddleHitSubId);
+    m_context.Events.Unsubscribe(GetEventId<BallDeathEvent>(), m_ballDeathSubId);
+}
 
 void GameFeelSystem::OnUpdate(float dt)
 {

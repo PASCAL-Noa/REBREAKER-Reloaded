@@ -76,6 +76,22 @@ struct DropdownDescriptor
     uint8_t     _padding[8] = {0};
 };
 
+struct TextInputDescriptor
+{
+    std::string     Placeholder = "Enter text...";
+    std::function<void(const std::string&)> OnSubmit = nullptr;
+    Vector2f    Position = {0.0f, 0.0f};
+    Vector2f    Size = {400.0f, 60.0f};
+    Color   DefaultColor = Color{50, 50, 50, 255};
+    Color   FocusedColor = Color{80, 80, 80, 255};
+    Color   TextColor    = Colors::White;
+    uint32_t    FontId = 0;
+    float   FontSize = 30.0f;
+    Anchor  AnchorPoint  = Anchor::Center;
+    size_t  MaxLength = 20;
+    uint32_t    TextureId = 0;
+};
+
 class UIFactory
 {
 public:
@@ -86,4 +102,5 @@ public:
     // Complex Widgets
     static void     CreateVolumeControl(Registry& registry, Entity parent, const VolumeControlDescriptor& desc);
     static Entity   CreateDropdown(Registry& registry, Entity parent, const DropdownDescriptor& desc);
+    static Entity   CreateTextInput(Registry& registry, Entity parent, const TextInputDescriptor& desc);
 };

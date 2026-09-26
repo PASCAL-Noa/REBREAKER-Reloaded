@@ -3,19 +3,43 @@
 #include <unordered_map>
 #include <vector>
 #include <functional>
+#include <cstdint>
 
 class EventDispatcher
 {
 public:
     using EventCallback = std::function<void(const Event&)>;
+    using SubscriptionID = uint64_t;
 
     template <typename T, typename F>
-    void Subscribe(F&& callback)
+    SubscriptionID Subscribe(F&& callback)
     {
-        m_observers[GetEventId<T>()].push_back([callback](const Event& e)
+        uint32_t eventId = GetEventId<T>();
+        SubscriptionID subId = ++m_nextSubscriptionId;
+        
+        m_observers[eventId].push_back({subId, [callback](const Event& e)
         {
             callback(static_cast<const T&>(e));
-        });
+        }});
+        
+        return subId;
+    }
+
+    void Unsubscribe(uint32_t eventId, SubscriptionID subId)
+    {
+        auto it = m_observers.find(eventId);
+        if (it != m_observers.end())
+        {
+            auto& callbacks = it->second;
+            for (auto cbIt = callbacks.begin(); cbIt != callbacks.end(); ++cbIt)
+            {
+                if (cbIt->first == subId)
+                {
+                    callbacks.erase(cbIt);
+                    break;
+                }
+            }
+        }
     }
 
     template <typename T>
@@ -26,9 +50,10 @@ public:
         
         if (it != m_observers.end())
         {
-            for (const auto& observer : it->second)
+            auto callbacksCopy = it->second;
+            for (const auto& observer : callbacksCopy)
             {
-                observer(event);
+                observer.second(event);
             }
         }
     }
@@ -39,5 +64,6 @@ public:
     }
 
 private:
-    std::unordered_map<uint32_t, std::vector<EventCallback>> m_observers;
+    SubscriptionID m_nextSubscriptionId = 0;
+    std::unordered_map<uint32_t, std::vector<std::pair<SubscriptionID, EventCallback>>> m_observers;
 };

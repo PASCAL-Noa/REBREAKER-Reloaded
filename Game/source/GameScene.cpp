@@ -17,6 +17,7 @@
 #include "Graphics/Renderer.h"
 #include "Events/EventDispatcher.h"
 #include "Events/CollisionEvent.h"
+#include "Events/CheatSubmitEvent.h"
 #include "StateMachine/Transition.h"
 #include "Conditions/KeyPressCondition.h"
 #include "Conditions/GameConditions.h"
@@ -94,7 +95,7 @@ void GameScene::OnInit(GameContext& context)
     };
     camTween.AddTween(alphaTween);
 
-    context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
+    m_collisionSubId = context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
         if (m_ballState != BallState::Active) return;
 
@@ -161,7 +162,7 @@ void GameScene::OnInit(GameContext& context)
 
     m_systemManager.OnInit();
 
-    mp_levelGenerator = new FileLevelGenerator("Resources/levels/level01.txt");
+    mp_levelGenerator = std::make_unique<FileLevelGenerator>("Resources/levels/level01.txt");
     m_brickCount = mp_levelGenerator->Generate(m_registry, context, m_brickTexId);
     ResetBallAndPaddle();
 
@@ -169,9 +170,9 @@ void GameScene::OnInit(GameContext& context)
     m_playlist.AddTrack(context, "Resources/audio/music/Game-2.ogg");
     m_playlist.AddTrack(context, "Resources/audio/music/Game-3.ogg");
     m_playlist.AddTrack(context, "Resources/audio/music/Game-4.ogg");
-    m_playlist.PlayNext(context);
+    m_lives = PlayerPrefs::GetInt("Lives", 3);
 
-    mp_state_machine = new StateMachine<GameScene>(this, 4);
+    mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 4);
 
     State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
     playingState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Paused)));
@@ -196,6 +197,7 @@ void GameScene::OnInit(GameContext& context)
     CreateRenderTab(context);
     CreateInputsTab(context);
     CreateGamerulesTab(context);
+    CreateCheatsTab(context);
     CreateSettingsLayout(context);
 
 }
@@ -221,6 +223,11 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         }
 
         m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = (currentState == static_cast<int>(SceneState::Paused) && !isSettingsOpen);
+        
+        if (m_cheatsTabBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_cheatsTabBtn))
+        {
+            m_registry.GetComponent<RectTransform>(m_cheatsTabBtn).IsActive = context.Rules.GetRule(Rule::Gameplay::CheatsUnlocked);
+        }
         
         if (currentState != static_cast<int>(SceneState::Paused) && m_settingsLayoutCanvas != NULL_ENTITY)
         {
@@ -268,8 +275,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         m_playlist.Update(context);
         m_systemManager.OnUpdate(dt);
     }
-
-    UISystem::OnUpdate(dt, m_registry, context);
+    m_registry.ProcessDeferredCommands();
 }
 
 void GameScene::OnRender(GameContext& context)
@@ -403,13 +409,15 @@ void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& c
 
 void GameScene::OnDestroy(GameContext& context)
 {
-    delete mp_state_machine;
-    mp_state_machine = nullptr;
+    m_textFeedback.reset();
+    mp_state_machine.reset();
+    mp_levelGenerator.reset();
 
-    delete mp_levelGenerator;
-    mp_levelGenerator = nullptr;
-
-    context.Events.Clear();
+    if (m_collisionSubId != 0)
+    {
+        context.Events.Unsubscribe(GetEventId<CollisionEvent>(), m_collisionSubId);
+        m_collisionSubId = 0;
+    }
     DefaultScene::OnDestroy(context);
 }
 
@@ -428,8 +436,9 @@ void GameScene::FullReset()
     }
 
     m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
-        m_registry.DestroyEntity(e);
+        m_registry.DestroyEntityDeferred(e);
     });
+    m_registry.ProcessDeferredCommands();
 
     m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
     ResetBallAndPaddle();
@@ -620,6 +629,7 @@ void GameScene::HandleDeath()
 
 void GameScene::HandleBrickCollision(Entity entity)
 {
+    if (m_registry.IsPendingDestroy(entity)) return;
     if (!m_registry.HasComponent<BrickComponent>(entity)) return;
 
     auto& brick = m_registry.GetComponent<BrickComponent>(entity);
@@ -675,7 +685,7 @@ void GameScene::HandleBrickCollision(Entity entity)
             SpawnExplosionParticles(transform.Position, sprite.Tint);
         }
         
-        m_registry.DestroyEntity(entity);
+        m_registry.DestroyEntityDeferred(entity);
     }
 }
 
@@ -867,6 +877,14 @@ void GameScene::CreateSettingsLayout(const GameContext& context)
         .Text = "GAMERULES",
         .OnClick = [this]() { OpenSettingsTab(m_gamerulesCanvas); },
         .Position = {leftPanelX, startY + stepY * 3.0f},
+        .Size = {leftPanelWidth * 0.8f, 60.0f},
+        .FontId = m_fontId
+    });
+
+    m_cheatsTabBtn = UIFactory::CreateButton(m_registry, m_settingsLayoutCanvas, ButtonDescriptor{
+        .Text = "CHEATS",
+        .OnClick = [this]() { OpenSettingsTab(m_cheatsCanvas); },
+        .Position = {leftPanelX, startY + stepY * 4.0f},
         .Size = {leftPanelWidth * 0.8f, 60.0f},
         .FontId = m_fontId
     });
@@ -1146,6 +1164,42 @@ void GameScene::CreateGamerulesTab(const GameContext& context)
       .Position = {rightPanelX, 0.0f},
       .Size = {rightPanelWidth, viewY},
       .Tint = Colors::Transparent
+    });
+}
+
+void GameScene::CreateCheatsTab(const GameContext& context)
+{
+    float viewX = context.Render.GetLogicalViewSize().X;
+    float viewY = context.Render.GetLogicalViewSize().Y;
+    float rightPanelWidth = viewX * 0.75f;
+    float rightPanelX = viewX * 0.125f;
+
+    m_cheatsCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_cheatsCanvas, CanvasComponent{.IsEnabled = false});
+    m_registry.AddComponent<TweenComponent>(m_cheatsCanvas, TweenComponent{});
+
+    UIFactory::CreateText(m_registry, m_cheatsCanvas, TextDescriptor{
+        .Text = "CHEATS",
+        .Position = {rightPanelX, -viewY * 0.2f},
+        .FontId = m_fontId,
+        .FontSize = 40.0f
+    });
+
+    UIFactory::CreateTextInput(m_registry, m_cheatsCanvas, TextInputDescriptor{
+        .Placeholder = "Enter Cheat Code...",
+        .OnSubmit = [&context](const std::string& code) {
+            context.Events.Publish(CheatSubmitEvent(code));
+        },
+        .Position = {rightPanelX, 0.0f},
+        .Size = {600.0f, 60.0f},
+        .FontId = m_fontId,
+        .FontSize = 40.0f
+    });
+
+    UIFactory::CreatePanel(m_registry, m_cheatsCanvas, PanelDescriptor{
+        .Position = {rightPanelX, 0.0f},
+        .Size = {rightPanelWidth, viewY},
+        .Tint = Colors::Transparent
     });
 }
 

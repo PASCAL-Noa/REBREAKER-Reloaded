@@ -32,6 +32,7 @@ void Application::Init()
     m_context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toggle Hitbox", false, RuleAccess::Private);
     m_context.Rules.RegisterRule(Rule::Gameplay::Invincible, "God mod", false, RuleAccess::Private);
     m_context.Rules.RegisterRule(Rule::Gameplay::InfiniteLives, "Infinite lives", false, RuleAccess::Private);
+    m_context.Rules.RegisterRule(Rule::Gameplay::CheatsUnlocked, "Cheats Unlocked", false, RuleAccess::Private);
 
     m_sceneManager.LoadScene<MenuScene>();
 }

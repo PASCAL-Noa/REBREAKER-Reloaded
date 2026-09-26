@@ -11,9 +11,7 @@ ParticleSystem::ParticleSystem(Registry& registry, Renderer& renderer, int maxPa
 
 void ParticleSystem::OnUpdate(float dt)
 {
-    std::vector<Entity> toDestroy;
-
-    m_registry.View<Transform2D, ParticleComponent>([&](Entity e, Transform2D& transform, ParticleComponent& particle)
+    m_registry.View<Transform2D, ParticleComponent>([this, dt](Entity e, Transform2D& transform, ParticleComponent& particle)
     {
         transform.Position.X += particle.Velocity.X * dt;
         transform.Position.Y += particle.Velocity.Y * dt;
@@ -21,14 +19,11 @@ void ParticleSystem::OnUpdate(float dt)
         particle.Life -= dt;
         if (particle.Life <= 0.0f)
         {
-            toDestroy.push_back(e);
+            m_registry.DestroyEntityDeferred(e);
         }
     });
 
-    for (Entity e : toDestroy)
-    {
-        m_registry.DestroyEntity(e);
-    }
+    m_registry.ProcessDeferredCommands();
 }
 
 void ParticleSystem::OnRender()

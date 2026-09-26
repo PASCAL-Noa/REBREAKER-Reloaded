@@ -26,4 +26,6 @@ private:
     static void RenderButton(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform);
     static void RenderSprite(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform);
     static void RenderText(Registry& registry, const GameContext& context, Entity entity, const Vector2f& absolutePos);
+    static void RenderTextInput(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform, const Vector2f& absolutePos);
+    static void UpdateTextInputs(Registry& registry, const GameContext& context, const Vector2f& logicalMousePos, const Vector2f& viewSize);
 };

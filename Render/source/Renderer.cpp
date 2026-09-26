@@ -198,6 +198,30 @@ void Renderer::DrawRectangle(float width, float height, const Transform2D& trans
     RenderItem(m_renderTexture, rect, blendMode);
 }
 
+void Renderer::DrawScannerEffect(float width, float height, const Transform2D& transform, Color color, float time, uint32_t shaderId)
+{
+    sf::RectangleShape rect({width, height});
+    rect.setOrigin({width / 2.0f, height / 2.0f});
+    ApplyTransform(rect, transform);
+    rect.setFillColor(sf::Color::White);
+
+    sf::RenderStates states;
+    states.blendMode = sf::BlendAlpha;
+
+    if (shaderId != 0)
+    {
+        if (sf::Shader* shader = m_resources.Get<sf::Shader>(shaderId))
+        {
+            shader->setUniform("u_progress", time);
+            shader->setUniform("u_color", sf::Glsl::Vec4(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f));
+            shader->setUniform("u_resolution", sf::Glsl::Vec2(width, height));
+            states.shader = shader;
+        }
+    }
+
+    m_renderTexture.draw(rect, states);
+}
+
 void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color, BlendMode blendMode)
 {
     if (sf::Font* font = m_resources.Get<sf::Font>(fontId))

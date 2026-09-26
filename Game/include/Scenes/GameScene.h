@@ -8,6 +8,7 @@
 #include "Scenes/DefaultScene.h"
 #include "ECS/Entity.h"
 #include "ECS/Components/BrickComponent.h"
+#include "Events/EventDispatcher.h"
 #include "StateMachine/StateMachine.h"
 #include "Generators/ILevelGenerator.h"
 
@@ -62,15 +63,13 @@ private:
     void    CreateRenderTab(const GameContext& context);
     void    CreateInputsTab(const GameContext& context);
     void    CreateGamerulesTab(const GameContext& context);
+    void    CreateCheatsTab(const GameContext& context);
     void    OpenSettingsTab(Entity targetCanvas);
 
     void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
 
 
-    StateMachine<GameScene>*    mp_state_machine = nullptr;
-    GameContext*    mp_context = nullptr;
-
-    Entity  m_camera{};
+    std::unique_ptr<StateMachine<GameScene>> mp_state_machine;
     Entity  m_ball{};
     Entity  m_paddle{};
     Entity  m_explodingHeart{};
@@ -95,6 +94,7 @@ private:
     Entity          m_renderCanvas = NULL_ENTITY;
     Entity          m_inputsCanvas = NULL_ENTITY;
     Entity          m_gamerulesCanvas = NULL_ENTITY;
+    Entity          m_cheatsCanvas = NULL_ENTITY;
     Entity          m_activeTabCanvas = NULL_ENTITY;
 
     Entity          m_scoreTextEntity = NULL_ENTITY;
@@ -113,12 +113,16 @@ private:
     Entity  m_fsBtn = NULL_ENTITY;
     Entity  m_shaderBtn = NULL_ENTITY;
     Entity  m_particlesBtn = NULL_ENTITY;
+    Entity  m_cheatsTabBtn = NULL_ENTITY;
 
     std::unique_ptr<TextFeedback> m_textFeedback;
 
-    ILevelGenerator*    mp_levelGenerator = nullptr;
+    std::unique_ptr<ILevelGenerator> mp_levelGenerator;
     ScoreManager       m_scoreManager{"save.dat"};
     uint32_t    m_combo = 0;
     PlaylistManager     m_playlist;
     float m_cheatTimer;
+
+    EventDispatcher::SubscriptionID m_collisionSubId = 0;
+    EventDispatcher::SubscriptionID m_uiEventSubId = 0;
 };
