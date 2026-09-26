@@ -123,6 +123,5 @@ private:
     PlaylistManager     m_playlist;
     float m_cheatTimer;
 
-    EventDispatcher::SubscriptionID m_collisionSubId = 0;
-    EventDispatcher::SubscriptionID m_uiEventSubId = 0;
+    ScopedSubscription m_collisionSub;
 };

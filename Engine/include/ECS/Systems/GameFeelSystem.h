@@ -10,15 +10,15 @@ class GameFeelSystem : public System
 {
 public:
     explicit GameFeelSystem(Registry& registry, GameContext& context);
-    ~GameFeelSystem() override;
+    ~GameFeelSystem() override = default;
     void OnUpdate(float dt) override;
 
 private:
     GameContext&    m_context;
 
-    EventDispatcher::SubscriptionID m_brickHitSubId = 0;
-    EventDispatcher::SubscriptionID m_paddleHitSubId = 0;
-    EventDispatcher::SubscriptionID m_ballDeathSubId = 0;
+    ScopedSubscription m_brickHitSub;
+    ScopedSubscription m_paddleHitSub;
+    ScopedSubscription m_ballDeathSub;
 
     uint32_t    m_sfxBrickHit = 0;
     uint32_t    m_sfxBrickDestroy = 0;

@@ -25,5 +25,5 @@ private:
     uint32_t    m_bounceSfxId = 0;
     uint32_t    m_debugTexId = 0;
 
-    EventDispatcher::SubscriptionID m_collisionSubId = 0;
+    ScopedSubscription m_collisionSub;
 };

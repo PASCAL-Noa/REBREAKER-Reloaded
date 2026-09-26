@@ -34,7 +34,7 @@ void SandBox::OnInit(GameContext& context)
     m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
 
-    m_collisionSubId = context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
+    m_collisionSub = context.Events.SubscribeScoped<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
         Debug::Info("Collision detectee entre {} et {}", e.EntityA, e.EntityB);
         context.Audio.PlaySfx(m_bounceSfxId, 50.0f);
@@ -186,11 +186,7 @@ void SandBox::OnRender(GameContext& context)
 
 void SandBox::OnDestroy(GameContext& context)
 {
-    if (m_collisionSubId != 0)
-    {
-        context.Events.Unsubscribe(GetEventId<CollisionEvent>(), m_collisionSubId);
-        m_collisionSubId = 0;
-    }
+    m_collisionSub.Reset();
     DefaultScene::OnDestroy(context);
 }
 

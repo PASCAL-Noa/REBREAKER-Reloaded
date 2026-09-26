@@ -95,7 +95,7 @@ void GameScene::OnInit(GameContext& context)
     };
     camTween.AddTween(alphaTween);
 
-    m_collisionSubId = context.Events.Subscribe<CollisionEvent>([&context, this](const CollisionEvent& e)
+    m_collisionSub = context.Events.SubscribeScoped<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
         if (m_ballState != BallState::Active) return;
 
@@ -412,12 +412,8 @@ void GameScene::OnDestroy(GameContext& context)
     m_textFeedback.reset();
     mp_state_machine.reset();
     mp_levelGenerator.reset();
+    m_collisionSub.Reset();
 
-    if (m_collisionSubId != 0)
-    {
-        context.Events.Unsubscribe(GetEventId<CollisionEvent>(), m_collisionSubId);
-        m_collisionSubId = 0;
-    }
     DefaultScene::OnDestroy(context);
 }
 
