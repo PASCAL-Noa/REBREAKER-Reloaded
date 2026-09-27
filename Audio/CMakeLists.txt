@@ -6,7 +6,7 @@ add_library(Audio STATIC ${AUDIO_SOURCES} ${AUDIO_HEADERS})
 target_include_directories(Audio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 target_link_libraries(Audio PUBLIC
-        Render
+        Core
         SFML::Audio
         SFML::System
 )

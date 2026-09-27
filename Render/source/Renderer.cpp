@@ -1,4 +1,7 @@
 #include "Graphics/Renderer.h"
+#include "ECS/Components/Transform2D.h"
+#include "ECS/Components/Camera2D.h"
+#include "ECS/Components/SpriteComponent.h"
 
 static sf::Color ToSfColor(const Color& c)
 {

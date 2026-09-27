@@ -2,17 +2,15 @@
 #include "System/Window.h"
 #include "Resources/ResourceManager.h"
 #include "Data/Color.h"
-#include "ECS/Components/Transform2D.h"
-#include "ECS/Components/Transform2D.h"
-#include "Math/Rect.h"
-#include <string>
-
 #include "Data/BlendMode.h"
-#include "ECS/Components/Camera2D.h"
 #include "Data/PrimitiveType.h"
 #include "Data/Vertex.h"
+#include "Math/Vector2.h"
+#include <string>
 
-#include "ECS/Components/SpriteComponent.h"
+struct Camera2D;
+struct Transform2D;
+struct SpriteComponent;
 
 class Renderer
 {
