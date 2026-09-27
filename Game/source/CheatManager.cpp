@@ -6,6 +6,7 @@
 #include "Events/CheatSubmitEvent.h"
 #include "Events/EventDispatcher.h"
 #include "Math/EasingFunctions.h"
+#include "ECS/Components/Transform2D.h"
 
 CheatManager::CheatManager(GameContext& context)
 {

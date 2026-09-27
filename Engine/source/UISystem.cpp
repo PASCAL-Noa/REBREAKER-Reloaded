@@ -7,6 +7,8 @@
 #include "ECS/Components/UI/PanelComponent.h"
 #include "ECS/Components/UI/TextComponent.h"
 #include "ECS/Components/UI/TextInputComponent.h"
+#include "ECS/Components/Transform2D.h"
+#include "ECS/Components/SpriteComponent.h"
 #include "Graphics/Renderer.h"
 
 Vector2f UISystem::GetAbsolutePosition(Registry& registry, Entity entity, const RectTransform& transform, const Vector2f& viewSize)
