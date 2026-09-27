@@ -1,11 +1,14 @@
 #include "TweenEffects/TweenEffects.h"
 #include <cstdlib>
 
+#include "ECS/Registry.hpp"
+#include "ECS/Components/Transform2D.h"
 #include "ECS/Components/Camera2D.h"
+#include "ECS/Components/TweenComponent.h"
 
 namespace TweenEffects
 {
-    void Shake(TweenComponent& tweenComp, Transform2D& transform, const float duration, const float intensity)
+    void Shake(TweenComponent& tweenComp, Registry& registry, Entity entity, const float duration, const float intensity)
     {
         TweenConfig<float> config;
         config.Start = intensity;
@@ -13,10 +16,26 @@ namespace TweenEffects
         config.Duration = duration;
         config.Ease = EasingFunctions::EasingType::EaseOutQuad;
 
-        config.Setter = [&transform, currentOffset = Vector2f{0.0f, 0.0f}](const float val) mutable
+        config.Setter = [&registry, entity, currentOffset = Vector2f{0.0f, 0.0f}](const float val) mutable
         {
-            transform.Position.X -= currentOffset.X;
-            transform.Position.Y -= currentOffset.Y;
+            const bool hasTransform = registry.HasComponent<Transform2D>(entity);
+            const bool hasCamera = registry.HasComponent<Camera2D>(entity);
+
+            if (!hasTransform && !hasCamera)
+                return;
+
+            if (hasTransform)
+            {
+                auto& transform = registry.GetComponent<Transform2D>(entity);
+                transform.Position.X -= currentOffset.X;
+                transform.Position.Y -= currentOffset.Y;
+            }
+            if (hasCamera)
+            {
+                auto& camera = registry.GetComponent<Camera2D>(entity);
+                camera.Position.X -= currentOffset.X;
+                camera.Position.Y -= currentOffset.Y;
+            }
 
             if (val <= 0.0f)
             {
@@ -28,44 +47,33 @@ namespace TweenEffects
             const float offsetY = ((std::rand() % 100) / 100.0f - 0.5f) * 2.0f * val;
             currentOffset = Vector2f{offsetX, offsetY};
 
-            transform.Position.X += currentOffset.X;
-            transform.Position.Y += currentOffset.Y;
-        };
-
-        tweenComp.AddTween(config);
-    }
-
-    void Shake(TweenComponent& tweenComp, Camera2D& camera, const float duration, const float intensity)
-    {
-        TweenConfig<float> config;
-        config.Start = intensity;
-        config.End = 0.0f;
-        config.Duration = duration;
-        config.Ease = EasingFunctions::EasingType::EaseOutQuad;
-
-        config.Setter = [&camera, currentOffset = Vector2f{0.0f, 0.0f}](const float val) mutable
-        {
-            camera.Position.X -= currentOffset.X;
-            camera.Position.Y -= currentOffset.Y;
-
-            if (val <= 0.0f)
+            if (hasTransform)
             {
-                currentOffset = Vector2f{0.0f, 0.0f};
-                return;
+                auto& transform = registry.GetComponent<Transform2D>(entity);
+                transform.Position.X += currentOffset.X;
+                transform.Position.Y += currentOffset.Y;
             }
-
-            const float offsetX = ((std::rand() % 100) / 100.0f - 0.5f) * 2.0f * val;
-            const float offsetY = ((std::rand() % 100) / 100.0f - 0.5f) * 2.0f * val;
-            currentOffset = Vector2f{offsetX, offsetY};
-
-            camera.Position.X += currentOffset.X;
-            camera.Position.Y += currentOffset.Y;
+            if (hasCamera)
+            {
+                auto& camera = registry.GetComponent<Camera2D>(entity);
+                camera.Position.X += currentOffset.X;
+                camera.Position.Y += currentOffset.Y;
+            }
         };
 
         tweenComp.AddTween(config);
     }
 
-    void Spin(TweenComponent& tweenComp, Transform2D& transform, const float duration)
+    void Shake(Registry& registry, Entity entity, const float duration, const float intensity)
+    {
+        if (!registry.HasComponent<TweenComponent>(entity))
+        {
+            registry.AddComponent<TweenComponent>(entity, TweenComponent{});
+        }
+        Shake(registry.GetComponent<TweenComponent>(entity), registry, entity, duration, intensity);
+    }
+
+    void Spin(TweenComponent& tweenComp, Registry& registry, Entity entity, const float duration)
     {
         TweenConfig<float> config;
         config.Start = 0.0f;
@@ -73,18 +81,35 @@ namespace TweenEffects
         config.Duration = duration;
         config.Ease = EasingFunctions::EasingType::EaseInOutSine;
 
-        config.Setter = [&transform](float angle)
+        config.Setter = [&registry, entity](float angle)
         {
-            transform.Rotation = angle;
+            if (!registry.HasComponent<Transform2D>(entity))
+                return;
+            registry.GetComponent<Transform2D>(entity).Rotation = angle;
         };
 
         tweenComp.AddTween(config);
     }
 
-    void ComboFlameScale(TweenComponent& tweenComp, Transform2D& transform, const float targetScale)
+    void Spin(Registry& registry, Entity entity, const float duration)
     {
+        if (!registry.HasComponent<TweenComponent>(entity))
+        {
+            registry.AddComponent<TweenComponent>(entity, TweenComponent{});
+        }
+        Spin(registry.GetComponent<TweenComponent>(entity), registry, entity, duration);
+    }
+
+    void ComboFlameScale(TweenComponent& tweenComp, Registry& registry, Entity entity, const float targetScale)
+    {
+        float startScale = 0.0f;
+        if (registry.HasComponent<Transform2D>(entity))
+        {
+            startScale = registry.GetComponent<Transform2D>(entity).Scale.X;
+        }
+
         TweenConfig<float> config;
-        config.Start = transform.Scale.X;
+        config.Start = startScale;
         config.End = targetScale;
         config.Duration = 0.4f;
         
@@ -93,46 +118,85 @@ namespace TweenEffects
         else
             config.Ease = EasingFunctions::EasingType::EaseOutBack;
         
-        config.Setter = [&transform](float val)
+        config.Setter = [&registry, entity](float val)
         {
+            if (!registry.HasComponent<Transform2D>(entity))
+                return;
             if (val < 0.0f) val = 0.0f;
-            transform.Scale = {val, val};
+            registry.GetComponent<Transform2D>(entity).Scale = {val, val};
         };
 
         tweenComp.AddTween(config);
     }
 
-    void BallIn(TweenComponent& tweenComp, Transform2D& transform, const std::function<void()>& onComplete, const float duration)
+    void ComboFlameScale(Registry& registry, Entity entity, const float targetScale)
+    {
+        if (!registry.HasComponent<TweenComponent>(entity))
+        {
+            registry.AddComponent<TweenComponent>(entity, TweenComponent{});
+        }
+        ComboFlameScale(registry.GetComponent<TweenComponent>(entity), registry, entity, targetScale);
+    }
+
+    void BallIn(TweenComponent& tweenComp, Registry& registry, Entity entity, const std::function<void()>& onComplete, const float duration)
     {
         TweenConfig<Vector2f> scaleTween;
         scaleTween.Start = Vector2f{0.0f, 0.0f};
         scaleTween.End = Vector2f{1.0f, 1.0f};
         scaleTween.Duration = duration;
         scaleTween.Ease = EasingFunctions::EasingType::EaseOutBack;
-        scaleTween.Setter = [&transform](const Vector2f v) {
-            transform.Scale = v;
+        scaleTween.Setter = [&registry, entity](const Vector2f v) {
+            if (!registry.HasComponent<Transform2D>(entity))
+                return;
+            registry.GetComponent<Transform2D>(entity).Scale = v;
         };
         scaleTween.OnComplete = onComplete;
         
         tweenComp.AddTween(scaleTween);
     }
 
-    void BallOut(TweenComponent& tweenComp, Transform2D& transform, std::function<void()> onComplete, float duration)
+    void BallIn(Registry& registry, Entity entity, const std::function<void()>& onComplete, const float duration)
     {
+        if (!registry.HasComponent<TweenComponent>(entity))
+        {
+            registry.AddComponent<TweenComponent>(entity, TweenComponent{});
+        }
+        BallIn(registry.GetComponent<TweenComponent>(entity), registry, entity, onComplete, duration);
+    }
+
+    void BallOut(TweenComponent& tweenComp, Registry& registry, Entity entity, std::function<void()> onComplete, float duration)
+    {
+        Vector2f startScale{1.0f, 1.0f};
+        if (registry.HasComponent<Transform2D>(entity))
+        {
+            startScale = registry.GetComponent<Transform2D>(entity).Scale;
+        }
+
         TweenConfig<Vector2f> scaleTween;
-        scaleTween.Start = Vector2f{1.0f, 1.0f};
+        scaleTween.Start = startScale;
         scaleTween.End = Vector2f{0.0f, 0.0f};
         scaleTween.Duration = duration;
         scaleTween.Ease = EasingFunctions::EasingType::EaseInBack;
-        scaleTween.Setter = [&transform](Vector2f v) {
-            transform.Scale = v;
+        scaleTween.Setter = [&registry, entity](Vector2f v) {
+            if (!registry.HasComponent<Transform2D>(entity))
+                return;
+            registry.GetComponent<Transform2D>(entity).Scale = v;
         };
         scaleTween.OnComplete = onComplete;
         
         tweenComp.AddTween(scaleTween);
     }
 
-    void CameraBreathing(TweenComponent& tweenComp, Camera2D& camera, const float minZoom, const float maxZoom, const float duration)
+    void BallOut(Registry& registry, Entity entity, std::function<void()> onComplete, float duration)
+    {
+        if (!registry.HasComponent<TweenComponent>(entity))
+        {
+            registry.AddComponent<TweenComponent>(entity, TweenComponent{});
+        }
+        BallOut(registry.GetComponent<TweenComponent>(entity), registry, entity, onComplete, duration);
+    }
+
+    void CameraBreathing(TweenComponent& tweenComp, Registry& registry, Entity entity, const float minZoom, const float maxZoom, const float duration)
     {
         TweenConfig<float> config;
         config.Start = minZoom;
@@ -141,11 +205,22 @@ namespace TweenEffects
         config.Ease = EasingFunctions::EasingType::EaseInOutSine;
         config.Yoyo = true;
         
-        config.Setter = [&camera](const float val) {
-            camera.Zoom = val;
+        config.Setter = [&registry, entity](const float val) {
+            if (!registry.HasComponent<Camera2D>(entity))
+                return;
+            registry.GetComponent<Camera2D>(entity).Zoom = val;
         };
         
         tweenComp.AddTween(config);
+    }
+
+    void CameraBreathing(Registry& registry, Entity entity, const float minZoom, const float maxZoom, const float duration)
+    {
+        if (!registry.HasComponent<TweenComponent>(entity))
+        {
+            registry.AddComponent<TweenComponent>(entity, TweenComponent{});
+        }
+        CameraBreathing(registry.GetComponent<TweenComponent>(entity), registry, entity, minZoom, maxZoom, duration);
     }
 
     void BackgroundColorShift(TweenComponent& tweenComp, Color color1, Color color2, std::function<void(Color)> colorSetter, const float duration)
@@ -168,4 +243,14 @@ namespace TweenEffects
         
         tweenComp.AddTween(config);
     }
+
+    void BackgroundColorShift(Registry& registry, Entity entity, Color color1, Color color2, std::function<void(Color)> colorSetter, const float duration)
+    {
+        if (!registry.HasComponent<TweenComponent>(entity))
+        {
+            registry.AddComponent<TweenComponent>(entity, TweenComponent{});
+        }
+        BackgroundColorShift(registry.GetComponent<TweenComponent>(entity), color1, color2, colorSetter, duration);
+    }
 }
+
