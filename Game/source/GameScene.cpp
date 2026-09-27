@@ -79,7 +79,7 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<TweenComponent>(m_camera, TweenComponent{});
     auto& camTween = m_registry.GetComponent<TweenComponent>(m_camera);
     
-    TweenEffects::CameraBreathing(camTween, camera, 0.74f, 0.76f, 6.0f);
+    TweenEffects::CameraBreathing(camTween, m_registry, m_camera, 0.74f, 0.76f, 6.0f);
     
     Color c1{20, 20, 30, 255};
     Color c2{30, 20, 40, 255};
@@ -522,7 +522,7 @@ void GameScene::ResetBallAndPaddle()
         m_registry.AddComponent<TweenComponent>(m_ball, TweenComponent{});
     }
 
-    TweenEffects::BallIn(m_registry.GetComponent<TweenComponent>(m_ball), ballTransform, [this]() {
+    TweenEffects::BallIn(m_registry.GetComponent<TweenComponent>(m_ball), m_registry, m_ball, [this]() {
         m_ballState = BallState::Attached;
     }, 0.5f);
 }

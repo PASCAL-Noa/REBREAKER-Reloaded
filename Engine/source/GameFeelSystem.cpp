@@ -37,8 +37,7 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
                 m_registry.HasComponent<Transform2D>(e.BrickEntity))
             {
                 auto& tween = m_registry.GetComponent<TweenComponent>(e.BrickEntity);
-                auto& transform = m_registry.GetComponent<Transform2D>(e.BrickEntity);
-                TweenEffects::Shake(tween, transform, 0.15f, 5.0f);
+                TweenEffects::Shake(tween, m_registry, e.BrickEntity, 0.15f, 5.0f);
             }
 
             if (e.Combo > 1)
@@ -56,9 +55,9 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_ballDeathSub = m_context.Events.SubscribeScoped<BallDeathEvent>([this](const BallDeathEvent& e)
     {
         m_context.Audio.PlaySfx(m_sfxBallDeath, 80.0f);
-        m_registry.View<Camera2D, TweenComponent>([&](Entity, Camera2D& cam, TweenComponent& tween) {
-        TweenEffects::Shake(tween, cam, 0.4f, 15.0f);
-    });
+        m_registry.View<Camera2D, TweenComponent>([&](Entity entity, Camera2D&, TweenComponent& tween) {
+            TweenEffects::Shake(tween, m_registry, entity, 0.4f, 15.0f);
+        });
     });
 }
 

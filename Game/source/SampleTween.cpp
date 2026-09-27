@@ -37,15 +37,13 @@ void SampleTween::OnUpdate(float dt, GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::Num1))
     {
         auto& tween = m_registry.GetComponent<TweenComponent>(m_agent);
-        auto& transform = m_registry.GetComponent<Transform2D>(m_agent);
-        TweenEffects::Shake(tween, transform, 0.4f, 25.0f);
+        TweenEffects::Shake(tween, m_registry, m_agent, 0.4f, 25.0f);
     }
 
     if (context.Input.IsKeyPress(KeyCode::Num2))
     {
         auto& tween = m_registry.GetComponent<TweenComponent>(m_agent);
-        auto& transform = m_registry.GetComponent<Transform2D>(m_agent);
-        TweenEffects::Spin(tween, transform, 0.8f);
+        TweenEffects::Spin(tween, m_registry, m_agent, 0.8f);
     }
 
     m_systemManager.OnUpdate(dt);
