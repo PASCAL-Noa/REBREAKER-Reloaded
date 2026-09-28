@@ -7,10 +7,14 @@
 #include "ECS/Components/CircleCollider.h"
 #include "Graphics/Renderer.h"
 
+#include <algorithm>
+
 RenderSystem::RenderSystem(Registry& registry, Renderer& renderer) : System(registry), m_renderer(renderer) {}
 
 void RenderSystem::OnRender()
 {
+    m_renderQueue.clear();
+
     m_registry.View<Transform2D, SpriteComponent>([this](const Entity e, const Transform2D& transform, const SpriteComponent& sprite)
     {
         float scaleX = transform.Scale.X;
@@ -38,7 +42,26 @@ void RenderSystem::OnRender()
         Transform2D renderTransform = transform;
         renderTransform.Scale = {scaleX, scaleY};
 
-        m_renderer.DrawSprite(sprite, renderTransform, BlendMode::Alpha);
+        m_renderQueue.push_back(RenderItem{
+            .sprite = &sprite,
+            .renderTransform = renderTransform,
+            .layer = sprite.Layer,
+            .entity = e
+        });
     });
+
+    std::stable_sort(m_renderQueue.begin(), m_renderQueue.end(), [](const RenderItem& a, const RenderItem& b)
+    {
+        if (a.layer != b.layer)
+        {
+            return a.layer < b.layer;
+        }
+        return a.entity < b.entity;
+    });
+
+    for (const auto& item : m_renderQueue)
+    {
+        m_renderer.DrawSprite(*item.sprite, item.renderTransform, BlendMode::Alpha);
+    }
 }
 

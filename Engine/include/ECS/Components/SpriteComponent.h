@@ -17,6 +17,7 @@ struct SpriteComponent
 {
     uint32_t    TextureId = 0;
     Color    Tint = Colors::White;
+    int         Layer = 0;
     ShaderParams    Shader;
     std::optional<IntRect>  TextureRect = std::nullopt;
     std::optional<Vector2f>     Origin = std::nullopt;
