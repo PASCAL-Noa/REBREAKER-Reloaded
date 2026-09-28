@@ -11,6 +11,7 @@
 #include "Scenes/SampleStateMachine.h"
 #include "Scenes/SampleTween.h"
 #include "Scenes/SampleUI.h"
+#include "Scenes/SampleRenderLayer.h"
 
 void MenuScene::OnInit(GameContext& context)
 {
@@ -55,6 +56,11 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     {
         context.Scenes.LoadScene<SampleUI>();
     }
+
+    if (context.Input.IsKeyDown(KeyCode::Num8))
+    {
+        context.Scenes.LoadScene<SampleRenderLayer>();
+    }
 }
 
 void MenuScene::OnRender(GameContext& context)
@@ -70,4 +76,5 @@ void MenuScene::OnRender(GameContext& context)
     context.Render.DrawText("Press '5' for StateMachine", m_fontId, 32.0f, Transform2D{200.0f, 500.0f}, Colors::White);
     context.Render.DrawText("Press '6' for Tween", m_fontId, 32.0f, Transform2D{200.0f, 550.0f}, Colors::White);
     context.Render.DrawText("Press '7' for UI", m_fontId, 32.0f, Transform2D{200.0f, 600.0f}, Colors::White);
+    context.Render.DrawText("Press '8' for Render Layer", m_fontId, 32.0f, Transform2D{200.0f, 650.0f}, Colors::White);
 }
