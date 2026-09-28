@@ -1,5 +1,5 @@
-file(GLOB_RECURSE AUDIO_SOURCES CONFIG_DEPENDS "source/*.cpp")
-file(GLOB_RECURSE AUDIO_HEADERS CONFIG_DEPENDS "include/*.hpp" "include/*.h")
+file(GLOB_RECURSE AUDIO_SOURCES CONFIGURE_DEPENDS "source/*.cpp")
+file(GLOB_RECURSE AUDIO_HEADERS CONFIGURE_DEPENDS "include/*.hpp" "include/*.h")
 
 add_library(Audio STATIC ${AUDIO_SOURCES} ${AUDIO_HEADERS})
 
