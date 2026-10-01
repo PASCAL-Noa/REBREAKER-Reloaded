@@ -2,6 +2,7 @@
 #include "Resources/ResourceManager.h"
 #include <SFML/Audio.hpp>
 #include <list>
+#include <iostream>
 
 struct AudioMixer::Impl
 {
@@ -24,16 +25,20 @@ struct AudioMixer::Impl
 };
 
 AudioMixer::AudioMixer(ResourceManager& resourceManager)
-    : mp_impl(new Impl(resourceManager)) {}
+    : mp_impl(std::make_unique<Impl>(resourceManager)) {}
 
 AudioMixer::~AudioMixer()
 {
     StopAll();
-    delete mp_impl;
 }
+
+AudioMixer::AudioMixer(AudioMixer&&) noexcept = default;
+AudioMixer& AudioMixer::operator=(AudioMixer&&) noexcept = default;
 
 void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch) const
 {
+    if (!mp_impl) return;
+
     sf::SoundBuffer* buffer = mp_impl->resourceManager.Get<sf::SoundBuffer>(soundId);
     if (!buffer) return;
 
@@ -53,6 +58,8 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch) const
 
 void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop) const
 {
+    if (!mp_impl) return;
+
     if (mp_impl->music.openFromFile(filepath))
     {
         float finalVolume = volume * (mp_impl->musicVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
@@ -60,15 +67,21 @@ void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop)
         mp_impl->music.setLooping(loop);
         mp_impl->music.play();
     }
+    else
+    {
+        std::cerr << "[AudioMixer] Warning: Failed to open music file \"" << filepath << "\".\n";
+    }
 }
 
 void AudioMixer::StopMusic() const
 {
+    if (!mp_impl) return;
     mp_impl->music.stop();
 }
 
 void AudioMixer::SetMasterVolume(float volume) const
 {
+    if (!mp_impl) return;
     mp_impl->masterVolume = volume;
     SetMusicVolume(mp_impl->musicVolume);
 
@@ -80,11 +93,13 @@ void AudioMixer::SetMasterVolume(float volume) const
 
 void AudioMixer::SetSfxVolume(float volume) const
 {
+    if (!mp_impl) return;
     mp_impl->sfxVolume = volume;
 }
 
 void AudioMixer::SetMusicVolume(float volume) const
 {
+    if (!mp_impl) return;
     mp_impl->musicVolume = volume;
     float finalVolume = mp_impl->musicVolume * (mp_impl->masterVolume / 100.0f);
     mp_impl->music.setVolume(finalVolume);
@@ -92,21 +107,25 @@ void AudioMixer::SetMusicVolume(float volume) const
 
 void AudioMixer::StopAll() const
 {
+    if (!mp_impl) return;
     mp_impl->sfxPool.clear();
     mp_impl->music.stop();
 }
 
 bool AudioMixer::IsMusicPlaying() const
 {
+    if (!mp_impl) return false;
     return mp_impl->music.getStatus() == sf::SoundSource::Status::Playing;
 }
 
 float AudioMixer::GetSfxVolume() const
 {
+    if (!mp_impl) return 0.0f;
     return mp_impl->sfxVolume;
 }
 
 float AudioMixer::GetMusicVolume() const
 {
+    if (!mp_impl) return 0.0f;
     return mp_impl->musicVolume;
 }
