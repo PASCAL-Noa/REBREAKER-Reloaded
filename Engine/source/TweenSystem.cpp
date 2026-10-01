@@ -10,6 +10,8 @@ void TweenSystem::OnUpdate(float dt)
 {
     m_registry.View<TweenComponent>([this, dt](Entity entity, TweenComponent& tweenComp)
     {
+        if (tweenComp.ActiveTweens.empty()) return;
+
         auto tweensCopy = tweenComp.ActiveTweens;
 
         for (int i = static_cast<int>(tweensCopy.size()) - 1; i >= 0; --i)

@@ -30,10 +30,13 @@ struct BallDeathEvent : public Event
         : BallEntity(ball) {}
 };
 
+#include "ECS/Components/PowerUpComponent.h"
+
 struct PowerUpEvent : public Event
 {
-    Entity PowerUpEntity;
+    Entity      PowerUpEntity;
+    PowerUpType Type;
 
-    explicit PowerUpEvent(const Entity powerUp)
-        : PowerUpEntity(powerUp) {}
+    explicit PowerUpEvent(const Entity powerUp, const PowerUpType type = PowerUpType::MultiBall)
+        : PowerUpEntity(powerUp), Type(type) {}
 };

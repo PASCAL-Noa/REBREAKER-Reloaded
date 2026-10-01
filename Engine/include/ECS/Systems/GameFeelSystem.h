@@ -19,6 +19,7 @@ private:
     ScopedSubscription m_brickHitSub;
     ScopedSubscription m_paddleHitSub;
     ScopedSubscription m_ballDeathSub;
+    ScopedSubscription m_powerUpSub;
 
     uint32_t    m_sfxBrickHit = 0;
     uint32_t    m_sfxBrickDestroy = 0;

@@ -1,5 +1,14 @@
 #include "Scenes/DefaultScene.h"
 #include "Scenes/MenuScene.h"
+#include "Scenes/SandBox.h"
+#include "Scenes/SamplePhysics.h"
+#include "Scenes/SampleAudio.h"
+#include "Scenes/GameScene.h"
+#include "Scenes/SampleStateMachine.h"
+#include "Scenes/SampleTween.h"
+#include "Scenes/SampleUI.h"
+#include "Scenes/SampleRenderLayer.h"
+#include "Scenes/SamplePowerUps.h"
 #include "Core/GameContext.h"
 #include "Core/GameData.h"
 #include "Core/SceneManager.h"
@@ -27,7 +36,17 @@ void DefaultScene::OnUpdate(float dt, GameContext& context)
     Scene::OnUpdate(dt, context);
     mp_context = &context;
 
-    if (context.Input.IsKeyDown(KeyCode::Num0))
+    // Universal quick scene navigation from anywhere
+    if (context.Input.IsKeyPress(KeyCode::F1))      context.Scenes.LoadScene<SandBox>();
+    else if (context.Input.IsKeyPress(KeyCode::F2)) context.Scenes.LoadScene<SamplePhysics>();
+    else if (context.Input.IsKeyPress(KeyCode::F3)) context.Scenes.LoadScene<SampleAudio>();
+    else if (context.Input.IsKeyPress(KeyCode::F4)) context.Scenes.LoadScene<GameScene>();
+    else if (context.Input.IsKeyPress(KeyCode::F5)) context.Scenes.LoadScene<SampleStateMachine>();
+    else if (context.Input.IsKeyPress(KeyCode::F6)) context.Scenes.LoadScene<SampleTween>();
+    else if (context.Input.IsKeyPress(KeyCode::F7)) context.Scenes.LoadScene<SampleUI>();
+    else if (context.Input.IsKeyPress(KeyCode::F8)) context.Scenes.LoadScene<SampleRenderLayer>();
+    else if (context.Input.IsKeyPress(KeyCode::F9)) context.Scenes.LoadScene<SamplePowerUps>();
+    else if (context.Input.IsKeyPress(KeyCode::F12) || context.Input.IsKeyPress(KeyCode::Num0))
     {
         context.Scenes.LoadScene<MenuScene>();
     }
@@ -51,7 +70,7 @@ void DefaultScene::DrawDefaultUI(const GameContext& context, const std::string& 
     text += "FPS : " + std::to_string(context.Data.FPS) + "\n";
     text += "Entities : " + std::to_string(m_registry.GetActiveEntityCount()) + "\n\n";
     text += instructions + "\n\n";
-    text += "[0] Retour au menu";
+    text += "[0/F12] Menu | [F1]SandBox [F2]Physics [F3]Audio [F4]Game [F5]State [F6]Tween [F7]UI [F8]Render [F9]PowerUps";
 
     context.Render.DrawText(text, m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 10.0f}}, Colors::White);
 }

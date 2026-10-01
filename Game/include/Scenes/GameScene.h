@@ -11,6 +11,8 @@
 #include "Events/EventDispatcher.h"
 #include "StateMachine/StateMachine.h"
 #include "Generators/ILevelGenerator.h"
+#include "ECS/Components/PowerUpComponent.h"
+#include <vector>
 
 struct Color;
 
@@ -44,17 +46,32 @@ public:
     [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
     void    FullReset();
 
-private:
+    void    SetPowerUpTesterActive(bool active);
+    [[nodiscard]] bool IsPowerUpTesterActive() const { return m_powerUpTesterActive; }
+    void    TogglePowerUpTester();
+
+protected:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
-    void    ResetBallAndPaddle();
+    void    ResetBallAndPaddle(bool smooth = false);
+    void    CreatePowerUpTesterUI(const GameContext& context);
+    void    SpawnAllPowerUps();
+    void    RespawnBricks();
 
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity);
-    void    HandlePaddleCollision();
+    void    HandlePaddleCollision(Entity ballEntity);
+    void    HandleBallBottomCollision(Entity ballEntity);
+
+    Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
+    void    SpawnPowerUp(const Vector2f& position);
+    void    ApplyPowerUp(PowerUpType type);
+    void    FireLasers();
+    static Color GetPowerUpColor(PowerUpType type);
 
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
+    void    UpdatePowerUpTimers(float dt);
 
     void    CreateUILayout(GameContext& context);
     void    CreatePauseMenu(const GameContext& context);
@@ -82,6 +99,7 @@ private:
     uint32_t    m_brickTexId = 0;
     uint32_t    m_brickCrackTexId = 0;
     uint32_t    m_bounceSfxId = 0;
+    uint32_t    m_despawnSfxId = 0;
     uint32_t    m_fireTexId = 0;
     uint32_t    m_heartTexId = 0;
 
@@ -124,4 +142,16 @@ private:
     float m_cheatTimer;
 
     ScopedSubscription m_collisionSub;
+    ScopedSubscription m_powerUpSub;
+
+    std::vector<Entity> m_balls;
+    std::vector<Entity> m_lasers;
+    bool    m_powerUpTesterActive = false;
+    Entity  m_powerUpTesterCanvas = NULL_ENTITY;
+
+    float   m_paddleSizeDuration = 0.0f;
+    float   m_laserDuration = 0.0f;
+    float   m_slowBallDuration = 0.0f;
+    int     m_slowBallStacks = 0;
+    Entity  m_powerUpStatusText = NULL_ENTITY;
 };

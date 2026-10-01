@@ -43,7 +43,7 @@ static void RenderItem(sf::RenderTexture& texture, const sf::Drawable& drawable,
 Renderer::Renderer(Window& window, ResourceManager& resources) : m_window(window), m_resources(resources)
 {
     sf::ContextSettings settings;
-    settings.antiAliasingLevel = 32;
+    settings.antiAliasingLevel = 4;
 
     (void)m_renderTexture.resize(m_window.GetNative().getSize(), settings);
 
@@ -56,7 +56,7 @@ void Renderer::BeginDraw(Color clearColor)
     if (m_renderTexture.getSize() != winSize && winSize.x > 0 && winSize.y > 0)
     {
         sf::ContextSettings settings;
-        settings.antiAliasingLevel = 32;
+        settings.antiAliasingLevel = 4;
         (void)m_renderTexture.resize(winSize, settings);
         m_renderTexture.setSmooth(true);
     }
@@ -251,12 +251,12 @@ void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType t
 {
     if (vertices.empty()) return;
 
-    std::vector<sf::Vertex> sfVertices;
-    sfVertices.reserve(vertices.size());
+    m_vertexScratch.clear();
+    m_vertexScratch.reserve(vertices.size());
 
     for (const auto& v : vertices)
     {
-        sfVertices.emplace_back(sf::Vector2f{v.X, v.Y}, ToSfColor(v.Color), sf::Vector2f{v.U, v.V});
+        m_vertexScratch.emplace_back(sf::Vector2f{v.X, v.Y}, ToSfColor(v.Color), sf::Vector2f{v.U, v.V});
     }
 
     sf::RenderStates states;
@@ -267,7 +267,7 @@ void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType t
         states.texture = m_resources.Get<sf::Texture>(textureId);
     }
 
-    m_renderTexture.draw(sfVertices.data(), sfVertices.size(), ToSfPrimitiveType(type), states);
+    m_renderTexture.draw(m_vertexScratch.data(), m_vertexScratch.size(), ToSfPrimitiveType(type), states);
 }
 
 void Renderer::DrawRectangleOutline(float width, float height, const Transform2D& transform, Color color, float thickness)
