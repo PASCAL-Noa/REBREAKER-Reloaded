@@ -26,6 +26,7 @@
 #include "ECS/Systems/PowerUpSystem.h"
 #include "ECS/Components/PaddleComponent.h"
 #include "ECS/Components/BallComponent.h"
+#include "PowerUps/PowerUpConfig.h"
 #include <string>
 #include <algorithm>
 #include <random>
@@ -54,6 +55,8 @@ void GameScene::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
     mp_context = &context;
+
+    PowerUpManager::Get().LoadFromPrefs();
 
     auto& camera = m_registry.GetComponent<Camera2D>(m_camera);
     context.Render.SetCamera(camera);
@@ -369,6 +372,36 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
                 trans.Position.Y = minY;
                 if (rb.Velocity.Y < 0.0f) rb.Velocity.Y = std::abs(rb.Velocity.Y);
             }
+
+            // Enforce minimum & maximum speed (especially critical during MultiBall collisions)
+            float speed = std::sqrt(rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y);
+            float minSpeed = (m_tempoBallDuration > 0.0f) ? 280.0f : 450.0f;
+            constexpr float MAX_BALL_SPEED = 900.0f;
+
+            if (speed < 0.1f)
+            {
+                rb.Velocity = Vector2f{300.0f, -400.0f}.Normalized() * minSpeed;
+            }
+            else if (speed < minSpeed)
+            {
+                rb.Velocity = (rb.Velocity / speed) * minSpeed;
+            }
+            else if (speed > MAX_BALL_SPEED)
+            {
+                rb.Velocity = (rb.Velocity / speed) * MAX_BALL_SPEED;
+            }
+
+            // Prevent balls from getting trapped in near-horizontal trajectories
+            constexpr float MIN_VERTICAL_SPEED = 120.0f;
+            if (std::abs(rb.Velocity.Y) < MIN_VERTICAL_SPEED)
+            {
+                rb.Velocity.Y = (rb.Velocity.Y >= 0.0f) ? MIN_VERTICAL_SPEED : -MIN_VERTICAL_SPEED;
+                float currentSpd = std::sqrt(rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y);
+                if (currentSpd > 0.1f)
+                {
+                    rb.Velocity = (rb.Velocity / currentSpd) * speed;
+                }
+            }
         }
 
         std::erase_if(m_lasers, [this](Entity laser) {
@@ -398,6 +431,7 @@ void GameScene::OnRender(GameContext& context)
     context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{-800.0f, 450.0f}, Colors::White, 2.0f);
     context.Render.DrawLine(Vector2f{800.0f, -450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
     context.Render.DrawLine(Vector2f{-800.0f, 450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
+
 
     const bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
     if (showDebug)
@@ -437,11 +471,13 @@ void GameScene::OnRender(GameContext& context)
     if (m_powerUpTesterActive)
     {
         const auto& paddleBox = m_registry.GetComponent<BoxCollider>(m_paddle);
+        const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
         const auto& paddleComp = m_registry.GetComponent<PaddleComponent>(m_paddle);
-        stats += "\n[POWER-UP TESTER ON] Balls: " + std::to_string(m_balls.size()) +
-                 " | Paddle: " + std::to_string(static_cast<int>(paddleBox.Size.X)) + "px" +
+        stats += "\n[POWER-UP DEBUG ON] Lv:" + std::to_string(PowerUpManager::Get().GetLevel(PowerUpType::MultiBall)) +
+                 " | Balls: " + std::to_string(m_balls.size()) +
+                 " | Paddle: " + std::to_string(static_cast<int>(paddleBox.GetEffectiveSize(paddleTrans.Scale).X)) + "px" +
                  " | Laser: " + (paddleComp.HasLaser ? "ON" : "OFF") +
-                 " | Keys: 1-6, D, S, R, B | [TAB] Hide";
+                 " | Keys: 1-7, P, O, R, B, U | [TAB] Hide";
     }
     else
     {
@@ -605,13 +641,14 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::Numpad2) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num2))) ApplyPowerUp(PowerUpType::ExpandPaddle);
     if (context.Input.IsKeyPress(KeyCode::Numpad3) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num3))) ApplyPowerUp(PowerUpType::ShrinkPaddle);
     if (context.Input.IsKeyPress(KeyCode::Numpad4) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num4))) ApplyPowerUp(PowerUpType::LaserPaddle);
-    if (context.Input.IsKeyPress(KeyCode::Numpad5) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num5))) ApplyPowerUp(PowerUpType::SlowBall);
+    if (context.Input.IsKeyPress(KeyCode::Numpad5) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num5))) ApplyPowerUp(PowerUpType::TempoBall);
     if (context.Input.IsKeyPress(KeyCode::Numpad6) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num6))) ApplyPowerUp(PowerUpType::ExtraLife);
-    if (context.Input.IsKeyPress(KeyCode::Numpad7) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::P)))
+    if (context.Input.IsKeyPress(KeyCode::Numpad7) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num7))) ApplyPowerUp(PowerUpType::BigBall);
+    if (context.Input.IsKeyPress(KeyCode::Numpad8) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::P)))
     {
         SpawnPowerUp(Vector2f{paddleTransform.Position.X, -300.0f});
     }
-    if (context.Input.IsKeyPress(KeyCode::Numpad8) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::O)))
+    if (context.Input.IsKeyPress(KeyCode::Numpad9) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::O)))
     {
         SpawnAllPowerUps();
     }
@@ -623,9 +660,21 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
     {
         RespawnBricks();
     }
+    if (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::U))
+    {
+        int curLvl = PowerUpManager::Get().GetLevel(PowerUpType::MultiBall);
+        int nextLvl = (curLvl % 5) + 1;
+        PowerUpManager::Get().SetLevel(PowerUpType::MultiBall, nextLvl);
+        PowerUpManager::Get().SetLevel(PowerUpType::ExpandPaddle, nextLvl);
+        PowerUpManager::Get().SetLevel(PowerUpType::ShrinkPaddle, nextLvl);
+        PowerUpManager::Get().SetLevel(PowerUpType::LaserPaddle, nextLvl);
+        PowerUpManager::Get().SetLevel(PowerUpType::TempoBall, nextLvl);
+        PowerUpManager::Get().SetLevel(PowerUpType::ExtraLife, nextLvl);
+        PowerUpManager::Get().SetLevel(PowerUpType::BigBall, nextLvl);
+    }
 
     const auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
-    const float halfPaddleWidth = (paddleCollider.Size.X * paddleTransform.Scale.X) * 0.5f;
+    const float halfPaddleWidth = paddleCollider.GetEffectiveSize(paddleTransform.Scale).X * 0.5f;
     const float limitX = 800.0f - halfPaddleWidth;
     paddleTransform.Position.X = std::clamp(paddleTransform.Position.X, -limitX, limitX);
 
@@ -638,7 +687,7 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
             if (context.Input.IsKeyPress(KeyCode::Space) || paddleComp.LaserCooldown <= 0.0f)
             {
                 FireLasers();
-                paddleComp.LaserCooldown = 0.6f;
+                paddleComp.LaserCooldown = PowerUpManager::Get().Laser().GetEffectiveCooldown();
             }
         }
     }
@@ -656,7 +705,9 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
                 if (m_registry.HasComponent<RigidBody>(m_ball))
                 {
                     auto& ballRb = m_registry.GetComponent<RigidBody>(m_ball);
-                    ballRb.Velocity = Vector2f{500.0f, -400.0f};
+                    float launchSpeed = (m_tempoBallDuration > 0.0f) ? 850.0f : 640.0f;
+                    Vector2f launchDir = Vector2f{500.0f, -400.0f}.Normalized();
+                    ballRb.Velocity = launchDir * launchSpeed;
                     ballRb.IsKinematic = false;
                 }
             }
@@ -703,8 +754,20 @@ void GameScene::ResetBallAndPaddle(bool smooth)
     // Reset power-up durations & stacks
     m_paddleSizeDuration = 0.0f;
     m_laserDuration = 0.0f;
-    m_slowBallDuration = 0.0f;
-    m_slowBallStacks = 0;
+    m_tempoBallDuration = 0.0f;
+    m_tempoBallStacks = 0;
+    m_bigBallDuration = 0.0f;
+    if (m_registry.IsAlive(m_ball))
+    {
+        if (m_registry.HasComponent<BallComponent>(m_ball))
+            m_registry.GetComponent<BallComponent>(m_ball).IsBig = false;
+        if (m_registry.HasComponent<CircleCollider>(m_ball))
+            m_registry.GetComponent<CircleCollider>(m_ball).Radius = 20.0f;
+        if (m_registry.HasComponent<Transform2D>(m_ball))
+            m_registry.GetComponent<Transform2D>(m_ball).Scale = Vector2f{1.0f, 1.0f};
+        if (m_registry.HasComponent<SpriteComponent>(m_ball))
+            m_registry.GetComponent<SpriteComponent>(m_ball).Tint = Colors::White;
+    }
 
     // Reset paddle size, scale, and laser status
     auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
@@ -873,7 +936,14 @@ void GameScene::HandleBrickCollision(Entity entity)
     if (!m_registry.HasComponent<BrickComponent>(entity)) return;
 
     auto& brick = m_registry.GetComponent<BrickComponent>(entity);
-    brick.HitPoints--;
+    if (m_bigBallDuration > 0.0f)
+    {
+        brick.HitPoints = 0; // Instant one-hit destruction by Big Ball!
+    }
+    else
+    {
+        brick.HitPoints--;
+    }
 
     bool isDestroyed = (brick.HitPoints <= 0);
 
@@ -945,14 +1015,18 @@ void GameScene::HandlePaddleCollision(Entity ballEntity)
     const auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
     const auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
 
-    const float paddleHalfWidth = paddleCollider.Size.X * 0.5f;
+    const float paddleHalfWidth = paddleCollider.GetEffectiveSize(paddleTransform.Scale).X * 0.5f;
     const float offset = ballTransform.Position.X - paddleTransform.Position.X;
 
     float hitFactor = offset / paddleHalfWidth;
     if (hitFactor < -1.0f) hitFactor = -1.0f;
     if (hitFactor > 1.0f) hitFactor = 1.0f;
 
-    const float speed = std::sqrt(ballRb.Velocity.X * ballRb.Velocity.X + ballRb.Velocity.Y * ballRb.Velocity.Y);
+    float speed = std::sqrt(ballRb.Velocity.X * ballRb.Velocity.X + ballRb.Velocity.Y * ballRb.Velocity.Y);
+    if (m_tempoBallDuration > 0.0f)
+    {
+        speed = PowerUpManager::Get().Tempo().GetEffectiveFastSpeed(); // Repart a toute vitesse !
+    }
     constexpr float maxAngle = 60.0f * 3.14159265f / 180.0f;
     const float bounceAngle = hitFactor * maxAngle;
 
@@ -1002,6 +1076,18 @@ Entity GameScene::CreateBall(const Vector2f& position, const Vector2f& velocity)
     m_registry.AddComponent<SpriteComponent>(ball, SpriteComponent{m_ballTexId});
     m_registry.AddComponent<TweenComponent>(ball, TweenComponent{});
     m_registry.AddComponent<BallComponent>(ball, BallComponent{});
+
+    if (m_bigBallDuration > 0.0f)
+    {
+        m_registry.GetComponent<BallComponent>(ball).IsBig = true;
+        const float bigScale = PowerUpManager::Get().Big().GetEffectiveScale();
+        m_registry.GetComponent<Transform2D>(ball).Scale = Vector2f{bigScale, bigScale};
+    }
+    if (m_tempoBallDuration > 0.0f)
+    {
+        m_registry.GetComponent<SpriteComponent>(ball).Tint = Color{210, 160, 255, 255};
+    }
+
     m_balls.push_back(ball);
     return ball;
 }
@@ -1014,8 +1100,9 @@ Color GameScene::GetPowerUpColor(PowerUpType type)
         case PowerUpType::ExpandPaddle: return Color{50, 255, 80, 255};
         case PowerUpType::ShrinkPaddle: return Color{255, 60, 60, 255};
         case PowerUpType::LaserPaddle:  return Color{255, 200, 0, 255};
-        case PowerUpType::SlowBall:     return Color{180, 70, 255, 255};
+        case PowerUpType::TempoBall:    return Color{180, 70, 255, 255};
         case PowerUpType::ExtraLife:    return Color{255, 100, 180, 255};
+        case PowerUpType::BigBall:      return Color{255, 120, 20, 255};
         default:                        return Colors::White;
     }
 }
@@ -1023,7 +1110,7 @@ Color GameScene::GetPowerUpColor(PowerUpType type)
 void GameScene::SpawnPowerUp(const Vector2f& position)
 {
     static int nextTypeIndex = 0;
-    PowerUpType type = static_cast<PowerUpType>(nextTypeIndex % 6);
+    PowerUpType type = static_cast<PowerUpType>(nextTypeIndex % 7);
     nextTypeIndex++;
 
     Entity capsule = m_registry.CreateEntity();
@@ -1039,14 +1126,15 @@ void GameScene::FireLasers()
 {
     const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
     const auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
-    float halfW = paddleCollider.Size.X * 0.4f;
+    float halfW = paddleCollider.GetEffectiveSize(paddleTrans.Scale).X * 0.4f;
+    float projSpeed = PowerUpManager::Get().Laser().ProjectileSpeed;
 
     for (float offset : {-halfW, halfW})
     {
         Entity laser = m_registry.CreateEntity();
         m_registry.AddComponent<Transform2D>(laser, Transform2D{Vector2f{paddleTrans.Position.X + offset, paddleTrans.Position.Y - 25.0f}});
         m_registry.AddComponent<BoxCollider>(laser, BoxCollider{Vector2f{10.0f, 25.0f}, Vector2f{0.0f, 0.0f}, false, true});
-        m_registry.AddComponent<RigidBody>(laser, RigidBody{Vector2f{0.0f, -900.0f}, 1.0f, 1.0f, false});
+        m_registry.AddComponent<RigidBody>(laser, RigidBody{Vector2f{0.0f, -projSpeed}, 1.0f, 1.0f, false});
         m_registry.AddComponent<SpriteComponent>(laser, SpriteComponent{m_fireTexId, Color{255, 180, 0, 255}});
         m_lasers.push_back(laser);
     }
@@ -1069,13 +1157,19 @@ void GameScene::ApplyPowerUp(PowerUpType type)
     {
         case PowerUpType::MultiBall:
         {
-            constexpr size_t MAX_BALLS = 12;
-            if (m_balls.size() >= MAX_BALLS) break;
+            const auto& cfg = PowerUpManager::Get().MultiBall();
+            const size_t maxBalls = static_cast<size_t>(cfg.MaxTotalBalls);
+            if (m_balls.size() >= maxBalls) break;
+
+            const int ballsToSpawn = cfg.GetBallsToSpawn();
+            const float rad = cfg.SplitAngleDeg * 3.14159265f / 180.0f;
+            const float cosA = std::cos(rad);
+            const float sinA = std::sin(rad);
 
             std::vector<Entity> currentBalls = m_balls;
             for (Entity existingBall : currentBalls)
             {
-                if (m_balls.size() >= MAX_BALLS) break;
+                if (m_balls.size() >= maxBalls) break;
                 if (!m_registry.IsAlive(existingBall) || !m_registry.HasComponent<Transform2D>(existingBall))
                     continue;
 
@@ -1090,13 +1184,25 @@ void GameScene::ApplyPowerUp(PowerUpType type)
                     vel = Vector2f{400.0f, -400.0f};
                 }
 
-                Vector2f vel1{vel.X * 0.8f - vel.Y * 0.5f, vel.X * 0.5f + vel.Y * 0.8f};
-                Vector2f vel2{vel.X * 0.8f + vel.Y * 0.5f, -vel.X * 0.5f + vel.Y * 0.8f};
+                float curSpeed = std::sqrt(vel.X * vel.X + vel.Y * vel.Y);
+                if (curSpeed < 450.0f) curSpeed = 600.0f;
+
+                Vector2f vel1{vel.X * cosA - vel.Y * sinA, vel.X * sinA + vel.Y * cosA};
+                Vector2f vel2{vel.X * cosA + vel.Y * sinA, -vel.X * sinA + vel.Y * cosA};
+                vel1 = vel1.Normalized() * curSpeed;
+                vel2 = vel2.Normalized() * curSpeed;
 
                 CreateBall(trans.Position, vel1);
-                if (m_balls.size() < MAX_BALLS)
+                if (ballsToSpawn > 1 && m_balls.size() < maxBalls)
                 {
                     CreateBall(trans.Position, vel2);
+                }
+                for (int extra = 2; extra < ballsToSpawn && m_balls.size() < maxBalls; ++extra)
+                {
+                    float extraRad = rad * (extra % 2 == 0 ? (extra/2 + 1) : -(extra/2 + 1));
+                    Vector2f velExtra{vel.X * std::cos(extraRad) - vel.Y * std::sin(extraRad),
+                                      vel.X * std::sin(extraRad) + vel.Y * std::cos(extraRad)};
+                    CreateBall(trans.Position, velExtra.Normalized() * curSpeed);
                 }
             }
 
@@ -1114,40 +1220,41 @@ void GameScene::ApplyPowerUp(PowerUpType type)
         }
         case PowerUpType::ExpandPaddle:
         {
+            const auto& cfg = PowerUpManager::Get().Expand();
             auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
             auto& trans = m_registry.GetComponent<Transform2D>(m_paddle);
             
-            // Stacking: expands up to 220.0f max (default is 120.0f)
-            constexpr float MAX_PADDLE_WIDTH = 220.0f;
-            paddleCollider.Size.X = std::min(paddleCollider.Size.X + 35.0f, MAX_PADDLE_WIDTH);
-            trans.Scale = Vector2f{1.0f, 1.0f};
+            // Base collider stays 120.0f; transform scale adapts collider automatically
+            paddleCollider.Size = Vector2f{120.0f, 20.0f};
+            trans.Scale.X = cfg.GetEffectiveScale();
 
-            const float halfW = paddleCollider.Size.X * 0.5f;
+            const float halfW = paddleCollider.GetEffectiveSize(trans.Scale).X * 0.5f;
             const float limitX = 800.0f - halfW;
             trans.Position.X = std::clamp(trans.Position.X, -limitX, limitX);
 
-            m_paddleSizeDuration = 10.0f; // 10s duration
+            m_paddleSizeDuration = cfg.GetEffectiveDuration();
             break;
         }
         case PowerUpType::ShrinkPaddle:
         {
+            const auto& cfg = PowerUpManager::Get().Shrink();
             auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
             auto& trans = m_registry.GetComponent<Transform2D>(m_paddle);
 
-            // Stacking: shrinks down to 65.0f min (default is 120.0f)
-            constexpr float MIN_PADDLE_WIDTH = 65.0f;
-            paddleCollider.Size.X = std::max(paddleCollider.Size.X - 25.0f, MIN_PADDLE_WIDTH);
-            trans.Scale = Vector2f{1.0f, 1.0f};
+            // Base collider stays 120.0f; transform scale adapts collider automatically
+            paddleCollider.Size = Vector2f{120.0f, 20.0f};
+            trans.Scale.X = cfg.GetEffectiveScale();
 
-            const float halfW = paddleCollider.Size.X * 0.5f;
+            const float halfW = paddleCollider.GetEffectiveSize(trans.Scale).X * 0.5f;
             const float limitX = 800.0f - halfW;
             trans.Position.X = std::clamp(trans.Position.X, -limitX, limitX);
 
-            m_paddleSizeDuration = 8.0f; // 8s duration
+            m_paddleSizeDuration = cfg.GetEffectiveDuration();
             break;
         }
         case PowerUpType::LaserPaddle:
         {
+            const auto& cfg = PowerUpManager::Get().Laser();
             if (m_registry.HasComponent<PaddleComponent>(m_paddle))
             {
                 auto& paddleComp = m_registry.GetComponent<PaddleComponent>(m_paddle);
@@ -1157,47 +1264,76 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             {
                 m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Color{255, 220, 100, 255};
             }
-            m_laserDuration = 10.0f; // 10s duration
+            m_laserDuration = cfg.GetEffectiveDuration();
             FireLasers();
             break;
         }
-        case PowerUpType::SlowBall:
+        case PowerUpType::TempoBall:
         {
-            constexpr int MAX_SLOW_STACKS = 3;
-            if (m_slowBallStacks < MAX_SLOW_STACKS)
+            const auto& cfg = PowerUpManager::Get().Tempo();
+            m_tempoBallDuration = cfg.GetEffectiveDuration();
+            const float fastSpeed = cfg.GetEffectiveFastSpeed();
+            for (Entity b : m_balls)
             {
-                m_slowBallStacks++;
-                for (Entity b : m_balls)
+                if (!m_registry.IsAlive(b) || !m_registry.HasComponent<RigidBody>(b)) continue;
+                auto& rb = m_registry.GetComponent<RigidBody>(b);
+                if (rb.IsKinematic) continue;
+                float currentSpeed = std::sqrt(rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y);
+                if (currentSpeed > 0.1f && rb.Velocity.Y < 0.0f)
                 {
-                    if (m_registry.IsAlive(b) && m_registry.HasComponent<RigidBody>(b))
-                    {
-                        auto& rb = m_registry.GetComponent<RigidBody>(b);
-                        rb.Velocity = rb.Velocity * 0.75f;
-                        float speed = std::sqrt(rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y);
-                        if (speed < 220.0f && speed > 0.1f)
-                        {
-                            rb.Velocity = (rb.Velocity / speed) * 220.0f;
-                        }
-                    }
+                    rb.Velocity = (rb.Velocity / currentSpeed) * fastSpeed;
+                }
+                if (m_registry.HasComponent<SpriteComponent>(b))
+                {
+                    m_registry.GetComponent<SpriteComponent>(b).Tint = Color{210, 160, 255, 255};
                 }
             }
-            m_slowBallDuration = 8.0f; // 8s duration
             break;
         }
         case PowerUpType::ExtraLife:
         {
+            const auto& cfg = PowerUpManager::Get().Life();
             bool infiniteLives = mp_context ? mp_context->Rules.GetRule(Rule::Gameplay::InfiniteLives) : false;
             if (!infiniteLives)
             {
-                if (m_lives < static_cast<int>(m_heartEntities.size()))
+                for (int i = 0; i < cfg.LivesGranted; ++i)
                 {
-                    Entity heart = m_heartEntities[m_lives];
-                    if (m_registry.HasComponent<RectTransform>(heart))
+                    if (m_lives < static_cast<int>(m_heartEntities.size()))
                     {
-                        m_registry.GetComponent<RectTransform>(heart).IsActive = true;
+                        Entity heart = m_heartEntities[m_lives];
+                        if (m_registry.HasComponent<RectTransform>(heart))
+                        {
+                            m_registry.GetComponent<RectTransform>(heart).IsActive = true;
+                        }
+                    }
+                    if (m_lives < cfg.MaxLivesCap)
+                    {
+                        m_lives++;
                     }
                 }
-                m_lives++;
+            }
+            break;
+        }
+        case PowerUpType::BigBall:
+        {
+            const auto& cfg = PowerUpManager::Get().Big();
+            m_bigBallDuration = cfg.GetEffectiveDuration();
+            const float bigScale = cfg.GetEffectiveScale();
+            for (Entity b : m_balls)
+            {
+                if (!m_registry.IsAlive(b)) continue;
+                if (m_registry.HasComponent<BallComponent>(b))
+                {
+                    m_registry.GetComponent<BallComponent>(b).IsBig = true;
+                }
+                if (m_registry.HasComponent<CircleCollider>(b))
+                {
+                    m_registry.GetComponent<CircleCollider>(b).Radius = 20.0f; // Automatic scaling drives effective size
+                }
+                if (m_registry.HasComponent<Transform2D>(b))
+                {
+                    m_registry.GetComponent<Transform2D>(b).Scale = Vector2f{bigScale, bigScale};
+                }
             }
             break;
         }
@@ -1219,10 +1355,10 @@ void GameScene::UpdatePowerUpTimers(float dt)
             {
                 auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
                 auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
-                paddleCollider.Size.X = 120.0f;
+                paddleCollider.Size = Vector2f{120.0f, 20.0f};
                 paddleTrans.Scale = Vector2f{1.0f, 1.0f};
 
-                const float halfW = 60.0f;
+                const float halfW = paddleCollider.GetEffectiveSize(paddleTrans.Scale).X * 0.5f;
                 const float limitX = 800.0f - halfW;
                 paddleTrans.Position.X = std::clamp(paddleTrans.Position.X, -limitX, limitX);
             }
@@ -1252,14 +1388,14 @@ void GameScene::UpdatePowerUpTimers(float dt)
         }
     }
 
-    // 3. Slow Ball Duration (Slow expires back to normal speed ~500.0f)
-    if (m_slowBallDuration > 0.0f)
+    // 3. Tempo Ball Duration
+    if (m_tempoBallDuration > 0.0f)
     {
-        m_slowBallDuration -= dt;
-        if (m_slowBallDuration <= 0.0f)
+        m_tempoBallDuration -= dt;
+        if (m_tempoBallDuration <= 0.0f)
         {
-            m_slowBallDuration = 0.0f;
-            m_slowBallStacks = 0;
+            m_tempoBallDuration = 0.0f;
+            m_tempoBallStacks = 0;
             for (Entity b : m_balls)
             {
                 if (!m_registry.IsAlive(b) || !m_registry.HasComponent<RigidBody>(b)) continue;
@@ -1268,7 +1404,87 @@ void GameScene::UpdatePowerUpTimers(float dt)
                 float currentSpeed = std::sqrt(rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y);
                 if (currentSpeed > 0.1f)
                 {
-                    rb.Velocity = (rb.Velocity / currentSpeed) * 500.0f;
+                    rb.Velocity = (rb.Velocity / currentSpeed) * 600.0f;
+                }
+                if (m_registry.HasComponent<SpriteComponent>(b))
+                {
+                    m_registry.GetComponent<SpriteComponent>(b).Tint = Colors::White;
+                }
+            }
+        }
+        else
+        {
+            const auto& tempoCfg = PowerUpManager::Get().Tempo();
+            const float fastSpeed = tempoCfg.GetEffectiveFastSpeed();
+            const float slowSpeed = tempoCfg.SlowSpeed;
+            const float topY = tempoCfg.SlowZoneTopY;
+            const float botY = tempoCfg.SlowZoneBottomY;
+
+            for (Entity b : m_balls)
+            {
+                if (!m_registry.IsAlive(b) || !m_registry.HasComponent<RigidBody>(b) || !m_registry.HasComponent<Transform2D>(b))
+                    continue;
+
+                auto& rb = m_registry.GetComponent<RigidBody>(b);
+                auto& trans = m_registry.GetComponent<Transform2D>(b);
+                if (rb.IsKinematic) continue;
+
+                float speed = std::sqrt(rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y);
+                if (speed < 0.1f) continue;
+
+                Vector2f dir = rb.Velocity / speed;
+
+                if (rb.Velocity.Y < 0.0f)
+                {
+                    // Moving towards the bricks (upward): full fast speed!
+                    rb.Velocity = dir * fastSpeed;
+                }
+                else
+                {
+                    // Moving towards the paddle (downward)
+                    if (trans.Position.Y < topY)
+                    {
+                        // Above the slow zone (brick area): keep full fast speed!
+                        rb.Velocity = dir * fastSpeed;
+                    }
+                    else
+                    {
+                        // In the Slow Zone: decelerates smoothly based on Y position towards the paddle
+                        float progress = std::clamp((trans.Position.Y - topY) / (botY - topY), 0.0f, 1.0f);
+                        float targetSpeed = fastSpeed - progress * (fastSpeed - slowSpeed);
+                        rb.Velocity = dir * targetSpeed;
+                    }
+                }
+
+                if (m_registry.HasComponent<SpriteComponent>(b))
+                {
+                    m_registry.GetComponent<SpriteComponent>(b).Tint = Color{210, 160, 255, 255};
+                }
+            }
+        }
+    }
+
+    // 4. Big Ball Duration (Balls shrink back to normal size)
+    if (m_bigBallDuration > 0.0f)
+    {
+        m_bigBallDuration -= dt;
+        if (m_bigBallDuration <= 0.0f)
+        {
+            m_bigBallDuration = 0.0f;
+            for (Entity b : m_balls)
+            {
+                if (!m_registry.IsAlive(b)) continue;
+                if (m_registry.HasComponent<BallComponent>(b))
+                {
+                    m_registry.GetComponent<BallComponent>(b).IsBig = false;
+                }
+                if (m_registry.HasComponent<CircleCollider>(b))
+                {
+                    m_registry.GetComponent<CircleCollider>(b).Radius = 20.0f;
+                }
+                if (m_registry.HasComponent<Transform2D>(b))
+                {
+                    m_registry.GetComponent<Transform2D>(b).Scale = Vector2f{1.0f, 1.0f};
                 }
             }
         }
@@ -1278,7 +1494,7 @@ void GameScene::UpdatePowerUpTimers(float dt)
     if (m_powerUpStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_powerUpStatusText))
     {
         std::string status;
-        if (m_balls.size() > 1) status += "Balls: " + std::to_string(m_balls.size()) + "/12  ";
+        if (m_balls.size() > 1) status += "Balls: " + std::to_string(m_balls.size()) + "/" + std::to_string(PowerUpManager::Get().MultiBall().MaxTotalBalls) + "  ";
         if (m_paddleSizeDuration > 0.0f) {
             char buf[32];
             snprintf(buf, sizeof(buf), "Size: %.1fs  ", m_paddleSizeDuration);
@@ -1289,10 +1505,19 @@ void GameScene::UpdatePowerUpTimers(float dt)
             snprintf(buf, sizeof(buf), "Laser: %.1fs  ", m_laserDuration);
             status += buf;
         }
-        if (m_slowBallDuration > 0.0f) {
+        if (m_tempoBallDuration > 0.0f) {
             char buf[32];
-            snprintf(buf, sizeof(buf), "Slow (x%d): %.1fs", m_slowBallStacks, m_slowBallDuration);
+            snprintf(buf, sizeof(buf), "Tempo Ball: %.1fs  ", m_tempoBallDuration);
             status += buf;
+        }
+        if (m_bigBallDuration > 0.0f) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "Big Ball: %.1fs  ", m_bigBallDuration);
+            status += buf;
+        }
+        if (status.empty())
+        {
+            status = "All Lv." + std::to_string(PowerUpManager::Get().GetLevel(PowerUpType::MultiBall)) + " | [U] Level 1-5";
         }
         m_registry.GetComponent<TextComponent>(m_powerUpStatusText).Text = status;
     }
@@ -1843,9 +2068,9 @@ void GameScene::TogglePowerUpTester()
 
 void GameScene::SpawnAllPowerUps()
 {
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 7; ++i)
     {
-        float x = -500.0f + i * 200.0f;
+        float x = -600.0f + i * 200.0f;
         PowerUpType type = static_cast<PowerUpType>(i);
         Entity capsule = m_registry.CreateEntity();
         m_registry.AddComponent<Transform2D>(capsule, Transform2D{Vector2f{x, -350.0f}, 0.0f, Vector2f{0.5f, 0.7f}});
@@ -1878,7 +2103,7 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
     // Dark semi-transparent panel on right side of the screen
     UIFactory::CreatePanel(m_registry, m_powerUpTesterCanvas, PanelDescriptor{
         .Position = {-155.0f, 0.0f},
-        .Size = {290.0f, 720.0f},
+        .Size = {290.0f, 760.0f},
         .Tint = Color{15, 20, 30, 220},
         .AnchorPoint = Anchor::MiddleRight
     });
@@ -1928,33 +2153,35 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
         {"2. Expand Paddle", PowerUpType::ExpandPaddle, Color{30, 130, 50, 255}, Color{50, 180, 80, 255}},
         {"3. Shrink Paddle", PowerUpType::ShrinkPaddle, Color{150, 40, 40, 255}, Color{200, 60, 60, 255}},
         {"4. Laser Paddle", PowerUpType::LaserPaddle, Color{160, 120, 20, 255}, Color{220, 170, 30, 255}},
-        {"5. Slow Ball", PowerUpType::SlowBall, Color{110, 40, 160, 255}, Color{150, 60, 210, 255}},
-        {"6. Extra Life", PowerUpType::ExtraLife, Color{160, 50, 110, 255}, Color{210, 70, 150, 255}}
+        {"5. Tempo Ball", PowerUpType::TempoBall, Color{110, 40, 160, 255}, Color{150, 60, 210, 255}},
+        {"6. Extra Life", PowerUpType::ExtraLife, Color{160, 50, 110, 255}, Color{210, 70, 150, 255}},
+        {"7. Big Ball", PowerUpType::BigBall, Color{180, 80, 15, 255}, Color{230, 110, 25, 255}}
     };
 
-    float startY = -235.0f;
-    float stepY = 48.0f;
+    float startY = -230.0f;
+    float stepY = 38.0f;
 
-    for (size_t i = 0; i < 6; ++i)
+    for (size_t i = 0; i < 7; ++i)
     {
         PowerUpType pType = buttons[i].type;
         UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
             .Text = buttons[i].text,
             .OnClick = [this, pType]() { ApplyPowerUp(pType); },
             .Position = {-155.0f, startY + i * stepY},
-            .Size = {260.0f, 42.0f},
+            .Size = {260.0f, 34.0f},
             .TextOffset = {0.0f, -8.0f},
             .DefaultColor = buttons[i].normalColor,
             .HoverColor = buttons[i].hoverColor,
             .PressedColor = Color{20, 20, 20, 255},
             .TextColor = Colors::White,
             .FontId = m_fontId,
-            .FontSize = 24.0f,
+            .FontSize = 22.0f,
             .AnchorPoint = Anchor::MiddleRight
         });
     }
 
-    float actionY = startY + 6 * stepY + 10.0f;
+    float actionY = startY + 7 * stepY + 6.0f;
+    float actionStepY = 38.0f;
 
     // Drop capsule button
     UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
@@ -1965,30 +2192,30 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
             }
         },
         .Position = {-155.0f, actionY},
-        .Size = {260.0f, 42.0f},
+        .Size = {260.0f, 34.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{60, 60, 80, 255},
         .HoverColor = Color{90, 90, 120, 255},
         .PressedColor = Color{30, 30, 40, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 24.0f,
+        .FontSize = 22.0f,
         .AnchorPoint = Anchor::MiddleRight
     });
 
-    // Drop all 6 capsules button
+    // Drop all 7 capsules button
     UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
-        .Text = "Drop All 6 [O]",
+        .Text = "Drop All 7 [O]",
         .OnClick = [this]() { SpawnAllPowerUps(); },
-        .Position = {-155.0f, actionY + stepY},
-        .Size = {260.0f, 42.0f},
+        .Position = {-155.0f, actionY + actionStepY},
+        .Size = {260.0f, 34.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{60, 60, 80, 255},
         .HoverColor = Color{90, 90, 120, 255},
         .PressedColor = Color{30, 30, 40, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 24.0f,
+        .FontSize = 22.0f,
         .AnchorPoint = Anchor::MiddleRight
     });
 
@@ -1996,15 +2223,15 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
         .Text = "Reset Ball [R]",
         .OnClick = [this]() { ResetBallAndPaddle(true); },
-        .Position = {-155.0f, actionY + stepY * 2},
-        .Size = {260.0f, 42.0f},
+        .Position = {-155.0f, actionY + actionStepY * 2},
+        .Size = {260.0f, 34.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{70, 70, 70, 255},
         .HoverColor = Color{100, 100, 100, 255},
         .PressedColor = Color{30, 30, 30, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 24.0f,
+        .FontSize = 22.0f,
         .AnchorPoint = Anchor::MiddleRight
     });
 
@@ -2012,15 +2239,41 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
         .Text = "Refill Bricks [B]",
         .OnClick = [this]() { RespawnBricks(); },
-        .Position = {-155.0f, actionY + stepY * 3},
-        .Size = {260.0f, 42.0f},
+        .Position = {-155.0f, actionY + actionStepY * 3},
+        .Size = {260.0f, 34.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{70, 70, 70, 255},
         .HoverColor = Color{100, 100, 100, 255},
         .PressedColor = Color{30, 30, 30, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 24.0f,
+        .FontSize = 22.0f,
+        .AnchorPoint = Anchor::MiddleRight
+    });
+
+    // Level +1 / Cycle button
+    UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+        .Text = "Level +1 / Cycle [U]",
+        .OnClick = [this]() {
+            int curLvl = PowerUpManager::Get().GetLevel(PowerUpType::MultiBall);
+            int nextLvl = (curLvl % 5) + 1;
+            PowerUpManager::Get().SetLevel(PowerUpType::MultiBall, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::ExpandPaddle, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::ShrinkPaddle, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::LaserPaddle, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::TempoBall, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::ExtraLife, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::BigBall, nextLvl);
+        },
+        .Position = {-155.0f, actionY + actionStepY * 4},
+        .Size = {260.0f, 34.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{110, 70, 25, 255},
+        .HoverColor = Color{150, 100, 35, 255},
+        .PressedColor = Color{40, 25, 10, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 22.0f,
         .AnchorPoint = Anchor::MiddleRight
     });
 }

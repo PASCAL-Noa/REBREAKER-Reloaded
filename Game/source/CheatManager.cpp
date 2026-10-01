@@ -160,10 +160,10 @@ bool CheatManager::TryCheat(const std::string& code, const GameContext& context)
         m_cheatWasActivated = true;
         success = true;
     }
-    else if (upperCode == "SLOW")
+    else if (upperCode == "TEMPO")
     {
-        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::SlowBall));
-        m_activeCheatName = "SLOW BALL";
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::TempoBall));
+        m_activeCheatName = "TEMPO BALL";
         m_cheatWasActivated = true;
         success = true;
     }
@@ -171,6 +171,13 @@ bool CheatManager::TryCheat(const std::string& code, const GameContext& context)
     {
         context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::ExtraLife));
         m_activeCheatName = "EXTRA LIFE";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "BIG")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::BigBall));
+        m_activeCheatName = "BIG BALL";
         m_cheatWasActivated = true;
         success = true;
     }

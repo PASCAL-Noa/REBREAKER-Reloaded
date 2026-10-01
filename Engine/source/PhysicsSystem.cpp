@@ -5,8 +5,11 @@
 #include "ECS/Components/CircleCollider.h"
 #include "ECS/Components/BoxCollider.h"
 #include "ECS/Components/PaddleComponent.h"
+#include "ECS/Components/BallComponent.h"
+#include "ECS/Components/BrickComponent.h"
 #include "Events/EventDispatcher.h"
 #include "Events/CollisionEvent.h"
+#include "PowerUps/PowerUpConfig.h"
 #include <algorithm>
 
 PhysicsSystem::PhysicsSystem(Registry& registry, EventDispatcher& events)
@@ -104,7 +107,19 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
                 b2.IsColliding = true;
                 m_events.Publish(CollisionEvent{e1, e2});
 
-                if (!c1.IsTrigger && !b2.IsTrigger) ResolveCollision(e1, t1, e2, t2, manifold);
+                bool isBigBallPiercing = false;
+                if (m_registry.HasComponent<BallComponent>(e1) && m_registry.GetComponent<BallComponent>(e1).IsBig)
+                {
+                    if (m_registry.HasComponent<BrickComponent>(e2) && PowerUpManager::Get().Big().PiercesBricks)
+                    {
+                        isBigBallPiercing = true;
+                    }
+                }
+
+                if (!c1.IsTrigger && !b2.IsTrigger && !isBigBallPiercing)
+                {
+                    ResolveCollision(e1, t1, e2, t2, manifold);
+                }
             }
         });
     });

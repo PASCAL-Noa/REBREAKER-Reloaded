@@ -151,7 +151,8 @@ protected:
 
     float   m_paddleSizeDuration = 0.0f;
     float   m_laserDuration = 0.0f;
-    float   m_slowBallDuration = 0.0f;
-    int     m_slowBallStacks = 0;
+    float   m_tempoBallDuration = 0.0f;
+    int     m_tempoBallStacks = 0;
+    float   m_bigBallDuration = 0.0f;
     Entity  m_powerUpStatusText = NULL_ENTITY;
 };

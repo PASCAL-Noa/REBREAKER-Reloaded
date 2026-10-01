@@ -8,7 +8,6 @@
 #include "Scenes/SampleTween.h"
 #include "Scenes/SampleUI.h"
 #include "Scenes/SampleRenderLayer.h"
-#include "Scenes/SamplePowerUps.h"
 #include "Core/GameContext.h"
 #include "Core/GameData.h"
 #include "Core/SceneManager.h"
@@ -45,7 +44,6 @@ void DefaultScene::OnUpdate(float dt, GameContext& context)
     else if (context.Input.IsKeyPress(KeyCode::F6)) context.Scenes.LoadScene<SampleTween>();
     else if (context.Input.IsKeyPress(KeyCode::F7)) context.Scenes.LoadScene<SampleUI>();
     else if (context.Input.IsKeyPress(KeyCode::F8)) context.Scenes.LoadScene<SampleRenderLayer>();
-    else if (context.Input.IsKeyPress(KeyCode::F9)) context.Scenes.LoadScene<SamplePowerUps>();
     else if (context.Input.IsKeyPress(KeyCode::F12) || context.Input.IsKeyPress(KeyCode::Num0))
     {
         context.Scenes.LoadScene<MenuScene>();

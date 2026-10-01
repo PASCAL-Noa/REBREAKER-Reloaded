@@ -12,7 +12,6 @@
 #include "Scenes/SampleTween.h"
 #include "Scenes/SampleUI.h"
 #include "Scenes/SampleRenderLayer.h"
-#include "Scenes/SamplePowerUps.h"
 
 void MenuScene::OnInit(GameContext& context)
 {
@@ -55,10 +54,6 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     {
         context.Scenes.LoadScene<SampleRenderLayer>();
     }
-    if (context.Input.IsKeyPress(KeyCode::Num9) || context.Input.IsKeyPress(KeyCode::F9))
-    {
-        context.Scenes.LoadScene<SamplePowerUps>();
-    }
 }
 
 void MenuScene::OnRender(GameContext& context)
@@ -75,6 +70,5 @@ void MenuScene::OnRender(GameContext& context)
     context.Render.DrawText("Press '6' / 'F6' for Tween", m_fontId, 32.0f, Transform2D{200.0f, 500.0f}, Colors::White);
     context.Render.DrawText("Press '7' / 'F7' for UI", m_fontId, 32.0f, Transform2D{200.0f, 550.0f}, Colors::White);
     context.Render.DrawText("Press '8' / 'F8' for Render Layer", m_fontId, 32.0f, Transform2D{200.0f, 600.0f}, Colors::White);
-    context.Render.DrawText("Press '9' / 'F9' for Power-Ups Sample", m_fontId, 32.0f, Transform2D{200.0f, 650.0f}, Color{0, 220, 255, 255});
-    context.Render.DrawText("Quick Scene Jump: [F1-F9] Jump Directly from Any Scene | [0]/[F12] Menu", m_fontId, 24.0f, Transform2D{200.0f, 720.0f}, Colors::Yellow);
+    context.Render.DrawText("Quick Scene Jump: [F1-F8] Jump Directly from Any Scene | [0]/[F12] Menu", m_fontId, 24.0f, Transform2D{200.0f, 670.0f}, Colors::Yellow);
 }
