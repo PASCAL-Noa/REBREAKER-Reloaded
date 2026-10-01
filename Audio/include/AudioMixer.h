@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <cstdint>
+#include <memory>
 
 class ResourceManager;
 
@@ -12,6 +13,8 @@ public:
 
     AudioMixer(const AudioMixer&) = delete;
     AudioMixer& operator=(const AudioMixer&) = delete;
+    AudioMixer(AudioMixer&&) noexcept;
+    AudioMixer& operator=(AudioMixer&&) noexcept;
 
     void    PlaySfx(uint32_t soundId, float volume = 100.0f, float pitch = 1.0f) const;
     void    PlayMusic(const std::string& filepath, float volume = 100.0f, bool loop = true) const;
@@ -28,5 +31,5 @@ public:
     [[nodiscard]] bool  IsMusicPlaying() const;
 private:
     struct  Impl;
-    Impl*   mp_impl;
+    std::unique_ptr<Impl> mp_impl;
 };
