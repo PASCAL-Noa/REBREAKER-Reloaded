@@ -125,6 +125,28 @@ struct BigBallConfig
     }
 };
 
+// Configuration for Fire Ball
+struct FireBallConfig
+{
+    int   Level = 1;
+    int   MaxLevel = 5;
+    float BaseScale = 1.3f;
+    float ScaleBonusPerLevel = 0.15f;
+    float BaseAoERadius = 110.0f;
+    float AoERadiusPerLevel = 25.0f;
+    float FuseDuration = 1.0f;
+
+    float GetEffectiveScale() const {
+        return BaseScale + (Level - 1) * ScaleBonusPerLevel;
+    }
+    float GetEffectiveAoERadius() const {
+        return BaseAoERadius + (Level - 1) * AoERadiusPerLevel;
+    }
+    int GetUpgradeCost() const {
+        return 160 * Level;
+    }
+};
+
 class PowerUpManager
 {
 public:
@@ -138,6 +160,7 @@ public:
     TempoBallConfig&   Tempo()       { return m_tempo; }
     ExtraLifeConfig&   Life()        { return m_life; }
     BigBallConfig&     Big()         { return m_big; }
+    FireBallConfig&    FireBall()    { return m_fireBall; }
 
     const MultiBallConfig&  MultiBall() const { return m_multiBall; }
     const PaddleSizeConfig& Expand()    const { return m_expand; }
@@ -146,6 +169,7 @@ public:
     const TempoBallConfig&  Tempo()     const { return m_tempo; }
     const ExtraLifeConfig&  Life()      const { return m_life; }
     const BigBallConfig&    Big()       const { return m_big; }
+    const FireBallConfig&   FireBall()  const { return m_fireBall; }
 
     // Leveling & Upgrades API
     int  GetLevel(PowerUpType type) const;
@@ -175,6 +199,7 @@ private:
     TempoBallConfig   m_tempo;
     ExtraLifeConfig   m_life;
     BigBallConfig     m_big;
+    FireBallConfig    m_fireBall;
 
     int m_coins = 0;
 };

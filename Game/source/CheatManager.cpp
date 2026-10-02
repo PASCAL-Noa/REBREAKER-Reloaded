@@ -181,6 +181,13 @@ bool CheatManager::TryCheat(const std::string& code, const GameContext& context)
         m_cheatWasActivated = true;
         success = true;
     }
+    else if (upperCode == "FIRE")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::FireBall));
+        m_activeCheatName = "FIRE BALL";
+        m_cheatWasActivated = true;
+        success = true;
+    }
 
     if (success)
     {

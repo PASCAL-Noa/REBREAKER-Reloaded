@@ -59,9 +59,13 @@ protected:
     void    RespawnBricks();
 
     void    HandleDeath();
-    void    HandleBrickCollision(Entity entity);
+    void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY);
     void    HandlePaddleCollision(Entity ballEntity);
     void    HandleBallBottomCollision(Entity ballEntity);
+
+    void    ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCenter);
+    void    SpawnFireTrailParticle(const Vector2f& position, const Vector2f& ballVelocity, bool isFuseActive);
+    void    SpawnFireExplosionParticles(const Vector2f& position, float radius, int count = 45);
 
     Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
     void    SpawnPowerUp(const Vector2f& position);
@@ -100,6 +104,7 @@ protected:
     uint32_t    m_brickCrackTexId = 0;
     uint32_t    m_bounceSfxId = 0;
     uint32_t    m_despawnSfxId = 0;
+    uint32_t    m_explosionSfxId = 0;
     uint32_t    m_fireTexId = 0;
     uint32_t    m_heartTexId = 0;
 

@@ -107,16 +107,20 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
                 b2.IsColliding = true;
                 m_events.Publish(CollisionEvent{e1, e2});
 
-                bool isBigBallPiercing = false;
-                if (m_registry.HasComponent<BallComponent>(e1) && m_registry.GetComponent<BallComponent>(e1).IsBig)
+                bool isPiercing = false;
+                if (m_registry.HasComponent<BallComponent>(e1))
                 {
-                    if (m_registry.HasComponent<BrickComponent>(e2) && PowerUpManager::Get().Big().PiercesBricks)
+                    const auto& ballComp = m_registry.GetComponent<BallComponent>(e1);
+                    if ((ballComp.IsBig && PowerUpManager::Get().Big().PiercesBricks) || ballComp.IsFireBall)
                     {
-                        isBigBallPiercing = true;
+                        if (m_registry.HasComponent<BrickComponent>(e2))
+                        {
+                            isPiercing = true;
+                        }
                     }
                 }
 
-                if (!c1.IsTrigger && !b2.IsTrigger && !isBigBallPiercing)
+                if (!c1.IsTrigger && !b2.IsTrigger && !isPiercing)
                 {
                     ResolveCollision(e1, t1, e2, t2, manifold);
                 }

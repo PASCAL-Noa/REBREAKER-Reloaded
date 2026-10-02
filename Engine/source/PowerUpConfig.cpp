@@ -29,6 +29,7 @@ int PowerUpManager::GetLevel(PowerUpType type) const
         case PowerUpType::TempoBall:    return m_tempo.Level;
         case PowerUpType::ExtraLife:    return m_life.Level;
         case PowerUpType::BigBall:      return m_big.Level;
+        case PowerUpType::FireBall:     return m_fireBall.Level;
         default:                        return 1;
     }
 }
@@ -44,6 +45,7 @@ int PowerUpManager::GetMaxLevel(PowerUpType type) const
         case PowerUpType::TempoBall:    return m_tempo.MaxLevel;
         case PowerUpType::ExtraLife:    return m_life.MaxLevel;
         case PowerUpType::BigBall:      return m_big.MaxLevel;
+        case PowerUpType::FireBall:     return m_fireBall.MaxLevel;
         default:                        return 5;
     }
 }
@@ -62,6 +64,7 @@ void PowerUpManager::SetLevel(PowerUpType type, int level)
         case PowerUpType::TempoBall:    m_tempo.Level = clamped; break;
         case PowerUpType::ExtraLife:    m_life.Level = clamped; break;
         case PowerUpType::BigBall:      m_big.Level = clamped; break;
+        case PowerUpType::FireBall:     m_fireBall.Level = clamped; break;
         default: break;
     }
     SaveToPrefs();
@@ -78,6 +81,7 @@ int PowerUpManager::GetUpgradeCost(PowerUpType type) const
         case PowerUpType::TempoBall:    return m_tempo.GetUpgradeCost();
         case PowerUpType::ExtraLife:    return m_life.GetUpgradeCost();
         case PowerUpType::BigBall:      return m_big.GetUpgradeCost();
+        case PowerUpType::FireBall:     return m_fireBall.GetUpgradeCost();
         default:                        return 100;
     }
 }
@@ -174,6 +178,14 @@ void PowerUpManager::LoadFromPrefs()
     m_big.ScaleBonusPerLevel = PlayerPrefs::GetFloat("PowerUp_Big_ScaleBonus", m_big.ScaleBonusPerLevel);
     m_big.PiercesBricks      = PlayerPrefs::GetBool("PowerUp_Big_PiercesBricks", m_big.PiercesBricks);
     m_big.OneHitKill         = PlayerPrefs::GetBool("PowerUp_Big_OneHitKill", m_big.OneHitKill);
+
+    // Fire Ball
+    m_fireBall.Level              = PlayerPrefs::GetInt("PowerUp_Fire_Level", m_fireBall.Level);
+    m_fireBall.BaseScale          = PlayerPrefs::GetFloat("PowerUp_Fire_BaseScale", m_fireBall.BaseScale);
+    m_fireBall.ScaleBonusPerLevel = PlayerPrefs::GetFloat("PowerUp_Fire_ScaleBonus", m_fireBall.ScaleBonusPerLevel);
+    m_fireBall.BaseAoERadius      = PlayerPrefs::GetFloat("PowerUp_Fire_BaseAoE", m_fireBall.BaseAoERadius);
+    m_fireBall.AoERadiusPerLevel  = PlayerPrefs::GetFloat("PowerUp_Fire_AoEBonus", m_fireBall.AoERadiusPerLevel);
+    m_fireBall.FuseDuration       = PlayerPrefs::GetFloat("PowerUp_Fire_FuseDuration", m_fireBall.FuseDuration);
 }
 
 void PowerUpManager::SaveToPrefs()
@@ -232,6 +244,14 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetBool("PowerUp_Big_PiercesBricks", m_big.PiercesBricks);
     PlayerPrefs::SetBool("PowerUp_Big_OneHitKill", m_big.OneHitKill);
 
+    // Fire Ball
+    PlayerPrefs::SetInt("PowerUp_Fire_Level", m_fireBall.Level);
+    PlayerPrefs::SetFloat("PowerUp_Fire_BaseScale", m_fireBall.BaseScale);
+    PlayerPrefs::SetFloat("PowerUp_Fire_ScaleBonus", m_fireBall.ScaleBonusPerLevel);
+    PlayerPrefs::SetFloat("PowerUp_Fire_BaseAoE", m_fireBall.BaseAoERadius);
+    PlayerPrefs::SetFloat("PowerUp_Fire_AoEBonus", m_fireBall.AoERadiusPerLevel);
+    PlayerPrefs::SetFloat("PowerUp_Fire_FuseDuration", m_fireBall.FuseDuration);
+
     PlayerPrefs::Save();
 }
 
@@ -248,6 +268,7 @@ void PowerUpManager::ResetToDefaults()
     m_tempo     = TempoBallConfig{};
     m_life      = ExtraLifeConfig{};
     m_big       = BigBallConfig{};
+    m_fireBall  = FireBallConfig{};
     m_coins     = 0;
 
     SaveToPrefs();

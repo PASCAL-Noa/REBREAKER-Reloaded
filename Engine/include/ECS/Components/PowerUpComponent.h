@@ -9,7 +9,8 @@ enum class PowerUpType : uint8_t
     LaserPaddle,
     TempoBall,
     ExtraLife,
-    BigBall
+    BigBall,
+    FireBall
 };
 
 struct PowerUpComponent

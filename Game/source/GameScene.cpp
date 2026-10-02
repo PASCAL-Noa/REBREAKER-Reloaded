@@ -71,6 +71,7 @@ void GameScene::OnInit(GameContext& context)
     m_brickCrackTexId = context.Resources.LoadResource("Resources/sprite/brick_crack.png");
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
     m_despawnSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_despawn.wav");
+    m_explosionSfxId = context.Resources.LoadResource("Resources/audio/sfx/brick_destroy.wav");
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
     m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
 
@@ -168,7 +169,7 @@ void GameScene::OnInit(GameContext& context)
         bool isPaddle = (otherEntity == m_paddle);
         bool isBottomWall = (otherEntity == m_bottomWall);
 
-        HandleBrickCollision(otherEntity);
+        HandleBrickCollision(otherEntity, ballEntity);
 
         if (isPaddle)
         {
@@ -568,6 +569,159 @@ void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& c
     }
 }
 
+void GameScene::SpawnFireTrailParticle(const Vector2f& position, const Vector2f& ballVelocity, bool isFuseActive)
+{
+    if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
+        return;
+    }
+
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> offsetDist(-8.0f, 8.0f);
+    std::uniform_real_distribution<float> velTurbDist(-60.0f, 60.0f);
+    std::uniform_real_distribution<float> lifeDist(0.18f, isFuseActive ? 0.35f : 0.28f);
+    std::uniform_real_distribution<float> sizeDist(isFuseActive ? 8.0f : 5.0f, isFuseActive ? 16.0f : 12.0f);
+    std::uniform_int_distribution<int> colorPick(0, 2);
+
+    Entity p = m_registry.CreateEntity();
+    Vector2f spawnPos{position.X + offsetDist(rng), position.Y + offsetDist(rng)};
+    m_registry.AddComponent<Transform2D>(p, Transform2D{spawnPos});
+
+    Vector2f pVel{-ballVelocity.X * 0.15f + velTurbDist(rng), -ballVelocity.Y * 0.15f + velTurbDist(rng)};
+
+    Color c;
+    int cp = colorPick(rng);
+    if (cp == 0)      c = Color{255, 230, 70, 255};
+    else if (cp == 1) c = Color{255, 120, 20, 255};
+    else              c = Color{220, 40, 10, 255};
+
+    ParticleComponent particle;
+    particle.Velocity = pVel;
+    particle.Life = lifeDist(rng);
+    particle.MaxLife = particle.Life;
+    particle.Size = sizeDist(rng);
+    particle.Tint = c;
+
+    m_registry.AddComponent<ParticleComponent>(p, particle);
+}
+
+void GameScene::SpawnFireExplosionParticles(const Vector2f& position, float radius, int count)
+{
+    if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
+        return;
+    }
+
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
+    std::uniform_real_distribution<float> speedDist(150.0f, 550.0f);
+    std::uniform_real_distribution<float> lifeDist(0.35f, 0.75f);
+    std::uniform_real_distribution<float> sizeDist(8.0f, 22.0f);
+    std::uniform_real_distribution<float> offsetDist(0.0f, radius * 0.25f);
+    std::uniform_int_distribution<int> colorPick(0, 3);
+
+    for (int i = 0; i < count; ++i)
+    {
+        float angle = angleDist(rng);
+        float speed = speedDist(rng);
+        float offset = offsetDist(rng);
+
+        Vector2f spawnPos{
+            position.X + std::cos(angle) * offset,
+            position.Y + std::sin(angle) * offset
+        };
+
+        Entity p = m_registry.CreateEntity();
+        m_registry.AddComponent<Transform2D>(p, Transform2D{spawnPos});
+
+        Color c;
+        int cp = colorPick(rng);
+        if (cp == 0)      c = Color{255, 255, 180, 255};
+        else if (cp == 1) c = Color{255, 180, 30, 255};
+        else if (cp == 2) c = Color{240, 50, 20, 255};
+        else              c = Color{120, 30, 10, 220};
+
+        ParticleComponent particle;
+        particle.Velocity = Vector2f{std::cos(angle) * speed, std::sin(angle) * speed};
+        particle.Life = lifeDist(rng);
+        particle.MaxLife = particle.Life;
+        particle.Size = sizeDist(rng);
+        particle.Tint = c;
+
+        m_registry.AddComponent<ParticleComponent>(p, particle);
+    }
+}
+
+void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCenter)
+{
+    const auto& cfg = PowerUpManager::Get().FireBall();
+    const float aoeRadius = cfg.GetEffectiveAoERadius();
+    const float aoeRadiusSq = aoeRadius * aoeRadius;
+
+    std::vector<Entity> affectedBricks;
+    m_registry.View<Transform2D, BrickComponent>([&](Entity brickEntity, const Transform2D& trans, const BrickComponent&)
+    {
+        float dx = trans.Position.X - explosionCenter.X;
+        float dy = trans.Position.Y - explosionCenter.Y;
+        if (dx * dx + dy * dy <= aoeRadiusSq)
+        {
+            affectedBricks.push_back(brickEntity);
+        }
+    });
+
+    for (Entity brickEntity : affectedBricks)
+    {
+        if (!m_registry.IsAlive(brickEntity) || m_registry.IsPendingDestroy(brickEntity)) continue;
+        auto& brick = m_registry.GetComponent<BrickComponent>(brickEntity);
+        brick.HitPoints = 0;
+        HandleBrickCollision(brickEntity, NULL_ENTITY);
+    }
+
+    SpawnFireExplosionParticles(explosionCenter, aoeRadius, 45);
+
+    if (mp_context)
+    {
+        if (m_explosionSfxId != 0)
+            mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
+        else if (m_despawnSfxId != 0)
+            mp_context->Audio.PlaySfx(m_despawnSfxId, 90.0f);
+    }
+
+    TweenEffects::Shake(m_registry, m_camera, 0.3f, 16.0f);
+
+    if (m_registry.IsAlive(ballEntity) && m_registry.HasComponent<BallComponent>(ballEntity))
+    {
+        auto& bc = m_registry.GetComponent<BallComponent>(ballEntity);
+        bc.IsFireBall = false;
+        bc.IsFuseActive = false;
+        bc.FuseTimer = 0.0f;
+        bc.TrailTimer = 0.0f;
+
+        if (m_registry.HasComponent<Transform2D>(ballEntity))
+        {
+            float targetScale = 1.0f;
+            if (m_bigBallDuration > 0.0f)
+            {
+                targetScale = PowerUpManager::Get().Big().GetEffectiveScale();
+            }
+            m_registry.GetComponent<Transform2D>(ballEntity).Scale = Vector2f{targetScale, targetScale};
+        }
+
+        if (m_registry.HasComponent<SpriteComponent>(ballEntity))
+        {
+            Color targetColor = Colors::White;
+            if (m_tempoBallDuration > 0.0f)
+            {
+                targetColor = Color{210, 160, 255, 255};
+            }
+            m_registry.GetComponent<SpriteComponent>(ballEntity).Tint = targetColor;
+        }
+
+        if (m_registry.HasComponent<CircleCollider>(ballEntity))
+        {
+            m_registry.GetComponent<CircleCollider>(ballEntity).Radius = 20.0f;
+        }
+    }
+}
+
 void GameScene::OnDestroy(GameContext& context)
 {
     m_textFeedback.reset();
@@ -644,7 +798,8 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::Numpad5) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num5))) ApplyPowerUp(PowerUpType::TempoBall);
     if (context.Input.IsKeyPress(KeyCode::Numpad6) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num6))) ApplyPowerUp(PowerUpType::ExtraLife);
     if (context.Input.IsKeyPress(KeyCode::Numpad7) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num7))) ApplyPowerUp(PowerUpType::BigBall);
-    if (context.Input.IsKeyPress(KeyCode::Numpad8) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::P)))
+    if (context.Input.IsKeyPress(KeyCode::Numpad8) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num8))) ApplyPowerUp(PowerUpType::FireBall);
+    if ((m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::P)))
     {
         SpawnPowerUp(Vector2f{paddleTransform.Position.X, -300.0f});
     }
@@ -652,7 +807,7 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
     {
         SpawnAllPowerUps();
     }
-    if (context.Input.IsKeyPress(KeyCode::Numpad9) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::R)))
+    if ((m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::R)))
     {
         ResetBallAndPaddle(true);
     }
@@ -671,6 +826,7 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
         PowerUpManager::Get().SetLevel(PowerUpType::TempoBall, nextLvl);
         PowerUpManager::Get().SetLevel(PowerUpType::ExtraLife, nextLvl);
         PowerUpManager::Get().SetLevel(PowerUpType::BigBall, nextLvl);
+        PowerUpManager::Get().SetLevel(PowerUpType::FireBall, nextLvl);
     }
 
     const auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
@@ -760,7 +916,14 @@ void GameScene::ResetBallAndPaddle(bool smooth)
     if (m_registry.IsAlive(m_ball))
     {
         if (m_registry.HasComponent<BallComponent>(m_ball))
-            m_registry.GetComponent<BallComponent>(m_ball).IsBig = false;
+        {
+            auto& bc = m_registry.GetComponent<BallComponent>(m_ball);
+            bc.IsBig = false;
+            bc.IsFireBall = false;
+            bc.IsFuseActive = false;
+            bc.FuseTimer = 0.0f;
+            bc.TrailTimer = 0.0f;
+        }
         if (m_registry.HasComponent<CircleCollider>(m_ball))
             m_registry.GetComponent<CircleCollider>(m_ball).Radius = 20.0f;
         if (m_registry.HasComponent<Transform2D>(m_ball))
@@ -930,22 +1093,38 @@ void GameScene::HandleDeath()
     m_registry.GetComponent<TweenComponent>(m_ball).AddTween(scaleTween);
 }
 
-void GameScene::HandleBrickCollision(Entity entity)
+void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity)
 {
     if (m_registry.IsPendingDestroy(entity)) return;
     if (!m_registry.HasComponent<BrickComponent>(entity)) return;
 
-    auto& brick = m_registry.GetComponent<BrickComponent>(entity);
-    if (m_bigBallDuration > 0.0f)
+    bool isFireBall = false;
+    if (ballEntity != NULL_ENTITY && m_registry.IsAlive(ballEntity) && m_registry.HasComponent<BallComponent>(ballEntity))
     {
-        brick.HitPoints = 0; // Instant one-hit destruction by Big Ball!
+        auto& ballComp = m_registry.GetComponent<BallComponent>(ballEntity);
+        if (ballComp.IsFireBall)
+        {
+            isFireBall = true;
+            if (!ballComp.IsFuseActive)
+            {
+                // First brick hit: start the fuse!
+                ballComp.IsFuseActive = true;
+                ballComp.FuseTimer = PowerUpManager::Get().FireBall().FuseDuration;
+            }
+        }
+    }
+
+    auto& brick = m_registry.GetComponent<BrickComponent>(entity);
+    if (m_bigBallDuration > 0.0f || isFireBall || brick.HitPoints <= 1)
+    {
+        brick.HitPoints = 0; // Destroyed in one hit or fatal damage
     }
     else
     {
         brick.HitPoints--;
     }
 
-    bool isDestroyed = (brick.HitPoints <= 0);
+    bool isDestroyed = (brick.HitPoints == 0);
 
     if (isDestroyed)
     {
@@ -1103,6 +1282,7 @@ Color GameScene::GetPowerUpColor(PowerUpType type)
         case PowerUpType::TempoBall:    return Color{180, 70, 255, 255};
         case PowerUpType::ExtraLife:    return Color{255, 100, 180, 255};
         case PowerUpType::BigBall:      return Color{255, 120, 20, 255};
+        case PowerUpType::FireBall:     return Color{255, 60, 20, 255};
         default:                        return Colors::White;
     }
 }
@@ -1110,7 +1290,7 @@ Color GameScene::GetPowerUpColor(PowerUpType type)
 void GameScene::SpawnPowerUp(const Vector2f& position)
 {
     static int nextTypeIndex = 0;
-    PowerUpType type = static_cast<PowerUpType>(nextTypeIndex % 7);
+    PowerUpType type = static_cast<PowerUpType>(nextTypeIndex % 8);
     nextTypeIndex++;
 
     Entity capsule = m_registry.CreateEntity();
@@ -1337,6 +1517,32 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             }
             break;
         }
+        case PowerUpType::FireBall:
+        {
+            const auto& cfg = PowerUpManager::Get().FireBall();
+            const float fireScale = cfg.GetEffectiveScale();
+            for (Entity b : m_balls)
+            {
+                if (!m_registry.IsAlive(b)) continue;
+                if (m_registry.HasComponent<BallComponent>(b))
+                {
+                    auto& bc = m_registry.GetComponent<BallComponent>(b);
+                    bc.IsFireBall = true;
+                    bc.IsFuseActive = false;
+                    bc.FuseTimer = cfg.FuseDuration;
+                    bc.TrailTimer = 0.0f;
+                }
+                if (m_registry.HasComponent<Transform2D>(b))
+                {
+                    m_registry.GetComponent<Transform2D>(b).Scale = Vector2f{fireScale, fireScale};
+                }
+                if (m_registry.HasComponent<SpriteComponent>(b))
+                {
+                    m_registry.GetComponent<SpriteComponent>(b).Tint = Color{255, 120, 20, 255};
+                }
+            }
+            break;
+        }
     }
 }
 
@@ -1490,6 +1696,59 @@ void GameScene::UpdatePowerUpTimers(float dt)
         }
     }
 
+    // 5. Fire Ball Timers & Dynamic Effects
+    const auto& fireCfg = PowerUpManager::Get().FireBall();
+    for (Entity b : m_balls)
+    {
+        if (!m_registry.IsAlive(b)) continue;
+        if (!m_registry.HasComponent<BallComponent>(b) || !m_registry.HasComponent<Transform2D>(b)) continue;
+
+        auto& bc = m_registry.GetComponent<BallComponent>(b);
+        if (!bc.IsFireBall) continue;
+
+        auto& bTrans = m_registry.GetComponent<Transform2D>(b);
+        Vector2f vel{0.0f, 0.0f};
+        if (m_registry.HasComponent<RigidBody>(b))
+        {
+            vel = m_registry.GetComponent<RigidBody>(b).Velocity;
+        }
+
+        // Emit dynamic trail particles
+        bc.TrailTimer += dt;
+        const float trailInterval = bc.IsFuseActive ? 0.015f : 0.03f;
+        while (bc.TrailTimer >= trailInterval)
+        {
+            bc.TrailTimer -= trailInterval;
+            SpawnFireTrailParticle(bTrans.Position, vel, bc.IsFuseActive);
+        }
+
+        // If the fuse has started (first brick was pierced)
+        if (bc.IsFuseActive)
+        {
+            bc.FuseTimer -= dt;
+
+            // Visual warning: fast pulsating intensity and tint
+            if (m_registry.HasComponent<SpriteComponent>(b))
+            {
+                auto& spr = m_registry.GetComponent<SpriteComponent>(b);
+                float blink = std::sin((fireCfg.FuseDuration - bc.FuseTimer) * 22.0f);
+                if (blink > 0.0f)
+                {
+                    spr.Tint = Color{255, 240, 80, 255};
+                }
+                else
+                {
+                    spr.Tint = Color{255, 50, 10, 255};
+                }
+            }
+
+            if (bc.FuseTimer <= 0.0f)
+            {
+                ExplodeFireBall(b, bTrans.Position);
+            }
+        }
+    }
+
     // Update active effects indicator in PowerUpTester panel if alive
     if (m_powerUpStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_powerUpStatusText))
     {
@@ -1514,6 +1773,23 @@ void GameScene::UpdatePowerUpTimers(float dt)
             char buf[32];
             snprintf(buf, sizeof(buf), "Big Ball: %.1fs  ", m_bigBallDuration);
             status += buf;
+        }
+        for (Entity b : m_balls)
+        {
+            if (m_registry.IsAlive(b) && m_registry.HasComponent<BallComponent>(b))
+            {
+                const auto& bc = m_registry.GetComponent<BallComponent>(b);
+                if (bc.IsFireBall)
+                {
+                    char buf[40];
+                    if (bc.IsFuseActive)
+                        snprintf(buf, sizeof(buf), "Fire: %.1fs  ", std::max(0.0f, bc.FuseTimer));
+                    else
+                        snprintf(buf, sizeof(buf), "Fire: Armed  ");
+                    status += buf;
+                    break;
+                }
+            }
         }
         if (status.empty())
         {
@@ -2068,9 +2344,9 @@ void GameScene::TogglePowerUpTester()
 
 void GameScene::SpawnAllPowerUps()
 {
-    for (int i = 0; i < 7; ++i)
+    for (int i = 0; i < 8; ++i)
     {
-        float x = -600.0f + i * 200.0f;
+        float x = -630.0f + i * 180.0f;
         PowerUpType type = static_cast<PowerUpType>(i);
         Entity capsule = m_registry.CreateEntity();
         m_registry.AddComponent<Transform2D>(capsule, Transform2D{Vector2f{x, -350.0f}, 0.0f, Vector2f{0.5f, 0.7f}});
@@ -2103,7 +2379,7 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
     // Dark semi-transparent panel on right side of the screen
     UIFactory::CreatePanel(m_registry, m_powerUpTesterCanvas, PanelDescriptor{
         .Position = {-155.0f, 0.0f},
-        .Size = {290.0f, 760.0f},
+        .Size = {290.0f, 790.0f},
         .Tint = Color{15, 20, 30, 220},
         .AnchorPoint = Anchor::MiddleRight
     });
@@ -2111,7 +2387,7 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
     // Title
     UIFactory::CreateText(m_registry, m_powerUpTesterCanvas, TextDescriptor{
         .Text = "POWER-UP TESTER",
-        .Position = {-155.0f, -320.0f},
+        .Position = {-155.0f, -330.0f},
         .FontId = m_fontId,
         .FontSize = 32.0f,
         .Tint = Colors::Yellow,
@@ -2122,7 +2398,7 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
     // Helper hint text
     UIFactory::CreateText(m_registry, m_powerUpTesterCanvas, TextDescriptor{
         .Text = "[TAB] to toggle",
-        .Position = {-155.0f, -285.0f},
+        .Position = {-155.0f, -295.0f},
         .FontId = m_fontId,
         .FontSize = 22.0f,
         .Tint = Color{180, 180, 180, 255},
@@ -2133,7 +2409,7 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
     // Active power-up indicators
     m_powerUpStatusText = UIFactory::CreateText(m_registry, m_powerUpTesterCanvas, TextDescriptor{
         .Text = "",
-        .Position = {-155.0f, -255.0f},
+        .Position = {-155.0f, -265.0f},
         .FontId = m_fontId,
         .FontSize = 18.0f,
         .Tint = Color{255, 230, 100, 255},
@@ -2155,33 +2431,34 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
         {"4. Laser Paddle", PowerUpType::LaserPaddle, Color{160, 120, 20, 255}, Color{220, 170, 30, 255}},
         {"5. Tempo Ball", PowerUpType::TempoBall, Color{110, 40, 160, 255}, Color{150, 60, 210, 255}},
         {"6. Extra Life", PowerUpType::ExtraLife, Color{160, 50, 110, 255}, Color{210, 70, 150, 255}},
-        {"7. Big Ball", PowerUpType::BigBall, Color{180, 80, 15, 255}, Color{230, 110, 25, 255}}
+        {"7. Big Ball", PowerUpType::BigBall, Color{180, 80, 15, 255}, Color{230, 110, 25, 255}},
+        {"8. Fire Ball", PowerUpType::FireBall, Color{190, 40, 10, 255}, Color{240, 80, 15, 255}}
     };
 
-    float startY = -230.0f;
-    float stepY = 38.0f;
+    float startY = -240.0f;
+    float stepY = 35.0f;
 
-    for (size_t i = 0; i < 7; ++i)
+    for (size_t i = 0; i < 8; ++i)
     {
         PowerUpType pType = buttons[i].type;
         UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
             .Text = buttons[i].text,
             .OnClick = [this, pType]() { ApplyPowerUp(pType); },
             .Position = {-155.0f, startY + i * stepY},
-            .Size = {260.0f, 34.0f},
+            .Size = {260.0f, 32.0f},
             .TextOffset = {0.0f, -8.0f},
             .DefaultColor = buttons[i].normalColor,
             .HoverColor = buttons[i].hoverColor,
             .PressedColor = Color{20, 20, 20, 255},
             .TextColor = Colors::White,
             .FontId = m_fontId,
-            .FontSize = 22.0f,
+            .FontSize = 20.0f,
             .AnchorPoint = Anchor::MiddleRight
         });
     }
 
-    float actionY = startY + 7 * stepY + 6.0f;
-    float actionStepY = 38.0f;
+    float actionY = startY + 8 * stepY + 6.0f;
+    float actionStepY = 35.0f;
 
     // Drop capsule button
     UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
@@ -2192,30 +2469,30 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
             }
         },
         .Position = {-155.0f, actionY},
-        .Size = {260.0f, 34.0f},
+        .Size = {260.0f, 32.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{60, 60, 80, 255},
         .HoverColor = Color{90, 90, 120, 255},
         .PressedColor = Color{30, 30, 40, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 22.0f,
+        .FontSize = 20.0f,
         .AnchorPoint = Anchor::MiddleRight
     });
 
-    // Drop all 7 capsules button
+    // Drop all 8 capsules button
     UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
-        .Text = "Drop All 7 [O]",
+        .Text = "Drop All 8 [O]",
         .OnClick = [this]() { SpawnAllPowerUps(); },
         .Position = {-155.0f, actionY + actionStepY},
-        .Size = {260.0f, 34.0f},
+        .Size = {260.0f, 32.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{60, 60, 80, 255},
         .HoverColor = Color{90, 90, 120, 255},
         .PressedColor = Color{30, 30, 40, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 22.0f,
+        .FontSize = 20.0f,
         .AnchorPoint = Anchor::MiddleRight
     });
 
@@ -2224,14 +2501,14 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
         .Text = "Reset Ball [R]",
         .OnClick = [this]() { ResetBallAndPaddle(true); },
         .Position = {-155.0f, actionY + actionStepY * 2},
-        .Size = {260.0f, 34.0f},
+        .Size = {260.0f, 32.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{70, 70, 70, 255},
         .HoverColor = Color{100, 100, 100, 255},
         .PressedColor = Color{30, 30, 30, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 22.0f,
+        .FontSize = 20.0f,
         .AnchorPoint = Anchor::MiddleRight
     });
 
@@ -2240,14 +2517,14 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
         .Text = "Refill Bricks [B]",
         .OnClick = [this]() { RespawnBricks(); },
         .Position = {-155.0f, actionY + actionStepY * 3},
-        .Size = {260.0f, 34.0f},
+        .Size = {260.0f, 32.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{70, 70, 70, 255},
         .HoverColor = Color{100, 100, 100, 255},
         .PressedColor = Color{30, 30, 30, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 22.0f,
+        .FontSize = 20.0f,
         .AnchorPoint = Anchor::MiddleRight
     });
 
@@ -2264,6 +2541,7 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
             PowerUpManager::Get().SetLevel(PowerUpType::TempoBall, nextLvl);
             PowerUpManager::Get().SetLevel(PowerUpType::ExtraLife, nextLvl);
             PowerUpManager::Get().SetLevel(PowerUpType::BigBall, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::FireBall, nextLvl);
         },
         .Position = {-155.0f, actionY + actionStepY * 4},
         .Size = {260.0f, 34.0f},
