@@ -47,4 +47,5 @@ private:
     Window&             m_window;
     ResourceManager&    m_resources;
     sf::RenderTexture   m_renderTexture;
+    std::vector<sf::Vertex> m_vertexScratch;
 };

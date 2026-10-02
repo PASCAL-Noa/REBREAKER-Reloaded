@@ -62,7 +62,12 @@ public:
         return m_dense;
     }
 
-    const std::vector<Entity>& GetEntities() const
+    size_t Size() const override
+    {
+        return m_entities.size();
+    }
+
+    const std::vector<Entity>& GetEntities() const override
     {
         return m_entities;
     }

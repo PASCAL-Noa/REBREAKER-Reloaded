@@ -7,4 +7,14 @@ struct CircleCollider
     Vector2f    Offset;
     bool        IsColliding = false;
     bool        IsTrigger = false;
+
+    float GetEffectiveRadius(float scale = 1.0f) const
+    {
+        return Radius * scale;
+    }
+
+    float GetEffectiveRadius(const Vector2f& scale) const
+    {
+        return Radius * scale.X;
+    }
 };

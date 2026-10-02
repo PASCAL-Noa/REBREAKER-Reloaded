@@ -4,6 +4,7 @@
 #include "Core/GameRules.h"
 #include "Data/Color.h"
 #include "Events/CheatSubmitEvent.h"
+#include "Events/GameplayEvents.h"
 #include "Events/EventDispatcher.h"
 #include "Math/EasingFunctions.h"
 #include "ECS/Components/Transform2D.h"
@@ -129,6 +130,62 @@ bool CheatManager::TryCheat(const std::string& code, const GameContext& context)
         context.Rules.SetRule(Rule::Gameplay::InfiniteLives, !inf);
         m_activeCheatName = inf ? "INFINITE LIVES OFF" : "INFINITE LIVES ON";
         m_cheatWasActivated = !inf;
+        success = true;
+    }
+    else if (upperCode == "MULTI")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::MultiBall));
+        m_activeCheatName = "MULTIBALL ACTIVATED";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "EXPAND")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::ExpandPaddle));
+        m_activeCheatName = "EXPAND PADDLE";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "SHRINK")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::ShrinkPaddle));
+        m_activeCheatName = "SHRINK PADDLE";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "LASER")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::LaserPaddle));
+        m_activeCheatName = "LASER PADDLE";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "TEMPO")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::TempoBall));
+        m_activeCheatName = "TEMPO BALL";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "LIFE")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::ExtraLife));
+        m_activeCheatName = "EXTRA LIFE";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "BIG")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::BigBall));
+        m_activeCheatName = "BIG BALL";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "FIRE")
+    {
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::FireBall));
+        m_activeCheatName = "FIRE BALL";
+        m_cheatWasActivated = true;
         success = true;
     }
 

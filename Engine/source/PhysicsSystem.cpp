@@ -4,8 +4,12 @@
 #include "ECS/Components/RigidBody.h"
 #include "ECS/Components/CircleCollider.h"
 #include "ECS/Components/BoxCollider.h"
+#include "ECS/Components/PaddleComponent.h"
+#include "ECS/Components/BallComponent.h"
+#include "ECS/Components/BrickComponent.h"
 #include "Events/EventDispatcher.h"
 #include "Events/CollisionEvent.h"
+#include "PowerUps/PowerUpConfig.h"
 #include <algorithm>
 
 PhysicsSystem::PhysicsSystem(Registry& registry, EventDispatcher& events)
@@ -37,22 +41,53 @@ void PhysicsSystem::ApplyVelocity(float dt) const
 
 void PhysicsSystem::CheckAABBCollisions() const
 {
-    m_registry.View<Transform2D, BoxCollider>([this](Entity e1, Transform2D& t1, BoxCollider& b1)
-    {
-        m_registry.View<Transform2D, BoxCollider>([&](Entity e2, Transform2D& t2, BoxCollider& b2)
-        {
-            if (e1 >= e2) return;
+    struct MovingBox {
+        Entity entity;
+        Transform2D* transform;
+        BoxCollider* collider;
+    };
 
-            CollisionManifold manifold = Physics::IntersectAABB(b1, t1, b2, t2);
+    std::vector<MovingBox> movingBoxes;
+    movingBoxes.reserve(16);
+
+    m_registry.View<Transform2D, BoxCollider>([this, &movingBoxes](Entity e, Transform2D& t, BoxCollider& b)
+    {
+        bool isDynamic = m_registry.HasComponent<RigidBody>(e) && !m_registry.GetComponent<RigidBody>(e).IsKinematic;
+        bool isPaddle = m_registry.HasComponent<PaddleComponent>(e);
+        if (isDynamic || isPaddle)
+        {
+            movingBoxes.push_back({e, &t, &b});
+        }
+    });
+
+    if (movingBoxes.empty()) return;
+
+    m_registry.View<Transform2D, BoxCollider>([this, &movingBoxes](Entity e2, Transform2D& t2, BoxCollider& b2)
+    {
+        bool isMover2 = (m_registry.HasComponent<RigidBody>(e2) && !m_registry.GetComponent<RigidBody>(e2).IsKinematic)
+                     || m_registry.HasComponent<PaddleComponent>(e2);
+
+        for (const auto& mover : movingBoxes)
+        {
+            Entity e1 = mover.entity;
+            if (e1 == e2) continue;
+
+            // When both are movers, test once (e1 < e2) to avoid duplicate collision events
+            if (isMover2 && e1 >= e2) continue;
+
+            CollisionManifold manifold = Physics::IntersectAABB(*mover.collider, *mover.transform, b2, t2);
             if (manifold.IsColliding)
             {
-                b1.IsColliding = true;
+                mover.collider->IsColliding = true;
                 b2.IsColliding = true;
                 m_events.Publish(CollisionEvent{e1, e2});
 
-                if (!b1.IsTrigger && !b2.IsTrigger) ResolveCollision(e1, t1, e2, t2, manifold);
+                if (!mover.collider->IsTrigger && !b2.IsTrigger)
+                {
+                    ResolveCollision(e1, *mover.transform, e2, t2, manifold);
+                }
             }
-        });
+        }
     });
 }
 
@@ -62,6 +97,9 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
     {
         m_registry.View<Transform2D, BoxCollider>([&](Entity e2, Transform2D& t2, BoxCollider& b2)
         {
+            // Triggers (bonus capsules, lasers) do not physically collide with balls
+            if (b2.IsTrigger) return;
+
             CollisionManifold manifold = Physics::IntersectCircleAABB(c1, t1, b2, t2);
             if (manifold.IsColliding)
             {
@@ -69,7 +107,23 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
                 b2.IsColliding = true;
                 m_events.Publish(CollisionEvent{e1, e2});
 
-                if (!c1.IsTrigger && !b2.IsTrigger) ResolveCollision(e1, t1, e2, t2, manifold);
+                bool isPiercing = false;
+                if (m_registry.HasComponent<BallComponent>(e1))
+                {
+                    const auto& ballComp = m_registry.GetComponent<BallComponent>(e1);
+                    if ((ballComp.IsBig && PowerUpManager::Get().Big().PiercesBricks) || ballComp.IsFireBall)
+                    {
+                        if (m_registry.HasComponent<BrickComponent>(e2))
+                        {
+                            isPiercing = true;
+                        }
+                    }
+                }
+
+                if (!c1.IsTrigger && !b2.IsTrigger && !isPiercing)
+                {
+                    ResolveCollision(e1, t1, e2, t2, manifold);
+                }
             }
         });
     });

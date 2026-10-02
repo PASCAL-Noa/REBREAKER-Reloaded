@@ -15,10 +15,7 @@ CollisionManifold Physics::IntersectCircleAABB(const CircleCollider& circle, con
     Vector2f circleCenter = circleTransform.Position + circle.Offset;
     Vector2f boxCenter = boxTransform.Position + box.Offset;
 
-    Vector2f halfExtents = {
-        (box.Size.X * boxTransform.Scale.X) / 2.0f,
-        (box.Size.Y * boxTransform.Scale.Y) / 2.0f
-    };
+    Vector2f halfExtents = box.GetEffectiveSize(boxTransform.Scale) / 2.0f;
 
     Vector2f difference = circleCenter - boxCenter;
 
@@ -32,7 +29,7 @@ CollisionManifold Physics::IntersectCircleAABB(const CircleCollider& circle, con
     Vector2f differenceToClosest = circleCenter - closestPoint;
     float distanceSquared = differenceToClosest.LengthSquared();
 
-    float radius = circle.Radius * circleTransform.Scale.X;
+    float radius = circle.GetEffectiveRadius(circleTransform.Scale);
 
     if (distanceSquared > 0.0f && distanceSquared < (radius * radius))
     {
@@ -63,8 +60,8 @@ CollisionManifold Physics::IntersectAABB(const BoxCollider& boxA, const Transfor
     Vector2f centerA = transformA.Position + boxA.Offset;
     Vector2f centerB = transformB.Position + boxB.Offset;
 
-    Vector2f halfExtentsA = { (boxA.Size.X * transformA.Scale.X) / 2.0f, (boxA.Size.Y * transformA.Scale.Y) / 2.0f };
-    Vector2f halfExtentsB = { (boxB.Size.X * transformB.Scale.X) / 2.0f, (boxB.Size.Y * transformB.Scale.Y) / 2.0f };
+    Vector2f halfExtentsA = boxA.GetEffectiveSize(transformA.Scale) / 2.0f;
+    Vector2f halfExtentsB = boxB.GetEffectiveSize(transformB.Scale) / 2.0f;
 
     Vector2f distanceVec = centerA - centerB;
 
@@ -100,8 +97,8 @@ CollisionManifold Physics::IntersectCircle(const CircleCollider& circleA, const 
     Vector2f distanceVec = centerA - centerB;
     float distanceSquared = distanceVec.LengthSquared();
 
-    float radiusA = circleA.Radius * transformA.Scale.X;
-    float radiusB = circleB.Radius * transformB.Scale.X;
+    float radiusA = circleA.GetEffectiveRadius(transformA.Scale);
+    float radiusB = circleB.GetEffectiveRadius(transformB.Scale);
     float sumRadii = radiusA + radiusB;
 
     if (distanceSquared > 0.0f && distanceSquared < (sumRadii * sumRadii))

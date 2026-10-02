@@ -59,6 +59,12 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
             TweenEffects::Shake(tween, m_registry, entity, 0.4f, 15.0f);
         });
     });
+
+    m_powerUpSub = m_context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
+    {
+        (void)e;
+        m_context.Audio.PlaySfx(m_sfxPowerUp, 80.0f);
+    });
 }
 
 void GameFeelSystem::OnUpdate(float dt)

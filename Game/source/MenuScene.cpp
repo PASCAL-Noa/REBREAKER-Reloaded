@@ -22,42 +22,35 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
 {
     DefaultScene::OnUpdate(dt, context);
 
-    if (context.Input.IsKeyDown(KeyCode::Num1))
+    if (context.Input.IsKeyPress(KeyCode::Num1) || context.Input.IsKeyPress(KeyCode::F1))
     {
         context.Scenes.LoadScene<SandBox>();
     }
-
-    if (context.Input.IsKeyDown(KeyCode::Num2))
+    if (context.Input.IsKeyPress(KeyCode::Num2) || context.Input.IsKeyPress(KeyCode::F2))
     {
         context.Scenes.LoadScene<SamplePhysics>();
     }
-
-    if (context.Input.IsKeyDown(KeyCode::Num3))
+    if (context.Input.IsKeyPress(KeyCode::Num3) || context.Input.IsKeyPress(KeyCode::F3))
     {
         context.Scenes.LoadScene<SampleAudio>();
     }
-
-    if (context.Input.IsKeyDown(KeyCode::Num4))
+    if (context.Input.IsKeyPress(KeyCode::Num4) || context.Input.IsKeyPress(KeyCode::F4))
     {
         context.Scenes.LoadScene<GameScene>();
     }
-
-    if (context.Input.IsKeyDown(KeyCode::Num5))
+    if (context.Input.IsKeyPress(KeyCode::Num5) || context.Input.IsKeyPress(KeyCode::F5))
     {
         context.Scenes.LoadScene<SampleStateMachine>();
     }
-
-    if (context.Input.IsKeyDown(KeyCode::Num6))
+    if (context.Input.IsKeyPress(KeyCode::Num6) || context.Input.IsKeyPress(KeyCode::F6))
     {
         context.Scenes.LoadScene<SampleTween>();
     }
-
-    if (context.Input.IsKeyDown(KeyCode::Num7))
+    if (context.Input.IsKeyPress(KeyCode::Num7) || context.Input.IsKeyPress(KeyCode::F7))
     {
         context.Scenes.LoadScene<SampleUI>();
     }
-
-    if (context.Input.IsKeyDown(KeyCode::Num8))
+    if (context.Input.IsKeyPress(KeyCode::Num8) || context.Input.IsKeyPress(KeyCode::F8))
     {
         context.Scenes.LoadScene<SampleRenderLayer>();
     }
@@ -69,12 +62,13 @@ void MenuScene::OnRender(GameContext& context)
 
     context.Render.ResetCamera();
 
-    context.Render.DrawText("Press '1' for SandBox", m_fontId, 32.0f, Transform2D{200.0f, 300.0f}, Colors::White);
-    context.Render.DrawText("Press '2' for Physics", m_fontId, 32.0f, Transform2D{200.0f, 350.0f}, Colors::White);
-    context.Render.DrawText("Press '3' for Audio", m_fontId, 32.0f, Transform2D{200.0f, 400.0f}, Colors::White);
-    context.Render.DrawText("Press '4' for Game", m_fontId, 32.0f, Transform2D{200.0f, 450.0f}, Colors::Green);
-    context.Render.DrawText("Press '5' for StateMachine", m_fontId, 32.0f, Transform2D{200.0f, 500.0f}, Colors::White);
-    context.Render.DrawText("Press '6' for Tween", m_fontId, 32.0f, Transform2D{200.0f, 550.0f}, Colors::White);
-    context.Render.DrawText("Press '7' for UI", m_fontId, 32.0f, Transform2D{200.0f, 600.0f}, Colors::White);
-    context.Render.DrawText("Press '8' for Render Layer", m_fontId, 32.0f, Transform2D{200.0f, 650.0f}, Colors::White);
+    context.Render.DrawText("Press '1' / 'F1' for SandBox", m_fontId, 32.0f, Transform2D{200.0f, 250.0f}, Colors::White);
+    context.Render.DrawText("Press '2' / 'F2' for Physics", m_fontId, 32.0f, Transform2D{200.0f, 300.0f}, Colors::White);
+    context.Render.DrawText("Press '3' / 'F3' for Audio", m_fontId, 32.0f, Transform2D{200.0f, 350.0f}, Colors::White);
+    context.Render.DrawText("Press '4' / 'F4' for Game", m_fontId, 32.0f, Transform2D{200.0f, 400.0f}, Colors::Green);
+    context.Render.DrawText("Press '5' / 'F5' for StateMachine", m_fontId, 32.0f, Transform2D{200.0f, 450.0f}, Colors::White);
+    context.Render.DrawText("Press '6' / 'F6' for Tween", m_fontId, 32.0f, Transform2D{200.0f, 500.0f}, Colors::White);
+    context.Render.DrawText("Press '7' / 'F7' for UI", m_fontId, 32.0f, Transform2D{200.0f, 550.0f}, Colors::White);
+    context.Render.DrawText("Press '8' / 'F8' for Render Layer", m_fontId, 32.0f, Transform2D{200.0f, 600.0f}, Colors::White);
+    context.Render.DrawText("Quick Scene Jump: [F1-F8] Jump Directly from Any Scene | [0]/[F12] Menu", m_fontId, 24.0f, Transform2D{200.0f, 670.0f}, Colors::Yellow);
 }

@@ -6,6 +6,7 @@
 #include "CommandBuffer.h"
 #include <vector>
 #include <queue>
+#include <tuple>
 
 class ComponentCounter
 {
@@ -65,7 +66,7 @@ public:
             if (pool) pool->Remove(entity);
         }
         
-        m_entityVersions[index]++;
+        m_entityVersions[index] = (m_entityVersions[index] >= MAX_ENTITY_VERSION) ? 1 : (m_entityVersions[index] + 1);
         m_freeEntities.push(index);
     }
 
@@ -91,6 +92,12 @@ public:
         uint32_t index = GetEntityIndex(entity);
         if (index >= m_pendingDestroy.size()) return false;
         return m_pendingDestroy[index];
+    }
+
+    [[nodiscard]] bool IsAlive(Entity entity) const
+    {
+        uint32_t index = GetEntityIndex(entity);
+        return index < m_entityVersions.size() && GetEntityVersion(entity) == m_entityVersions[index] && !IsPendingDestroy(entity);
     }
 
     template <typename T, typename... Args>
@@ -172,24 +179,73 @@ public:
     template <typename T1, typename... Tn, typename Func>
     void View(Func&& func)
     {
-        SparseSet<T1>* primaryPool = GetPool<T1>();
-        if (!primaryPool) return;
+        SparseSet<T1>* pool1 = GetPool<T1>();
+        if (!pool1) return;
 
-        auto& entities = primaryPool->GetEntities();
-        for (int i = static_cast<int>(entities.size()) - 1; i >= 0; --i)
+        ISparseSet* minPool = pool1;
+
+        if constexpr (sizeof...(Tn) == 0)
         {
-            if (i >= static_cast<int>(entities.size())) 
+            const auto& entities = minPool->GetEntities();
+            for (int i = static_cast<int>(entities.size()) - 1; i >= 0; --i)
             {
-                i = static_cast<int>(entities.size()) - 1;
-                if (i < 0) break;
+                if (i >= static_cast<int>(entities.size())) 
+                {
+                    i = static_cast<int>(entities.size()) - 1;
+                    if (i < 0) break;
+                }
+
+                Entity entity = entities[i];
+                if (IsPendingDestroy(entity)) continue;
+
+                if (pool1->Contains(entity))
+                {
+                    func(entity, pool1->Get(entity));
+                }
             }
+        }
+        else
+        {
+            std::tuple<SparseSet<Tn>*...> otherPools = { GetPool<Tn>()... };
+            bool anyNull = false;
+            std::apply([&anyNull, &minPool](auto*... pools) {
+                auto check = [&anyNull, &minPool](auto* pool) {
+                    if (!pool) { anyNull = true; return; }
+                    if (pool->Size() < minPool->Size()) {
+                        minPool = pool;
+                    }
+                };
+                (check(pools), ...);
+            }, otherPools);
 
-            Entity entity = entities[i];
-            if (IsPendingDestroy(entity)) continue;
+            if (anyNull) return;
 
-            if ((HasComponent<Tn>(entity) && ...))
+            const auto& entities = minPool->GetEntities();
+            for (int i = static_cast<int>(entities.size()) - 1; i >= 0; --i)
             {
-                func(entity, primaryPool->Get(entity), GetComponent<Tn>(entity)...);
+                if (i >= static_cast<int>(entities.size())) 
+                {
+                    i = static_cast<int>(entities.size()) - 1;
+                    if (i < 0) break;
+                }
+
+                Entity entity = entities[i];
+                if (IsPendingDestroy(entity)) continue;
+
+                bool hasAll = pool1->Contains(entity);
+                if (hasAll)
+                {
+                    std::apply([entity, &hasAll](auto*... pools) {
+                        hasAll = (hasAll && (pools->Contains(entity) && ...));
+                    }, otherPools);
+                }
+
+                if (hasAll)
+                {
+                    std::apply([entity, &func, pool1](auto*... pools) {
+                        func(entity, pool1->Get(entity), pools->Get(entity)...);
+                    }, otherPools);
+                }
             }
         }
     }
