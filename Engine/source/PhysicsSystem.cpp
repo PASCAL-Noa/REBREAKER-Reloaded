@@ -11,17 +11,49 @@
 #include "Events/CollisionEvent.h"
 #include "PowerUps/PowerUpConfig.h"
 #include <algorithm>
+#include <cmath>
 
 PhysicsSystem::PhysicsSystem(Registry& registry, EventDispatcher& events)
     : System(registry), m_events(events) {}
 
 void PhysicsSystem::OnUpdate(float dt)
 {
-    ResetColliders();
-    ApplyVelocity(dt);
-    CheckAABBCollisions();
-    CheckCircleAABBCollisions();
-    CheckCircleCollisions();
+    if (dt <= 0.0f) return;
+
+    int subSteps = 1;
+    m_registry.View<Transform2D, RigidBody, CircleCollider>(
+        [&subSteps, dt](Entity, const Transform2D& transform, const RigidBody& rb, const CircleCollider& circle)
+        {
+            if (rb.IsKinematic) return;
+
+            float speed = rb.Velocity.Length();
+            float displacement = speed * dt;
+            float radius = circle.GetEffectiveRadius(transform.Scale);
+
+            if (radius > 0.0f && displacement > radius)
+            {
+                int steps = static_cast<int>(std::ceil(displacement / radius));
+                if (steps > subSteps)
+                {
+                    subSteps = steps;
+                }
+            }
+        });
+
+    constexpr int maxSubSteps = 16;
+    subSteps = std::clamp(subSteps, 1, maxSubSteps);
+
+    float subDt = dt / static_cast<float>(subSteps);
+
+    for (int step = 0; step < subSteps; ++step)
+    {
+        ResetColliders();
+        ApplyVelocity(subDt);
+        CheckAABBCollisions();
+        CheckCircleAABBCollisions();
+        CheckCircleCollisions();
+    }
+
     m_registry.ProcessDeferredCommands();
 }
 
