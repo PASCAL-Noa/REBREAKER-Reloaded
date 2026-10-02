@@ -1,4 +1,6 @@
 #include "Math/Physics.h"
+#include <cmath>
+#include <algorithm>
 
 float Physics::Clamp(float value, float min, float max)
 {
@@ -31,7 +33,7 @@ CollisionManifold Physics::IntersectCircleAABB(const CircleCollider& circle, con
 
     float radius = circle.GetEffectiveRadius(circleTransform.Scale);
 
-    if (distanceSquared > 0.0f && distanceSquared < (radius * radius))
+    if (distanceSquared > 0.00001f && distanceSquared < (radius * radius))
     {
         manifold.IsColliding = true;
 
@@ -39,15 +41,23 @@ CollisionManifold Physics::IntersectCircleAABB(const CircleCollider& circle, con
         manifold.Penetration = radius - distance;
         manifold.Normal = differenceToClosest / distance;
     }
-    else if (distanceSquared == 0.0f)
+    else if (distanceSquared <= 0.00001f)
     {
         manifold.IsColliding = true;
-        manifold.Penetration = radius;
 
-        if (std::abs(difference.X) > std::abs(difference.Y))
-            manifold.Normal = { difference.X > 0 ? 1.0f : -1.0f, 0.0f };
+        float overlapX = std::max(0.0f, halfExtents.X - std::abs(difference.X));
+        float overlapY = std::max(0.0f, halfExtents.Y - std::abs(difference.Y));
+
+        if (overlapX < overlapY)
+        {
+            manifold.Penetration = radius + overlapX;
+            manifold.Normal = { difference.X >= 0.0f ? 1.0f : -1.0f, 0.0f };
+        }
         else
-            manifold.Normal = { 0.0f, difference.Y > 0 ? 1.0f : -1.0f };
+        {
+            manifold.Penetration = radius + overlapY;
+            manifold.Normal = { 0.0f, difference.Y >= 0.0f ? 1.0f : -1.0f };
+        }
     }
     return manifold;
 }
