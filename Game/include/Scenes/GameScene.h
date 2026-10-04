@@ -12,6 +12,7 @@
 #include "StateMachine/StateMachine.h"
 #include "Generators/ILevelGenerator.h"
 #include "ECS/Components/PowerUpComponent.h"
+#include "LevelManager.h"
 #include <vector>
 
 struct Color;
@@ -21,7 +22,8 @@ enum class SceneState : int
     Playing = 0,
     Paused = 1,
     GameOver = 2,
-    Victory = 3
+    Victory = 3,
+    LevelTransition = 4
 };
 
 enum class BallState
@@ -45,6 +47,21 @@ public:
     [[nodiscard]] int     GetLives() const { return m_lives; }
     [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
     void    FullReset();
+
+    // Level Management & Progression
+    [[nodiscard]] LevelManager&       GetLevelManager() { return m_levelManager; }
+    [[nodiscard]] const LevelManager& GetLevelManager() const { return m_levelManager; }
+    [[nodiscard]] int                 GetCurrentLevel() const;
+    [[nodiscard]] int                 GetLevelCount() const;
+    [[nodiscard]] bool                HasNextLevel() const;
+    void    AdvanceToNextLevel();
+    void    LoadLevel(int levelIndex, bool preserveStats = false);
+    void    StartLevelTransition();
+    void    UpdateLevelTransition();
+    void    CompleteLevelTransition();
+    [[nodiscard]] bool                IsLevelTransitionComplete() const;
+    [[nodiscard]] float               GetTransitionTimer() const { return m_levelTransitionTimer; }
+    void    SetTransitionTimer(float timer) { m_levelTransitionTimer = timer; }
 
     void    SetPowerUpTesterActive(bool active);
     [[nodiscard]] bool IsPowerUpTesterActive() const { return m_powerUpTesterActive; }
@@ -148,6 +165,11 @@ protected:
 
     ScopedSubscription m_collisionSub;
     ScopedSubscription m_powerUpSub;
+    ScopedSubscription m_nextLevelSub;
+
+    LevelManager m_levelManager;
+    float   m_levelTransitionTimer = 0.0f;
+    uint32_t m_levelStartScore = 0;
 
     std::vector<Entity> m_balls;
     std::vector<Entity> m_lasers;

@@ -1,5 +1,7 @@
 #include "ScoreManager.h"
+#include "Core/PlayerPrefs.h"
 #include <fstream>
+#include <algorithm>
 
 constexpr float COMBO_DURATION = 3.0f;
 
@@ -60,6 +62,11 @@ void ScoreManager::LoadHighScore()
     {
         file >> m_highScore;
     }
+    int prefHigh = PlayerPrefs::GetInt("HighScore", 0);
+    if (static_cast<uint32_t>(prefHigh) > m_highScore)
+    {
+        m_highScore = static_cast<uint32_t>(prefHigh);
+    }
 }
 
 void ScoreManager::SaveHighScore()
@@ -69,4 +76,6 @@ void ScoreManager::SaveHighScore()
     {
         file << m_highScore;
     }
+    PlayerPrefs::SetInt("HighScore", static_cast<int>(m_highScore));
+    PlayerPrefs::Save();
 }

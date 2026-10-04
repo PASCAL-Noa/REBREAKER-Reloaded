@@ -22,6 +22,7 @@
 #include "Conditions/KeyPressCondition.h"
 #include "Conditions/GameConditions.h"
 #include "Actions/ResetGameAction.h"
+#include "Actions/NextLevelAction.h"
 #include "AudioMixer.h"
 #include "ECS/Systems/PowerUpSystem.h"
 #include "ECS/Components/PaddleComponent.h"
@@ -88,6 +89,11 @@ void GameScene::OnInit(GameContext& context)
     m_powerUpSub = context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
     {
         ApplyPowerUp(e.Type);
+    });
+
+    m_nextLevelSub = context.Events.SubscribeScoped<NextLevelEvent>([this](const NextLevelEvent&)
+    {
+        AdvanceToNextLevel();
     });
 
     m_registry.AddComponent<TweenComponent>(m_camera, TweenComponent{});
@@ -222,9 +228,8 @@ void GameScene::OnInit(GameContext& context)
 
     m_systemManager.OnInit();
 
-    mp_levelGenerator = std::make_unique<FileLevelGenerator>("Resources/levels/level01.txt");
-    m_brickCount = mp_levelGenerator->Generate(m_registry, context, m_brickTexId);
-    ResetBallAndPaddle();
+    m_levelManager.Initialize("Resources/levels");
+    m_levelManager.LoadFromPrefs();
 
     m_playlist.AddTrack(context, "Resources/audio/music/Game-1.ogg");
     m_playlist.AddTrack(context, "Resources/audio/music/Game-2.ogg");
@@ -232,11 +237,14 @@ void GameScene::OnInit(GameContext& context)
     m_playlist.AddTrack(context, "Resources/audio/music/Game-4.ogg");
     m_lives = PlayerPrefs::GetInt("Lives", 3);
 
-    mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 4);
+    LoadLevel(0, false);
+
+    mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 5);
 
     State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
     playingState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Paused)));
     playingState->AddTransition(new Transition<GameScene>(new LivesCondition<GameScene>(), static_cast<int>(SceneState::GameOver)));
+    playingState->AddTransition(new Transition<GameScene>(new LevelClearedCondition<GameScene>(), static_cast<int>(SceneState::LevelTransition)));
     playingState->AddTransition(new Transition<GameScene>(new VictoryCondition<GameScene>(), static_cast<int>(SceneState::Victory)));
 
     State<GameScene>* pauseState = mp_state_machine->CreateState(static_cast<int>(SceneState::Paused));
@@ -249,6 +257,10 @@ void GameScene::OnInit(GameContext& context)
     State<GameScene>* victoryState = mp_state_machine->CreateState(static_cast<int>(SceneState::Victory));
     victoryState->AddAction(new ResetGameAction<GameScene>());
     victoryState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Space), static_cast<int>(SceneState::Playing)));
+
+    State<GameScene>* levelTransitionState = mp_state_machine->CreateState(static_cast<int>(SceneState::LevelTransition));
+    levelTransitionState->AddAction(new NextLevelAction<GameScene>());
+    levelTransitionState->AddTransition(new Transition<GameScene>(new LevelTransitionCompleteCondition<GameScene>(), static_cast<int>(SceneState::Playing)));
 
     mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
 
@@ -306,6 +318,14 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
 
     UISystem::OnUpdate(dt, m_registry, context);
     
+    if (currentState == static_cast<int>(SceneState::LevelTransition))
+    {
+        if (m_levelTransitionTimer > 0.0f)
+        {
+            m_levelTransitionTimer -= dt;
+        }
+    }
+
     if (currentState == static_cast<int>(SceneState::Playing))
     {
         HandleInput(dt, context);
@@ -320,8 +340,12 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
             }
         }
         
-        mp_levelGenerator->Update(dt, m_registry, context);
+        if (mp_levelGenerator)
+        {
+            mp_levelGenerator->Update(dt, m_registry, context);
+        }
         m_scoreManager.Update(dt);
+        m_levelManager.SetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber(), m_scoreManager.GetScore());
 
         if (m_scoreTextEntity != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_scoreTextEntity) && m_registry.HasComponent<RectTransform>(m_scoreTextEntity))
         {
@@ -456,7 +480,8 @@ void GameScene::OnRender(GameContext& context)
         int state = mp_state_machine->GetCurrentState();
         if (state == static_cast<int>(SceneState::Paused)) gameStateStr = "PAUSE";
         else if (state == static_cast<int>(SceneState::GameOver)) gameStateStr = "GAME OVER - ESPACE POUR REJOUER";
-        else if (state == static_cast<int>(SceneState::Victory)) gameStateStr = "VICTOIRE - ESPACE POUR REJOUER";
+        else if (state == static_cast<int>(SceneState::Victory)) gameStateStr = "VICTOIRE - TOUS LES NIVEAUX TERMINES ! ESPACE POUR REINITIALISER";
+        else if (state == static_cast<int>(SceneState::LevelTransition)) gameStateStr = "NIVEAU TERMINE ! PASSAGE AU NIVEAU " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + "...";
     }
 
     std::string debugStr = showDebug ? "ON" : "OFF";
@@ -464,8 +489,10 @@ void GameScene::OnRender(GameContext& context)
     std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
     std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
 
-    std::string stats = "Record : " + std::to_string(m_scoreManager.GetHighScore());
-
+    std::string stats = "Niveau : " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + " / " + std::to_string(m_levelManager.GetLevelCount()) +
+                        " (Debloques : " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")";
+    stats += "\nRecord Niveau : " + std::to_string(m_levelManager.GetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber())) +
+             " | Record Global : " + std::to_string(m_scoreManager.GetHighScore());
     stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
     stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
     stats += "\nState : " + gameStateStr;
@@ -728,21 +755,47 @@ void GameScene::OnDestroy(GameContext& context)
     mp_state_machine.reset();
     mp_levelGenerator.reset();
     m_collisionSub.Reset();
+    m_powerUpSub.Reset();
+    m_nextLevelSub.Reset();
 
     DefaultScene::OnDestroy(context);
 }
 
-void GameScene::FullReset()
+int GameScene::GetCurrentLevel() const
 {
-    m_scoreManager.Reset();
-    m_lives = 3;
-    m_brickCount = 0;
+    return m_levelManager.GetCurrentLevelNumber();
+}
 
-    for (Entity heart : m_heartEntities)
+int GameScene::GetLevelCount() const
+{
+    return m_levelManager.GetLevelCount();
+}
+
+bool GameScene::HasNextLevel() const
+{
+    return m_levelManager.HasNextLevel();
+}
+
+void GameScene::LoadLevel(int levelIndex, bool preserveStats)
+{
+    m_levelManager.SetLevel(levelIndex);
+
+    if (!preserveStats)
     {
-        if (m_registry.HasComponent<RectTransform>(heart))
+        m_scoreManager.Reset();
+        m_lives = PlayerPrefs::GetInt("Lives", 3);
+        m_levelStartScore = 0;
+    }
+    else
+    {
+        m_levelStartScore = m_scoreManager.GetScore();
+    }
+
+    for (size_t i = 0; i < m_heartEntities.size(); ++i)
+    {
+        if (m_registry.HasComponent<RectTransform>(m_heartEntities[i]))
         {
-            m_registry.GetComponent<RectTransform>(heart).IsActive = true;
+            m_registry.GetComponent<RectTransform>(m_heartEntities[i]).IsActive = (static_cast<int>(i) < m_lives);
         }
     }
 
@@ -751,8 +804,59 @@ void GameScene::FullReset()
     });
     m_registry.ProcessDeferredCommands();
 
-    m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
+    m_registry.View<PowerUpComponent>([this](const Entity e, PowerUpComponent&) {
+        m_registry.DestroyEntityDeferred(e);
+    });
+    m_registry.ProcessDeferredCommands();
+
+    mp_levelGenerator = std::make_unique<FileLevelGenerator>(m_levelManager.GetCurrentLevelPath());
+    if (mp_context)
+    {
+        m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
+    }
+
     ResetBallAndPaddle();
+}
+
+void GameScene::AdvanceToNextLevel()
+{
+    m_scoreManager.BreakCombo();
+
+    int curLevel = m_levelManager.GetCurrentLevelNumber();
+    m_levelManager.SetHighScoreForLevel(curLevel, m_scoreManager.GetScore());
+
+    int nextLevel = curLevel + 1;
+    m_levelManager.UnlockLevel(nextLevel);
+    m_levelManager.NextLevel();
+
+    LoadLevel(m_levelManager.GetCurrentLevelIndex(), /*preserveStats=*/true);
+
+    m_levelTransitionTimer = 0.8f;
+}
+
+void GameScene::StartLevelTransition()
+{
+    AdvanceToNextLevel();
+}
+
+void GameScene::UpdateLevelTransition()
+{
+}
+
+void GameScene::CompleteLevelTransition()
+{
+    m_levelTransitionTimer = 0.0f;
+}
+
+bool GameScene::IsLevelTransitionComplete() const
+{
+    return m_levelTransitionTimer <= 0.0f || (mp_context && mp_context->Input.IsKeyPress(KeyCode::Space));
+}
+
+void GameScene::FullReset()
+{
+    m_levelManager.ResetToFirstLevel();
+    LoadLevel(0, /*preserveStats=*/false);
 }
 
 void GameScene::HandleInput(const float dt, const GameContext& context)
@@ -814,6 +918,10 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::Numpad0) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::B)))
     {
         RespawnBricks();
+    }
+    if ((m_powerUpTesterActive || context.Rules.GetRule(Rule::Gameplay::CheatsUnlocked)) && context.Input.IsKeyPress(KeyCode::N))
+    {
+        AdvanceToNextLevel();
     }
     if (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::U))
     {
@@ -2552,6 +2660,22 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
         .TextColor = Colors::White,
         .FontId = m_fontId,
         .FontSize = 22.0f,
+        .AnchorPoint = Anchor::MiddleRight
+    });
+
+    // Next Level button
+    UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+        .Text = "Next Level [N]",
+        .OnClick = [this]() { AdvanceToNextLevel(); },
+        .Position = {-155.0f, actionY + actionStepY * 5},
+        .Size = {260.0f, 32.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{50, 80, 120, 255},
+        .HoverColor = Color{70, 110, 160, 255},
+        .PressedColor = Color{30, 50, 80, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 20.0f,
         .AnchorPoint = Anchor::MiddleRight
     });
 }

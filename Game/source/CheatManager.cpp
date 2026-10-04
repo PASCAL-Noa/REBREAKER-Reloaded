@@ -188,6 +188,13 @@ bool CheatManager::TryCheat(const std::string& code, const GameContext& context)
         m_cheatWasActivated = true;
         success = true;
     }
+    else if (upperCode == "NEXT")
+    {
+        context.Events.Publish(NextLevelEvent());
+        m_activeCheatName = "NEXT LEVEL";
+        m_cheatWasActivated = true;
+        success = true;
+    }
 
     if (success)
     {
