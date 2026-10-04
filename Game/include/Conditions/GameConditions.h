@@ -58,3 +58,20 @@ public:
         }
     }
 };
+
+template<typename T>
+class GameOverReplayCondition : public Condition<T>
+{
+public:
+    bool OnTest(T* pOwner) override
+    {
+        if constexpr (requires { pOwner->IsTypingName(); })
+        {
+            if (pOwner->IsTypingName())
+            {
+                return false;
+            }
+        }
+        return pOwner->GetContext()->Input.IsKeyPress(KeyCode::Space);
+    }
+};

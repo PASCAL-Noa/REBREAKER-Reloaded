@@ -92,7 +92,12 @@ bool LevelManager::NextLevel()
         SaveToPrefs();
         return true;
     }
-    return false;
+    else
+    {
+        m_currentLevelIndex = 0;
+        SaveToPrefs();
+        return false;
+    }
 }
 
 void LevelManager::SetLevel(int index)

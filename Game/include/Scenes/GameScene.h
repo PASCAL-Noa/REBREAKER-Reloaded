@@ -13,6 +13,7 @@
 #include "Generators/ILevelGenerator.h"
 #include "ECS/Components/PowerUpComponent.h"
 #include "LevelManager.h"
+#include "LeaderboardManager.h"
 #include <vector>
 
 struct Color;
@@ -63,6 +64,21 @@ public:
     [[nodiscard]] float               GetTransitionTimer() const { return m_levelTransitionTimer; }
     void    SetTransitionTimer(float timer) { m_levelTransitionTimer = timer; }
 
+    // State Machine Lifecycle Hooks
+    void    OnGameOverEnter();
+    void    OnGameOverUpdate();
+    void    OnGameOverExit();
+    void    OnVictoryEnter();
+    void    OnVictoryUpdate();
+    void    OnVictoryExit();
+
+    // Leaderboard
+    [[nodiscard]] LeaderboardManager&       GetLeaderboard() { return m_leaderboard; }
+    [[nodiscard]] const LeaderboardManager& GetLeaderboard() const { return m_leaderboard; }
+    [[nodiscard]] bool                      IsTypingName();
+    void    RefreshLeaderboardUI();
+    void    SubmitHighScore(const std::string& name);
+
     void    SetPowerUpTesterActive(bool active);
     [[nodiscard]] bool IsPowerUpTesterActive() const { return m_powerUpTesterActive; }
     void    TogglePowerUpTester();
@@ -105,7 +121,9 @@ protected:
     void    OpenSettingsTab(Entity targetCanvas);
 
     void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
-
+    void    CreateGameOverMenu(const GameContext& context);
+    void    CreateLevelClearMenu(const GameContext& context);
+    void    CreateVictoryMenu(const GameContext& context);
 
     std::unique_ptr<StateMachine<GameScene>> mp_state_machine;
     Entity  m_ball{};
@@ -124,8 +142,11 @@ protected:
     uint32_t    m_explosionSfxId = 0;
     uint32_t    m_fireTexId = 0;
     uint32_t    m_heartTexId = 0;
+    uint32_t    m_gameOverSfxId = 0;
+    uint32_t    m_levelClearSfxId = 0;
+    uint32_t    m_victorySfxId = 0;
+    uint32_t    m_scoreRecordedSfxId = 0;
 
-    
     UISystem        m_uiSystem;
     Entity          m_uiCanvas = NULL_ENTITY;
     Entity          m_pauseCanvas = NULL_ENTITY;
@@ -136,12 +157,32 @@ protected:
     Entity          m_gamerulesCanvas = NULL_ENTITY;
     Entity          m_cheatsCanvas = NULL_ENTITY;
     Entity          m_activeTabCanvas = NULL_ENTITY;
+    Entity          m_gameOverCanvas = NULL_ENTITY;
+    Entity          m_levelClearCanvas = NULL_ENTITY;
+    Entity          m_victoryCanvas = NULL_ENTITY;
 
     Entity          m_scoreTextEntity = NULL_ENTITY;
 
     std::vector<Entity> m_heartEntities;
     std::vector<Entity> m_sfxVolumeBars;
     std::vector<Entity> m_musicVolumeBars;
+    std::vector<Entity> m_leaderboardRowTexts;
+
+    Entity          m_gameOverTitleText = NULL_ENTITY;
+    Entity          m_gameOverScoreText = NULL_ENTITY;
+    Entity          m_gameOverStatusText = NULL_ENTITY;
+    Entity          m_nameInputEntity = NULL_ENTITY;
+    Entity          m_submitNameBtn = NULL_ENTITY;
+    Entity          m_replayBtn = NULL_ENTITY;
+    bool            m_hasSubmittedScore = false;
+    std::string     m_enteredPlayerName = "PLAYER";
+
+    Entity          m_levelClearTitleText = NULL_ENTITY;
+    Entity          m_levelClearStatsText = NULL_ENTITY;
+    Entity          m_levelClearTimerText = NULL_ENTITY;
+    Entity          m_victoryStatsText = NULL_ENTITY;
+
+    LeaderboardManager m_leaderboard;
 
     BallState   m_ballState = BallState::Spawning;
 

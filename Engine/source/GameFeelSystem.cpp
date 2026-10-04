@@ -24,12 +24,12 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     {
         float pitch = 1.0f + (e.Combo * 0.05f);
 
-        m_context.Audio.PlaySfx(m_sfxBrickHit, 50.0f, pitch);
+        m_context.Audio.PlaySfx(m_sfxBrickHit, 85.0f, pitch);
 
         if (e.IsDestroyed)
         {
-            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 80.0f, pitch);
-            m_context.Audio.PlaySfx(m_sfxCombo, 80.0f, pitch - 0.5f);
+            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 100.0f, pitch);
+            m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch - 0.5f);
         }
         else
         {
@@ -42,19 +42,19 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
 
             if (e.Combo > 1)
             {
-                m_context.Audio.PlaySfx(m_sfxCombo, 80.0f, pitch - 0.5f);
+                m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch - 0.5f);
             }
         }
     });
 
     m_paddleHitSub = m_context.Events.SubscribeScoped<PaddleHitEvent>([this](const PaddleHitEvent& e)
     {
-        m_context.Audio.PlaySfx(m_sfxPaddleHit, 80.0f);
+        m_context.Audio.PlaySfx(m_sfxPaddleHit, 100.0f);
     });
 
     m_ballDeathSub = m_context.Events.SubscribeScoped<BallDeathEvent>([this](const BallDeathEvent& e)
     {
-        m_context.Audio.PlaySfx(m_sfxBallDeath, 80.0f);
+        m_context.Audio.PlaySfx(m_sfxBallDeath, 100.0f);
         m_registry.View<Camera2D, TweenComponent>([&](Entity entity, Camera2D&, TweenComponent& tween) {
             TweenEffects::Shake(tween, m_registry, entity, 0.4f, 15.0f);
         });
@@ -63,7 +63,7 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_powerUpSub = m_context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
     {
         (void)e;
-        m_context.Audio.PlaySfx(m_sfxPowerUp, 80.0f);
+        m_context.Audio.PlaySfx(m_sfxPowerUp, 100.0f);
     });
 }
 

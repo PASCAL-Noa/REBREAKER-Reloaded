@@ -23,6 +23,9 @@
 #include "Conditions/GameConditions.h"
 #include "Actions/ResetGameAction.h"
 #include "Actions/NextLevelAction.h"
+#include "Actions/GameOverAction.h"
+#include "Actions/VictoryAction.h"
+#include "ECS/Components/UI/TextInputComponent.h"
 #include "AudioMixer.h"
 #include "ECS/Systems/PowerUpSystem.h"
 #include "ECS/Components/PaddleComponent.h"
@@ -75,6 +78,10 @@ void GameScene::OnInit(GameContext& context)
     m_explosionSfxId = context.Resources.LoadResource("Resources/audio/sfx/brick_destroy.wav");
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
     m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
+    m_gameOverSfxId = context.Resources.LoadResource("Resources/audio/sfx/game_over.mp3");
+    m_levelClearSfxId = context.Resources.LoadResource("Resources/audio/sfx/game_win.mp3");
+    m_victorySfxId = context.Resources.LoadResource("Resources/audio/sfx/victory.mp3");
+    m_scoreRecordedSfxId = context.Resources.LoadResource("Resources/audio/sfx/combo.wav");
 
 
 
@@ -251,12 +258,12 @@ void GameScene::OnInit(GameContext& context)
     pauseState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Playing)));
 
     State<GameScene>* gameOverState = mp_state_machine->CreateState(static_cast<int>(SceneState::GameOver));
-    gameOverState->AddAction(new ResetGameAction<GameScene>());
-    gameOverState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Space), static_cast<int>(SceneState::Playing)));
+    gameOverState->AddAction(new GameOverAction<GameScene>());
+    gameOverState->AddTransition(new Transition<GameScene>(new GameOverReplayCondition<GameScene>(), static_cast<int>(SceneState::Playing)));
 
     State<GameScene>* victoryState = mp_state_machine->CreateState(static_cast<int>(SceneState::Victory));
-    victoryState->AddAction(new ResetGameAction<GameScene>());
-    victoryState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Space), static_cast<int>(SceneState::Playing)));
+    victoryState->AddAction(new VictoryAction<GameScene>());
+    victoryState->AddTransition(new Transition<GameScene>(new GameOverReplayCondition<GameScene>(), static_cast<int>(SceneState::Playing)));
 
     State<GameScene>* levelTransitionState = mp_state_machine->CreateState(static_cast<int>(SceneState::LevelTransition));
     levelTransitionState->AddAction(new NextLevelAction<GameScene>());
@@ -272,6 +279,9 @@ void GameScene::OnInit(GameContext& context)
     CreateCheatsTab(context);
     CreateSettingsLayout(context);
     CreatePowerUpTesterUI(context);
+    CreateGameOverMenu(context);
+    CreateLevelClearMenu(context);
+    CreateVictoryMenu(context);
 }
 
 void GameScene::OnUpdate(const float dt, GameContext& context)
@@ -316,6 +326,22 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         m_registry.GetComponent<CanvasComponent>(m_powerUpTesterCanvas).IsEnabled = (m_powerUpTesterActive && currentState == static_cast<int>(SceneState::Playing));
     }
 
+    if (m_gameOverCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_gameOverCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_gameOverCanvas).IsEnabled =
+            (currentState == static_cast<int>(SceneState::GameOver) || currentState == static_cast<int>(SceneState::Victory));
+    }
+
+    if (m_levelClearCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelClearCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_levelClearCanvas).IsEnabled = (currentState == static_cast<int>(SceneState::LevelTransition));
+    }
+
+    if (m_victoryCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_victoryCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_victoryCanvas).IsEnabled = false;
+    }
+
     UISystem::OnUpdate(dt, m_registry, context);
     
     if (currentState == static_cast<int>(SceneState::LevelTransition))
@@ -324,10 +350,27 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         {
             m_levelTransitionTimer -= dt;
         }
+
+        if (m_levelClearTimerText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_levelClearTimerText))
+        {
+            int remainingSecs = static_cast<int>(std::ceil(std::max(0.0f, m_levelTransitionTimer)));
+            m_registry.GetComponent<TextComponent>(m_levelClearTimerText).Text =
+                "NEXT STAGE IN " + std::to_string(remainingSecs) + "s (OR PRESS SPACE)";
+        }
+    }
+
+    if (currentState == static_cast<int>(SceneState::GameOver) || currentState == static_cast<int>(SceneState::Victory))
+    {
+        if (context.Input.IsKeyPress(KeyCode::Escape))
+        {
+            context.Scenes.LoadScene<MenuScene>();
+            return;
+        }
     }
 
     if (currentState == static_cast<int>(SceneState::Playing))
     {
+        m_playlist.Update(context);
         HandleInput(dt, context);
         UpdatePowerUpTimers(dt);
         
@@ -362,7 +405,6 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
 
     if (currentState != static_cast<int>(SceneState::Paused))
     {
-        m_playlist.Update(context);
         m_systemManager.OnUpdate(dt);
 
         // Hard boundary safety clamp & bounce for all active balls (guarantees no escaping or tunneling walls)
@@ -831,12 +873,38 @@ void GameScene::AdvanceToNextLevel()
 
     LoadLevel(m_levelManager.GetCurrentLevelIndex(), /*preserveStats=*/true);
 
-    m_levelTransitionTimer = 0.8f;
+    m_levelTransitionTimer = 10.0f;
 }
 
 void GameScene::StartLevelTransition()
 {
+    int clearedLevel = m_levelManager.GetCurrentLevelNumber();
+    uint32_t currentScore = m_scoreManager.GetScore();
+
+    if (mp_context)
+    {
+        mp_context->Audio.StopMusic();
+        if (m_levelClearSfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_levelClearSfxId, 100.0f);
+        }
+    }
+
     AdvanceToNextLevel();
+
+    if (m_levelClearTitleText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_levelClearTitleText))
+    {
+        m_registry.GetComponent<TextComponent>(m_levelClearTitleText).Text =
+            "STAGE " + std::to_string(clearedLevel) + " COMPLETED!";
+    }
+
+    if (m_levelClearStatsText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_levelClearStatsText))
+    {
+        m_registry.GetComponent<TextComponent>(m_levelClearStatsText).Text =
+            "Accumulated Score: " + std::to_string(currentScore) + "  |  Lives: " + std::to_string(m_lives);
+    }
+
+    m_levelTransitionTimer = 10.0f;
 }
 
 void GameScene::UpdateLevelTransition()
@@ -846,6 +914,14 @@ void GameScene::UpdateLevelTransition()
 void GameScene::CompleteLevelTransition()
 {
     m_levelTransitionTimer = 0.0f;
+    if (m_levelClearCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelClearCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_levelClearCanvas).IsEnabled = false;
+    }
+    if (mp_context)
+    {
+        m_playlist.PlayNext(*mp_context);
+    }
 }
 
 bool GameScene::IsLevelTransitionComplete() const
@@ -853,8 +929,241 @@ bool GameScene::IsLevelTransitionComplete() const
     return m_levelTransitionTimer <= 0.0f || (mp_context && mp_context->Input.IsKeyPress(KeyCode::Space));
 }
 
+void GameScene::OnGameOverEnter()
+{
+    m_scoreManager.BreakCombo();
+
+    if (mp_context)
+    {
+        mp_context->Audio.StopMusic();
+        if (m_gameOverSfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_gameOverSfxId, 100.0f);
+        }
+        mp_context->Audio.PlayMusic("Resources/audio/music/Game-death.ogg", 40.0f, false);
+    }
+
+    m_hasSubmittedScore = false;
+    m_enteredPlayerName = "";
+    uint32_t finalScore = m_scoreManager.GetScore();
+    int finalLevel = m_levelManager.GetCurrentLevelNumber();
+
+    if (m_gameOverTitleText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverTitleText))
+    {
+        auto& titleComp = m_registry.GetComponent<TextComponent>(m_gameOverTitleText);
+        titleComp.Text = "GAME OVER";
+        titleComp.Tint = Color{240, 50, 50, 255};
+    }
+
+    if (m_replayBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_replayBtn))
+    {
+        m_registry.GetComponent<TextComponent>(m_replayBtn).Text = "REPLAY [SPACE]";
+    }
+
+    if (m_gameOverScoreText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverScoreText))
+    {
+        m_registry.GetComponent<TextComponent>(m_gameOverScoreText).Text =
+            "FINAL SCORE: " + std::to_string(finalScore) + "  |  STAGE REACHED: " + std::to_string(finalLevel);
+    }
+
+    if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
+    {
+        m_registry.GetComponent<TextComponent>(m_gameOverStatusText).Text = "ENTER YOUR PSEUDO [PRESS ENTER OR SAVE]:";
+    }
+
+    if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_nameInputEntity))
+    {
+        m_registry.GetComponent<RectTransform>(m_nameInputEntity).IsActive = true;
+    }
+    if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
+    {
+        auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
+        input.Text = "";
+        input.Placeholder = "ENTER PSEUDO";
+        input.IsFocused = true;
+    }
+    if (m_submitNameBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_submitNameBtn))
+    {
+        m_registry.GetComponent<RectTransform>(m_submitNameBtn).IsActive = true;
+    }
+    if (m_submitNameBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_submitNameBtn))
+    {
+        m_registry.GetComponent<TextComponent>(m_submitNameBtn).Text = "SAVE";
+    }
+
+    RefreshLeaderboardUI();
+}
+
+void GameScene::OnGameOverUpdate()
+{
+}
+
+void GameScene::OnGameOverExit()
+{
+    if (mp_context)
+    {
+        mp_context->Audio.StopMusic();
+        m_playlist.PlayNext(*mp_context);
+    }
+    FullReset();
+}
+
+void GameScene::OnVictoryEnter()
+{
+    m_scoreManager.BreakCombo();
+
+    if (mp_context)
+    {
+        mp_context->Audio.StopMusic();
+        if (m_victorySfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_victorySfxId, 100.0f);
+        }
+    }
+
+    m_hasSubmittedScore = false;
+    m_enteredPlayerName = "";
+    uint32_t finalScore = m_scoreManager.GetScore();
+
+    if (m_gameOverTitleText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverTitleText))
+    {
+        auto& titleComp = m_registry.GetComponent<TextComponent>(m_gameOverTitleText);
+        titleComp.Text = "VICTORY !";
+        titleComp.Tint = Color{255, 215, 0, 255};
+    }
+
+    if (m_replayBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_replayBtn))
+    {
+        m_registry.GetComponent<TextComponent>(m_replayBtn).Text = "CONTINUE [SPACE]";
+    }
+
+    if (m_gameOverScoreText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverScoreText))
+    {
+        m_registry.GetComponent<TextComponent>(m_gameOverScoreText).Text =
+            "VICTORY SCORE: " + std::to_string(finalScore) + "  |  ALL 5 STAGES CLEARED!";
+    }
+
+    if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
+    {
+        m_registry.GetComponent<TextComponent>(m_gameOverStatusText).Text = "CHAMPION! ENTER YOUR PSEUDO:";
+    }
+
+    if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_nameInputEntity))
+    {
+        m_registry.GetComponent<RectTransform>(m_nameInputEntity).IsActive = true;
+    }
+    if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
+    {
+        auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
+        input.Text = "";
+        input.Placeholder = "ENTER PSEUDO";
+        input.IsFocused = true;
+    }
+    if (m_submitNameBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_submitNameBtn))
+    {
+        m_registry.GetComponent<RectTransform>(m_submitNameBtn).IsActive = true;
+    }
+    if (m_submitNameBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_submitNameBtn))
+    {
+        m_registry.GetComponent<TextComponent>(m_submitNameBtn).Text = "SAVE";
+    }
+
+    if (m_victoryStatsText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_victoryStatsText))
+    {
+        m_registry.GetComponent<TextComponent>(m_victoryStatsText).Text =
+            "FINAL SCORE: " + std::to_string(finalScore);
+    }
+
+    RefreshLeaderboardUI();
+}
+
+void GameScene::OnVictoryUpdate()
+{
+}
+
+void GameScene::OnVictoryExit()
+{
+    if (mp_context)
+    {
+        mp_context->Audio.StopMusic();
+        m_playlist.PlayNext(*mp_context);
+    }
+    m_levelManager.ResetToFirstLevel();
+    LoadLevel(0, /*preserveStats=*/true);
+}
+
+bool GameScene::IsTypingName()
+{
+    if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
+    {
+        return m_registry.GetComponent<TextInputComponent>(m_nameInputEntity).IsFocused;
+    }
+    return false;
+}
+
+void GameScene::RefreshLeaderboardUI()
+{
+    const auto& entries = m_leaderboard.GetEntries();
+    for (size_t i = 0; i < m_leaderboardRowTexts.size(); ++i)
+    {
+        Entity rowEntity = m_leaderboardRowTexts[i];
+        if (!m_registry.IsAlive(rowEntity) || !m_registry.HasComponent<TextComponent>(rowEntity))
+            continue;
+
+        auto& textComp = m_registry.GetComponent<TextComponent>(rowEntity);
+        if (i < entries.size() && entries[i].Name != "---")
+        {
+            std::string rankStr = "#" + std::to_string(i + 1);
+            std::string nameStr = entries[i].Name;
+            while (nameStr.length() < 12) nameStr += " ";
+            textComp.Text = rankStr + "   " + nameStr + "   " + std::to_string(entries[i].Score) + " PTS";
+        }
+        else
+        {
+            textComp.Text = "#" + std::to_string(i + 1) + "   ---            0 PTS";
+        }
+    }
+}
+
+void GameScene::SubmitHighScore(const std::string& name)
+{
+    std::string safeName = name.empty() ? "PLAYER" : name;
+    int rank = m_leaderboard.AddOrUpdateEntry(m_enteredPlayerName, safeName, m_scoreManager.GetScore(), m_levelManager.GetCurrentLevelNumber());
+    m_enteredPlayerName = safeName;
+    m_hasSubmittedScore = true;
+
+    if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
+    {
+        auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
+        input.IsFocused = false;
+        input.Text = safeName;
+    }
+    if (m_submitNameBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_submitNameBtn))
+    {
+        m_registry.GetComponent<TextComponent>(m_submitNameBtn).Text = "SAVED";
+    }
+
+    if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
+    {
+        std::string rankMsg = (rank > 0 && rank <= 5) ? ("RANK #" + std::to_string(rank) + " - CONGRATULATIONS!") : "PSEUDO SAVED!";
+        m_registry.GetComponent<TextComponent>(m_gameOverStatusText).Text = rankMsg;
+    }
+
+    if (mp_context && m_scoreRecordedSfxId != 0)
+    {
+        mp_context->Audio.PlaySfx(m_scoreRecordedSfxId, 100.0f);
+    }
+
+    RefreshLeaderboardUI();
+}
+
 void GameScene::FullReset()
 {
+    if (mp_context)
+    {
+        mp_context->Audio.StopMusic();
+        m_playlist.PlayNext(*mp_context);
+    }
     m_levelManager.ResetToFirstLevel();
     LoadLevel(0, /*preserveStats=*/false);
 }
@@ -2677,6 +2986,443 @@ void GameScene::CreatePowerUpTesterUI(const GameContext& context)
         .FontId = m_fontId,
         .FontSize = 20.0f,
         .AnchorPoint = Anchor::MiddleRight
+    });
+}
+
+void GameScene::CreateGameOverMenu(const GameContext& context)
+{
+    m_gameOverCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_gameOverCanvas, CanvasComponent{.IsEnabled = false});
+
+    float viewX = context.Render.GetLogicalViewSize().X;
+    float viewY = context.Render.GetLogicalViewSize().Y;
+
+    // --- FOREGROUND: Buttons, Inputs, Texts (created first -> rendered last on top) ---
+
+    // Replay Button
+    m_replayBtn = UIFactory::CreateButton(m_registry, m_gameOverCanvas, ButtonDescriptor{
+        .Text = "REPLAY [SPACE]",
+        .OnClick = [this]() {
+            if (mp_state_machine)
+            {
+                mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+            }
+            else
+            {
+                FullReset();
+            }
+        },
+        .Position = {-180.0f, 310.0f},
+        .Size = {300.0f, 60.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{65, 65, 90, 255},
+        .HoverColor = Color{95, 95, 130, 255},
+        .PressedColor = Color{35, 35, 50, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 28.0f,
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Main Menu Button
+    UIFactory::CreateButton(m_registry, m_gameOverCanvas, ButtonDescriptor{
+        .Text = "MAIN MENU [ESC]",
+        .OnClick = [this]() {
+            if (mp_context)
+            {
+                mp_context->Audio.StopMusic();
+                mp_context->Scenes.LoadScene<MenuScene>();
+            }
+        },
+        .Position = {180.0f, 310.0f},
+        .Size = {300.0f, 60.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{95, 45, 45, 255},
+        .HoverColor = Color{135, 65, 65, 255},
+        .PressedColor = Color{60, 25, 25, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 28.0f,
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Submit button
+    m_submitNameBtn = UIFactory::CreateButton(m_registry, m_gameOverCanvas, ButtonDescriptor{
+        .Text = "SAVE",
+        .OnClick = [this]() {
+            if (m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
+            {
+                auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
+                SubmitHighScore(input.Text);
+            }
+        },
+        .Position = {170.0f, 195.0f},
+        .Size = {140.0f, 54.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{40, 130, 75, 255},
+        .HoverColor = Color{60, 175, 105, 255},
+        .PressedColor = Color{25, 90, 50, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 26.0f,
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Name text input field
+    m_nameInputEntity = UIFactory::CreateTextInput(m_registry, m_gameOverCanvas, TextInputDescriptor{
+        .Placeholder = "YOUR NAME",
+        .OnSubmit = [this](const std::string& name) {
+            SubmitHighScore(name);
+        },
+        .Position = {-100.0f, 195.0f},
+        .Size = {360.0f, 54.0f},
+        .DefaultColor = Color{35, 30, 45, 255},
+        .FocusedColor = Color{75, 65, 95, 255},
+        .TextColor = Colors::Yellow,
+        .FontId = m_fontId,
+        .FontSize = 30.0f,
+        .AnchorPoint = Anchor::Center,
+        .MaxLength = 10
+    });
+
+    // Status label
+    m_gameOverStatusText = UIFactory::CreateText(m_registry, m_gameOverCanvas, TextDescriptor{
+        .Text = "ENTER YOUR NAME:",
+        .Position = {0.0f, 135.0f},
+        .FontId = m_fontId,
+        .FontSize = 28.0f,
+        .Tint = Color{120, 230, 255, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // 5 Rows of Leaderboard
+    m_leaderboardRowTexts.clear();
+    float rowStartY = -110.0f;
+    float rowSpacing = 42.0f;
+    for (size_t i = 0; i < 5; ++i)
+    {
+        Color rankColor = (i == 0) ? Color{255, 215, 0, 255}
+                        : ((i == 1) ? Color{220, 225, 240, 255}
+                        : ((i == 2) ? Color{215, 140, 70, 255} : Colors::White));
+
+        Entity rowEntity = UIFactory::CreateText(m_registry, m_gameOverCanvas, TextDescriptor{
+            .Text = "#" + std::to_string(i + 1) + "   ---            0 PTS",
+            .Position = {0.0f, rowStartY + i * rowSpacing},
+            .FontId = m_fontId,
+            .FontSize = 30.0f,
+            .Tint = rankColor,
+            .AnchorPoint = Anchor::Center
+        });
+        m_leaderboardRowTexts.push_back(rowEntity);
+    }
+
+    // Leaderboard Header
+    UIFactory::CreateText(m_registry, m_gameOverCanvas, TextDescriptor{
+        .Text = "- HALL OF FAME  (TOP 5 ARCADE LEGENDS) -",
+        .Position = {0.0f, -155.0f},
+        .FontId = m_fontId,
+        .FontSize = 28.0f,
+        .Tint = Color{255, 215, 0, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Final score text
+    m_gameOverScoreText = UIFactory::CreateText(m_registry, m_gameOverCanvas, TextDescriptor{
+        .Text = "FINAL SCORE: 0  |  STAGE REACHED: 1",
+        .Position = {0.0f, -230.0f},
+        .FontId = m_fontId,
+        .FontSize = 36.0f,
+        .Tint = Color{255, 230, 120, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Title: GAME OVER
+    m_gameOverTitleText = UIFactory::CreateText(m_registry, m_gameOverCanvas, TextDescriptor{
+        .Text = "GAME OVER",
+        .Position = {0.0f, -295.0f},
+        .FontId = m_fontId,
+        .FontSize = 72.0f,
+        .Tint = Color{240, 50, 50, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // --- MIDGROUND: Inner plates ---
+
+    // Leaderboard card inner background plate
+    UIFactory::CreatePanel(m_registry, m_gameOverCanvas, PanelDescriptor{
+        .Position = {0.0f, -40.0f},
+        .Size = {1020.0f, 290.0f},
+        .Tint = Color{25, 20, 38, 230},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Header accent line
+    UIFactory::CreatePanel(m_registry, m_gameOverCanvas, PanelDescriptor{
+        .Position = {0.0f, -345.0f},
+        .Size = {1060.0f, 8.0f},
+        .Tint = Color{240, 50, 50, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // --- BACKGROUND: Main card & Backdrop overlay (created last -> rendered first) ---
+
+    // Dark semi-transparent card backdrop
+    UIFactory::CreatePanel(m_registry, m_gameOverCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {1120.0f, 820.0f},
+        .Tint = Color{16, 12, 24, 252},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Outer neon glow border
+    UIFactory::CreatePanel(m_registry, m_gameOverCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {1128.0f, 828.0f},
+        .Tint = Color{220, 50, 50, 180},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Fullscreen dimmed backdrop
+    UIFactory::CreatePanel(m_registry, m_gameOverCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {viewX * 2.0f, viewY * 2.0f},
+        .Tint = Color{0, 0, 0, 215},
+        .AnchorPoint = Anchor::Center
+    });
+}
+
+void GameScene::CreateLevelClearMenu(const GameContext& context)
+{
+    m_levelClearCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_levelClearCanvas, CanvasComponent{.IsEnabled = false});
+
+    float viewX = context.Render.GetLogicalViewSize().X;
+    float viewY = context.Render.GetLogicalViewSize().Y;
+
+    // --- FOREGROUND: Buttons, Texts (created first -> rendered last on top) ---
+
+    // Continue button
+    UIFactory::CreateButton(m_registry, m_levelClearCanvas, ButtonDescriptor{
+        .Text = "CONTINUE [SPACE]",
+        .OnClick = [this]() {
+            m_levelTransitionTimer = 0.0f;
+        },
+        .Position = {0.0f, 195.0f},
+        .Size = {340.0f, 64.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{45, 125, 70, 255},
+        .HoverColor = Color{65, 170, 95, 255},
+        .PressedColor = Color{30, 85, 45, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 28.0f,
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Countdown / next stage status
+    m_levelClearTimerText = UIFactory::CreateText(m_registry, m_levelClearCanvas, TextDescriptor{
+        .Text = "NEXT STAGE IN 10s (OR PRESS SPACE)",
+        .Position = {0.0f, 85.0f},
+        .FontId = m_fontId,
+        .FontSize = 32.0f,
+        .Tint = Color{120, 230, 255, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Stats
+    m_levelClearStatsText = UIFactory::CreateText(m_registry, m_levelClearCanvas, TextDescriptor{
+        .Text = "Accumulated Score: 0  |  Lives: 3",
+        .Position = {0.0f, -30.0f},
+        .FontId = m_fontId,
+        .FontSize = 36.0f,
+        .Tint = Colors::White,
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Subtitle & congratulations
+    UIFactory::CreateText(m_registry, m_levelClearCanvas, TextDescriptor{
+        .Text = "- EXCELLENT WORK -",
+        .Position = {0.0f, -135.0f},
+        .FontId = m_fontId,
+        .FontSize = 32.0f,
+        .Tint = Color{255, 220, 50, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Title: STAGE CLEARED!
+    m_levelClearTitleText = UIFactory::CreateText(m_registry, m_levelClearCanvas, TextDescriptor{
+        .Text = "STAGE CLEARED!",
+        .Position = {0.0f, -200.0f},
+        .FontId = m_fontId,
+        .FontSize = 72.0f,
+        .Tint = Color{70, 240, 110, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // --- MIDGROUND: Inner Stats panel & accent line ---
+
+    // Inner Stats panel
+    UIFactory::CreatePanel(m_registry, m_levelClearCanvas, PanelDescriptor{
+        .Position = {0.0f, -30.0f},
+        .Size = {1000.0f, 130.0f},
+        .Tint = Color{20, 48, 35, 230},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Top accent line
+    UIFactory::CreatePanel(m_registry, m_levelClearCanvas, PanelDescriptor{
+        .Position = {0.0f, -260.0f},
+        .Size = {1060.0f, 8.0f},
+        .Tint = Color{50, 220, 90, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // --- BACKGROUND: Main card & Backdrop overlay (created last -> rendered first) ---
+
+    // Backdrop panel
+    UIFactory::CreatePanel(m_registry, m_levelClearCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {1120.0f, 640.0f},
+        .Tint = Color{12, 28, 20, 252},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Glowing green outer border
+    UIFactory::CreatePanel(m_registry, m_levelClearCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {1128.0f, 648.0f},
+        .Tint = Color{50, 205, 80, 180},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Fullscreen dimmed backdrop
+    UIFactory::CreatePanel(m_registry, m_levelClearCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {viewX * 2.0f, viewY * 2.0f},
+        .Tint = Color{0, 0, 0, 200},
+        .AnchorPoint = Anchor::Center
+    });
+}
+
+void GameScene::CreateVictoryMenu(const GameContext& context)
+{
+    m_victoryCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_victoryCanvas, CanvasComponent{.IsEnabled = false});
+
+    float viewX = context.Render.GetLogicalViewSize().X;
+    float viewY = context.Render.GetLogicalViewSize().Y;
+
+    // --- FOREGROUND: Buttons, Texts (created first -> rendered last on top) ---
+
+    UIFactory::CreateButton(m_registry, m_victoryCanvas, ButtonDescriptor{
+        .Text = "PLAY AGAIN [SPACE]",
+        .OnClick = [this]() {
+            if (mp_state_machine)
+            {
+                mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+            }
+            else
+            {
+                FullReset();
+            }
+        },
+        .Position = {-170.0f, 175.0f},
+        .Size = {300.0f, 60.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{50, 110, 160, 255},
+        .HoverColor = Color{75, 145, 205, 255},
+        .PressedColor = Color{35, 75, 110, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 28.0f,
+        .AnchorPoint = Anchor::Center
+    });
+
+    UIFactory::CreateButton(m_registry, m_victoryCanvas, ButtonDescriptor{
+        .Text = "MAIN MENU [ESC]",
+        .OnClick = [this]() {
+            if (mp_context)
+            {
+                mp_context->Audio.StopMusic();
+                mp_context->Scenes.LoadScene<MenuScene>();
+            }
+        },
+        .Position = {170.0f, 175.0f},
+        .Size = {300.0f, 60.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{80, 80, 80, 255},
+        .HoverColor = Color{115, 115, 115, 255},
+        .PressedColor = Color{45, 45, 45, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 28.0f,
+        .AnchorPoint = Anchor::Center
+    });
+
+    m_victoryStatsText = UIFactory::CreateText(m_registry, m_victoryCanvas, TextDescriptor{
+        .Text = "FINAL SCORE: 0",
+        .Position = {0.0f, -30.0f},
+        .FontId = m_fontId,
+        .FontSize = 42.0f,
+        .Tint = Colors::White,
+        .AnchorPoint = Anchor::Center
+    });
+
+    UIFactory::CreateText(m_registry, m_victoryCanvas, TextDescriptor{
+        .Text = "ALL STAGES COMPLETED - GAME CLEARED !",
+        .Position = {0.0f, -140.0f},
+        .FontId = m_fontId,
+        .FontSize = 34.0f,
+        .Tint = Color{120, 230, 255, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    UIFactory::CreateText(m_registry, m_victoryCanvas, TextDescriptor{
+        .Text = "VICTORY !",
+        .Position = {0.0f, -210.0f},
+        .FontId = m_fontId,
+        .FontSize = 80.0f,
+        .Tint = Color{255, 225, 50, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // --- MIDGROUND: Inner Stats panel & accent line ---
+
+    UIFactory::CreatePanel(m_registry, m_victoryCanvas, PanelDescriptor{
+        .Position = {0.0f, -30.0f},
+        .Size = {1000.0f, 130.0f},
+        .Tint = Color{35, 30, 55, 230},
+        .AnchorPoint = Anchor::Center
+    });
+
+    UIFactory::CreatePanel(m_registry, m_victoryCanvas, PanelDescriptor{
+        .Position = {0.0f, -280.0f},
+        .Size = {1080.0f, 8.0f},
+        .Tint = Color{255, 215, 0, 255},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // --- BACKGROUND: Main card & Backdrop overlay (created last -> rendered first) ---
+
+    UIFactory::CreatePanel(m_registry, m_victoryCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {1140.0f, 680.0f},
+        .Tint = Color{22, 18, 34, 252},
+        .AnchorPoint = Anchor::Center
+    });
+
+    UIFactory::CreatePanel(m_registry, m_victoryCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {1148.0f, 688.0f},
+        .Tint = Color{255, 215, 0, 180},
+        .AnchorPoint = Anchor::Center
+    });
+
+    UIFactory::CreatePanel(m_registry, m_victoryCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {viewX * 2.0f, viewY * 2.0f},
+        .Tint = Color{0, 0, 0, 215},
+        .AnchorPoint = Anchor::Center
     });
 }
 
