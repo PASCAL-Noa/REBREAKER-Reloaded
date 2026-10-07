@@ -40,3 +40,7 @@ struct PowerUpEvent : public Event
     explicit PowerUpEvent(const Entity powerUp, const PowerUpType type = PowerUpType::MultiBall)
         : PowerUpEntity(powerUp), Type(type) {}
 };
+
+struct NextLevelEvent : public Event
+{
+};

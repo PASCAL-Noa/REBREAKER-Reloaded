@@ -352,7 +352,7 @@ void UISystem::UpdateTextInputs(Registry& registry, const GameContext& context, 
             {
                 if (textInput.OnSubmit)
                     textInput.OnSubmit(textInput.Text);
-                textInput.Text.clear();
+                textInput.IsFocused = false;
             }
             else if (!enteredText.empty() && textInput.Text.size() < textInput.MaxLength)
             {
