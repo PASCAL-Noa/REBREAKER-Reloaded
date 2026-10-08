@@ -57,25 +57,29 @@ float ScoreManager::GetComboTimer() const { return m_comboTimer; }
 
 void ScoreManager::LoadHighScore()
 {
-    std::ifstream file(m_savePath);
-    if (file.is_open())
-    {
-        file >> m_highScore;
-    }
     int prefHigh = PlayerPrefs::GetInt("HighScore", 0);
-    if (static_cast<uint32_t>(prefHigh) > m_highScore)
+    m_highScore = (prefHigh > 0) ? static_cast<uint32_t>(prefHigh) : 0;
+
+    // Optional legacy migration from plain text file if present
+    if (!m_savePath.empty())
     {
-        m_highScore = static_cast<uint32_t>(prefHigh);
+        std::ifstream file(m_savePath);
+        if (file.is_open())
+        {
+            uint32_t legacyScore = 0;
+            if (file >> legacyScore && legacyScore > m_highScore)
+            {
+                m_highScore = legacyScore;
+                PlayerPrefs::SetInt("HighScore", static_cast<int>(m_highScore));
+                PlayerPrefs::Save();
+            }
+            file.close();
+        }
     }
 }
 
 void ScoreManager::SaveHighScore()
 {
-    std::ofstream file(m_savePath);
-    if (file.is_open())
-    {
-        file << m_highScore;
-    }
     PlayerPrefs::SetInt("HighScore", static_cast<int>(m_highScore));
     PlayerPrefs::Save();
 }
