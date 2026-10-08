@@ -5,6 +5,8 @@
 #include "Core/InputManager.h"
 #include "Data/WindowConfig.h"
 
+class Renderer;
+
 class Window
 {
 public:
@@ -16,7 +18,7 @@ public:
     void                Clear();
     void                Display();
 
-    bool                PollEvents(InputManager& input);
+    bool                PollEvents(InputManager& input, Renderer* renderer = nullptr);
     void                ApplyConfig(const WindowConfig& config);
 
     const WindowConfig& GetConfig() const;

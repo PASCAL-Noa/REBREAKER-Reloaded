@@ -1,5 +1,6 @@
 #include "System/Window.h"
 #include "System/InputTranslator.h"
+#include "Graphics/Renderer.h"
 #include <optional>
 
 
@@ -33,7 +34,7 @@ void Window::Display()
     m_window.display();
 }
 
-bool Window::PollEvents(InputManager& input)
+bool Window::PollEvents(InputManager& input, Renderer* renderer)
 {
     const auto handleKey = [&input](auto sfKey, bool isPressed)
     {
@@ -64,10 +65,28 @@ bool Window::PollEvents(InputManager& input)
             input.SetMouseWheelDelta(e->delta);
         else if (const auto* e = event->getIf<sf::Event::TextEntered>())
             input.AppendEnteredText(e->unicode);
+        else if (const auto* e = event->getIf<sf::Event::Resized>())
+        {
+            m_config.Width = e->size.x;
+            m_config.Height = e->size.y;
+            m_window.setView(sf::View(sf::FloatRect({0.f, 0.f}, {static_cast<float>(e->size.x), static_cast<float>(e->size.y)})));
+            if (renderer)
+            {
+                renderer->OnWindowResized(e->size.x, e->size.y);
+            }
+        }
     }
 
-    sf::Vector2i mousePos = sf::Mouse::getPosition(m_window);
-    input.SetMousePosition(static_cast<float>(mousePos.x), static_cast<float>(mousePos.y));
+    const sf::Vector2i mousePos = sf::Mouse::getPosition(m_window);
+    if (renderer)
+    {
+        const Vector2f logicalPos = renderer->MapPixelToCoords(Vector2f{static_cast<float>(mousePos.x), static_cast<float>(mousePos.y)});
+        input.SetMousePosition(logicalPos.X, logicalPos.Y);
+    }
+    else
+    {
+        input.SetMousePosition(static_cast<float>(mousePos.x), static_cast<float>(mousePos.y));
+    }
 
     return true;
 }
@@ -99,6 +118,10 @@ void Window::ApplyConfig(const WindowConfig &config)
     }
 
     m_window.create(sf::VideoMode({m_config.Width, m_config.Height}), m_config.Title, sfStyle, sfState);
+    const sf::Vector2u actualSize = m_window.getSize();
+    m_config.Width = actualSize.x;
+    m_config.Height = actualSize.y;
+    m_window.setView(sf::View(sf::FloatRect({0.f, 0.f}, {static_cast<float>(actualSize.x), static_cast<float>(actualSize.y)})));
     m_window.setFramerateLimit(0);
     m_window.setVerticalSyncEnabled(m_config.VSync);
 }
