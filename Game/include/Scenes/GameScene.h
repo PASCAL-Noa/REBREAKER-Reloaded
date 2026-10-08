@@ -199,7 +199,7 @@ protected:
     std::unique_ptr<TextFeedback> m_textFeedback;
 
     std::unique_ptr<ILevelGenerator> mp_levelGenerator;
-    ScoreManager       m_scoreManager{"save.dat"};
+    ScoreManager       m_scoreManager;
     uint32_t    m_combo = 0;
     PlaylistManager     m_playlist;
     float m_cheatTimer;

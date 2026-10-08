@@ -6,7 +6,7 @@
 class ScoreManager
 {
 public:
-    explicit ScoreManager(const std::string& savePath);
+    explicit ScoreManager(const std::string& savePath = "");
 
     void    Update(float dt);
     void    AddScore(uint32_t score);

@@ -1,6 +1,15 @@
 #include "Core/PlayerPrefs.h"
 #include <fstream>
 #include <iostream>
+#include <filesystem>
+
+#ifdef _WIN32
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+#endif
 
 json PlayerPrefs::s_Data = json::object();
 const std::string PlayerPrefs::s_FilePath = "playerprefs.json";
@@ -61,8 +70,6 @@ std::string PlayerPrefs::GetString(const std::string& key, const std::string& de
     return defaultValue;
 }
 
-#include <filesystem>
-
 void PlayerPrefs::Save()
 {
     std::string tmpFilePath = s_FilePath + ".tmp";
@@ -72,12 +79,31 @@ void PlayerPrefs::Save()
         file << s_Data.dump(4);
         file.close();
 
+#if defined(_WIN32)
+        std::filesystem::path srcPath(tmpFilePath);
+        std::filesystem::path dstPath(s_FilePath);
+
+        // MoveFileExW with MOVEFILE_REPLACE_EXISTING performs an atomic replacement on NTFS
+        if (!MoveFileExW(srcPath.c_str(), dstPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        {
+            // Fallback to std::filesystem::copy_file with overwrite_existing
+            std::error_code ec;
+            std::filesystem::copy_file(srcPath, dstPath, std::filesystem::copy_options::overwrite_existing, ec);
+            std::filesystem::remove(srcPath, ec);
+            if (ec)
+            {
+                std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
+            }
+        }
+#else
         std::error_code ec;
-        std::filesystem::rename(tmpFilePath, s_FilePath, ec);
+        std::filesystem::copy_file(tmpFilePath, s_FilePath, std::filesystem::copy_options::overwrite_existing, ec);
+        std::filesystem::remove(tmpFilePath, ec);
         if (ec)
         {
             std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
         }
+#endif
     }
     else
     {
@@ -87,6 +113,13 @@ void PlayerPrefs::Save()
 
 void PlayerPrefs::Load()
 {
+    std::string tmpFilePath = s_FilePath + ".tmp";
+    std::error_code ec;
+    if (!std::filesystem::exists(s_FilePath, ec) && std::filesystem::exists(tmpFilePath, ec))
+    {
+        std::filesystem::copy_file(tmpFilePath, s_FilePath, std::filesystem::copy_options::overwrite_existing, ec);
+    }
+
     std::ifstream file(s_FilePath);
     if (file.is_open())
     {
