@@ -37,6 +37,9 @@ namespace Debug
         std::cout << "\033[32m[INFO]\033[0m "
                   << std::format(ctx.fmt, std::forward<Args>(args)...)
                   << " \033[90m(" << GetFileName(ctx.loc.file_name()) << ":" << ctx.loc.line() << ")\033[0m\n";
+#else
+        (void)ctx;
+        ((void)args, ...);
 #endif
     }
 
@@ -47,6 +50,9 @@ namespace Debug
         std::cout << "\033[33m[WARN]\033[0m "
                   << std::format(ctx.fmt, std::forward<Args>(args)...)
                   << " \033[90m(" << GetFileName(ctx.loc.file_name()) << ":" << ctx.loc.line() << ")\033[0m\n";
+#else
+        (void)ctx;
+        ((void)args, ...);
 #endif
     }
 
@@ -57,6 +63,9 @@ namespace Debug
         std::cerr << "\033[31m[ERROR]\033[0m "
                   << std::format(ctx.fmt, std::forward<Args>(args)...)
                   << " \033[90m(" << GetFileName(ctx.loc.file_name()) << ":" << ctx.loc.line() << ")\033[0m\n";
+#else
+        (void)ctx;
+        ((void)args, ...);
 #endif
     }
 }

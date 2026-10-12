@@ -1433,7 +1433,7 @@ void GameScene::HandleDeath()
 
         if (!infiniteLives)
         {
-            if (m_lives - 1 >= 0 && m_lives - 1 < m_heartEntities.size())
+            if (m_lives - 1 >= 0 && static_cast<size_t>(m_lives - 1) < m_heartEntities.size())
             {
                 Entity actualHeart = m_heartEntities[m_lives - 1];
 

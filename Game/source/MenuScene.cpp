@@ -1,5 +1,5 @@
 #include "Scenes/MenuScene.h"
-#include "Scenes/SandBox.h"
+#include "Scenes/Sandbox.h"
 #include "Core/GameContext.h"
 #include "Core/SceneManager.h"
 #include "Core/InputManager.h"

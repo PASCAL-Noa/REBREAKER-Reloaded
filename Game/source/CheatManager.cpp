@@ -37,7 +37,7 @@ void CheatManager::Update(float dt, const GameContext& context)
         if (context.Input.IsKeyPress(m_konamiSequence[m_konamiIndex]))
         {
             m_konamiIndex++;
-            if (m_konamiIndex >= m_konamiSequence.size())
+            if (static_cast<size_t>(m_konamiIndex) >= m_konamiSequence.size())
             {
                 m_konamiIndex = 0;
                 if (!m_cheatTabUnlocked)

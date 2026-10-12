@@ -1,6 +1,6 @@
 #include "Scenes/DefaultScene.h"
 #include "Scenes/MenuScene.h"
-#include "Scenes/SandBox.h"
+#include "Scenes/Sandbox.h"
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleAudio.h"
 #include "Scenes/GameScene.h"
