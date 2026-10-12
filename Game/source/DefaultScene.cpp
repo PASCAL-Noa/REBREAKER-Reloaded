@@ -73,9 +73,9 @@ void DefaultScene::DrawDefaultUI(const GameContext& context, const std::string& 
     context.Render.DrawText(text, m_fontId, 24.0f, Transform2D{Vector2f{10.0f, 10.0f}}, Colors::White);
 }
 
-void DefaultScene::PlaySfx(uint32_t id, float volume, float pitch) const
+void DefaultScene::PlaySfx(uint32_t id, float volume, float pitch, float pan) const
 {
-    if (mp_context) mp_context->Audio.PlaySfx(id, volume, pitch);
+    if (mp_context) mp_context->Audio.PlaySfx(id, volume, pitch, pan);
 }
 
 void DefaultScene::PlayMusic(const std::string& filepath, float volume, bool loop) const

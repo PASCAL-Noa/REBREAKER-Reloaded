@@ -198,7 +198,13 @@ void GameScene::OnInit(GameContext& context)
         }
         else if (!isBrick && !isPaddle && !isBottomWall)
         {
-            context.Audio.PlaySfx(m_bounceSfxId, 50.0f);
+            float bouncePan = 0.0f;
+            if (m_registry.HasComponent<Transform2D>(ballEntity))
+            {
+                constexpr float kHalfPlayfieldWidth = 800.0f;
+                bouncePan = std::clamp(m_registry.GetComponent<Transform2D>(ballEntity).Position.X / kHalfPlayfieldWidth, -1.0f, 1.0f);
+            }
+            context.Audio.PlaySfx(m_bounceSfxId, 50.0f, 1.0f, bouncePan);
         }
 
         if (isPaddle || (!isBrick && !isPaddle && !isBottomWall))
@@ -1573,7 +1579,17 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity)
         }
     }
 
-    mp_context->Events.Publish(BrickHitEvent(entity, isDestroyed, brick.IsSpecial, m_scoreManager.GetComboMultiplier()));
+    Vector2f contactPos{0.0f, 0.0f};
+    if (ballEntity != NULL_ENTITY && m_registry.HasComponent<Transform2D>(ballEntity))
+    {
+        contactPos = m_registry.GetComponent<Transform2D>(ballEntity).Position;
+    }
+    else if (m_registry.HasComponent<Transform2D>(entity))
+    {
+        contactPos = m_registry.GetComponent<Transform2D>(entity).Position;
+    }
+
+    mp_context->Events.Publish(BrickHitEvent(entity, isDestroyed, brick.IsSpecial, m_scoreManager.GetComboMultiplier(), contactPos));
 
     if (m_scoreManager.GetComboMultiplier() > 1 && m_registry.HasComponent<Transform2D>(entity))
     {
@@ -1629,7 +1645,7 @@ void GameScene::HandlePaddleCollision(Entity ballEntity)
     ballRb.Velocity.X = speed * std::sin(bounceAngle);
     ballRb.Velocity.Y = -speed * std::cos(bounceAngle);
 
-    mp_context->Events.Publish(PaddleHitEvent(m_paddle, ballEntity));
+    mp_context->Events.Publish(PaddleHitEvent(m_paddle, ballEntity, ballTransform.Position));
 }
 
 void GameScene::HandleBallBottomCollision(Entity ballEntity)

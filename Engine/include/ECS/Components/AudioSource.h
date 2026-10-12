@@ -9,6 +9,7 @@ struct AudioSource
     
     float       Volume = 100.0f;
     float       Pitch = 1.0f;
+    float       Pan = 0.0f;
     bool        IsMusic = false;
     bool        Loop = false;
     bool        PlayRequested = false;

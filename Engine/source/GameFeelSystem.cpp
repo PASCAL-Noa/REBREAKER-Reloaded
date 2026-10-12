@@ -23,13 +23,15 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_brickHitSub = m_context.Events.SubscribeScoped<BrickHitEvent>([this](const BrickHitEvent& e)
     {
         float pitch = 1.0f + (e.Combo * 0.05f);
+        constexpr float kHalfPlayfieldWidth = 800.0f;
+        float pan = std::clamp(e.ContactPoint.X / kHalfPlayfieldWidth, -1.0f, 1.0f);
 
-        m_context.Audio.PlaySfx(m_sfxBrickHit, 85.0f, pitch);
+        m_context.Audio.PlaySfx(m_sfxBrickHit, 85.0f, pitch, pan);
 
         if (e.IsDestroyed)
         {
-            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 100.0f, pitch);
-            m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch - 0.5f);
+            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 100.0f, pitch, pan);
+            m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch - 0.5f, pan);
         }
         else
         {
@@ -42,14 +44,16 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
 
             if (e.Combo > 1)
             {
-                m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch - 0.5f);
+                m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch - 0.5f, pan);
             }
         }
     });
 
     m_paddleHitSub = m_context.Events.SubscribeScoped<PaddleHitEvent>([this](const PaddleHitEvent& e)
     {
-        m_context.Audio.PlaySfx(m_sfxPaddleHit, 100.0f);
+        constexpr float kHalfPlayfieldWidth = 800.0f;
+        float pan = std::clamp(e.ContactPoint.X / kHalfPlayfieldWidth, -1.0f, 1.0f);
+        m_context.Audio.PlaySfx(m_sfxPaddleHit, 100.0f, 1.0f, pan);
     });
 
     m_ballDeathSub = m_context.Events.SubscribeScoped<BallDeathEvent>([this](const BallDeathEvent& e)

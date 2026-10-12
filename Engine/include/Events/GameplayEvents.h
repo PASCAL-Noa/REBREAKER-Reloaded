@@ -1,25 +1,28 @@
 #pragma once
 #include "ECS/Entity.h"
 #include "Events/Event.h"
+#include "Math/Vector2.h"
 
 struct BrickHitEvent : public Event
 {
-    Entity  BrickEntity;
-    bool    IsDestroyed;
-    bool    IsSpecial;
+    Entity      BrickEntity;
+    bool        IsDestroyed;
+    bool        IsSpecial;
     uint32_t    Combo;
+    Vector2f    ContactPoint;
 
-    BrickHitEvent(const Entity brick, const bool destroyed, const bool special, const uint32_t combo)
-        : BrickEntity(brick), IsDestroyed(destroyed), IsSpecial(special), Combo(combo) {}
+    BrickHitEvent(const Entity brick, const bool destroyed, const bool special, const uint32_t combo, const Vector2f& contactPoint = Vector2f{0.0f, 0.0f})
+        : BrickEntity(brick), IsDestroyed(destroyed), IsSpecial(special), Combo(combo), ContactPoint(contactPoint) {}
 };
 
 struct PaddleHitEvent : public Event
 {
-    Entity PaddleEntity;
-    Entity BallEntity;
+    Entity      PaddleEntity;
+    Entity      BallEntity;
+    Vector2f    ContactPoint;
 
-    PaddleHitEvent(const Entity paddle, const Entity ball)
-        : PaddleEntity(paddle), BallEntity(ball) {}
+    PaddleHitEvent(const Entity paddle, const Entity ball, const Vector2f& contactPoint = Vector2f{0.0f, 0.0f})
+        : PaddleEntity(paddle), BallEntity(ball), ContactPoint(contactPoint) {}
 };
 
 struct BallDeathEvent : public Event

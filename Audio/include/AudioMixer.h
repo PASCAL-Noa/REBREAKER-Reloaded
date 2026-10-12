@@ -16,7 +16,7 @@ public:
     AudioMixer(AudioMixer&&) noexcept;
     AudioMixer& operator=(AudioMixer&&) noexcept;
 
-    void    PlaySfx(uint32_t soundId, float volume = 100.0f, float pitch = 1.0f) const;
+    void    PlaySfx(uint32_t soundId, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
     void    PlayMusic(const std::string& filepath, float volume = 100.0f, bool loop = true) const;
     void    StopMusic() const;
 
