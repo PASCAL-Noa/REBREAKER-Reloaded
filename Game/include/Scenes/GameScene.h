@@ -223,4 +223,6 @@ protected:
     int     m_tempoBallStacks = 0;
     float   m_bigBallDuration = 0.0f;
     Entity  m_powerUpStatusText = NULL_ENTITY;
+
+    ParticleSystem* m_particleSystem = nullptr;
 };

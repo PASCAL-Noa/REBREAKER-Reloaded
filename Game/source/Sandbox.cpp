@@ -31,7 +31,7 @@ void SandBox::OnInit(GameContext& context)
     m_debugTexId = context.Resources.LoadResource("Resources/sprite/debug.jpg");
 
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
-    m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
+    m_particleSystem = m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
 
     m_collisionSub = context.Events.SubscribeScoped<CollisionEvent>([&context, this](const CollisionEvent& e)
@@ -73,6 +73,8 @@ void SandBox::InitPhysicsWorld(GameContext& context)
 
 void SandBox::InitParticles()
 {
+    if (!m_particleSystem) return;
+
     std::mt19937 rng(42);
     std::uniform_real_distribution<float> posDist(-500.0f, 500.0f);
     std::uniform_real_distribution<float> velDist(-50.0f, 50.0f);
@@ -80,17 +82,10 @@ void SandBox::InitParticles()
 
     for (int i = 0; i < 1000; ++i)
     {
-        Entity e = m_registry.CreateEntity();
-        m_registry.AddComponent<Transform2D>(e, Transform2D{Vector2f{posDist(rng), posDist(rng)}});
-        
-        ParticleComponent particle;
-        particle.Velocity = Vector2f{velDist(rng), velDist(rng)};
-        particle.Life = 5.0f;
-        particle.MaxLife = 5.0f;
-        particle.Size = 4.0f;
-        particle.Tint = Color{static_cast<uint8_t>(colDist(rng)), 50, 200, 255};
-        
-        m_registry.AddComponent<ParticleComponent>(e, particle);
+        Vector2f pos{posDist(rng), posDist(rng)};
+        Vector2f vel{velDist(rng), velDist(rng)};
+        Color tint{static_cast<uint8_t>(colDist(rng)), 50, 200, 255};
+        m_particleSystem->Spawn(pos, vel, 5.0f, 4.0f, tint);
     }
 }
 
@@ -137,23 +132,17 @@ void SandBox::HandleInput(float dt, const GameContext& context)
 
 void SandBox::SpawnParticles(int count, float x, float y)
 {
+    if (!m_particleSystem) return;
+
     static std::mt19937 rng(42);
     std::uniform_real_distribution<float> velDist(-300.0f, 300.0f);
     std::uniform_int_distribution<int> colDist(150, 255);
 
     for (int i = 0; i < count; ++i)
     {
-        Entity e = m_registry.CreateEntity();
-        m_registry.AddComponent<Transform2D>(e, Transform2D{Vector2f{x, y}});
-        
-        ParticleComponent particle;
-        particle.Velocity = Vector2f{velDist(rng), velDist(rng)};
-        particle.Life = 1.0f;
-        particle.MaxLife = 1.0f;
-        particle.Size = 4.0f;
-        particle.Tint = Color{255, static_cast<uint8_t>(colDist(rng)), 50, 255};
-        
-        m_registry.AddComponent<ParticleComponent>(e, particle);
+        Vector2f vel{velDist(rng), velDist(rng)};
+        Color tint{255, static_cast<uint8_t>(colDist(rng)), 50, 255};
+        m_particleSystem->Spawn(Vector2f{x, y}, vel, 1.0f, 4.0f, tint);
     }
 }
 

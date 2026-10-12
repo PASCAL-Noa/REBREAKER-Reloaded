@@ -26,4 +26,5 @@ private:
     uint32_t    m_debugTexId = 0;
 
     ScopedSubscription m_collisionSub;
+    class ParticleSystem* m_particleSystem = nullptr;
 };

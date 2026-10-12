@@ -88,7 +88,7 @@ void GameScene::OnInit(GameContext& context)
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
     m_systemManager.AddSystem<AnimatorSystem>(m_registry);
-    m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
+    m_particleSystem = m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
     m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
     m_systemManager.AddSystem<TweenSystem>(m_registry);
     m_systemManager.AddSystem<PowerUpSystem>(m_registry, context.Events);
@@ -588,28 +588,22 @@ void GameScene::SpawnBleedParticles(const Vector2f& position)
     if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
         return;
     }
+    if (!m_particleSystem) return;
 
     static std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     
-    // Throttle bleed particles to avoid flooding ECS
+    // Throttle bleed particles
     if (chance(rng) > 0.75f)
     {
         std::uniform_real_distribution<float> posOffsetX(-8.0f, 8.0f);
         std::uniform_real_distribution<float> posOffsetY(-8.0f, 8.0f);
         std::uniform_real_distribution<float> velDist(-120.0f, 120.0f);
         
-        Entity p = m_registry.CreateEntity();
-        m_registry.AddComponent<Transform2D>(p, Transform2D{Vector2f{position.X + posOffsetX(rng), position.Y + posOffsetY(rng)}});
+        Vector2f spawnPos{position.X + posOffsetX(rng), position.Y + posOffsetY(rng)};
+        Vector2f vel{velDist(rng), velDist(rng)};
         
-        ParticleComponent particle;
-        particle.Velocity = Vector2f{velDist(rng), velDist(rng)};
-        particle.Life = 0.35f;
-        particle.MaxLife = 0.35f;
-        particle.Size = 8.0f;
-        particle.Tint = Colors::Red; 
-        
-        m_registry.AddComponent<ParticleComponent>(p, particle);
+        m_particleSystem->Spawn(spawnPos, vel, 0.35f, 8.0f, Colors::Red);
     }
 }
 
@@ -618,6 +612,7 @@ void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& c
     if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
         return;
     }
+    if (!m_particleSystem) return;
 
     static std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> velDistX(-200.0f, 200.0f);
@@ -630,17 +625,12 @@ void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& c
     int actualCount = std::min(count, 12);
     for (int i = 0; i < actualCount; ++i)
     {
-        Entity p = m_registry.CreateEntity();
-        m_registry.AddComponent<Transform2D>(p, Transform2D{Vector2f{position.X + posOffsetX(rng), position.Y + posOffsetY(rng)}});
-        
-        ParticleComponent particle;
-        particle.Velocity = Vector2f{velDistX(rng), velDistY(rng)};
-        particle.Life = lifeDist(rng);
-        particle.MaxLife = particle.Life;
-        particle.Size = sizeDist(rng);
-        particle.Tint = color; 
-        
-        m_registry.AddComponent<ParticleComponent>(p, particle);
+        Vector2f spawnPos{position.X + posOffsetX(rng), position.Y + posOffsetY(rng)};
+        Vector2f vel{velDistX(rng), velDistY(rng)};
+        float life = lifeDist(rng);
+        float size = sizeDist(rng);
+
+        m_particleSystem->Spawn(spawnPos, vel, life, size, color);
     }
 }
 
@@ -649,6 +639,7 @@ void GameScene::SpawnFireTrailParticle(const Vector2f& position, const Vector2f&
     if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
         return;
     }
+    if (!m_particleSystem) return;
 
     static std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> offsetDist(-8.0f, 8.0f);
@@ -657,10 +648,7 @@ void GameScene::SpawnFireTrailParticle(const Vector2f& position, const Vector2f&
     std::uniform_real_distribution<float> sizeDist(isFuseActive ? 8.0f : 5.0f, isFuseActive ? 16.0f : 12.0f);
     std::uniform_int_distribution<int> colorPick(0, 2);
 
-    Entity p = m_registry.CreateEntity();
     Vector2f spawnPos{position.X + offsetDist(rng), position.Y + offsetDist(rng)};
-    m_registry.AddComponent<Transform2D>(p, Transform2D{spawnPos});
-
     Vector2f pVel{-ballVelocity.X * 0.15f + velTurbDist(rng), -ballVelocity.Y * 0.15f + velTurbDist(rng)};
 
     Color c;
@@ -669,14 +657,7 @@ void GameScene::SpawnFireTrailParticle(const Vector2f& position, const Vector2f&
     else if (cp == 1) c = Color{255, 120, 20, 255};
     else              c = Color{220, 40, 10, 255};
 
-    ParticleComponent particle;
-    particle.Velocity = pVel;
-    particle.Life = lifeDist(rng);
-    particle.MaxLife = particle.Life;
-    particle.Size = sizeDist(rng);
-    particle.Tint = c;
-
-    m_registry.AddComponent<ParticleComponent>(p, particle);
+    m_particleSystem->Spawn(spawnPos, pVel, lifeDist(rng), sizeDist(rng), c);
 }
 
 void GameScene::SpawnFireExplosionParticles(const Vector2f& position, float radius, int count)
@@ -684,6 +665,7 @@ void GameScene::SpawnFireExplosionParticles(const Vector2f& position, float radi
     if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
         return;
     }
+    if (!m_particleSystem) return;
 
     static std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
@@ -704,9 +686,6 @@ void GameScene::SpawnFireExplosionParticles(const Vector2f& position, float radi
             position.Y + std::sin(angle) * offset
         };
 
-        Entity p = m_registry.CreateEntity();
-        m_registry.AddComponent<Transform2D>(p, Transform2D{spawnPos});
-
         Color c;
         int cp = colorPick(rng);
         if (cp == 0)      c = Color{255, 255, 180, 255};
@@ -714,14 +693,8 @@ void GameScene::SpawnFireExplosionParticles(const Vector2f& position, float radi
         else if (cp == 2) c = Color{240, 50, 20, 255};
         else              c = Color{120, 30, 10, 220};
 
-        ParticleComponent particle;
-        particle.Velocity = Vector2f{std::cos(angle) * speed, std::sin(angle) * speed};
-        particle.Life = lifeDist(rng);
-        particle.MaxLife = particle.Life;
-        particle.Size = sizeDist(rng);
-        particle.Tint = c;
-
-        m_registry.AddComponent<ParticleComponent>(p, particle);
+        Vector2f vel{std::cos(angle) * speed, std::sin(angle) * speed};
+        m_particleSystem->Spawn(spawnPos, vel, lifeDist(rng), sizeDist(rng), c);
     }
 }
 
