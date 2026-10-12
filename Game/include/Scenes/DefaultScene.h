@@ -15,7 +15,7 @@ public:
 
 protected:
     void    DrawDefaultUI(const GameContext& context, const std::string& sceneName, const std::string& instructions) const;
-    void    PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f) const;
+    void    PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
     void    PlayMusic(const std::string& filepath, float volume = 100.0f, bool loop = true) const;
     void    StopMusic() const;
     void    StopAllAudio() const;

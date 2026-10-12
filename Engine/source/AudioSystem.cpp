@@ -20,7 +20,7 @@ void AudioSystem::OnUpdate(float dt)
             }
             else
             {
-                m_mixer.PlaySfx(audio.SoundId, audio.Volume, audio.Pitch);
+                m_mixer.PlaySfx(audio.SoundId, audio.Volume, audio.Pitch, audio.Pan);
             }
             audio.PlayRequested = false;
         }
