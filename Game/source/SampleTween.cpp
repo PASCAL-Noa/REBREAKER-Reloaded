@@ -46,6 +46,11 @@ void SampleTween::OnUpdate(float dt, GameContext& context)
         TweenEffects::Spin(tween, m_registry, m_agent, 0.8f);
     }
 
+    if (context.Input.IsKeyPress(KeyCode::Num3))
+    {
+        TweenEffects::Shake(m_registry, m_camera, 0.35f, 20.0f);
+    }
+
     m_systemManager.OnUpdate(dt);
 }
 
@@ -57,7 +62,7 @@ void SampleTween::OnRender(GameContext& context)
     
     context.Render.ResetCamera();
 
-    std::string stats = "[1] : Shake\n[2] : Spin";
+    std::string stats = "[1] : Shake Entity\n[2] : Spin Entity\n[3] : Camera Shake (Bounded & Damped)";
     DrawDefaultUI(context, "SAMPLE : TWEEN", stats);
 }
 
