@@ -364,7 +364,7 @@ void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType t
 
     for (const auto& v : vertices)
     {
-        m_vertexScratch.emplace_back(sf::Vector2f{v.X, v.Y}, ToSfColor(v.Color), sf::Vector2f{v.U, v.V});
+        m_vertexScratch.emplace_back(sf::Vector2f{v.X, v.Y}, ToSfColor(v.Tint), sf::Vector2f{v.U, v.V});
     }
 
     sf::RenderStates states;

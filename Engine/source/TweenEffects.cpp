@@ -19,10 +19,10 @@ namespace TweenEffects
     };
 
     static std::unordered_map<Entity, std::shared_ptr<ShakeState>> s_activeShakes;
+    constexpr float kMaxShakeDisplacement = 25.0f;
 
     void Shake(TweenComponent& tweenComp, Registry& registry, Entity entity, const float duration, const float intensity)
     {
-        constexpr float kMaxShakeDisplacement = 25.0f;
         const float clampedIntensity = std::clamp(intensity, 0.0f, kMaxShakeDisplacement);
 
         // Cancel previous active shake on the same entity and restore its offset immediately to prevent runaway accumulation
