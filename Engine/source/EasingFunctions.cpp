@@ -106,9 +106,18 @@ namespace EasingFunctions
         float n1 = 7.5625f;
         float d1 = 2.75f;
         if (t < 1.0f / d1) return n1 * t * t;
-        if (t < 2.0f / d1) return n1 * (t -= 1.5f / d1) * t + 0.75f;
-        if (t < 2.5f / d1) return n1 * (t -= 2.25f / d1) * t + 0.9375f;
-        return n1 * (t -= 2.625f / d1) * t + 0.984375f;
+        if (t < 2.0f / d1)
+        {
+            float subT = t - 1.5f / d1;
+            return n1 * subT * subT + 0.75f;
+        }
+        if (t < 2.5f / d1)
+        {
+            float subT = t - 2.25f / d1;
+            return n1 * subT * subT + 0.9375f;
+        }
+        float subT = t - 2.625f / d1;
+        return n1 * subT * subT + 0.984375f;
     }
     float BounceIn(float t)     { return 1.0f - BounceOut(1.0f - t); }
     float BounceInOut(float t)  { return t < 0.5f ? (1.0f - BounceOut(1.0f - 2.0f * t)) / 2.0f : (1.0f + BounceOut(2.0f * t - 1.0f)) / 2.0f; }

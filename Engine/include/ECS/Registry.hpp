@@ -141,6 +141,7 @@ public:
     T& AddComponent(Entity entity, Args&&... args)
     {
         uint32_t index = GetEntityIndex(entity);
+        (void)index;
         assert(index < m_entityVersions.size() && GetEntityVersion(entity) == m_entityVersions[index] && "Entity is invalid!");
 
         SparseSet<T>* pool = GetOrCreatePool<T>();
@@ -155,6 +156,7 @@ public:
     void RemoveComponent(Entity entity)
     {
         uint32_t index = GetEntityIndex(entity);
+        (void)index;
         assert(index < m_entityVersions.size() && GetEntityVersion(entity) == m_entityVersions[index] && "Entity is invalid!");
 
         if (SparseSet<T>* pool = GetPool<T>())
