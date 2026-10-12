@@ -53,26 +53,26 @@ bool Window::PollEvents(InputManager& input, Renderer* renderer)
         if (event->is<sf::Event::Closed>())
             return false;
 
-        if (const auto* e = event->getIf<sf::Event::KeyPressed>())
-            handleKey(e->code, true);
-        else if (const auto* e = event->getIf<sf::Event::KeyReleased>())
-            handleKey(e->code, false);
-        else if (const auto* e = event->getIf<sf::Event::MouseButtonPressed>())
-            handleMouse(e->button, true);
-        else if (const auto* e = event->getIf<sf::Event::MouseButtonReleased>())
-            handleMouse(e->button, false);
-        else if (const auto* e = event->getIf<sf::Event::MouseWheelScrolled>())
-            input.SetMouseWheelDelta(e->delta);
-        else if (const auto* e = event->getIf<sf::Event::TextEntered>())
-            input.AppendEnteredText(e->unicode);
-        else if (const auto* e = event->getIf<sf::Event::Resized>())
+        if (const auto* keyPress = event->getIf<sf::Event::KeyPressed>())
+            handleKey(keyPress->code, true);
+        else if (const auto* keyRelease = event->getIf<sf::Event::KeyReleased>())
+            handleKey(keyRelease->code, false);
+        else if (const auto* mousePress = event->getIf<sf::Event::MouseButtonPressed>())
+            handleMouse(mousePress->button, true);
+        else if (const auto* mouseRelease = event->getIf<sf::Event::MouseButtonReleased>())
+            handleMouse(mouseRelease->button, false);
+        else if (const auto* scroll = event->getIf<sf::Event::MouseWheelScrolled>())
+            input.SetMouseWheelDelta(scroll->delta);
+        else if (const auto* text = event->getIf<sf::Event::TextEntered>())
+            input.AppendEnteredText(text->unicode);
+        else if (const auto* resize = event->getIf<sf::Event::Resized>())
         {
-            m_config.Width = e->size.x;
-            m_config.Height = e->size.y;
-            m_window.setView(sf::View(sf::FloatRect({0.f, 0.f}, {static_cast<float>(e->size.x), static_cast<float>(e->size.y)})));
+            m_config.Width = resize->size.x;
+            m_config.Height = resize->size.y;
+            m_window.setView(sf::View(sf::FloatRect({0.f, 0.f}, {static_cast<float>(resize->size.x), static_cast<float>(resize->size.y)})));
             if (renderer)
             {
-                renderer->OnWindowResized(e->size.x, e->size.y);
+                renderer->OnWindowResized(resize->size.x, resize->size.y);
             }
         }
     }

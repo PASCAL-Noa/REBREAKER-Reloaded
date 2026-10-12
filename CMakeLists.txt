@@ -5,10 +5,18 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(TREAT_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+
 if(MSVC)
     add_compile_options(/W4)
+    if(TREAT_WARNINGS_AS_ERRORS)
+        add_compile_options(/WX)
+    endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -Wpedantic)
+    if(TREAT_WARNINGS_AS_ERRORS)
+        add_compile_options(-Werror)
+    endif()
 endif()
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")

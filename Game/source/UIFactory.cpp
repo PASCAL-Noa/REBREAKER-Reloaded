@@ -213,8 +213,8 @@ Entity UIFactory::CreateDropdown(Registry& registry, Entity parent, const Dropdo
     
     // Initial setup of buttons
     for (size_t i = 0; i < dropdownComp.OptionButtons.size(); ++i) {
-        int index = dropdownComp.ScrollOffset + i;
-        if (index < dropdownComp.Options.size()) {
+        int index = dropdownComp.ScrollOffset + static_cast<int>(i);
+        if (index >= 0 && static_cast<size_t>(index) < dropdownComp.Options.size()) {
             registry.GetComponent<TextComponent>(dropdownComp.OptionButtons[i]).Text = dropdownComp.Options[index];
             auto optionText = dropdownComp.Options[index];
             auto onSelect = dropdownComp.OnSelect;

@@ -2205,7 +2205,7 @@ void GameScene::UpdatePowerUpTimers(float dt)
     }
 }
 
-void GameScene::CreateUILayout(GameContext& context)
+void GameScene::CreateUILayout(GameContext& /*context*/)
 {
     m_uiCanvas = m_registry.CreateEntity();
     m_registry.AddComponent<CanvasComponent>(m_uiCanvas, CanvasComponent{.IsEnabled = true});
@@ -2539,7 +2539,7 @@ void GameScene::CreateRenderTab(const GameContext& context)
     UIFactory::CreateDropdown(m_registry, m_renderCanvas, DropdownDescriptor{
         .DefaultText = currentRes,
         .Options = options,
-        .OnSelect = [&context, uniqueModes](int index, const std::string& text) {
+        .OnSelect = [&context, uniqueModes](int index, const std::string& /*text*/) {
             WindowConfig config = context.Render.GetWindow().GetConfig();
             config.Width = uniqueModes[index].Width;
             config.Height = uniqueModes[index].Height;

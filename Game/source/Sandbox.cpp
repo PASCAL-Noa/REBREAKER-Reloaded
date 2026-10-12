@@ -46,7 +46,7 @@ void SandBox::OnInit(GameContext& context)
     m_systemManager.OnInit();
 }
 
-void SandBox::InitPhysicsWorld(GameContext& context)
+void SandBox::InitPhysicsWorld(GameContext& /*context*/)
 {
     m_player = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(m_player, Transform2D{Vector2f{0.0f, 0.0f}});
@@ -96,7 +96,7 @@ void SandBox::OnUpdate(float dt, GameContext& context)
     m_systemManager.OnUpdate(dt);
 }
 
-void SandBox::HandleInput(float dt, const GameContext& context)
+void SandBox::HandleInput(float /*dt*/, const GameContext& context)
 {
     const InputManager& input = context.Input;
 
