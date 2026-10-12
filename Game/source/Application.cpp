@@ -45,7 +45,7 @@ void Application::Run()
         m_gameData.FPS = static_cast<int>(m_time.GetFPS());
 
         m_inputManager.Update();
-        if (!m_window.PollEvents(m_inputManager)) break;
+        if (!m_window.PollEvents(m_inputManager, &m_renderer)) break;
 
         m_cheatManager.Update(m_time.GetDeltaTime(), m_context);
 

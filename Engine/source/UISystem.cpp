@@ -191,9 +191,7 @@ void UISystem::UpdateDropdowns(Registry& registry, const GameContext& context, c
 void UISystem::OnUpdate(float dt, Registry& registry, const GameContext& context)
 {
     auto [mouseX, mouseY] = context.Input.GetMousePosition();
-    context.Render.ResetCamera();
-    
-    const Vector2f logicalMousePos = context.Render.MapPixelToCoords(Vector2f{mouseX, mouseY});
+    const Vector2f logicalMousePos{mouseX, mouseY};
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
 
     UpdateButtons(registry, context, logicalMousePos, viewSize);

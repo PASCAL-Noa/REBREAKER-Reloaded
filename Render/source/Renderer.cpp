@@ -40,14 +40,18 @@ static void RenderItem(sf::RenderTexture& texture, const sf::Drawable& drawable,
     texture.draw(drawable, states);
 }
 
+static constexpr float kLogicalHeight = 1600.0f;
+static constexpr float kMinAspect     = 16.0f / 10.0f; // 1.6f (16:10)
+static constexpr float kMaxAspect     = 16.0f / 9.0f;  // ~1.7777778f (16:9)
+
 Renderer::Renderer(Window& window, ResourceManager& resources) : m_window(window), m_resources(resources)
 {
     sf::ContextSettings settings;
     settings.antiAliasingLevel = 4;
 
     (void)m_renderTexture.resize(m_window.GetNative().getSize(), settings);
-
     m_renderTexture.setSmooth(true);
+    ResetCamera();
 }
 
 void Renderer::BeginDraw(Color clearColor)
@@ -59,6 +63,7 @@ void Renderer::BeginDraw(Color clearColor)
         settings.antiAliasingLevel = 4;
         (void)m_renderTexture.resize(winSize, settings);
         m_renderTexture.setSmooth(true);
+        ResetCamera();
     }
     m_renderTexture.clear(sf::Color(clearColor.r, clearColor.g, clearColor.b, clearColor.a));
 }
@@ -69,7 +74,7 @@ void Renderer::EndDraw(uint32_t postProcessShaderId)
 
     m_window.Clear();
 
-    sf::Vector2u winSize = m_window.GetNative().getSize();
+    const sf::Vector2u winSize = m_window.GetNative().getSize();
     m_window.GetNative().setView(sf::View(sf::FloatRect({0.f, 0.f}, {static_cast<float>(winSize.x), static_cast<float>(winSize.y)})));
     
     sf::Sprite renderSprite(m_renderTexture.getTexture());
@@ -84,51 +89,154 @@ void Renderer::EndDraw(uint32_t postProcessShaderId)
     {
         m_window.GetNative().draw(renderSprite);
     }
+
+    DrawLetterboxBars(m_window.GetNative(), winSize);
+
     m_window.Display();
+}
+
+void Renderer::DrawLetterboxBars(sf::RenderTarget& target, const sf::Vector2u& winSize) const
+{
+    if (winSize.x == 0 || winSize.y == 0) return;
+
+    const sf::FloatRect vp = GetLetterboxViewport();
+    if (vp.position.x <= 0.0001f && vp.position.y <= 0.0001f && vp.size.x >= 0.9999f && vp.size.y >= 0.9999f)
+        return;
+
+    const sf::View barView(sf::FloatRect({0.f, 0.f}, {static_cast<float>(winSize.x), static_cast<float>(winSize.y)}));
+    target.setView(barView);
+
+    const float w = static_cast<float>(winSize.x);
+    const float h = static_cast<float>(winSize.y);
+
+    if (vp.position.y > 0.0f)
+    {
+        // Top and bottom bars (Letterbox)
+        const float topBarHeight = vp.position.y * h;
+        sf::RectangleShape topBar(sf::Vector2f(w, topBarHeight));
+        topBar.setPosition({0.0f, 0.0f});
+        topBar.setFillColor(sf::Color::Black);
+        target.draw(topBar);
+
+        const float bottomBarTop = (vp.position.y + vp.size.y) * h;
+        const float bottomBarHeight = h - bottomBarTop;
+        if (bottomBarHeight > 0.0f)
+        {
+            sf::RectangleShape bottomBar(sf::Vector2f(w, bottomBarHeight));
+            bottomBar.setPosition({0.0f, bottomBarTop});
+            bottomBar.setFillColor(sf::Color::Black);
+            target.draw(bottomBar);
+        }
+    }
+    else if (vp.position.x > 0.0f)
+    {
+        // Left and right bars (Pillarbox)
+        const float leftBarWidth = vp.position.x * w;
+        sf::RectangleShape leftBar(sf::Vector2f(leftBarWidth, h));
+        leftBar.setPosition({0.0f, 0.0f});
+        leftBar.setFillColor(sf::Color::Black);
+        target.draw(leftBar);
+
+        const float rightBarLeft = (vp.position.x + vp.size.x) * w;
+        const float rightBarWidth = w - rightBarLeft;
+        if (rightBarWidth > 0.0f)
+        {
+            sf::RectangleShape rightBar(sf::Vector2f(rightBarWidth, h));
+            rightBar.setPosition({rightBarLeft, 0.0f});
+            rightBar.setFillColor(sf::Color::Black);
+            target.draw(rightBar);
+        }
+    }
+}
+
+void Renderer::OnWindowResized(unsigned int width, unsigned int height)
+{
+    if (width > 0 && height > 0)
+    {
+        sf::ContextSettings settings;
+        settings.antiAliasingLevel = 4;
+        (void)m_renderTexture.resize({width, height}, settings);
+        m_renderTexture.setSmooth(true);
+        ResetCamera();
+    }
+}
+
+float Renderer::GetEffectiveAspectRatio() const
+{
+    const sf::Vector2u winSize = m_window.GetNative().getSize();
+    if (winSize.y == 0) return kMinAspect;
+    const float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
+    if (aspect < kMinAspect) return kMinAspect;
+    if (aspect > kMaxAspect) return kMaxAspect;
+    return aspect;
+}
+
+sf::FloatRect Renderer::GetLetterboxViewport() const
+{
+    const sf::Vector2u winSize = m_window.GetNative().getSize();
+    if (winSize.x == 0 || winSize.y == 0)
+        return sf::FloatRect({0.0f, 0.0f}, {1.0f, 1.0f});
+
+    const float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
+
+    if (aspect < kMinAspect)
+    {
+        // Window is narrower/taller than 16:10 -> Letterbox (top & bottom bars)
+        const float vpHeight = aspect / kMinAspect;
+        const float vpTop = (1.0f - vpHeight) * 0.5f;
+        return sf::FloatRect({0.0f, vpTop}, {1.0f, vpHeight});
+    }
+    if (aspect > kMaxAspect)
+    {
+        // Window is wider than 16:9 -> Pillarbox (left & right bars)
+        const float vpWidth = kMaxAspect / aspect;
+        const float vpLeft = (1.0f - vpWidth) * 0.5f;
+        return sf::FloatRect({vpLeft, 0.0f}, {vpWidth, 1.0f});
+    }
+
+    // Between 16:10 and 16:9 -> Full viewport
+    return sf::FloatRect({0.0f, 0.0f}, {1.0f, 1.0f});
 }
 
 void Renderer::SetCamera(const Camera2D& camera)
 {
-    float targetHeight = 1600.0f;
-    sf::Vector2u winSize = m_window.GetNative().getSize();
-    float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
-    float targetWidth = targetHeight * aspect;
-
-    sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(targetWidth, targetHeight));
+    const Vector2f viewSize = GetLogicalViewSize();
+    sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(viewSize.X, viewSize.Y));
     view.setCenter({camera.Position.X, camera.Position.Y});
     view.setRotation(sf::degrees(camera.Rotation));
     view.zoom(camera.Zoom);
+    view.setViewport(GetLetterboxViewport());
     m_renderTexture.setView(view);
 }
 
 void Renderer::ResetCamera()
 {
-    float targetHeight = 1600.0f;
-    sf::Vector2u winSize = m_window.GetNative().getSize();
-    float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
-    float targetWidth = targetHeight * aspect;
-
-    sf::View view(sf::Vector2f(targetWidth / 2.0f, targetHeight / 2.0f), sf::Vector2f(targetWidth, targetHeight));
+    const Vector2f viewSize = GetLogicalViewSize();
+    sf::View view(sf::Vector2f(viewSize.X / 2.0f, viewSize.Y / 2.0f), sf::Vector2f(viewSize.X, viewSize.Y));
+    view.setViewport(GetLetterboxViewport());
     m_renderTexture.setView(view);
 }
 
 Vector2f Renderer::GetLogicalViewSize() const
 {
-    float targetHeight = 1600.0f;
-    sf::Vector2u winSize = m_window.GetNative().getSize();
-    float aspect = static_cast<float>(winSize.x) / static_cast<float>(winSize.y);
-    return Vector2f{targetHeight * aspect, targetHeight};
+    return Vector2f{kLogicalHeight * GetEffectiveAspectRatio(), kLogicalHeight};
 }
 
 Vector2f Renderer::MapPixelToCoords(const Vector2f& pixelPos) const
 {
-    sf::Vector2f mapped = m_renderTexture.mapPixelToCoords(sf::Vector2i(static_cast<int>(pixelPos.X), static_cast<int>(pixelPos.Y)));
+    const Vector2f viewSize = GetLogicalViewSize();
+    sf::View uiView(sf::Vector2f(viewSize.X / 2.0f, viewSize.Y / 2.0f), sf::Vector2f(viewSize.X, viewSize.Y));
+    uiView.setViewport(GetLetterboxViewport());
+    const sf::Vector2f mapped = m_renderTexture.mapPixelToCoords(
+        sf::Vector2i(static_cast<int>(pixelPos.X), static_cast<int>(pixelPos.Y)),
+        uiView
+    );
     return Vector2f{mapped.x, mapped.y};
 }
 
 Vector2f Renderer::MapCoordsToPixel(const Vector2f& coords) const
 {
-    sf::Vector2i mapped = m_renderTexture.mapCoordsToPixel(sf::Vector2f(coords.X, coords.Y));
+    const sf::Vector2i mapped = m_renderTexture.mapCoordsToPixel(sf::Vector2f(coords.X, coords.Y));
     return Vector2f{static_cast<float>(mapped.x), static_cast<float>(mapped.y)};
 }
 

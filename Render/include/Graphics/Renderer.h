@@ -28,6 +28,9 @@ public:
     const Window&       GetWindow() const { return m_window; }
 
     [[nodiscard]] Vector2f  GetLogicalViewSize() const;
+    [[nodiscard]] sf::FloatRect GetLetterboxViewport() const;
+    [[nodiscard]] float     GetEffectiveAspectRatio() const;
+    void                    OnWindowResized(unsigned int width, unsigned int height);
     [[nodiscard]] Vector2f  MapPixelToCoords(const Vector2f& pixelPos) const;
     [[nodiscard]] Vector2f  MapCoordsToPixel(const Vector2f& coords) const;
 
@@ -44,6 +47,8 @@ public:
     Vector2f            GetTextSize(const std::string& text, uint32_t fontId, float fontSize) const;
 
 private:
+    void                DrawLetterboxBars(sf::RenderTarget& target, const sf::Vector2u& size) const;
+
     Window&             m_window;
     ResourceManager&    m_resources;
     sf::RenderTexture   m_renderTexture;
