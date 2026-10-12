@@ -56,7 +56,7 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
         m_context.Audio.PlaySfx(m_sfxPaddleHit, 100.0f, 1.0f, pan);
     });
 
-    m_ballDeathSub = m_context.Events.SubscribeScoped<BallDeathEvent>([this](const BallDeathEvent& e)
+    m_ballDeathSub = m_context.Events.SubscribeScoped<BallDeathEvent>([this](const BallDeathEvent& /*e*/)
     {
         m_context.Audio.PlaySfx(m_sfxBallDeath, 100.0f);
         m_registry.View<Camera2D, TweenComponent>([&](Entity entity, Camera2D&, TweenComponent& tween) {
@@ -64,13 +64,12 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
         });
     });
 
-    m_powerUpSub = m_context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
+    m_powerUpSub = m_context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& /*e*/)
     {
-        (void)e;
         m_context.Audio.PlaySfx(m_sfxPowerUp, 100.0f);
     });
 }
 
-void GameFeelSystem::OnUpdate(float dt)
+void GameFeelSystem::OnUpdate(float /*dt*/)
 {
 }

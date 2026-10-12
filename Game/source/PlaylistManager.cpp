@@ -2,7 +2,7 @@
 #include "AudioMixer.h"
 #include "Resources/ResourceManager.h"
 
-void PlaylistManager::AddTrack(GameContext& context, const std::string& filepath)
+void PlaylistManager::AddTrack(GameContext& /*context*/, const std::string& filepath)
 {
     m_tracks.push_back(filepath);
 }

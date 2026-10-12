@@ -11,7 +11,7 @@
 #include "ECS/Components/SpriteComponent.h"
 #include "Graphics/Renderer.h"
 
-Vector2f UISystem::GetAbsolutePosition(Registry& registry, Entity entity, const RectTransform& transform, const Vector2f& viewSize)
+Vector2f UISystem::GetAbsolutePosition(Registry& registry, Entity /*entity*/, const RectTransform& transform, const Vector2f& viewSize)
 {
     Vector2f basePos{0.0f, 0.0f};
 
@@ -188,7 +188,7 @@ void UISystem::UpdateDropdowns(Registry& registry, const GameContext& context, c
     });
 }
 
-void UISystem::OnUpdate(float dt, Registry& registry, const GameContext& context)
+void UISystem::OnUpdate(float /*dt*/, Registry& registry, const GameContext& context)
 {
     auto [mouseX, mouseY] = context.Input.GetMousePosition();
     const Vector2f logicalMousePos{mouseX, mouseY};
@@ -363,7 +363,7 @@ void UISystem::UpdateTextInputs(Registry& registry, const GameContext& context, 
     });
 }
 
-void UISystem::RenderTextInput(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform, const Vector2f& absolutePos)
+void UISystem::RenderTextInput(Registry& registry, const GameContext& context, Entity entity, const RectTransform& transform, Transform2D& drawTransform, const Vector2f& /*absolutePos*/)
 {
     if (!registry.HasComponent<TextInputComponent>(entity)) return;
 

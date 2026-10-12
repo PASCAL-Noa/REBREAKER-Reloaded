@@ -8,7 +8,7 @@ AudioSystem::AudioSystem(Registry& registry, AudioMixer& mixer)
 {
 }
 
-void AudioSystem::OnUpdate(float dt)
+void AudioSystem::OnUpdate(float /*dt*/)
 {
     m_registry.View<AudioSource>([this](Entity, AudioSource& audio)
     {

@@ -119,6 +119,7 @@ void SampleAudio::PlaySound(uint32_t soundId, float pan)
 {
     auto& sfx = m_registry.GetComponent<AudioSource>(m_sfxEntity);
     sfx.SoundId = soundId;
+    sfx.Pan = pan;
     sfx.PlayRequested = true;
 }
 

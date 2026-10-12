@@ -15,8 +15,8 @@ public:
         pOwner->GetRegistry().template GetComponent<SpriteComponent>(m_entity).Tint = m_color;
     }
 
-    void    Update(T* pOwner) override {}
-    void    End(T* pOwner) override {}
+    void    Update(T* /*pOwner*/) override {}
+    void    End(T* /*pOwner*/) override {}
 
 private:
     Entity  m_entity;

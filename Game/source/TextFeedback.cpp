@@ -38,7 +38,7 @@ void TextFeedback::OnInit(Entity canvasParent)
     m_registry.AddComponent<TweenComponent>(m_comboFlame, TweenComponent{});
 }
 
-void TextFeedback::OnUpdate(float dt, uint32_t comboMultiplier, uint32_t score)
+void TextFeedback::OnUpdate(float /*dt*/, uint32_t comboMultiplier, uint32_t /*score*/)
 {
     if (m_registry.HasComponent<RectTransform>(m_comboFlame) && m_registry.HasComponent<TweenComponent>(m_comboFlame))
     {

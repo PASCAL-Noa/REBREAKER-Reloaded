@@ -10,8 +10,8 @@ public:
 
     virtual void OnInit() {}
     virtual void OnBeginUpdate() {}
-    virtual void OnUpdate(float dt) {}
-    virtual void OnLateUpdate(float dt) {}
+    virtual void OnUpdate(float /*dt*/) {}
+    virtual void OnLateUpdate(float /*dt*/) {}
     virtual void OnEndUpdate() {}
     virtual void OnRender() {}
 

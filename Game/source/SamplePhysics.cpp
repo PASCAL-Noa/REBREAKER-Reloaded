@@ -46,7 +46,7 @@ void SamplePhysics::OnUpdate(float dt, GameContext& context)
     m_systemManager.OnUpdate(dt);
 }
 
-void SamplePhysics::HandleInput(float dt, const GameContext& context)
+void SamplePhysics::HandleInput(float /*dt*/, const GameContext& context)
 {
     const InputManager& input = context.Input;
     auto& rb = m_registry.GetComponent<RigidBody>(m_player);

@@ -271,7 +271,7 @@ private:
     }
 
     std::vector<ISparseSet*> m_pools;
-    size_t m_entityCount = 0;
+    uint32_t m_entityCount = 0;
     std::vector<uint32_t> m_entityVersions;
     std::queue<uint32_t> m_freeEntities;
 
