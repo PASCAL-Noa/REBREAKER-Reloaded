@@ -1,5 +1,7 @@
 #pragma once
 #include "PlaylistManager.h"
+#include "ECS/Systems/PaddleSystem.h"
+#include "ECS/Systems/BallSystem.h"
 #include "../../../Engine/include/ECS/Systems/UISystem.h"
 #include "ECS/Systems/ParticleSystem.h"
 #include "ECS/Systems/TweenSystem.h"
@@ -212,8 +214,8 @@ protected:
     float   m_levelTransitionTimer = 0.0f;
     uint32_t m_levelStartScore = 0;
 
-    std::vector<Entity> m_balls;
-    std::vector<Entity> m_lasers;
+    PaddleSystem* mp_paddleSystem = nullptr;
+    BallSystem*   mp_ballSystem = nullptr;
     bool    m_powerUpTesterActive = false;
     Entity  m_powerUpTesterCanvas = NULL_ENTITY;
 

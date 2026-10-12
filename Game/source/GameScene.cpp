@@ -85,6 +85,8 @@ void GameScene::OnInit(GameContext& context)
 
 
 
+    mp_paddleSystem = m_systemManager.AddSystem<PaddleSystem>(m_registry, context);
+    mp_ballSystem = m_systemManager.AddSystem<BallSystem>(m_registry, context);
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
     m_systemManager.AddSystem<AnimatorSystem>(m_registry);
@@ -92,6 +94,26 @@ void GameScene::OnInit(GameContext& context)
     m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
     m_systemManager.AddSystem<TweenSystem>(m_registry);
     m_systemManager.AddSystem<PowerUpSystem>(m_registry, context.Events);
+
+    mp_paddleSystem->SetOnFireLaserCallback([this](Entity)
+    {
+        FireLasers();
+    });
+
+    mp_paddleSystem->SetOnBallLaunchedCallback([this](Entity)
+    {
+        m_ballState = BallState::Active;
+    });
+
+    mp_ballSystem->SetFireTrailCallback([this](const Vector2f& pos, const Vector2f& vel, bool isFuseActive)
+    {
+        SpawnFireTrailParticle(pos, vel, isFuseActive);
+    });
+
+    mp_ballSystem->SetFireExplosionCallback([this](Entity b, const Vector2f& pos)
+    {
+        ExplodeFireBall(b, pos);
+    });
 
     m_powerUpSub = context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
     {
@@ -125,12 +147,13 @@ void GameScene::OnInit(GameContext& context)
     m_collisionSub = context.Events.SubscribeScoped<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
         // 1. Check laser projectile collision with bricks
-        for (auto it = m_lasers.begin(); it != m_lasers.end(); )
+        auto& lasers = mp_ballSystem->GetLasers();
+        for (auto it = lasers.begin(); it != lasers.end(); )
         {
             Entity laser = *it;
             if (!m_registry.IsAlive(laser))
             {
-                it = m_lasers.erase(it);
+                it = lasers.erase(it);
                 continue;
             }
 
@@ -150,13 +173,13 @@ void GameScene::OnInit(GameContext& context)
                 {
                     HandleBrickCollision(other);
                     m_registry.DestroyEntityDeferred(laser);
-                    it = m_lasers.erase(it);
+                    it = lasers.erase(it);
                     return;
                 }
                 else if (other != m_paddle)
                 {
                     m_registry.DestroyEntityDeferred(laser);
-                    it = m_lasers.erase(it);
+                    it = lasers.erase(it);
                     return;
                 }
             }
@@ -176,7 +199,7 @@ void GameScene::OnInit(GameContext& context)
         // Ignore collisions with bonus capsules, particles, or laser projectiles
         if (m_registry.HasComponent<PowerUpComponent>(otherEntity)) return;
         if (m_registry.HasComponent<ParticleComponent>(otherEntity)) return;
-        for (Entity laser : m_lasers) { if (otherEntity == laser) return; }
+        if (mp_ballSystem->IsLaser(otherEntity)) return;
 
         bool isBrick = m_registry.HasComponent<BrickComponent>(otherEntity);
         bool isPaddle = (otherEntity == m_paddle);
@@ -223,7 +246,7 @@ void GameScene::OnInit(GameContext& context)
     CreateWall(900.0f, 0.0f, 200.0f, 1200.0f);
     m_bottomWall = CreateWall(0.0f, 550.0f, 2000.0f, 200.0f);
 
-    m_balls.clear();
+    if (mp_ballSystem) mp_ballSystem->ClearBalls();
     m_ball = CreateBall(Vector2f{0.0f, 0.0f}, Vector2f{0.0f, 0.0f});
     m_registry.GetComponent<RigidBody>(m_ball).IsKinematic = true;
 
@@ -409,87 +432,15 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         m_textFeedback->OnUpdate(dt, m_scoreManager.GetComboMultiplier(), m_scoreManager.GetScore());
     }
 
+    const bool canControlPaddle = (currentState == static_cast<int>(SceneState::Playing) || currentState == static_cast<int>(SceneState::LevelTransition));
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetInputEnabled(canControlPaddle);
+    }
+
     if (currentState != static_cast<int>(SceneState::Paused))
     {
         m_systemManager.OnUpdate(dt);
-
-        // Hard boundary safety clamp & bounce for all active balls (guarantees no escaping or tunneling walls)
-        for (Entity ballEntity : m_balls)
-        {
-            if (!m_registry.IsAlive(ballEntity)) continue;
-            if (!m_registry.HasComponent<Transform2D>(ballEntity) || !m_registry.HasComponent<RigidBody>(ballEntity))
-                continue;
-
-            auto& trans = m_registry.GetComponent<Transform2D>(ballEntity);
-            auto& rb = m_registry.GetComponent<RigidBody>(ballEntity);
-            if (rb.IsKinematic) continue;
-
-            constexpr float radius = 20.0f;
-            constexpr float minX = -800.0f + radius;
-            constexpr float maxX = 800.0f - radius;
-            constexpr float minY = -450.0f + radius;
-
-            if (trans.Position.X < minX)
-            {
-                trans.Position.X = minX;
-                if (rb.Velocity.X < 0.0f) rb.Velocity.X = std::abs(rb.Velocity.X);
-            }
-            else if (trans.Position.X > maxX)
-            {
-                trans.Position.X = maxX;
-                if (rb.Velocity.X > 0.0f) rb.Velocity.X = -std::abs(rb.Velocity.X);
-            }
-
-            if (trans.Position.Y < minY)
-            {
-                trans.Position.Y = minY;
-                if (rb.Velocity.Y < 0.0f) rb.Velocity.Y = std::abs(rb.Velocity.Y);
-            }
-
-            // Enforce minimum & maximum speed (especially critical during MultiBall collisions)
-            float speed = std::sqrt(rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y);
-            float minSpeed = (m_tempoBallDuration > 0.0f) ? 280.0f : 450.0f;
-            constexpr float MAX_BALL_SPEED = 900.0f;
-
-            if (speed < 0.1f)
-            {
-                rb.Velocity = Vector2f{300.0f, -400.0f}.Normalized() * minSpeed;
-            }
-            else if (speed < minSpeed)
-            {
-                rb.Velocity = (rb.Velocity / speed) * minSpeed;
-            }
-            else if (speed > MAX_BALL_SPEED)
-            {
-                rb.Velocity = (rb.Velocity / speed) * MAX_BALL_SPEED;
-            }
-
-            // Prevent balls from getting trapped in near-horizontal trajectories
-            constexpr float MIN_VERTICAL_SPEED = 120.0f;
-            if (std::abs(rb.Velocity.Y) < MIN_VERTICAL_SPEED)
-            {
-                rb.Velocity.Y = (rb.Velocity.Y >= 0.0f) ? MIN_VERTICAL_SPEED : -MIN_VERTICAL_SPEED;
-                float currentSpd = std::sqrt(rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y);
-                if (currentSpd > 0.1f)
-                {
-                    rb.Velocity = (rb.Velocity / currentSpd) * speed;
-                }
-            }
-        }
-
-        std::erase_if(m_lasers, [this](Entity laser) {
-            if (!m_registry.IsAlive(laser)) return true;
-            if (m_registry.HasComponent<Transform2D>(laser))
-            {
-                const auto& trans = m_registry.GetComponent<Transform2D>(laser);
-                if (trans.Position.Y < -460.0f)
-                {
-                    m_registry.DestroyEntityDeferred(laser);
-                    return true;
-                }
-            }
-            return false;
-        });
     }
     m_registry.ProcessDeferredCommands();
 }
@@ -550,7 +501,7 @@ void GameScene::OnRender(GameContext& context)
         const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
         const auto& paddleComp = m_registry.GetComponent<PaddleComponent>(m_paddle);
         stats += "\n[POWER-UP DEBUG ON] Lv:" + std::to_string(PowerUpManager::Get().GetLevel(PowerUpType::MultiBall)) +
-                 " | Balls: " + std::to_string(m_balls.size()) +
+                 " | Balls: " + std::to_string(mp_ballSystem ? mp_ballSystem->GetBallCount() : 0) +
                  " | Paddle: " + std::to_string(static_cast<int>(paddleBox.GetEffectiveSize(paddleTrans.Scale).X)) + "px" +
                  " | Laser: " + (paddleComp.HasLaser ? "ON" : "OFF") +
                  " | Keys: 1-7, P, O, R, B, U | [TAB] Hide";
@@ -1147,11 +1098,8 @@ void GameScene::FullReset()
     LoadLevel(0, /*preserveStats=*/false);
 }
 
-void GameScene::HandleInput(const float dt, const GameContext& context)
+void GameScene::HandleInput(const float /*dt*/, const GameContext& context)
 {
-    auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
-    constexpr float speed = 700.0f;
-
     if (context.Input.IsKeyPress(KeyCode::F))
     {
         bool shader = context.Rules.GetRule(Rule::Graphics::EnableShader);
@@ -1175,9 +1123,6 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
         context.Rules.SetRule(Rule::Gameplay::InfiniteLives, !infLives);
     }
 
-    if (context.Input.IsKeyDown(KeyCode::Q) || context.Input.IsKeyDown(KeyCode::A) || context.Input.IsKeyDown(KeyCode::Left)) paddleTransform.Position.X -= speed * dt;
-    if (context.Input.IsKeyDown(KeyCode::D) || context.Input.IsKeyDown(KeyCode::Right)) paddleTransform.Position.X += speed * dt;
-
     if (context.Input.IsKeyPress(KeyCode::Tab) || context.Input.IsKeyPress(KeyCode::T))
     {
         TogglePowerUpTester();
@@ -1193,7 +1138,11 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::Numpad8) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::Num8))) ApplyPowerUp(PowerUpType::FireBall);
     if ((m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::P)))
     {
-        SpawnPowerUp(Vector2f{paddleTransform.Position.X, -300.0f});
+        if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+        {
+            const auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
+            SpawnPowerUp(Vector2f{paddleTransform.Position.X, -300.0f});
+        }
     }
     if (context.Input.IsKeyPress(KeyCode::Numpad9) || (m_powerUpTesterActive && context.Input.IsKeyPress(KeyCode::O)))
     {
@@ -1224,79 +1173,29 @@ void GameScene::HandleInput(const float dt, const GameContext& context)
         PowerUpManager::Get().SetLevel(PowerUpType::BigBall, nextLvl);
         PowerUpManager::Get().SetLevel(PowerUpType::FireBall, nextLvl);
     }
-
-    const auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
-    const float halfPaddleWidth = paddleCollider.GetEffectiveSize(paddleTransform.Scale).X * 0.5f;
-    const float limitX = 800.0f - halfPaddleWidth;
-    paddleTransform.Position.X = std::clamp(paddleTransform.Position.X, -limitX, limitX);
-
-    if (m_registry.HasComponent<PaddleComponent>(m_paddle))
-    {
-        auto& paddleComp = m_registry.GetComponent<PaddleComponent>(m_paddle);
-        if (paddleComp.HasLaser)
-        {
-            paddleComp.LaserCooldown -= dt;
-            if (context.Input.IsKeyPress(KeyCode::Space) || paddleComp.LaserCooldown <= 0.0f)
-            {
-                FireLasers();
-                paddleComp.LaserCooldown = PowerUpManager::Get().Laser().GetEffectiveCooldown();
-            }
-        }
-    }
-
-    if (m_ballState == BallState::Attached)
-    {
-        if (m_registry.HasComponent<Transform2D>(m_ball))
-        {
-            auto& ballTransform = m_registry.GetComponent<Transform2D>(m_ball);
-            ballTransform.Position = Vector2f{paddleTransform.Position.X, paddleTransform.Position.Y - 40.0f};
-
-            if (context.Input.IsKeyPress(KeyCode::Space))
-            {
-                m_ballState = BallState::Active;
-                if (m_registry.HasComponent<RigidBody>(m_ball))
-                {
-                    auto& ballRb = m_registry.GetComponent<RigidBody>(m_ball);
-                    float launchSpeed = (m_tempoBallDuration > 0.0f) ? 850.0f : 640.0f;
-                    Vector2f launchDir = Vector2f{500.0f, -400.0f}.Normalized();
-                    ballRb.Velocity = launchDir * launchSpeed;
-                    ballRb.IsKinematic = false;
-                }
-            }
-        }
-    }
 }
 
 void GameScene::ResetBallAndPaddle(bool smooth)
 {
-    // Clean up extra balls
-    for (Entity b : m_balls)
+    // Clean up extra balls and lasers
+    if (mp_ballSystem)
     {
-        if (b != m_ball && m_registry.IsAlive(b))
-        {
-            m_registry.DestroyEntityDeferred(b);
-        }
+        mp_ballSystem->ClearBalls(m_ball);
+        mp_ballSystem->ClearLasers();
     }
-    m_balls.clear();
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->DetachBall();
+    }
 
     if (!m_registry.IsAlive(m_ball))
     {
         m_ball = CreateBall(Vector2f{0.0f, 0.0f}, Vector2f{0.0f, 0.0f});
     }
-    else
+    else if (mp_ballSystem)
     {
-        m_balls.push_back(m_ball);
+        mp_ballSystem->RegisterBall(m_ball);
     }
-
-    // Clean up lasers
-    for (Entity laser : m_lasers)
-    {
-        if (m_registry.IsAlive(laser))
-        {
-            m_registry.DestroyEntityDeferred(laser);
-        }
-    }
-    m_lasers.clear();
 
     // Clean up falling power-ups
     m_registry.View<PowerUpComponent>([this](Entity e, PowerUpComponent&) {
@@ -1309,6 +1208,14 @@ void GameScene::ResetBallAndPaddle(bool smooth)
     m_tempoBallDuration = 0.0f;
     m_tempoBallStacks = 0;
     m_bigBallDuration = 0.0f;
+    if (mp_ballSystem)
+    {
+        mp_ballSystem->SetTempoBallActive(false);
+    }
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetLaunchSpeed(640.0f);
+    }
     if (m_registry.IsAlive(m_ball))
     {
         if (m_registry.HasComponent<BallComponent>(m_ball))
@@ -1364,6 +1271,10 @@ void GameScene::ResetBallAndPaddle(bool smooth)
 
         TweenEffects::BallIn(m_registry.GetComponent<TweenComponent>(m_ball), m_registry, m_ball, [this]() {
             m_ballState = BallState::Attached;
+            if (mp_paddleSystem)
+            {
+                mp_paddleSystem->AttachBall(m_paddle, m_ball);
+            }
         }, 0.8f);
     };
 
@@ -1625,10 +1536,12 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
 {
     if (m_ballState != BallState::Active) return;
 
-    std::erase_if(m_balls, [this](Entity b) { return !m_registry.IsAlive(b); });
-    std::erase(m_balls, ballEntity);
+    if (mp_ballSystem)
+    {
+        mp_ballSystem->UnregisterBall(ballEntity);
+    }
 
-    if (!m_balls.empty())
+    if (mp_ballSystem && mp_ballSystem->GetBallCount() > 0)
     {
         if (m_registry.HasComponent<Transform2D>(ballEntity) && m_registry.HasComponent<SpriteComponent>(ballEntity))
         {
@@ -1640,41 +1553,25 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
 
         if (ballEntity == m_ball)
         {
-            m_ball = m_balls.front();
+            m_ball = mp_ballSystem->GetBalls().front();
         }
 
         m_registry.DestroyEntityDeferred(ballEntity);
     }
     else
     {
-        m_balls.clear();
+        if (mp_ballSystem) mp_ballSystem->ClearBalls();
         HandleDeath();
     }
 }
 
 Entity GameScene::CreateBall(const Vector2f& position, const Vector2f& velocity)
 {
-    Entity ball = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(ball, Transform2D{position});
-    m_registry.AddComponent<CircleCollider>(ball, CircleCollider{20.0f, Vector2f{0.0f, 0.0f}, false});
-    m_registry.AddComponent<RigidBody>(ball, RigidBody{velocity, 1.0f, 1.0f, false});
-    m_registry.AddComponent<SpriteComponent>(ball, SpriteComponent{m_ballTexId});
-    m_registry.AddComponent<TweenComponent>(ball, TweenComponent{});
-    m_registry.AddComponent<BallComponent>(ball, BallComponent{});
+    const bool isBig = (m_bigBallDuration > 0.0f);
+    const float bigScale = isBig ? PowerUpManager::Get().Big().GetEffectiveScale() : 1.0f;
+    const bool isTempo = (m_tempoBallDuration > 0.0f);
 
-    if (m_bigBallDuration > 0.0f)
-    {
-        m_registry.GetComponent<BallComponent>(ball).IsBig = true;
-        const float bigScale = PowerUpManager::Get().Big().GetEffectiveScale();
-        m_registry.GetComponent<Transform2D>(ball).Scale = Vector2f{bigScale, bigScale};
-    }
-    if (m_tempoBallDuration > 0.0f)
-    {
-        m_registry.GetComponent<SpriteComponent>(ball).Tint = Color{210, 160, 255, 255};
-    }
-
-    m_balls.push_back(ball);
-    return ball;
+    return mp_ballSystem->CreateBall(position, velocity, m_ballTexId, isBig, bigScale, isTempo);
 }
 
 Color GameScene::GetPowerUpColor(PowerUpType type)
@@ -1722,7 +1619,10 @@ void GameScene::FireLasers()
         m_registry.AddComponent<BoxCollider>(laser, BoxCollider{Vector2f{10.0f, 25.0f}, Vector2f{0.0f, 0.0f}, false, true});
         m_registry.AddComponent<RigidBody>(laser, RigidBody{Vector2f{0.0f, -projSpeed}, 1.0f, 1.0f, false});
         m_registry.AddComponent<SpriteComponent>(laser, SpriteComponent{m_fireTexId, Color{255, 180, 0, 255}});
-        m_lasers.push_back(laser);
+        if (mp_ballSystem)
+        {
+            mp_ballSystem->RegisterLaser(laser);
+        }
     }
 }
 
@@ -1745,17 +1645,17 @@ void GameScene::ApplyPowerUp(PowerUpType type)
         {
             const auto& cfg = PowerUpManager::Get().MultiBall();
             const size_t maxBalls = static_cast<size_t>(cfg.MaxTotalBalls);
-            if (m_balls.size() >= maxBalls) break;
+            if (!mp_ballSystem || mp_ballSystem->GetBallCount() >= maxBalls) break;
 
             const int ballsToSpawn = cfg.GetBallsToSpawn();
             const float rad = cfg.SplitAngleDeg * 3.14159265f / 180.0f;
             const float cosA = std::cos(rad);
             const float sinA = std::sin(rad);
 
-            std::vector<Entity> currentBalls = m_balls;
+            std::vector<Entity> currentBalls = mp_ballSystem->GetBalls();
             for (Entity existingBall : currentBalls)
             {
-                if (m_balls.size() >= maxBalls) break;
+                if (mp_ballSystem->GetBallCount() >= maxBalls) break;
                 if (!m_registry.IsAlive(existingBall) || !m_registry.HasComponent<Transform2D>(existingBall))
                     continue;
 
@@ -1779,11 +1679,11 @@ void GameScene::ApplyPowerUp(PowerUpType type)
                 vel2 = vel2.Normalized() * curSpeed;
 
                 CreateBall(trans.Position, vel1);
-                if (ballsToSpawn > 1 && m_balls.size() < maxBalls)
+                if (ballsToSpawn > 1 && mp_ballSystem->GetBallCount() < maxBalls)
                 {
                     CreateBall(trans.Position, vel2);
                 }
-                for (int extra = 2; extra < ballsToSpawn && m_balls.size() < maxBalls; ++extra)
+                for (int extra = 2; extra < ballsToSpawn && mp_ballSystem->GetBallCount() < maxBalls; ++extra)
                 {
                     float extraRad = rad * (extra % 2 == 0 ? (extra/2 + 1) : -(extra/2 + 1));
                     Vector2f velExtra{vel.X * std::cos(extraRad) - vel.Y * std::sin(extraRad),
@@ -1795,11 +1695,9 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             if (m_ballState == BallState::Attached)
             {
                 m_ballState = BallState::Active;
-                if (m_registry.HasComponent<RigidBody>(m_ball))
+                if (mp_paddleSystem)
                 {
-                    auto& rb = m_registry.GetComponent<RigidBody>(m_ball);
-                    rb.Velocity = Vector2f{500.0f, -400.0f};
-                    rb.IsKinematic = false;
+                    mp_paddleSystem->LaunchBall();
                 }
             }
             break;
@@ -1858,8 +1756,11 @@ void GameScene::ApplyPowerUp(PowerUpType type)
         {
             const auto& cfg = PowerUpManager::Get().Tempo();
             m_tempoBallDuration = cfg.GetEffectiveDuration();
+            if (mp_ballSystem) mp_ballSystem->SetTempoBallActive(true);
+            if (mp_paddleSystem) mp_paddleSystem->SetLaunchSpeed(850.0f);
             const float fastSpeed = cfg.GetEffectiveFastSpeed();
-            for (Entity b : m_balls)
+            const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
+            for (Entity b : balls)
             {
                 if (!m_registry.IsAlive(b) || !m_registry.HasComponent<RigidBody>(b)) continue;
                 auto& rb = m_registry.GetComponent<RigidBody>(b);
@@ -1905,7 +1806,8 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             const auto& cfg = PowerUpManager::Get().Big();
             m_bigBallDuration = cfg.GetEffectiveDuration();
             const float bigScale = cfg.GetEffectiveScale();
-            for (Entity b : m_balls)
+            const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
+            for (Entity b : balls)
             {
                 if (!m_registry.IsAlive(b)) continue;
                 if (m_registry.HasComponent<BallComponent>(b))
@@ -1927,7 +1829,8 @@ void GameScene::ApplyPowerUp(PowerUpType type)
         {
             const auto& cfg = PowerUpManager::Get().FireBall();
             const float fireScale = cfg.GetEffectiveScale();
-            for (Entity b : m_balls)
+            const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
+            for (Entity b : balls)
             {
                 if (!m_registry.IsAlive(b)) continue;
                 if (m_registry.HasComponent<BallComponent>(b))
@@ -2008,7 +1911,10 @@ void GameScene::UpdatePowerUpTimers(float dt)
         {
             m_tempoBallDuration = 0.0f;
             m_tempoBallStacks = 0;
-            for (Entity b : m_balls)
+            if (mp_ballSystem) mp_ballSystem->SetTempoBallActive(false);
+            if (mp_paddleSystem) mp_paddleSystem->SetLaunchSpeed(640.0f);
+            const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
+            for (Entity b : balls)
             {
                 if (!m_registry.IsAlive(b) || !m_registry.HasComponent<RigidBody>(b)) continue;
                 auto& rb = m_registry.GetComponent<RigidBody>(b);
@@ -2032,7 +1938,8 @@ void GameScene::UpdatePowerUpTimers(float dt)
             const float topY = tempoCfg.SlowZoneTopY;
             const float botY = tempoCfg.SlowZoneBottomY;
 
-            for (Entity b : m_balls)
+            const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
+            for (Entity b : balls)
             {
                 if (!m_registry.IsAlive(b) || !m_registry.HasComponent<RigidBody>(b) || !m_registry.HasComponent<Transform2D>(b))
                     continue;
@@ -2083,7 +1990,8 @@ void GameScene::UpdatePowerUpTimers(float dt)
         if (m_bigBallDuration <= 0.0f)
         {
             m_bigBallDuration = 0.0f;
-            for (Entity b : m_balls)
+            const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
+            for (Entity b : balls)
             {
                 if (!m_registry.IsAlive(b)) continue;
                 if (m_registry.HasComponent<BallComponent>(b))
@@ -2102,64 +2010,11 @@ void GameScene::UpdatePowerUpTimers(float dt)
         }
     }
 
-    // 5. Fire Ball Timers & Dynamic Effects
-    const auto& fireCfg = PowerUpManager::Get().FireBall();
-    for (Entity b : m_balls)
-    {
-        if (!m_registry.IsAlive(b)) continue;
-        if (!m_registry.HasComponent<BallComponent>(b) || !m_registry.HasComponent<Transform2D>(b)) continue;
-
-        auto& bc = m_registry.GetComponent<BallComponent>(b);
-        if (!bc.IsFireBall) continue;
-
-        auto& bTrans = m_registry.GetComponent<Transform2D>(b);
-        Vector2f vel{0.0f, 0.0f};
-        if (m_registry.HasComponent<RigidBody>(b))
-        {
-            vel = m_registry.GetComponent<RigidBody>(b).Velocity;
-        }
-
-        // Emit dynamic trail particles
-        bc.TrailTimer += dt;
-        const float trailInterval = bc.IsFuseActive ? 0.015f : 0.03f;
-        while (bc.TrailTimer >= trailInterval)
-        {
-            bc.TrailTimer -= trailInterval;
-            SpawnFireTrailParticle(bTrans.Position, vel, bc.IsFuseActive);
-        }
-
-        // If the fuse has started (first brick was pierced)
-        if (bc.IsFuseActive)
-        {
-            bc.FuseTimer -= dt;
-
-            // Visual warning: fast pulsating intensity and tint
-            if (m_registry.HasComponent<SpriteComponent>(b))
-            {
-                auto& spr = m_registry.GetComponent<SpriteComponent>(b);
-                float blink = std::sin((fireCfg.FuseDuration - bc.FuseTimer) * 22.0f);
-                if (blink > 0.0f)
-                {
-                    spr.Tint = Color{255, 240, 80, 255};
-                }
-                else
-                {
-                    spr.Tint = Color{255, 50, 10, 255};
-                }
-            }
-
-            if (bc.FuseTimer <= 0.0f)
-            {
-                ExplodeFireBall(b, bTrans.Position);
-            }
-        }
-    }
-
     // Update active effects indicator in PowerUpTester panel if alive
     if (m_powerUpStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_powerUpStatusText))
     {
         std::string status;
-        if (m_balls.size() > 1) status += "Balls: " + std::to_string(m_balls.size()) + "/" + std::to_string(PowerUpManager::Get().MultiBall().MaxTotalBalls) + "  ";
+        if (mp_ballSystem && mp_ballSystem->GetBallCount() > 1) status += "Balls: " + std::to_string(mp_ballSystem->GetBallCount()) + "/" + std::to_string(PowerUpManager::Get().MultiBall().MaxTotalBalls) + "  ";
         if (m_paddleSizeDuration > 0.0f) {
             char buf[32];
             snprintf(buf, sizeof(buf), "Size: %.1fs  ", m_paddleSizeDuration);
@@ -2180,7 +2035,8 @@ void GameScene::UpdatePowerUpTimers(float dt)
             snprintf(buf, sizeof(buf), "Big Ball: %.1fs  ", m_bigBallDuration);
             status += buf;
         }
-        for (Entity b : m_balls)
+        const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
+        for (Entity b : balls)
         {
             if (m_registry.IsAlive(b) && m_registry.HasComponent<BallComponent>(b))
             {
