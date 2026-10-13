@@ -40,3 +40,5 @@
 # debug information files
 *.dwo
 /.idea
+playerprefs.json
+leaderboard.json

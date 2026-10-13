@@ -83,7 +83,7 @@ void SampleUI::OnInit(GameContext& context)
         .AnchorPoint = Anchor::Center,
         .Parent = m_canvas
     });
-    m_registry.AddComponent<PanelComponent>(nestedPanel, PanelComponent{.Tint = Color{30, 30, 30, 200}});
+    m_registry.AddComponent<PanelComponent>(nestedPanel, PanelComponent{.Tint = Color{25, 32, 50, 180}});
     
     Entity nestedText = m_registry.CreateEntity();
     m_registry.AddComponent<RectTransform>(nestedText, RectTransform{
@@ -107,7 +107,7 @@ void SampleUI::OnInit(GameContext& context)
         .AnchorPoint = Anchor::Center,
         .Parent = m_canvas
     });
-    m_registry.AddComponent<PanelComponent>(bg, PanelComponent{.Tint = Colors::DarkSlateGray});
+    m_registry.AddComponent<PanelComponent>(bg, PanelComponent{.Tint = Color{8, 10, 16, 255}});
 }
 
 void SampleUI::OnUpdate(float dt, GameContext& context)
