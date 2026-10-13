@@ -47,3 +47,37 @@ struct PowerUpEvent : public Event
 struct NextLevelEvent : public Event
 {
 };
+
+enum class GameUIState
+{
+    Playing,
+    Paused,
+    GameOver,
+    Victory,
+    LevelTransition
+};
+
+struct GameStateChangedEvent : public Event
+{
+    GameUIState State;
+
+    explicit GameStateChangedEvent(GameUIState state)
+        : State(state) {}
+};
+
+struct ScoreChangedEvent : public Event
+{
+    uint32_t Score;
+    uint32_t Multiplier;
+
+    ScoreChangedEvent(uint32_t score, uint32_t multiplier)
+        : Score(score), Multiplier(multiplier) {}
+};
+
+struct LivesChangedEvent : public Event
+{
+    int Lives;
+
+    explicit LivesChangedEvent(int lives)
+        : Lives(lives) {}
+};
