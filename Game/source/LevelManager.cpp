@@ -1,5 +1,6 @@
 #include "LevelManager.h"
 #include "Core/PlayerPrefs.h"
+#include "Resources/ResourceManager.h"
 #include <filesystem>
 #include <algorithm>
 #include <iomanip>
@@ -56,6 +57,14 @@ void LevelManager::Initialize(const std::string& levelsDirectory)
 
     m_currentLevelIndex = 0;
     LoadFromPrefs();
+}
+
+void LevelManager::PreloadLevels(ResourceManager& resources)
+{
+    for (const auto& levelPath : m_levelFiles)
+    {
+        resources.LoadResourceAsync(levelPath);
+    }
 }
 
 const std::string& LevelManager::GetCurrentLevelPath() const

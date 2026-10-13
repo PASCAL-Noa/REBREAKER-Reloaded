@@ -65,6 +65,41 @@ void MenuScene::OnInit(GameContext& context)
     CreateLevelSelectModal(context);
     CreateLeaderboardModal(context);
     CreateDebugModal(context);
+
+    PreloadGameAssets(context);
+}
+
+void MenuScene::PreloadGameAssets(GameContext& context)
+{
+    // Preload all level files asynchronously
+    m_levelManager.PreloadLevels(context.Resources);
+
+    // Preload gameplay textures asynchronously
+    context.Resources.LoadResourceAsync("Resources/sprite/ball.png");
+    context.Resources.LoadResourceAsync("Resources/sprite/paddle.png");
+    context.Resources.LoadResourceAsync("Resources/sprite/brick.png");
+    context.Resources.LoadResourceAsync("Resources/sprite/brick_crack.png");
+    context.Resources.LoadResourceAsync("Resources/sprite/fire.png");
+    context.Resources.LoadResourceAsync("Resources/sprite/heart.png");
+    context.Resources.LoadResourceAsync("Resources/sprite/debug.jpg");
+
+    // Preload shaders asynchronously
+    context.Resources.LoadResourceAsync("Resources/shaders/crack.frag");
+    context.Resources.LoadResourceAsync("Resources/shaders/scanner.frag");
+
+    // Preload audio buffers asynchronously
+    context.Resources.LoadResourceAsync("Resources/audio/sfx/ball_despawn.wav");
+    context.Resources.LoadResourceAsync("Resources/audio/sfx/brick_destroy.wav");
+    context.Resources.LoadResourceAsync("Resources/audio/sfx/brick_hit.wav");
+    context.Resources.LoadResourceAsync("Resources/audio/sfx/combo.wav");
+    context.Resources.LoadResourceAsync("Resources/audio/sfx/game_over.mp3");
+    context.Resources.LoadResourceAsync("Resources/audio/sfx/game_win.mp3");
+    context.Resources.LoadResourceAsync("Resources/audio/sfx/victory.mp3");
+    context.Resources.LoadResourceAsync("Resources/audio/sfx/paddle_hit.wav");
+    context.Resources.LoadResourceAsync("Resources/audio/sfx/powerup.wav");
+
+    // Preload font asynchronously
+    context.Resources.LoadResourceAsync("Resources/font/arial.ttf");
 }
 
 void MenuScene::OnUpdate(float dt, GameContext& context)

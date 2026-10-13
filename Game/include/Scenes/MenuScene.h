@@ -44,6 +44,8 @@ private:
     void    CreateLeaderboardModal(const GameContext& context);
     void    CreateDebugModal(const GameContext& context);
 
+    void    PreloadGameAssets(GameContext& context);
+
     void    OpenModal(Entity modalCanvas);
     void    CloseModals();
 

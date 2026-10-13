@@ -44,6 +44,8 @@ void Application::Run()
         m_time.Update();
         m_gameData.FPS = static_cast<int>(m_time.GetFPS());
 
+        m_resourceManager.ProcessPendingUploads();
+
         m_inputManager.Update();
         if (!m_window.PollEvents(m_inputManager, &m_renderer)) break;
 
