@@ -130,8 +130,8 @@ void GameScene::OnInit(GameContext& context)
     
     TweenEffects::CameraBreathing(camTween, m_registry, m_camera, 0.74f, 0.76f, 6.0f);
     
-    Color c1{20, 20, 30, 255};
-    Color c2{30, 20, 40, 255};
+    Color c1{8, 10, 16, 255};
+    Color c2{14, 12, 22, 255};
     TweenEffects::BackgroundColorShift(camTween, c1, c2, [this](Color c){ m_bgColor = c; }, 5.0f);
 
     TweenConfig<float> alphaTween;
@@ -273,7 +273,10 @@ void GameScene::OnInit(GameContext& context)
     m_playlist.AddTrack(context, "Resources/audio/music/Game-4.ogg");
     m_lives = PlayerPrefs::GetInt("Lives", 3);
 
-    LoadLevel(0, false);
+    int startLevel = PlayerPrefs::GetInt("SelectedLevel", 0);
+    PlayerPrefs::SetInt("SelectedLevel", 0);
+    PlayerPrefs::Save();
+    LoadLevel(startLevel, false);
 
     mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 5);
 
@@ -477,10 +480,10 @@ void GameScene::OnRender(GameContext& context)
     if (mp_state_machine)
     {
         int state = mp_state_machine->GetCurrentState();
-        if (state == static_cast<int>(SceneState::Paused)) gameStateStr = "PAUSE";
-        else if (state == static_cast<int>(SceneState::GameOver)) gameStateStr = "GAME OVER - ESPACE POUR REJOUER";
-        else if (state == static_cast<int>(SceneState::Victory)) gameStateStr = "VICTOIRE - TOUS LES NIVEAUX TERMINES ! ESPACE POUR REINITIALISER";
-        else if (state == static_cast<int>(SceneState::LevelTransition)) gameStateStr = "NIVEAU TERMINE ! PASSAGE AU NIVEAU " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + "...";
+        if (state == static_cast<int>(SceneState::Paused)) gameStateStr = "PAUSED";
+        else if (state == static_cast<int>(SceneState::GameOver)) gameStateStr = "GAME OVER - PRESS SPACE TO REPLAY";
+        else if (state == static_cast<int>(SceneState::Victory)) gameStateStr = "VICTORY - ALL LEVELS CLEARED! PRESS SPACE TO RESET";
+        else if (state == static_cast<int>(SceneState::LevelTransition)) gameStateStr = "STAGE CLEAR! ADVANCING TO LEVEL " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + "...";
     }
 
     std::string debugStr = showDebug ? "ON" : "OFF";
@@ -488,10 +491,10 @@ void GameScene::OnRender(GameContext& context)
     std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
     std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
 
-    std::string stats = "Niveau : " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + " / " + std::to_string(m_levelManager.GetLevelCount()) +
-                        " (Debloques : " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")";
-    stats += "\nRecord Niveau : " + std::to_string(m_levelManager.GetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber())) +
-             " | Record Global : " + std::to_string(m_scoreManager.GetHighScore());
+    std::string stats = "Level: " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + " / " + std::to_string(m_levelManager.GetLevelCount()) +
+                        " (Unlocked: " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")";
+    stats += "\nLevel Best: " + std::to_string(m_levelManager.GetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber())) +
+             " | Global Best: " + std::to_string(m_scoreManager.GetHighScore());
     stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
     stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
     stats += "\nState : " + gameStateStr;
@@ -2148,7 +2151,7 @@ void GameScene::CreatePauseMenu(const GameContext& context)
         .FontId = m_fontId
     });
 
-    // Dark overlay background
+    // Dark overlay background to dim the active gameplay
     UIFactory::CreatePanel(m_registry, m_pauseCanvas, PanelDescriptor{
         .Position = {0, 0},
         .Size = {context.Render.GetLogicalViewSize().X * 2.0f, context.Render.GetLogicalViewSize().Y * 2.0f},
@@ -2234,10 +2237,14 @@ void GameScene::CreateSettingsLayout(const GameContext& context)
         .Size = {leftPanelWidth * 0.8f, 60.0f},
         .FontId = m_fontId
     });
+    if (m_registry.HasComponent<RectTransform>(m_cheatsTabBtn))
+    {
+        m_registry.GetComponent<RectTransform>(m_cheatsTabBtn).IsActive = context.Rules.GetRule(Rule::Gameplay::CheatsUnlocked);
+    }
 
     // Back Button
     UIFactory::CreateButton(m_registry, m_settingsLayoutCanvas, ButtonDescriptor{
-        .Text = "RETOUR",
+        .Text = "BACK",
         .OnClick = [this]() {
             m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled = false;
             if (m_activeTabCanvas != NULL_ENTITY) {
@@ -2254,16 +2261,18 @@ void GameScene::CreateSettingsLayout(const GameContext& context)
         .FontId = m_fontId
     });
 
+    // Dark transparent background for settings modal
     UIFactory::CreatePanel(m_registry, m_settingsLayoutCanvas, PanelDescriptor{
         .Position = {0.0f, 0.0f},
-        .Size = {viewX + 300, viewY + 350},
-        .Tint = Color{0, 0, 0, 200}
+        .Size = {viewX + 300.0f, viewY + 350.0f},
+        .Tint = Color{0, 0, 0, 200},
+        .AnchorPoint = Anchor::Center
     });
 
     // Left Tabs Panel
     UIFactory::CreatePanel(m_registry, m_settingsLayoutCanvas, PanelDescriptor{
         .Position = {leftPanelX, 0.0f},
-        .Size = {leftPanelWidth, viewY - 50},
+        .Size = {leftPanelWidth, viewY - 50.0f},
         .Tint = Colors::Transparent
     });
 }
@@ -3004,8 +3013,8 @@ void GameScene::CreateGameOverMenu(const GameContext& context)
     // Header accent line
     UIFactory::CreatePanel(m_registry, m_gameOverCanvas, PanelDescriptor{
         .Position = {0.0f, -345.0f},
-        .Size = {1060.0f, 8.0f},
-        .Tint = Color{240, 50, 50, 255},
+        .Size = {1060.0f, 4.0f},
+        .Tint = Color{240, 50, 50, 220},
         .AnchorPoint = Anchor::Center
     });
 
@@ -3015,7 +3024,7 @@ void GameScene::CreateGameOverMenu(const GameContext& context)
     UIFactory::CreatePanel(m_registry, m_gameOverCanvas, PanelDescriptor{
         .Position = {0.0f, 0.0f},
         .Size = {1120.0f, 820.0f},
-        .Tint = Color{16, 12, 24, 252},
+        .Tint = Color{16, 12, 24, 245},
         .AnchorPoint = Anchor::Center
     });
 
@@ -3031,7 +3040,7 @@ void GameScene::CreateGameOverMenu(const GameContext& context)
     UIFactory::CreatePanel(m_registry, m_gameOverCanvas, PanelDescriptor{
         .Position = {0.0f, 0.0f},
         .Size = {viewX * 2.0f, viewY * 2.0f},
-        .Tint = Color{0, 0, 0, 215},
+        .Tint = Color{0, 0, 0, 210},
         .AnchorPoint = Anchor::Center
     });
 }
@@ -3117,8 +3126,8 @@ void GameScene::CreateLevelClearMenu(const GameContext& context)
     // Top accent line
     UIFactory::CreatePanel(m_registry, m_levelClearCanvas, PanelDescriptor{
         .Position = {0.0f, -260.0f},
-        .Size = {1060.0f, 8.0f},
-        .Tint = Color{50, 220, 90, 255},
+        .Size = {1060.0f, 4.0f},
+        .Tint = Color{50, 220, 90, 220},
         .AnchorPoint = Anchor::Center
     });
 
@@ -3128,7 +3137,7 @@ void GameScene::CreateLevelClearMenu(const GameContext& context)
     UIFactory::CreatePanel(m_registry, m_levelClearCanvas, PanelDescriptor{
         .Position = {0.0f, 0.0f},
         .Size = {1120.0f, 640.0f},
-        .Tint = Color{12, 28, 20, 252},
+        .Tint = Color{12, 28, 20, 245},
         .AnchorPoint = Anchor::Center
     });
 
@@ -3242,8 +3251,8 @@ void GameScene::CreateVictoryMenu(const GameContext& context)
 
     UIFactory::CreatePanel(m_registry, m_victoryCanvas, PanelDescriptor{
         .Position = {0.0f, -280.0f},
-        .Size = {1080.0f, 8.0f},
-        .Tint = Color{255, 215, 0, 255},
+        .Size = {1080.0f, 4.0f},
+        .Tint = Color{255, 215, 0, 220},
         .AnchorPoint = Anchor::Center
     });
 
@@ -3252,7 +3261,7 @@ void GameScene::CreateVictoryMenu(const GameContext& context)
     UIFactory::CreatePanel(m_registry, m_victoryCanvas, PanelDescriptor{
         .Position = {0.0f, 0.0f},
         .Size = {1140.0f, 680.0f},
-        .Tint = Color{22, 18, 34, 252},
+        .Tint = Color{22, 18, 34, 245},
         .AnchorPoint = Anchor::Center
     });
 
@@ -3263,10 +3272,11 @@ void GameScene::CreateVictoryMenu(const GameContext& context)
         .AnchorPoint = Anchor::Center
     });
 
+    // Fullscreen atmospheric dimming backdrop
     UIFactory::CreatePanel(m_registry, m_victoryCanvas, PanelDescriptor{
         .Position = {0.0f, 0.0f},
         .Size = {viewX * 2.0f, viewY * 2.0f},
-        .Tint = Color{0, 0, 0, 215},
+        .Tint = Color{0, 0, 0, 210},
         .AnchorPoint = Anchor::Center
     });
 }
