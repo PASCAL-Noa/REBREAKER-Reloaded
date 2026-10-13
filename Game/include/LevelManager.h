@@ -4,6 +4,8 @@
 #include <vector>
 #include <cstdint>
 
+class ResourceManager;
+
 class LevelManager
 {
 public:
@@ -11,6 +13,7 @@ public:
     explicit LevelManager(const std::string& levelsDirectory);
 
     void Initialize(const std::string& levelsDirectory = "Resources/levels");
+    void PreloadLevels(ResourceManager& resources);
 
     // Level Navigation
     [[nodiscard]] int GetCurrentLevelIndex() const { return m_currentLevelIndex; } // 0-based: 0, 1, 2...

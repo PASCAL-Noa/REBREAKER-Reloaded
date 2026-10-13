@@ -1,15 +1,31 @@
 #include "Generators/FileLevelGenerator.h"
 #include "Factories/BrickFactory.h"
+#include "Resources/ResourceManager.h"
+#include "Core/GameContext.h"
 #include <fstream>
+#include <sstream>
 
 FileLevelGenerator::FileLevelGenerator(const std::string& filepath) : m_filepath(filepath) {}
 
 int FileLevelGenerator::Generate(Registry& registry, GameContext& context, uint32_t brickTexId)
 {
-    (void)context;
-    std::ifstream file(m_filepath);
-    if (!file.is_open()) return 0;
+    std::string levelContent;
+    uint32_t resId = ResourceManager::GetResourceId(m_filepath);
+    std::string* cached = context.Resources.Get<std::string>(resId);
+    if (cached && !cached->empty())
+    {
+        levelContent = *cached;
+    }
+    else
+    {
+        std::ifstream file(m_filepath);
+        if (!file.is_open()) return 0;
+        std::stringstream ss;
+        ss << file.rdbuf();
+        levelContent = ss.str();
+    }
 
+    std::istringstream stream(levelContent);
     int brickCount = 0;
     std::string line;
     
@@ -20,7 +36,7 @@ int FileLevelGenerator::Generate(Registry& registry, GameContext& context, uint3
     const float pad = 10.0f;
 
     int row = 0;
-    while (std::getline(file, line))
+    while (std::getline(stream, line))
     {
         while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
         {
