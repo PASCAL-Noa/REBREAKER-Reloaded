@@ -2,11 +2,9 @@
 #include "PlaylistManager.h"
 #include "ECS/Systems/PaddleSystem.h"
 #include "ECS/Systems/BallSystem.h"
-#include "../../../Engine/include/ECS/Systems/UISystem.h"
 #include "ECS/Systems/ParticleSystem.h"
 #include "ECS/Systems/TweenSystem.h"
 #include "ScoreManager.h"
-#include "UI/TextFeedback.h"
 #include "Scenes/DefaultScene.h"
 #include "ECS/Entity.h"
 #include "ECS/Components/BrickComponent.h"
@@ -16,7 +14,9 @@
 #include "ECS/Components/PowerUpComponent.h"
 #include "LevelManager.h"
 #include "LeaderboardManager.h"
+#include "UI/GameUIController.h"
 #include <vector>
+#include <memory>
 
 struct Color;
 
@@ -74,24 +74,25 @@ public:
     void    OnVictoryUpdate();
     void    OnVictoryExit();
 
-    // Leaderboard
+    // Leaderboard & UI Interaction
     [[nodiscard]] LeaderboardManager&       GetLeaderboard() { return m_leaderboard; }
     [[nodiscard]] const LeaderboardManager& GetLeaderboard() const { return m_leaderboard; }
+    [[nodiscard]] ScoreManager&             GetScoreManager() { return m_scoreManager; }
+    [[nodiscard]] const ScoreManager&       GetScoreManager() const { return m_scoreManager; }
     [[nodiscard]] bool                      IsTypingName();
-    void    RefreshLeaderboardUI();
-    void    SubmitHighScore(const std::string& name);
+    void    ResumeGame();
+    void    OnReplayRequested();
 
-    void    SetPowerUpTesterActive(bool active);
-    [[nodiscard]] bool IsPowerUpTesterActive() const { return m_powerUpTesterActive; }
-    void    TogglePowerUpTester();
+    // Power-Up Tester callbacks
+    void    ApplyPowerUp(PowerUpType type);
+    void    SpawnPowerUpAtPaddle();
+    void    SpawnAllPowerUps();
+    void    RespawnBricks();
+    void    ResetBallAndPaddle(bool smooth = false);
 
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
-    void    ResetBallAndPaddle(bool smooth = false);
-    void    CreatePowerUpTesterUI(const GameContext& context);
-    void    SpawnAllPowerUps();
-    void    RespawnBricks();
 
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY);
@@ -104,7 +105,6 @@ protected:
 
     Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
     void    SpawnPowerUp(const Vector2f& position);
-    void    ApplyPowerUp(PowerUpType type);
     void    FireLasers();
     static Color GetPowerUpColor(PowerUpType type);
 
@@ -112,25 +112,9 @@ protected:
     void    SpawnBleedParticles(const Vector2f& position);
     void    UpdatePowerUpTimers(float dt);
 
-    void    CreateUILayout(GameContext& context);
-    void    CreatePauseMenu(const GameContext& context);
-    void    CreateSettingsLayout(const GameContext& context);
-    void    CreateAudioTab(const GameContext& context);
-    void    CreateRenderTab(const GameContext& context);
-    void    CreateInputsTab(const GameContext& context);
-    void    CreateGamerulesTab(const GameContext& context);
-    void    CreateCheatsTab(const GameContext& context);
-    void    OpenSettingsTab(Entity targetCanvas);
-
-    void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
-    void    CreateGameOverMenu(const GameContext& context);
-    void    CreateLevelClearMenu(const GameContext& context);
-    void    CreateVictoryMenu(const GameContext& context);
-
     std::unique_ptr<StateMachine<GameScene>> mp_state_machine;
     Entity  m_ball{};
     Entity  m_paddle{};
-    Entity  m_explodingHeart{};
     Entity  m_bottomWall{};
 
     uint32_t    m_shaderId = 0;
@@ -149,62 +133,16 @@ protected:
     uint32_t    m_victorySfxId = 0;
     uint32_t    m_scoreRecordedSfxId = 0;
 
-    UISystem        m_uiSystem;
-    Entity          m_uiCanvas = NULL_ENTITY;
-    Entity          m_pauseCanvas = NULL_ENTITY;
-    Entity          m_settingsLayoutCanvas = NULL_ENTITY;
-    Entity          m_audioCanvas = NULL_ENTITY;
-    Entity          m_renderCanvas = NULL_ENTITY;
-    Entity          m_inputsCanvas = NULL_ENTITY;
-    Entity          m_gamerulesCanvas = NULL_ENTITY;
-    Entity          m_cheatsCanvas = NULL_ENTITY;
-    Entity          m_activeTabCanvas = NULL_ENTITY;
-    Entity          m_gameOverCanvas = NULL_ENTITY;
-    Entity          m_levelClearCanvas = NULL_ENTITY;
-    Entity          m_victoryCanvas = NULL_ENTITY;
-
-    Entity          m_scoreTextEntity = NULL_ENTITY;
-
-    std::vector<Entity> m_heartEntities;
-    std::vector<Entity> m_sfxVolumeBars;
-    std::vector<Entity> m_musicVolumeBars;
-    std::vector<Entity> m_leaderboardRowTexts;
-
-    Entity          m_gameOverTitleText = NULL_ENTITY;
-    Entity          m_gameOverScoreText = NULL_ENTITY;
-    Entity          m_gameOverStatusText = NULL_ENTITY;
-    Entity          m_nameInputEntity = NULL_ENTITY;
-    Entity          m_submitNameBtn = NULL_ENTITY;
-    Entity          m_replayBtn = NULL_ENTITY;
-    bool            m_hasSubmittedScore = false;
-    std::string     m_enteredPlayerName = "PLAYER";
-
-    Entity          m_levelClearTitleText = NULL_ENTITY;
-    Entity          m_levelClearStatsText = NULL_ENTITY;
-    Entity          m_levelClearTimerText = NULL_ENTITY;
-    Entity          m_victoryStatsText = NULL_ENTITY;
-
     LeaderboardManager m_leaderboard;
+    ScoreManager       m_scoreManager;
 
     BallState   m_ballState = BallState::Spawning;
 
-    uint32_t    m_score = 0;
-    uint32_t    m_highScore = 0;
     int     m_lives = 3;
     int     m_brickCount = 0;
-    float   m_heartsAlpha = 0.0f;
-    Entity  m_fsBtn = NULL_ENTITY;
-    Entity  m_shaderBtn = NULL_ENTITY;
-    Entity  m_particlesBtn = NULL_ENTITY;
-    Entity  m_cheatsTabBtn = NULL_ENTITY;
-
-    std::unique_ptr<TextFeedback> m_textFeedback;
 
     std::unique_ptr<ILevelGenerator> mp_levelGenerator;
-    ScoreManager       m_scoreManager;
-    uint32_t    m_combo = 0;
     PlaylistManager     m_playlist;
-    float m_cheatTimer;
 
     ScopedSubscription m_collisionSub;
     ScopedSubscription m_powerUpSub;
@@ -216,15 +154,15 @@ protected:
 
     PaddleSystem* mp_paddleSystem = nullptr;
     BallSystem*   mp_ballSystem = nullptr;
-    bool    m_powerUpTesterActive = false;
-    Entity  m_powerUpTesterCanvas = NULL_ENTITY;
 
     float   m_paddleSizeDuration = 0.0f;
     float   m_laserDuration = 0.0f;
     float   m_tempoBallDuration = 0.0f;
     int     m_tempoBallStacks = 0;
     float   m_bigBallDuration = 0.0f;
-    Entity  m_powerUpStatusText = NULL_ENTITY;
 
     ParticleSystem* m_particleSystem = nullptr;
+
+    // Dedicated UI Controller
+    std::unique_ptr<GameUIController> m_uiController;
 };
