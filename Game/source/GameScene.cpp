@@ -15,6 +15,7 @@
 #include "ECS/Systems/PhysicsSystem.h"
 #include "ECS/Systems/RenderSystem.h"
 #include "Graphics/Renderer.h"
+#include "LevelTheme.h"
 #include "Events/EventDispatcher.h"
 #include "Events/CollisionEvent.h"
 #include "Events/CheatSubmitEvent.h"
@@ -131,9 +132,17 @@ void GameScene::OnInit(GameContext& context)
     
     TweenEffects::CameraBreathing(camTween, m_registry, m_camera, 0.74f, 0.76f, 6.0f);
     
+    m_ambientBackground.OnInit(60);
+    m_bgTweenEntity = m_registry.CreateEntity();
+    m_registry.AddComponent<TweenComponent>(m_bgTweenEntity, TweenComponent{});
+
+    m_bgColor = Color{8, 10, 16, 255};
     Color c1{8, 10, 16, 255};
     Color c2{14, 12, 22, 255};
-    TweenEffects::BackgroundColorShift(camTween, c1, c2, [this](Color c){ m_bgColor = c; }, 5.0f);
+    TweenEffects::BackgroundColorShift(m_registry.GetComponent<TweenComponent>(m_bgTweenEntity), c1, c2, [this](Color c){ m_bgColor = c; }, 4.0f);
+
+    m_postProcessParams = PostProcessParams{};
+    m_currentComboMultiplier = 0;
 
     m_collisionSub = context.Events.SubscribeScoped<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
@@ -379,6 +388,45 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         context.Events.Publish(ScoreChangedEvent(m_scoreManager.GetScore(), m_scoreManager.GetComboMultiplier()));
     }
 
+    // 1. Dynamic background color modulation reacting to combo multipliers
+    UpdateComboBackgroundColor(m_scoreManager.GetComboMultiplier());
+
+    // 2. Update ambient background (parallax grid + floating dust particles)
+    Vector2f paddlePos{0.0f, 0.0f};
+    if (m_registry.HasComponent<Transform2D>(m_paddle))
+    {
+        paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
+    }
+    Vector2f camPos{0.0f, 0.0f};
+    if (m_registry.HasComponent<Camera2D>(m_camera))
+    {
+        camPos = m_registry.GetComponent<Camera2D>(m_camera).Position;
+    }
+    m_ambientBackground.OnUpdate(dt, paddlePos, camPos);
+
+    // 3. Post-process parameter decay towards resting baseline
+    constexpr float kBaseCA = 0.005f;
+    constexpr float kBaseVig = 0.25f;
+    const Color kBaseVigColor{0, 0, 0, 255};
+
+    if (m_postProcessParams.ChromaticAberration > kBaseCA)
+    {
+        m_postProcessParams.ChromaticAberration = std::max(kBaseCA, m_postProcessParams.ChromaticAberration - dt * 0.05f);
+    }
+    if (m_postProcessParams.VignetteIntensity > kBaseVig)
+    {
+        m_postProcessParams.VignetteIntensity = std::max(kBaseVig, m_postProcessParams.VignetteIntensity - dt * 0.9f);
+    }
+    if (m_postProcessParams.FlashIntensity > 0.0f)
+    {
+        m_postProcessParams.FlashIntensity = std::max(0.0f, m_postProcessParams.FlashIntensity - dt * 1.3f);
+    }
+
+    const float decayAlpha = std::clamp(dt * 3.5f, 0.0f, 1.0f);
+    m_postProcessParams.VignetteColor.r = static_cast<uint8_t>(m_postProcessParams.VignetteColor.r + (kBaseVigColor.r - m_postProcessParams.VignetteColor.r) * decayAlpha);
+    m_postProcessParams.VignetteColor.g = static_cast<uint8_t>(m_postProcessParams.VignetteColor.g + (kBaseVigColor.g - m_postProcessParams.VignetteColor.g) * decayAlpha);
+    m_postProcessParams.VignetteColor.b = static_cast<uint8_t>(m_postProcessParams.VignetteColor.b + (kBaseVigColor.b - m_postProcessParams.VignetteColor.b) * decayAlpha);
+
     const bool canControlPaddle = (currentState == static_cast<int>(SceneState::Playing) || currentState == static_cast<int>(SceneState::LevelTransition));
     if (mp_paddleSystem)
     {
@@ -395,7 +443,18 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
 void GameScene::OnRender(GameContext& context)
 {
     DefaultScene::OnRender(context);
-    context.Render.SetCamera(m_registry.GetComponent<Camera2D>(m_camera));
+    const auto& cameraComp = m_registry.GetComponent<Camera2D>(m_camera);
+    context.Render.SetCamera(cameraComp);
+
+    Vector2f paddlePos{0.0f, 0.0f};
+    if (m_registry.HasComponent<Transform2D>(m_paddle))
+    {
+        paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
+    }
+
+    // Render ambient background layer (behind gameplay entities)
+    m_ambientBackground.OnRender(context.Render, m_bgColor, cameraComp.Position, paddlePos);
+
     m_systemManager.OnRender();
 
     context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{800.0f, -450.0f}, Colors::White, 2.0f);
@@ -436,7 +495,8 @@ void GameScene::OnRender(GameContext& context)
     std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
 
     std::string stats = "Level: " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + " / " + std::to_string(m_levelManager.GetLevelCount()) +
-                        " (Unlocked: " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")";
+                        " (Unlocked: " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")" +
+                        " | Theme: " + m_currentTheme.Name;
     stats += "\nLevel Best: " + std::to_string(m_levelManager.GetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber())) +
              " | Global Best: " + std::to_string(m_scoreManager.GetHighScore());
     stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
@@ -473,6 +533,102 @@ uint32_t GameScene::GetPostProcessShader() const
         return m_shaderId;
     }
     return 0;
+}
+
+PostProcessParams GameScene::GetPostProcessParams() const
+{
+    if (mp_context && mp_context->Rules.GetRule(Rule::Graphics::EnableShader))
+    {
+        return m_postProcessParams;
+    }
+    return PostProcessParams{};
+}
+
+void GameScene::TriggerPostProcessFlash(float caIntensity, float vignetteIntensity, const Color& vignetteColor, float flashIntensity, const Color& flashColor)
+{
+    m_postProcessParams.ChromaticAberration = std::max(m_postProcessParams.ChromaticAberration, caIntensity);
+    m_postProcessParams.VignetteIntensity = std::max(m_postProcessParams.VignetteIntensity, vignetteIntensity);
+    m_postProcessParams.VignetteColor = vignetteColor;
+    m_postProcessParams.FlashIntensity = std::max(m_postProcessParams.FlashIntensity, flashIntensity);
+    m_postProcessParams.FlashColor = flashColor;
+}
+
+void GameScene::UpdateComboBackgroundColor(uint32_t comboMultiplier)
+{
+    if (comboMultiplier == m_currentComboMultiplier) return;
+    m_currentComboMultiplier = comboMultiplier;
+
+    Color targetColor;
+    float duration = 3.5f;
+
+    if (comboMultiplier <= 1)
+    {
+        targetColor = m_currentTheme.ComboColors[0];
+        duration = 3.5f;
+    }
+    else if (comboMultiplier == 2)
+    {
+        targetColor = m_currentTheme.ComboColors[1];
+        duration = 2.5f;
+    }
+    else if (comboMultiplier == 3)
+    {
+        targetColor = m_currentTheme.ComboColors[2];
+        duration = 2.0f;
+    }
+    else if (comboMultiplier == 4)
+    {
+        targetColor = m_currentTheme.ComboColors[3];
+        duration = 1.6f;
+    }
+    else
+    {
+        targetColor = m_currentTheme.ComboColors[4];
+        duration = 1.2f;
+    }
+
+    if (m_registry.IsAlive(m_bgTweenEntity) && m_registry.HasComponent<TweenComponent>(m_bgTweenEntity))
+    {
+        auto& tweenComp = m_registry.GetComponent<TweenComponent>(m_bgTweenEntity);
+        tweenComp.Clear();
+        TweenEffects::BackgroundColorShift(
+            tweenComp,
+            m_bgColor,
+            targetColor,
+            [this](Color c) { m_bgColor = c; },
+            duration
+        );
+    }
+}
+
+void GameScene::ApplyLevelTheme(int levelNumber)
+{
+    m_currentTheme = LevelThemeCatalog::GetThemeForLevel(levelNumber);
+    m_ambientBackground.SetTheme(m_currentTheme);
+
+    // Apply baseline theme vignette
+    m_postProcessParams.VignetteColor = m_currentTheme.VignetteBaseColor;
+    m_postProcessParams.VignetteIntensity = m_currentTheme.VignetteBaseIntensity;
+
+    // Smoothly shift to new level base background palette
+    if (m_registry.IsAlive(m_bgTweenEntity) && m_registry.HasComponent<TweenComponent>(m_bgTweenEntity))
+    {
+        auto& tweenComp = m_registry.GetComponent<TweenComponent>(m_bgTweenEntity);
+        tweenComp.Clear();
+        TweenEffects::BackgroundColorShift(
+            tweenComp,
+            m_currentTheme.BgBase1,
+            m_currentTheme.BgBase2,
+            [this](Color c) { m_bgColor = c; },
+            3.5f
+        );
+    }
+    else
+    {
+        m_bgColor = m_currentTheme.BgBase1;
+    }
+
+    m_currentComboMultiplier = 0;
 }
 
 Entity GameScene::CreateWall(const float x, const float y, const float w, const float h)
@@ -636,6 +792,7 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
     }
 
     TweenEffects::Shake(m_registry, m_camera, 0.3f, 16.0f);
+    TriggerPostProcessFlash(0.028f, 0.70f, Color{255, 120, 20, 255}, 0.28f, Color{255, 180, 50, 255});
 
     if (m_registry.IsAlive(ballEntity) && m_registry.HasComponent<BallComponent>(ballEntity))
     {
@@ -702,6 +859,7 @@ bool GameScene::HasNextLevel() const
 void GameScene::LoadLevel(int levelIndex, bool preserveStats)
 {
     m_levelManager.SetLevel(levelIndex);
+    ApplyLevelTheme(m_levelManager.GetCurrentLevelNumber());
 
     if (!preserveStats)
     {
@@ -1112,6 +1270,9 @@ void GameScene::HandleDeath()
 {
     if (m_ballState == BallState::Dying) return;
     m_ballState = BallState::Dying;
+
+    // Dramatic red chromatic aberration and vignette flash on ball lost
+    TriggerPostProcessFlash(0.035f, 0.85f, Color{220, 20, 20, 255}, 0.35f, Color{190, 25, 25, 255});
 
     m_scoreManager.BreakCombo();
     mp_context->Events.Publish(BallDeathEvent(m_ball));

@@ -68,7 +68,7 @@ void Renderer::BeginDraw(Color clearColor)
     m_renderTexture.clear(sf::Color(clearColor.r, clearColor.g, clearColor.b, clearColor.a));
 }
 
-void Renderer::EndDraw(uint32_t postProcessShaderId)
+void Renderer::EndDraw(uint32_t postProcessShaderId, const PostProcessParams& params)
 {
     m_renderTexture.display();
 
@@ -81,8 +81,24 @@ void Renderer::EndDraw(uint32_t postProcessShaderId)
 
     if (postProcessShaderId != 0 && m_resources.Get<sf::Shader>(postProcessShaderId) != nullptr)
     {
+        sf::Shader* shader = m_resources.Get<sf::Shader>(postProcessShaderId);
+        shader->setUniform("screen_texture", sf::Shader::CurrentTexture);
+        shader->setUniform("u_ca_intensity", params.ChromaticAberration);
+        shader->setUniform("u_vignetteIntensity", params.VignetteIntensity);
+        shader->setUniform("u_vignetteColor", sf::Glsl::Vec3(
+            params.VignetteColor.r / 255.f,
+            params.VignetteColor.g / 255.f,
+            params.VignetteColor.b / 255.f
+        ));
+        shader->setUniform("u_flashIntensity", params.FlashIntensity);
+        shader->setUniform("u_flashColor", sf::Glsl::Vec3(
+            params.FlashColor.r / 255.f,
+            params.FlashColor.g / 255.f,
+            params.FlashColor.b / 255.f
+        ));
+
         sf::RenderStates states;
-        states.shader = m_resources.Get<sf::Shader>(postProcessShaderId);
+        states.shader = shader;
         m_window.GetNative().draw(renderSprite, states);
     }
     else

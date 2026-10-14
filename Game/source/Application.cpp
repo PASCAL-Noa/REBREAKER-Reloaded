@@ -59,7 +59,7 @@ void Application::Run()
         
         m_cheatManager.Render(m_renderer);
 
-        m_renderer.EndDraw(m_sceneManager.GetPostProcessShader());
+        m_renderer.EndDraw(m_sceneManager.GetPostProcessShader(), m_sceneManager.GetPostProcessParams());
     }
 
     m_sceneManager.Shutdown(m_context);

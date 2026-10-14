@@ -20,6 +20,7 @@ public:
     void Render(GameContext& context) const;
 
     [[nodiscard]] uint32_t GetPostProcessShader() const;
+    [[nodiscard]] PostProcessParams GetPostProcessParams() const;
     [[nodiscard]] Color GetClearColor() const;
 
 private:

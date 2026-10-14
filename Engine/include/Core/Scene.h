@@ -2,6 +2,7 @@
 #include "ECS/Registry.hpp"
 #include "ECS/SystemManager.hpp"
 #include "Data/Color.h"
+#include "Data/PostProcessParams.h"
 
 struct GameContext;
 
@@ -16,6 +17,7 @@ public:
     virtual void                    OnRender(GameContext& /*context*/) {}
     virtual void                    OnDestroy(GameContext& /*context*/) {}
     [[nodiscard]] virtual uint32_t  GetPostProcessShader() const { return 0; }
+    [[nodiscard]] virtual PostProcessParams GetPostProcessParams() const { return PostProcessParams{}; }
     [[nodiscard]] virtual Color     GetClearColor() const { return Colors::Black; }
 
 protected:
