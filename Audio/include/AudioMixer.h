@@ -16,8 +16,14 @@ public:
     AudioMixer(AudioMixer&&) noexcept;
     AudioMixer& operator=(AudioMixer&&) noexcept;
 
+    void    Update(float dt) const;
+
     void    PlaySfx(uint32_t soundId, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
+    void    StopSfx() const;
+
     void    PlayMusic(const std::string& filepath, float volume = 100.0f, bool loop = true) const;
+    void    FadeToMusic(const std::string& filepath, float fadeDuration = 1.5f, float volume = 100.0f, bool loop = true) const;
+    void    FadeOutMusic(float fadeDuration = 1.0f) const;
     void    StopMusic() const;
 
     void    SetMasterVolume(float volume) const;
@@ -29,6 +35,8 @@ public:
     [[nodiscard]] float GetMusicVolume() const;
 
     [[nodiscard]] bool  IsMusicPlaying() const;
+    [[nodiscard]] const std::string& GetCurrentMusicPath() const;
+    [[nodiscard]] float GetMusicTimeRemaining() const;
 private:
     struct  Impl;
     std::unique_ptr<Impl> mp_impl;

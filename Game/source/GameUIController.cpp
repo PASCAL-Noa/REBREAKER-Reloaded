@@ -1,6 +1,7 @@
 #include "UI/GameUIController.h"
 #include "Scenes/GameScene.h"
 #include "Scenes/MenuScene.h"
+#include "Scenes/LevelSelectScene.h"
 #include "Core/SceneManager.h"
 #include "UI/UIFactory.h"
 #include "ECS/Components/UI/CanvasComponent.h"
@@ -9,6 +10,7 @@
 #include "ECS/Components/UI/TextComponent.h"
 #include "ECS/Components/UI/TextInputComponent.h"
 #include "ECS/Components/UI/RectTransform.h"
+#include "ECS/Components/Transform2D.h"
 #include "ECS/Components/SpriteComponent.h"
 #include "ECS/Components/TweenComponent.h"
 #include "Math/EasingFunctions.h"
@@ -41,6 +43,7 @@ void GameUIController::OnInit(uint32_t fontId, uint32_t heartTexId, uint32_t fir
     m_textFeedback->OnInit(m_uiCanvas);
 
     CreatePauseMenu();
+    CreateLevelSelectModal();
     CreateAudioTab();
     CreateRenderTab();
     CreateInputsTab();
@@ -94,18 +97,33 @@ void GameUIController::ShowState(GameUIState state)
         isSettingsOpen = m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled;
     }
 
-    if (m_pauseCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_pauseCanvas))
+    bool isLevelSelectOpen = false;
+    if (m_levelSelectCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas))
     {
-        m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = (state == GameUIState::Paused && !isSettingsOpen);
+        isLevelSelectOpen = m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled;
     }
 
-    if (state != GameUIState::Paused && m_settingsLayoutCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_settingsLayoutCanvas))
+    if (m_pauseCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_pauseCanvas))
     {
-        m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled = false;
-        if (m_activeTabCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_activeTabCanvas))
+        m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = (state == GameUIState::Paused && !isSettingsOpen && !isLevelSelectOpen);
+    }
+
+    if (state != GameUIState::Paused)
+    {
+        if (m_levelSelectCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas))
         {
-            m_registry.GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
-            m_activeTabCanvas = NULL_ENTITY;
+            m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled = false;
+            ClearLevelSelectCards();
+        }
+
+        if (m_settingsLayoutCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_settingsLayoutCanvas))
+        {
+            m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled = false;
+            if (m_activeTabCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_activeTabCanvas))
+            {
+                m_registry.GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
+                m_activeTabCanvas = NULL_ENTITY;
+            }
         }
     }
 
@@ -152,6 +170,103 @@ void GameUIController::ShowState(GameUIState state)
 
 void GameUIController::OnUpdate(float dt)
 {
+    // 1. Escape key navigation for submenus / modals
+    if (m_context.Input.IsKeyPress(KeyCode::Escape))
+    {
+        if (m_levelSelectCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas) &&
+            m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled)
+        {
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            CloseLevelSelectModal();
+            return;
+        }
+        if (m_settingsLayoutCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_settingsLayoutCanvas) &&
+            m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled)
+        {
+            CloseSettingsLayout();
+            return;
+        }
+    }
+
+    // 2. Active Level Select modal updates
+    if (m_levelSelectCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas) &&
+        m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled)
+    {
+        m_levelSelectAnimTime += dt;
+
+        auto& levelManager = m_scene.GetLevelManager();
+        const int totalLevels = levelManager.GetLevelCount();
+        constexpr int kInGameCardsPerPage = 5;
+        constexpr float kInGameCardW = 250.0f;
+        constexpr float kInGameCardH = 430.0f;
+        constexpr float kInGameCardGap = 35.0f;
+        constexpr float kInGameCardCenterY = 0.0f;
+        const int totalPages = std::max(1, (totalLevels + kInGameCardsPerPage - 1) / kInGameCardsPerPage);
+
+        if (m_context.Input.IsKeyPress(KeyCode::Left) && m_levelSelectPage > 0)
+        {
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            m_levelSelectPage--;
+            RebuildLevelSelectCards();
+        }
+        else if (m_context.Input.IsKeyPress(KeyCode::Right) && m_levelSelectPage < totalPages - 1)
+        {
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            m_levelSelectPage++;
+            RebuildLevelSelectCards();
+        }
+
+        const int startLevelIndex = m_levelSelectPage * kInGameCardsPerPage;
+        for (int slot = 0; slot < 5; ++slot)
+        {
+            KeyCode key = static_cast<KeyCode>(static_cast<int>(KeyCode::Num1) + slot);
+            KeyCode numpadKey = static_cast<KeyCode>(static_cast<int>(KeyCode::Numpad1) + slot);
+            if (m_context.Input.IsKeyPress(key) || m_context.Input.IsKeyPress(numpadKey))
+            {
+                int lvlIdx = startLevelIndex + slot;
+                if (lvlIdx < totalLevels && levelManager.IsLevelUnlocked(lvlIdx + 1))
+                {
+                    if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                    CloseLevelSelectModal();
+                    m_scene.LoadLevel(lvlIdx, /*preserveStats=*/false);
+                    m_scene.ResumeGame();
+                    return;
+                }
+            }
+        }
+
+        // Hover tracking
+        auto [mouseX, mouseY] = m_context.Input.GetMousePosition();
+        const Vector2f viewSize = m_context.Render.GetLogicalViewSize();
+        const float screenCenterX = viewSize.X * 0.5f;
+        const float screenCenterY = viewSize.Y * 0.5f;
+        const Vector2f centeredMouse{ mouseX - screenCenterX, mouseY - screenCenterY };
+
+        constexpr float totalSpan = static_cast<float>(kInGameCardsPerPage) * kInGameCardW + static_cast<float>(kInGameCardsPerPage - 1) * kInGameCardGap;
+        constexpr float startX = -(totalSpan - kInGameCardW) * 0.5f;
+        constexpr float stepX = kInGameCardW + kInGameCardGap;
+
+        m_hoveredLevelCard = -1;
+        const int levelsOnThisPage = std::clamp(totalLevels - startLevelIndex, 0, kInGameCardsPerPage);
+
+        for (int slot = 0; slot < levelsOnThisPage; ++slot)
+        {
+            const float cX = startX + static_cast<float>(slot) * stepX;
+            const float cY = kInGameCardCenterY;
+
+            if (centeredMouse.X >= cX - kInGameCardW * 0.5f && centeredMouse.X <= cX + kInGameCardW * 0.5f &&
+                centeredMouse.Y >= cY - kInGameCardH * 0.5f && centeredMouse.Y <= cY + kInGameCardH * 0.5f)
+            {
+                m_hoveredLevelCard = startLevelIndex + slot;
+                if (m_context.Input.IsMouseButtonPress(MouseButton::Left))
+                {
+                    m_selectedLevelCard = m_hoveredLevelCard;
+                }
+                break;
+            }
+        }
+    }
+
     if (m_cheatsTabBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_cheatsTabBtn))
     {
         m_registry.GetComponent<RectTransform>(m_cheatsTabBtn).IsActive = m_context.Rules.GetRule(Rule::Gameplay::CheatsUnlocked);
@@ -496,7 +611,18 @@ void GameUIController::CreatePauseMenu()
         .OnClick = [this]() {
             m_scene.ResumeGame();
         },
-        .Position = {0, -50.0f},
+        .Position = {0, -90.0f},
+        .FontId = m_fontId
+    });
+
+    // Level Select Button
+    UIFactory::CreateButton(m_registry, m_pauseCanvas, ButtonDescriptor{
+        .Text = "LEVEL SELECT",
+        .OnClick = [this]() {
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            OpenLevelSelectModal(m_pauseCanvas);
+        },
+        .Position = {0, -10.0f},
         .FontId = m_fontId
     });
 
@@ -509,7 +635,7 @@ void GameUIController::CreatePauseMenu()
             auto& settingsCanvas = m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas);
             settingsCanvas.IsEnabled = true;
         },
-        .Position = {0, 50.0f},
+        .Position = {0, 70.0f},
         .FontId = m_fontId
     });
 
@@ -517,6 +643,7 @@ void GameUIController::CreatePauseMenu()
     UIFactory::CreateButton(m_registry, m_pauseCanvas, ButtonDescriptor{
         .Text = "QUIT",
         .OnClick = [this]() {
+            m_context.Audio.StopMusic();
             m_context.Scenes.LoadScene<MenuScene>();
         },
         .Position = {0, 150.0f},
@@ -887,6 +1014,21 @@ void GameUIController::CreateGamerulesTab()
         .FontId = m_fontId
     });
 
+    UIFactory::CreateButton(m_registry, m_gamerulesCanvas, ButtonDescriptor{
+        .Text = "SELECT LEVEL",
+        .OnClick = [this]() {
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            OpenLevelSelectModal(m_settingsLayoutCanvas);
+        },
+        .Position = {rightPanelX, 0.0f},
+        .Size = {rightPanelWidth * 0.6f, 56.0f},
+        .DefaultColor = Color{35, 75, 110, 255},
+        .HoverColor = Color{50, 110, 160, 255},
+        .PressedColor = Color{25, 50, 75, 255},
+        .FontId = m_fontId,
+        .FontSize = 28.0f
+    });
+
     UIFactory::CreatePanel(m_registry, m_gamerulesCanvas, PanelDescriptor{
       .Position = {rightPanelX, 0.0f},
       .Size = {rightPanelWidth, viewY},
@@ -1186,15 +1328,34 @@ void GameUIController::CreateGameOverMenu()
         .OnClick = [this]() {
             m_scene.OnReplayRequested();
         },
-        .Position = {-180.0f, 310.0f},
-        .Size = {300.0f, 60.0f},
+        .Position = {-260.0f, 310.0f},
+        .Size = {240.0f, 56.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{65, 65, 90, 255},
         .HoverColor = Color{95, 95, 130, 255},
         .PressedColor = Color{35, 35, 50, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 28.0f,
+        .FontSize = 26.0f,
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Level Select Button
+    UIFactory::CreateButton(m_registry, m_gameOverCanvas, ButtonDescriptor{
+        .Text = "LEVEL SELECT",
+        .OnClick = [this]() {
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            OpenLevelSelectModal(m_gameOverCanvas);
+        },
+        .Position = {0.0f, 310.0f},
+        .Size = {240.0f, 56.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{35, 65, 90, 255},
+        .HoverColor = Color{50, 95, 135, 255},
+        .PressedColor = Color{25, 45, 65, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 26.0f,
         .AnchorPoint = Anchor::Center
     });
 
@@ -1205,15 +1366,15 @@ void GameUIController::CreateGameOverMenu()
             m_context.Audio.StopMusic();
             m_context.Scenes.LoadScene<MenuScene>();
         },
-        .Position = {180.0f, 310.0f},
-        .Size = {300.0f, 60.0f},
+        .Position = {260.0f, 310.0f},
+        .Size = {240.0f, 56.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{95, 45, 45, 255},
         .HoverColor = Color{135, 65, 65, 255},
         .PressedColor = Color{60, 25, 25, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 28.0f,
+        .FontSize = 26.0f,
         .AnchorPoint = Anchor::Center
     });
 
@@ -1475,15 +1636,33 @@ void GameUIController::CreateVictoryMenu()
         .OnClick = [this]() {
             m_scene.OnReplayRequested();
         },
-        .Position = {-170.0f, 175.0f},
-        .Size = {300.0f, 60.0f},
+        .Position = {-260.0f, 175.0f},
+        .Size = {240.0f, 56.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{50, 110, 160, 255},
         .HoverColor = Color{75, 145, 205, 255},
         .PressedColor = Color{35, 75, 110, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 28.0f,
+        .FontSize = 26.0f,
+        .AnchorPoint = Anchor::Center
+    });
+
+    UIFactory::CreateButton(m_registry, m_victoryCanvas, ButtonDescriptor{
+        .Text = "LEVEL SELECT",
+        .OnClick = [this]() {
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            OpenLevelSelectModal(m_victoryCanvas);
+        },
+        .Position = {0.0f, 175.0f},
+        .Size = {240.0f, 56.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = Color{35, 65, 90, 255},
+        .HoverColor = Color{50, 95, 135, 255},
+        .PressedColor = Color{25, 45, 65, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 26.0f,
         .AnchorPoint = Anchor::Center
     });
 
@@ -1493,15 +1672,15 @@ void GameUIController::CreateVictoryMenu()
             m_context.Audio.StopMusic();
             m_context.Scenes.LoadScene<MenuScene>();
         },
-        .Position = {170.0f, 175.0f},
-        .Size = {300.0f, 60.0f},
+        .Position = {260.0f, 175.0f},
+        .Size = {240.0f, 56.0f},
         .TextOffset = {0.0f, -8.0f},
         .DefaultColor = Color{80, 80, 80, 255},
         .HoverColor = Color{115, 115, 115, 255},
         .PressedColor = Color{45, 45, 45, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 28.0f,
+        .FontSize = 26.0f,
         .AnchorPoint = Anchor::Center
     });
 
@@ -1568,4 +1747,440 @@ void GameUIController::CreateVictoryMenu()
         .Tint = Color{0, 0, 0, 210},
         .AnchorPoint = Anchor::Center
     });
+}
+
+bool GameUIController::IsModalOrSubMenuOpen() const
+{
+    if (m_levelSelectCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas) &&
+        m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled)
+    {
+        return true;
+    }
+    if (m_settingsLayoutCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_settingsLayoutCanvas) &&
+        m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled)
+    {
+        return true;
+    }
+    return false;
+}
+
+void GameUIController::CloseSettingsLayout()
+{
+    if (m_settingsLayoutCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_settingsLayoutCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas).IsEnabled = false;
+    }
+    if (m_activeTabCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_activeTabCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
+        m_activeTabCanvas = NULL_ENTITY;
+    }
+    if (m_pauseCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_pauseCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = true;
+    }
+}
+
+constexpr int kInGameCardsPerPage = 5;
+constexpr float kInGameCardW = 250.0f;
+constexpr float kInGameCardH = 430.0f;
+constexpr float kInGameCardGap = 35.0f;
+constexpr float kInGameCardCenterY = 0.0f;
+
+void GameUIController::CreateLevelSelectModal()
+{
+    m_levelSelectCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_levelSelectCanvas, CanvasComponent{.IsEnabled = false});
+
+    // Dark semi-transparent background overlay over the active game field
+    const Vector2f viewSize = m_context.Render.GetLogicalViewSize();
+    UIFactory::CreatePanel(m_registry, m_levelSelectCanvas, PanelDescriptor{
+        .Position = {0.0f, 0.0f},
+        .Size = {viewSize.X * 2.0f, viewSize.Y * 2.0f},
+        .Tint = Color{0, 0, 0, 220},
+        .AnchorPoint = Anchor::Center
+    });
+
+    // Header Title
+    UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
+        .Text = "LEVEL SELECT",
+        .Position = {0.0f, -360.0f},
+        .FontId = m_fontId,
+        .FontSize = 64.0f,
+        .Tint = Colors::Gold
+    });
+
+    // Accent line
+    UIFactory::CreatePanel(m_registry, m_levelSelectCanvas, PanelDescriptor{
+        .Position = {0.0f, -315.0f},
+        .Size = {640.0f, 3.0f},
+        .Tint = Color{60, 200, 255, 200}
+    });
+
+    // Subtitle
+    UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
+        .Text = "SELECT AN UNLOCKED STAGE  |  PRESS [1-5] OR CLICK CARD",
+        .Position = {0.0f, -280.0f},
+        .FontId = m_fontId,
+        .FontSize = 24.0f,
+        .Tint = Color{190, 215, 240, 230}
+    });
+}
+
+void GameUIController::OpenLevelSelectModal(Entity sourceCanvas)
+{
+    m_levelSelectSourceCanvas = sourceCanvas;
+    if (sourceCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(sourceCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(sourceCanvas).IsEnabled = false;
+    }
+    if (m_levelSelectCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled = true;
+    }
+    m_levelThumbnails = LoadAllLevelThumbnails(m_scene.GetLevelManager());
+    m_levelSelectPage = 0;
+    m_hoveredLevelCard = -1;
+    m_selectedLevelCard = 0;
+    RebuildLevelSelectCards();
+}
+
+void GameUIController::CloseLevelSelectModal()
+{
+    if (m_levelSelectCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled = false;
+    }
+    ClearLevelSelectCards();
+    if (m_levelSelectSourceCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectSourceCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_levelSelectSourceCanvas).IsEnabled = true;
+    }
+}
+
+void GameUIController::ClearLevelSelectCards()
+{
+    for (Entity e : m_levelSelectEntities)
+    {
+        if (m_registry.IsAlive(e))
+        {
+            m_registry.DestroyEntity(e);
+        }
+    }
+    m_levelSelectEntities.clear();
+}
+
+void GameUIController::RebuildLevelSelectCards()
+{
+    ClearLevelSelectCards();
+
+    auto& levelManager = m_scene.GetLevelManager();
+    const int totalLevels = levelManager.GetLevelCount();
+    const int totalPages = std::max(1, (totalLevels + kInGameCardsPerPage - 1) / kInGameCardsPerPage);
+    if (m_levelSelectPage >= totalPages) m_levelSelectPage = totalPages - 1;
+    if (m_levelSelectPage < 0) m_levelSelectPage = 0;
+
+    const int startLevelIndex = m_levelSelectPage * kInGameCardsPerPage;
+    const int levelsOnThisPage = std::clamp(totalLevels - startLevelIndex, 0, kInGameCardsPerPage);
+
+    constexpr float totalSpan = static_cast<float>(kInGameCardsPerPage) * kInGameCardW + static_cast<float>(kInGameCardsPerPage - 1) * kInGameCardGap;
+    constexpr float startX = -(totalSpan - kInGameCardW) * 0.5f;
+    constexpr float stepX = kInGameCardW + kInGameCardGap;
+
+    for (int slot = 0; slot < levelsOnThisPage; ++slot)
+    {
+        const int levelIndex = startLevelIndex + slot;
+        const int levelNum = levelIndex + 1;
+        const bool isUnlocked = levelManager.IsLevelUnlocked(levelNum);
+        const uint32_t highScore = levelManager.GetHighScoreForLevel(levelNum);
+        const bool isCleared = (levelNum <= levelManager.GetHighestClearedLevel()) || (highScore > 0);
+
+        const Vector2f cardCenter = { startX + static_cast<float>(slot) * stepX, kInGameCardCenterY };
+
+        // Card Base Panel
+        const Color bgTint = isCleared
+            ? Color{16, 26, 42, 230}
+            : (isUnlocked ? Color{14, 22, 34, 230} : Color{12, 14, 20, 210});
+
+        Entity p = UIFactory::CreatePanel(m_registry, m_levelSelectCanvas, PanelDescriptor{
+            .Position = cardCenter,
+            .Size = {kInGameCardW, kInGameCardH},
+            .Tint = bgTint
+        });
+        m_levelSelectEntities.push_back(p);
+
+        // Stage Title
+        const Color stageColor = isUnlocked ? Colors::Gold : Color{110, 115, 130, 255};
+        std::string stageNumStr = (levelNum < 10) ? ("STAGE 0" + std::to_string(levelNum)) : ("STAGE " + std::to_string(levelNum));
+        Entity t1 = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
+            .Text = stageNumStr,
+            .Position = {cardCenter.X, cardCenter.Y - 175.0f},
+            .FontId = m_fontId,
+            .FontSize = 32.0f,
+            .Tint = stageColor
+        });
+        m_levelSelectEntities.push_back(t1);
+
+        // Status Badge
+        if (!isUnlocked)
+        {
+            Entity tLock = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
+                .Text = "[ LOCKED ]",
+                .Position = {cardCenter.X, cardCenter.Y - 140.0f},
+                .FontId = m_fontId,
+                .FontSize = 24.0f,
+                .Tint = Color{220, 65, 75, 255}
+            });
+            m_levelSelectEntities.push_back(tLock);
+        }
+        else if (isCleared)
+        {
+            Entity tClear = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
+                .Text = "[ CLEARED ]",
+                .Position = {cardCenter.X, cardCenter.Y - 140.0f},
+                .FontId = m_fontId,
+                .FontSize = 24.0f,
+                .Tint = Color{65, 225, 120, 255}
+            });
+            m_levelSelectEntities.push_back(tClear);
+        }
+        else
+        {
+            Entity tUn = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
+                .Text = "[ UNLOCKED ]",
+                .Position = {cardCenter.X, cardCenter.Y - 140.0f},
+                .FontId = m_fontId,
+                .FontSize = 24.0f,
+                .Tint = Color{75, 180, 255, 255}
+            });
+            m_levelSelectEntities.push_back(tUn);
+        }
+
+        // High score
+        Entity tBest = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
+            .Text = "BEST SCORE",
+            .Position = {cardCenter.X, cardCenter.Y + 30.0f},
+            .FontId = m_fontId,
+            .FontSize = 20.0f,
+            .Tint = Color{150, 160, 185, 220}
+        });
+        m_levelSelectEntities.push_back(tBest);
+
+        const std::string scoreStr = (highScore > 0) ? std::to_string(highScore) : "---";
+        const Color scoreColor = (highScore > 0)
+            ? Colors::White
+            : (isUnlocked ? Color{130, 140, 160, 200} : Color{80, 85, 95, 180});
+
+        Entity tScore = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
+            .Text = scoreStr,
+            .Position = {cardCenter.X, cardCenter.Y + 68.0f},
+            .FontId = m_fontId,
+            .FontSize = 30.0f,
+            .Tint = scoreColor
+        });
+        m_levelSelectEntities.push_back(tScore);
+
+        // Action Button
+        if (isUnlocked)
+        {
+            Entity btn = UIFactory::CreateButton(m_registry, m_levelSelectCanvas, ButtonDescriptor{
+                .Text = "PLAY [" + std::to_string(levelNum) + "]",
+                .OnClick = [this, levelIndex]() {
+                    if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                    CloseLevelSelectModal();
+                    m_scene.LoadLevel(levelIndex, /*preserveStats=*/false);
+                    m_scene.ResumeGame();
+                },
+                .Position = {cardCenter.X, cardCenter.Y + 155.0f},
+                .Size = {200.0f, 48.0f},
+                .DefaultColor = Color{35, 90, 55, 255},
+                .HoverColor = Color{50, 140, 85, 255},
+                .PressedColor = Color{20, 60, 35, 255},
+                .TextColor = Colors::White,
+                .FontId = m_fontId,
+                .FontSize = 26.0f
+            });
+            m_levelSelectEntities.push_back(btn);
+        }
+        else
+        {
+            Entity btn = UIFactory::CreateButton(m_registry, m_levelSelectCanvas, ButtonDescriptor{
+                .Text = "LOCKED",
+                .OnClick = nullptr,
+                .Position = {cardCenter.X, cardCenter.Y + 155.0f},
+                .Size = {200.0f, 48.0f},
+                .DefaultColor = Color{35, 38, 48, 160},
+                .HoverColor = Color{35, 38, 48, 160},
+                .PressedColor = Color{35, 38, 48, 160},
+                .TextColor = Color{90, 95, 110, 255},
+                .FontId = m_fontId,
+                .FontSize = 24.0f
+            });
+            m_levelSelectEntities.push_back(btn);
+        }
+    }
+
+    // Navigation Arrows
+    constexpr float arrowX = (totalSpan * 0.5f) + 60.0f;
+    const bool canGoPrev = m_levelSelectPage > 0;
+    const bool canGoNext = m_levelSelectPage < (totalPages - 1);
+
+    Entity leftBtn = UIFactory::CreateButton(m_registry, m_levelSelectCanvas, ButtonDescriptor{
+        .Text = "<",
+        .OnClick = [this, canGoPrev]() {
+            if (canGoPrev)
+            {
+                if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                m_levelSelectPage--;
+                RebuildLevelSelectCards();
+            }
+        },
+        .Position = {-arrowX, kInGameCardCenterY},
+        .Size = {54.0f, 74.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = canGoPrev ? Color{40, 65, 100, 240} : Color{25, 28, 36, 120},
+        .HoverColor   = canGoPrev ? Color{60, 110, 170, 255} : Color{25, 28, 36, 120},
+        .PressedColor = canGoPrev ? Color{25, 45, 75, 255} : Color{25, 28, 36, 120},
+        .TextColor    = canGoPrev ? Colors::White : Color{75, 80, 95, 160},
+        .FontId = m_fontId,
+        .FontSize = 46.0f
+    });
+    m_levelSelectEntities.push_back(leftBtn);
+
+    Entity rightBtn = UIFactory::CreateButton(m_registry, m_levelSelectCanvas, ButtonDescriptor{
+        .Text = ">",
+        .OnClick = [this, canGoNext]() {
+            if (canGoNext)
+            {
+                if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                m_levelSelectPage++;
+                RebuildLevelSelectCards();
+            }
+        },
+        .Position = {arrowX, kInGameCardCenterY},
+        .Size = {54.0f, 74.0f},
+        .TextOffset = {0.0f, -8.0f},
+        .DefaultColor = canGoNext ? Color{40, 65, 100, 240} : Color{25, 28, 36, 120},
+        .HoverColor   = canGoNext ? Color{60, 110, 170, 255} : Color{25, 28, 36, 120},
+        .PressedColor = canGoNext ? Color{25, 45, 75, 255} : Color{25, 28, 36, 120},
+        .TextColor    = canGoNext ? Colors::White : Color{75, 80, 95, 160},
+        .FontId = m_fontId,
+        .FontSize = 46.0f
+    });
+    m_levelSelectEntities.push_back(rightBtn);
+
+    if (totalPages > 1)
+    {
+        std::string pageStr = "PAGE " + std::to_string(m_levelSelectPage + 1) + " / " + std::to_string(totalPages);
+        Entity pageTxt = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
+            .Text = pageStr,
+            .Position = {0.0f, 255.0f},
+            .FontId = m_fontId,
+            .FontSize = 24.0f,
+            .Tint = Color{180, 200, 230, 220}
+        });
+        m_levelSelectEntities.push_back(pageTxt);
+    }
+
+    // Back Button
+    Entity backBtn = UIFactory::CreateButton(m_registry, m_levelSelectCanvas, ButtonDescriptor{
+        .Text = "<- BACK [ESC]",
+        .OnClick = [this]() {
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            CloseLevelSelectModal();
+        },
+        .Position = {0.0f, 320.0f},
+        .Size = {300.0f, 52.0f},
+        .DefaultColor = Color{95, 35, 42, 255},
+        .HoverColor = Color{135, 50, 60, 255},
+        .PressedColor = Color{65, 25, 30, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 28.0f
+    });
+    m_levelSelectEntities.push_back(backBtn);
+}
+
+void GameUIController::OnRender(GameContext& context)
+{
+    if (m_levelSelectCanvas == NULL_ENTITY || !m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas) ||
+        !m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled)
+    {
+        return;
+    }
+
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+    const float screenCenterX = viewSize.X * 0.5f;
+    const float screenCenterY = viewSize.Y * 0.5f;
+
+    auto& levelManager = m_scene.GetLevelManager();
+    const int totalLevels = levelManager.GetLevelCount();
+    const int startLevelIndex = m_levelSelectPage * kInGameCardsPerPage;
+    const int levelsOnThisPage = std::clamp(totalLevels - startLevelIndex, 0, kInGameCardsPerPage);
+
+    constexpr float totalSpan = static_cast<float>(kInGameCardsPerPage) * kInGameCardW + static_cast<float>(kInGameCardsPerPage - 1) * kInGameCardGap;
+    constexpr float startX = -(totalSpan - kInGameCardW) * 0.5f;
+    constexpr float stepX = kInGameCardW + kInGameCardGap;
+
+    for (int slot = 0; slot < levelsOnThisPage; ++slot)
+    {
+        const int levelIndex = startLevelIndex + slot;
+        const int levelNum = levelIndex + 1;
+        const bool isUnlocked = levelManager.IsLevelUnlocked(levelNum);
+        const bool isSelected = (levelIndex == m_selectedLevelCard);
+        const bool isHovered = (levelIndex == m_hoveredLevelCard);
+
+        const float cX = screenCenterX + startX + static_cast<float>(slot) * stepX;
+        const float cY = screenCenterY + kInGameCardCenterY;
+
+        // 1. Hover & Selection Outline Feedbacks
+        if (isSelected)
+        {
+            const float pulse = (std::sin(m_levelSelectAnimTime * 6.0f) + 1.0f) * 0.5f;
+            const uint8_t alpha = static_cast<uint8_t>(200 + pulse * 55.0f);
+            context.Render.DrawRectangleOutline(kInGameCardW + 6.0f, kInGameCardH + 6.0f, Transform2D{Vector2f{cX, cY}}, Color{255, 215, 0, alpha}, 3.0f);
+        }
+        else if (isHovered && isUnlocked)
+        {
+            context.Render.DrawRectangleOutline(kInGameCardW + 4.0f, kInGameCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{80, 220, 255, 230}, 2.5f);
+        }
+        else if (isHovered && !isUnlocked)
+        {
+            context.Render.DrawRectangleOutline(kInGameCardW + 4.0f, kInGameCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{220, 60, 70, 180}, 2.0f);
+        }
+        else
+        {
+            const Color borderCol = isUnlocked ? Color{60, 95, 140, 140} : Color{45, 50, 65, 120};
+            context.Render.DrawRectangleOutline(kInGameCardW, kInGameCardH, Transform2D{Vector2f{cX, cY}}, borderCol, 1.5f);
+        }
+
+        // 2. Thumbnail Frame Outline
+        const float thumbBoxX = cX;
+        const float thumbBoxY = cY - 50.0f;
+        const Color frameColor = isSelected ? Color{255, 215, 0, 200} : (isUnlocked ? Color{70, 140, 210, 160} : Color{50, 55, 70, 120});
+        context.Render.DrawRectangleOutline(210.0f, 96.0f, Transform2D{Vector2f{thumbBoxX, thumbBoxY}}, frameColor, 1.5f);
+
+        // 3. Level Pattern Miniature (Brick layout preview)
+        if (static_cast<size_t>(levelIndex) < m_levelThumbnails.size())
+        {
+            const auto& thumb = m_levelThumbnails[static_cast<size_t>(levelIndex)];
+            for (const auto& b : thumb.Bricks)
+            {
+                Color brickTint = b.Tint;
+                if (!isUnlocked)
+                {
+                    uint8_t gray = static_cast<uint8_t>(b.Tint.r * 0.15f + b.Tint.g * 0.15f + b.Tint.b * 0.15f);
+                    brickTint = Color{gray, gray, gray, 120};
+                }
+                context.Render.DrawRectangle(b.W, b.H, Transform2D{Vector2f{thumbBoxX + b.RelX, thumbBoxY + b.RelY}}, brickTint);
+            }
+        }
+
+        // 4. Locked overlay over preview if locked
+        if (!isUnlocked)
+        {
+            context.Render.DrawRectangle(206.0f, 92.0f, Transform2D{Vector2f{thumbBoxX, thumbBoxY}}, Color{0, 0, 0, 160});
+            context.Render.DrawText("LOCKED", m_fontId, 22.0f, Transform2D{Vector2f{thumbBoxX - 35.0f, thumbBoxY - 10.0f}}, Color{200, 60, 70, 220});
+        }
+    }
 }

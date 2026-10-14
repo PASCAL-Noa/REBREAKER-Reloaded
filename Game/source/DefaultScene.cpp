@@ -1,5 +1,6 @@
 #include "Scenes/DefaultScene.h"
 #include "Scenes/MenuScene.h"
+#include "Scenes/LevelSelectScene.h"
 #include "Scenes/Sandbox.h"
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleAudio.h"
@@ -44,6 +45,7 @@ void DefaultScene::OnUpdate(float dt, GameContext& context)
     else if (context.Input.IsKeyPress(KeyCode::F6)) context.Scenes.LoadScene<SampleTween>();
     else if (context.Input.IsKeyPress(KeyCode::F7)) context.Scenes.LoadScene<SampleUI>();
     else if (context.Input.IsKeyPress(KeyCode::F8)) context.Scenes.LoadScene<SampleRenderLayer>();
+    else if (context.Input.IsKeyPress(KeyCode::F9)) context.Scenes.LoadScene<LevelSelectScene>();
     else if (context.Input.IsKeyPress(KeyCode::F12) || context.Input.IsKeyPress(KeyCode::Num0))
     {
         context.Scenes.LoadScene<MenuScene>();
@@ -58,7 +60,14 @@ void DefaultScene::OnRender(GameContext& context)
 
 void DefaultScene::OnDestroy(GameContext& context)
 {
-    StopAllAudio();
+    if (mp_context)
+    {
+        mp_context->Audio.StopSfx();
+        if (!PreservesMusicOnDestroy())
+        {
+            mp_context->Audio.StopMusic();
+        }
+    }
     Scene::OnDestroy(context);
 }
 
@@ -81,6 +90,11 @@ void DefaultScene::PlaySfx(uint32_t id, float volume, float pitch, float pan) co
 void DefaultScene::PlayMusic(const std::string& filepath, float volume, bool loop) const
 {
     if (mp_context) mp_context->Audio.PlayMusic(filepath, volume, loop);
+}
+
+void DefaultScene::FadeToMusic(const std::string& filepath, float fadeDuration, float volume, bool loop) const
+{
+    if (mp_context) mp_context->Audio.FadeToMusic(filepath, fadeDuration, volume, loop);
 }
 
 void DefaultScene::StopMusic() const

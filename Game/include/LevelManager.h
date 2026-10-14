@@ -31,6 +31,8 @@ public:
     [[nodiscard]] int GetUnlockedLevel() const; // 1-based (highest unlocked level)
     void UnlockLevel(int levelNumber);
     [[nodiscard]] bool IsLevelUnlocked(int levelNumber) const;
+    [[nodiscard]] int GetHighestClearedLevel() const;
+    void SetHighestClearedLevel(int levelNumber);
 
     // High Scores per level (PlayerPrefs persisted)
     [[nodiscard]] uint32_t GetHighScoreForLevel(int levelNumber) const;

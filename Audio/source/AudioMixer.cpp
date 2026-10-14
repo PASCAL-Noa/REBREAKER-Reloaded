@@ -6,6 +6,7 @@
 #include <chrono>
 #include <algorithm>
 #include <iostream>
+#include <memory>
 
 struct SoundInstance
 {
@@ -13,12 +14,28 @@ struct SoundInstance
     sf::Sound sound;
 };
 
+struct MusicTrack
+{
+    std::unique_ptr<sf::Music> music;
+    std::string path;
+    float baseVolume = 100.0f;
+    float currentVolume = 100.0f;
+    float startVolume = 100.0f;
+    float targetVolume = 100.0f;
+    float fadeDuration = 0.0f;
+    float fadeTimer = 0.0f;
+    bool isFading = false;
+    bool isLooping = false;
+};
+
 struct AudioMixer::Impl
 {
     ResourceManager& resourceManager;
     std::list<SoundInstance> sfxPool;
     std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> lastTriggerTime;
-    sf::Music music;
+
+    MusicTrack activeTrack;
+    MusicTrack fadingTrack;
 
     float masterVolume = 100.0f;
     float sfxVolume = 100.0f;
@@ -35,6 +52,11 @@ struct AudioMixer::Impl
             return item.sound.getStatus() == sf::SoundSource::Status::Stopped;
         });
     }
+
+    [[nodiscard]] float GetEffectiveMusicVolume(float rawVolume) const
+    {
+        return rawVolume * (musicVolume / 100.0f) * (masterVolume / 100.0f);
+    }
 };
 
 AudioMixer::AudioMixer(ResourceManager& resourceManager)
@@ -47,6 +69,66 @@ AudioMixer::~AudioMixer()
 
 AudioMixer::AudioMixer(AudioMixer&&) noexcept = default;
 AudioMixer& AudioMixer::operator=(AudioMixer&&) noexcept = default;
+
+void AudioMixer::Update(float dt) const
+{
+    if (!mp_impl) return;
+
+    mp_impl->CleanUpSfx();
+
+    // 1. Active track fade update
+    if (mp_impl->activeTrack.music &&
+        mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+    {
+        if (mp_impl->activeTrack.isFading && mp_impl->activeTrack.fadeDuration > 0.0f)
+        {
+            mp_impl->activeTrack.fadeTimer += dt;
+            float t = std::clamp(mp_impl->activeTrack.fadeTimer / mp_impl->activeTrack.fadeDuration, 0.0f, 1.0f);
+            mp_impl->activeTrack.currentVolume = mp_impl->activeTrack.startVolume + (mp_impl->activeTrack.targetVolume - mp_impl->activeTrack.startVolume) * t;
+            if (t >= 1.0f)
+            {
+                mp_impl->activeTrack.isFading = false;
+                mp_impl->activeTrack.currentVolume = mp_impl->activeTrack.targetVolume;
+            }
+        }
+        mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(mp_impl->activeTrack.currentVolume));
+    }
+    else if (mp_impl->activeTrack.music &&
+             mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Stopped)
+    {
+        mp_impl->activeTrack.music.reset();
+        mp_impl->activeTrack = MusicTrack{};
+    }
+
+    // 2. Fading-out track update
+    if (mp_impl->fadingTrack.music &&
+        mp_impl->fadingTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+    {
+        if (mp_impl->fadingTrack.isFading && mp_impl->fadingTrack.fadeDuration > 0.0f)
+        {
+            mp_impl->fadingTrack.fadeTimer += dt;
+            float t = std::clamp(mp_impl->fadingTrack.fadeTimer / mp_impl->fadingTrack.fadeDuration, 0.0f, 1.0f);
+            mp_impl->fadingTrack.currentVolume = mp_impl->fadingTrack.startVolume + (mp_impl->fadingTrack.targetVolume - mp_impl->fadingTrack.startVolume) * t;
+            if (t >= 1.0f)
+            {
+                mp_impl->fadingTrack.isFading = false;
+                mp_impl->fadingTrack.music->stop();
+                mp_impl->fadingTrack.music.reset();
+                mp_impl->fadingTrack = MusicTrack{};
+            }
+            else
+            {
+                mp_impl->fadingTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(mp_impl->fadingTrack.currentVolume));
+            }
+        }
+    }
+    else if (mp_impl->fadingTrack.music &&
+             mp_impl->fadingTrack.music->getStatus() == sf::SoundSource::Status::Stopped)
+    {
+        mp_impl->fadingTrack.music.reset();
+        mp_impl->fadingTrack = MusicTrack{};
+    }
+}
 
 void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan) const
 {
@@ -108,16 +190,66 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
     newSound.play();
 }
 
+void AudioMixer::StopSfx() const
+{
+    if (!mp_impl) return;
+    for (auto& item : mp_impl->sfxPool)
+    {
+        item.sound.stop();
+    }
+    mp_impl->sfxPool.clear();
+    mp_impl->lastTriggerTime.clear();
+}
+
 void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop) const
 {
     if (!mp_impl) return;
 
-    if (mp_impl->music.openFromFile(filepath))
+    // If the exact same music is ALREADY playing, simply update volume and looping without interrupting
+    if (mp_impl->activeTrack.music &&
+        mp_impl->activeTrack.path == filepath &&
+        mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
     {
-        float finalVolume = volume * (mp_impl->musicVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
-        mp_impl->music.setVolume(finalVolume);
-        mp_impl->music.setLooping(loop);
-        mp_impl->music.play();
+        mp_impl->activeTrack.baseVolume = volume;
+        mp_impl->activeTrack.targetVolume = volume;
+        mp_impl->activeTrack.currentVolume = volume;
+        mp_impl->activeTrack.isFading = false;
+        mp_impl->activeTrack.isLooping = loop;
+        mp_impl->activeTrack.music->setLooping(loop);
+        mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(volume));
+        return;
+    }
+
+    // Stop any existing tracks
+    if (mp_impl->fadingTrack.music)
+    {
+        mp_impl->fadingTrack.music->stop();
+        mp_impl->fadingTrack.music.reset();
+        mp_impl->fadingTrack = MusicTrack{};
+    }
+    if (mp_impl->activeTrack.music)
+    {
+        mp_impl->activeTrack.music->stop();
+        mp_impl->activeTrack.music.reset();
+        mp_impl->activeTrack = MusicTrack{};
+    }
+
+    auto newMusic = std::make_unique<sf::Music>();
+    if (newMusic->openFromFile(filepath))
+    {
+        mp_impl->activeTrack.music = std::move(newMusic);
+        mp_impl->activeTrack.path = filepath;
+        mp_impl->activeTrack.baseVolume = volume;
+        mp_impl->activeTrack.currentVolume = volume;
+        mp_impl->activeTrack.startVolume = volume;
+        mp_impl->activeTrack.targetVolume = volume;
+        mp_impl->activeTrack.fadeDuration = 0.0f;
+        mp_impl->activeTrack.fadeTimer = 0.0f;
+        mp_impl->activeTrack.isFading = false;
+        mp_impl->activeTrack.isLooping = loop;
+        mp_impl->activeTrack.music->setLooping(loop);
+        mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(volume));
+        mp_impl->activeTrack.music->play();
     }
     else
     {
@@ -125,10 +257,127 @@ void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop)
     }
 }
 
+void AudioMixer::FadeToMusic(const std::string& filepath, float fadeDuration, float volume, bool loop) const
+{
+    if (!mp_impl) return;
+
+    // If the exact same music is ALREADY playing, don't restart or cut
+    if (mp_impl->activeTrack.music &&
+        mp_impl->activeTrack.path == filepath &&
+        mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+    {
+        mp_impl->activeTrack.baseVolume = volume;
+        mp_impl->activeTrack.targetVolume = volume;
+        mp_impl->activeTrack.isLooping = loop;
+        mp_impl->activeTrack.music->setLooping(loop);
+        if (mp_impl->activeTrack.isFading && mp_impl->activeTrack.targetVolume < mp_impl->activeTrack.startVolume)
+        {
+            mp_impl->activeTrack.isFading = false;
+            mp_impl->activeTrack.currentVolume = volume;
+            mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(volume));
+        }
+        return;
+    }
+
+    if (fadeDuration <= 0.05f)
+    {
+        PlayMusic(filepath, volume, loop);
+        return;
+    }
+
+    // Move currently active music to fadingTrack to crossfade it out
+    if (mp_impl->activeTrack.music &&
+        mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+    {
+        if (mp_impl->fadingTrack.music)
+        {
+            mp_impl->fadingTrack.music->stop();
+            mp_impl->fadingTrack.music.reset();
+        }
+        mp_impl->fadingTrack = std::move(mp_impl->activeTrack);
+        mp_impl->fadingTrack.startVolume = mp_impl->fadingTrack.currentVolume;
+        mp_impl->fadingTrack.targetVolume = 0.0f;
+        mp_impl->fadingTrack.fadeDuration = fadeDuration;
+        mp_impl->fadingTrack.fadeTimer = 0.0f;
+        mp_impl->fadingTrack.isFading = true;
+    }
+    else
+    {
+        mp_impl->activeTrack = MusicTrack{};
+    }
+
+    auto newMusic = std::make_unique<sf::Music>();
+    if (newMusic->openFromFile(filepath))
+    {
+        mp_impl->activeTrack.music = std::move(newMusic);
+        mp_impl->activeTrack.path = filepath;
+        mp_impl->activeTrack.baseVolume = volume;
+        mp_impl->activeTrack.currentVolume = 0.0f;
+        mp_impl->activeTrack.startVolume = 0.0f;
+        mp_impl->activeTrack.targetVolume = volume;
+        mp_impl->activeTrack.fadeDuration = fadeDuration;
+        mp_impl->activeTrack.fadeTimer = 0.0f;
+        mp_impl->activeTrack.isFading = true;
+        mp_impl->activeTrack.isLooping = loop;
+        mp_impl->activeTrack.music->setLooping(loop);
+        mp_impl->activeTrack.music->setVolume(0.0f);
+        mp_impl->activeTrack.music->play();
+    }
+    else
+    {
+        std::cerr << "[AudioMixer] Warning: Failed to open music file \"" << filepath << "\".\n";
+    }
+}
+
+void AudioMixer::FadeOutMusic(float fadeDuration) const
+{
+    if (!mp_impl) return;
+
+    if (!mp_impl->activeTrack.music ||
+        mp_impl->activeTrack.music->getStatus() != sf::SoundSource::Status::Playing)
+    {
+        return;
+    }
+
+    if (fadeDuration <= 0.05f)
+    {
+        StopMusic();
+        return;
+    }
+
+    if (mp_impl->fadingTrack.music)
+    {
+        mp_impl->fadingTrack.music->stop();
+        mp_impl->fadingTrack.music.reset();
+    }
+
+    mp_impl->fadingTrack = std::move(mp_impl->activeTrack);
+    mp_impl->fadingTrack.startVolume = mp_impl->fadingTrack.currentVolume;
+    mp_impl->fadingTrack.targetVolume = 0.0f;
+    mp_impl->fadingTrack.fadeDuration = fadeDuration;
+    mp_impl->fadingTrack.fadeTimer = 0.0f;
+    mp_impl->fadingTrack.isFading = true;
+
+    mp_impl->activeTrack = MusicTrack{};
+}
+
 void AudioMixer::StopMusic() const
 {
     if (!mp_impl) return;
-    mp_impl->music.stop();
+
+    if (mp_impl->activeTrack.music)
+    {
+        mp_impl->activeTrack.music->stop();
+        mp_impl->activeTrack.music.reset();
+    }
+    mp_impl->activeTrack = MusicTrack{};
+
+    if (mp_impl->fadingTrack.music)
+    {
+        mp_impl->fadingTrack.music->stop();
+        mp_impl->fadingTrack.music.reset();
+    }
+    mp_impl->fadingTrack = MusicTrack{};
 }
 
 void AudioMixer::SetMasterVolume(float volume) const
@@ -153,22 +402,48 @@ void AudioMixer::SetMusicVolume(float volume) const
 {
     if (!mp_impl) return;
     mp_impl->musicVolume = volume;
-    float finalVolume = mp_impl->musicVolume * (mp_impl->masterVolume / 100.0f);
-    mp_impl->music.setVolume(finalVolume);
+    if (mp_impl->activeTrack.music && mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+    {
+        mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(mp_impl->activeTrack.currentVolume));
+    }
+    if (mp_impl->fadingTrack.music && mp_impl->fadingTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+    {
+        mp_impl->fadingTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(mp_impl->fadingTrack.currentVolume));
+    }
 }
 
 void AudioMixer::StopAll() const
 {
-    if (!mp_impl) return;
-    mp_impl->sfxPool.clear();
-    mp_impl->lastTriggerTime.clear();
-    mp_impl->music.stop();
+    StopSfx();
+    StopMusic();
 }
 
 bool AudioMixer::IsMusicPlaying() const
 {
     if (!mp_impl) return false;
-    return mp_impl->music.getStatus() == sf::SoundSource::Status::Playing;
+    if (mp_impl->activeTrack.music && mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+        return true;
+    if (mp_impl->fadingTrack.music && mp_impl->fadingTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+        return true;
+    return false;
+}
+
+const std::string& AudioMixer::GetCurrentMusicPath() const
+{
+    static const std::string kEmpty;
+    if (!mp_impl) return kEmpty;
+    return mp_impl->activeTrack.path;
+}
+
+float AudioMixer::GetMusicTimeRemaining() const
+{
+    if (!mp_impl || !mp_impl->activeTrack.music) return -1.0f;
+    if (mp_impl->activeTrack.music->getStatus() != sf::SoundSource::Status::Playing) return -1.0f;
+    if (mp_impl->activeTrack.isLooping) return 999999.0f;
+
+    float dur = mp_impl->activeTrack.music->getDuration().asSeconds();
+    float offset = mp_impl->activeTrack.music->getPlayingOffset().asSeconds();
+    return std::max(0.0f, dur - offset);
 }
 
 float AudioMixer::GetSfxVolume() const

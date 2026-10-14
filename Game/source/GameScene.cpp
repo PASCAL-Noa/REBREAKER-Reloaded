@@ -261,6 +261,7 @@ void GameScene::OnInit(GameContext& context)
     m_playlist.AddTrack(context, "Resources/audio/music/Game-2.ogg");
     m_playlist.AddTrack(context, "Resources/audio/music/Game-3.ogg");
     m_playlist.AddTrack(context, "Resources/audio/music/Game-4.ogg");
+    m_playlist.PlayNext(context, 1.5f);
     m_lives = PlayerPrefs::GetInt("Lives", 3);
 
     int startLevel = PlayerPrefs::GetInt("SelectedLevel", 0);
@@ -270,6 +271,16 @@ void GameScene::OnInit(GameContext& context)
 
     mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 5);
 
+    class PauseToPlayCondition : public Condition<GameScene>
+    {
+    public:
+        bool OnTest(GameScene* pOwner) override
+        {
+            if (!pOwner || !pOwner->CanUnpause()) return false;
+            return pOwner->GetContext()->Input.IsKeyPress(KeyCode::Escape);
+        }
+    };
+
     State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
     playingState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Paused)));
     playingState->AddTransition(new Transition<GameScene>(new LivesCondition<GameScene>(), static_cast<int>(SceneState::GameOver)));
@@ -277,7 +288,7 @@ void GameScene::OnInit(GameContext& context)
     playingState->AddTransition(new Transition<GameScene>(new VictoryCondition<GameScene>(), static_cast<int>(SceneState::Victory)));
 
     State<GameScene>* pauseState = mp_state_machine->CreateState(static_cast<int>(SceneState::Paused));
-    pauseState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Playing)));
+    pauseState->AddTransition(new Transition<GameScene>(new PauseToPlayCondition(), static_cast<int>(SceneState::Playing)));
 
     State<GameScene>* gameOverState = mp_state_machine->CreateState(static_cast<int>(SceneState::GameOver));
     gameOverState->AddAction(new GameOverAction<GameScene>());
@@ -449,6 +460,10 @@ void GameScene::OnRender(GameContext& context)
 
     DrawDefaultUI(context, "REBREAKER", stats);
     UISystem::OnRender(m_registry, context);
+    if (m_uiController)
+    {
+        m_uiController->OnRender(context);
+    }
 }
 
 uint32_t GameScene::GetPostProcessShader() const
@@ -730,6 +745,7 @@ void GameScene::AdvanceToNextLevel()
 
     int curLevel = m_levelManager.GetCurrentLevelNumber();
     m_levelManager.SetHighScoreForLevel(curLevel, m_scoreManager.GetScore());
+    m_levelManager.SetHighestClearedLevel(curLevel);
 
     int nextLevel = curLevel + 1;
     m_levelManager.UnlockLevel(nextLevel);
@@ -744,7 +760,7 @@ void GameScene::StartLevelTransition()
 {
     if (mp_context)
     {
-        mp_context->Audio.StopMusic();
+        mp_context->Audio.FadeOutMusic(0.8f);
         if (m_levelClearSfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_levelClearSfxId, 100.0f);
@@ -764,7 +780,7 @@ void GameScene::CompleteLevelTransition()
     m_levelTransitionTimer = 0.0f;
     if (mp_context)
     {
-        m_playlist.PlayNext(*mp_context);
+        m_playlist.PlayNext(*mp_context, 1.5f);
     }
 }
 
@@ -789,6 +805,7 @@ void GameScene::OnGameOverEnter()
 
     if (m_uiController)
     {
+        m_levelManager.SetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber(), m_scoreManager.GetScore());
         m_uiController->SetupGameOver(m_scoreManager.GetScore(), m_levelManager.GetCurrentLevelNumber());
     }
 }
@@ -810,6 +827,10 @@ void GameScene::OnGameOverExit()
 void GameScene::OnVictoryEnter()
 {
     m_scoreManager.BreakCombo();
+
+    int curLevel = m_levelManager.GetCurrentLevelNumber();
+    m_levelManager.SetHighScoreForLevel(curLevel, m_scoreManager.GetScore());
+    m_levelManager.SetHighestClearedLevel(curLevel);
 
     if (mp_context)
     {
@@ -841,6 +862,15 @@ void GameScene::OnVictoryExit()
     LoadLevel(0, /*preserveStats=*/true);
 }
 
+bool GameScene::CanUnpause() const
+{
+    if (m_uiController && m_uiController->IsModalOrSubMenuOpen())
+    {
+        return false;
+    }
+    return true;
+}
+
 bool GameScene::IsTypingName()
 {
     return m_uiController && m_uiController->IsTypingName();
@@ -870,8 +900,7 @@ void GameScene::FullReset()
 {
     if (mp_context)
     {
-        mp_context->Audio.StopMusic();
-        m_playlist.PlayNext(*mp_context);
+        m_playlist.PlayNext(*mp_context, 1.0f);
     }
     m_levelManager.ResetToFirstLevel();
     LoadLevel(0, /*preserveStats=*/false);
