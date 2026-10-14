@@ -15,6 +15,8 @@
 #include "LevelManager.h"
 #include "LeaderboardManager.h"
 #include "UI/GameUIController.h"
+#include "AmbientBackground.h"
+#include "Data/PostProcessParams.h"
 #include <vector>
 #include <memory>
 
@@ -45,6 +47,11 @@ public:
     void    OnRender(GameContext& context) override;
     void    OnDestroy(GameContext& context) override;
     [[nodiscard]] uint32_t  GetPostProcessShader() const override;
+    [[nodiscard]] PostProcessParams GetPostProcessParams() const override;
+    void    TriggerPostProcessFlash(float caIntensity, float vignetteIntensity, const Color& vignetteColor, float flashIntensity = 0.0f, const Color& flashColor = Colors::White);
+    void    UpdateComboBackgroundColor(uint32_t comboMultiplier);
+    void    ApplyLevelTheme(int levelNumber);
+    [[nodiscard]] const LevelTheme& GetCurrentTheme() const { return m_currentTheme; }
 
     [[nodiscard]] const GameContext*    GetContext() const { return mp_context; }
     [[nodiscard]] int     GetLives() const { return m_lives; }
@@ -166,4 +173,11 @@ protected:
 
     // Dedicated UI Controller
     std::unique_ptr<GameUIController> m_uiController;
+
+    // Ambient background & dynamic shader effects
+    AmbientBackground   m_ambientBackground;
+    LevelTheme          m_currentTheme{};
+    PostProcessParams   m_postProcessParams;
+    Entity              m_bgTweenEntity = NULL_ENTITY;
+    uint32_t            m_currentComboMultiplier = 0;
 };

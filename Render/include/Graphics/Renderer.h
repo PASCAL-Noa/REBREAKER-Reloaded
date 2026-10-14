@@ -5,6 +5,7 @@
 #include "Data/BlendMode.h"
 #include "Data/PrimitiveType.h"
 #include "Data/Vertex.h"
+#include "Data/PostProcessParams.h"
 #include "Math/Vector2.h"
 #include <string>
 
@@ -19,7 +20,7 @@ public:
     ~Renderer() = default;
 
     void                BeginDraw(Color clearColor = Colors::Black);
-    void                EndDraw(uint32_t postProcessShaderId = 0);
+    void                EndDraw(uint32_t postProcessShaderId = 0, const PostProcessParams& params = PostProcessParams{});
 
     void                SetCamera(const Camera2D& camera);
     void                ResetCamera();
