@@ -49,6 +49,7 @@ public:
     [[nodiscard]] const GameContext*    GetContext() const { return mp_context; }
     [[nodiscard]] int     GetLives() const { return m_lives; }
     [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
+    [[nodiscard]] bool    CanUnpause() const;
     void    FullReset();
 
     // Level Management & Progression

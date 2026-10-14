@@ -26,6 +26,9 @@ public:
     void    OnDestroy(GameContext& context) override;
     [[nodiscard]] uint32_t GetPostProcessShader() const override;
 
+protected:
+    [[nodiscard]] bool PreservesMusicOnDestroy() const override { return true; }
+
 private:
     void    InitRetroBackground(const GameContext& context);
     void    UpdateRetroBackground(float dt, const GameContext& context);
@@ -40,7 +43,6 @@ private:
     void    CreateCheatsTab(const GameContext& context);
     void    OpenSettingsTab(Entity targetCanvas);
 
-    void    CreateLevelSelectModal(const GameContext& context);
     void    CreateLeaderboardModal(const GameContext& context);
     void    CreateDebugModal(const GameContext& context);
 
@@ -60,7 +62,6 @@ private:
     Entity  m_cheatsCanvas = NULL_ENTITY;
     Entity  m_activeTabCanvas = NULL_ENTITY;
     Entity  m_cheatsTabBtn = NULL_ENTITY;
-    Entity  m_levelSelectCanvas = NULL_ENTITY;
     Entity  m_leaderboardCanvas = NULL_ENTITY;
     Entity  m_debugCanvas = NULL_ENTITY;
     Entity  m_activeModal = NULL_ENTITY;
@@ -77,6 +78,7 @@ private:
     LevelManager        m_levelManager;
 
     uint32_t            m_clickSfxId = 0;
+    uint32_t            m_bounceSfxId = 0;
     uint32_t            m_shaderId = 0;
 
     std::vector<StarParticle> m_stars;

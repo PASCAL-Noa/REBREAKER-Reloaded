@@ -6,6 +6,7 @@
 #include "Events/GameplayEvents.h"
 #include "UI/TextFeedback.h"
 #include "LeaderboardManager.h"
+#include "LevelThumbnail.h"
 #include <vector>
 #include <string>
 #include <memory>
@@ -50,6 +51,13 @@ public:
     // Text feedback
     void SpawnComboText(const Vector2f& worldPos, int comboMultiplier, const Camera2D& camera);
 
+    void OnRender(GameContext& context);
+
+    [[nodiscard]] bool IsModalOrSubMenuOpen() const;
+    void CloseSettingsLayout();
+    void OpenLevelSelectModal(Entity sourceCanvas);
+    void CloseLevelSelectModal();
+
     // Access to UI canvas
     [[nodiscard]] Entity GetMainUICanvas() const noexcept { return m_uiCanvas; }
 
@@ -65,6 +73,9 @@ private:
     void CreateInputsTab();
     void CreateGamerulesTab();
     void CreateCheatsTab();
+    void CreateLevelSelectModal();
+    void RebuildLevelSelectCards();
+    void ClearLevelSelectCards();
     void CreatePowerUpTesterUI();
     void CreateGameOverMenu();
     void CreateLevelClearMenu();
@@ -130,6 +141,16 @@ private:
     Entity          m_levelClearStatsText = NULL_ENTITY;
     Entity          m_levelClearTimerText = NULL_ENTITY;
     Entity          m_victoryStatsText = NULL_ENTITY;
+
+    // Level Select Modal widgets
+    Entity          m_levelSelectCanvas = NULL_ENTITY;
+    Entity          m_levelSelectSourceCanvas = NULL_ENTITY;
+    std::vector<Entity> m_levelSelectEntities;
+    std::vector<LevelThumbnailData> m_levelThumbnails;
+    int             m_levelSelectPage = 0;
+    int             m_hoveredLevelCard = -1;
+    int             m_selectedLevelCard = 0;
+    float           m_levelSelectAnimTime = 0.0f;
 
     // Text Feedback
     std::unique_ptr<TextFeedback> m_textFeedback;

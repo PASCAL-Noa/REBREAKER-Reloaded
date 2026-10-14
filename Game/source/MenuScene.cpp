@@ -1,5 +1,6 @@
 #include "Scenes/MenuScene.h"
 #include "Scenes/GameScene.h"
+#include "Scenes/LevelSelectScene.h"
 #include "Scenes/Sandbox.h"
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleAudio.h"
@@ -38,7 +39,8 @@ void MenuScene::OnInit(GameContext& context)
     DefaultScene::OnInit(context);
     m_bgColor = Color{8, 10, 16, 255};
 
-    m_clickSfxId = context.Resources.LoadResource("Resources/audio/ball_hit.wav");
+    m_clickSfxId = context.Resources.LoadResource("Resources/audio/sfx/paddle_hit.wav");
+    m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
 
     // Initialize persisted audio & render preferences
@@ -46,6 +48,9 @@ void MenuScene::OnInit(GameContext& context)
     float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
     context.Audio.SetSfxVolume(sfxVol);
     context.Audio.SetMusicVolume(musicVol);
+
+    // Play Main Menu background music in loop
+    context.Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 60.0f, true);
 
     bool vsync = PlayerPrefs::GetBool("VSync", false);
     context.Render.GetWindow().SetVSync(vsync);
@@ -62,7 +67,6 @@ void MenuScene::OnInit(GameContext& context)
     CreateInputsTab(context);
     CreateGamerulesTab(context);
     CreateCheatsTab(context);
-    CreateLevelSelectModal(context);
     CreateLeaderboardModal(context);
     CreateDebugModal(context);
 
@@ -126,7 +130,8 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
         }
         if (context.Input.IsKeyPress(KeyCode::L))
         {
-            OpenModal(m_levelSelectCanvas);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+            context.Scenes.LoadScene<LevelSelectScene>();
             return;
         }
         if (context.Input.IsKeyPress(KeyCode::C) || context.Input.IsKeyPress(KeyCode::H))
@@ -187,6 +192,11 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
         context.Scenes.LoadScene<SampleRenderLayer>();
         return;
     }
+    if (context.Input.IsKeyPress(KeyCode::F9) || (m_activeModal == NULL_ENTITY && context.Input.IsKeyPress(KeyCode::Num9)))
+    {
+        context.Scenes.LoadScene<LevelSelectScene>();
+        return;
+    }
 
     UpdateRetroBackground(dt, context);
 
@@ -236,7 +246,7 @@ void MenuScene::OpenModal(Entity modalCanvas)
 
 void MenuScene::CloseModals()
 {
-    for (Entity canvas : {m_settingsCanvas, m_levelSelectCanvas, m_leaderboardCanvas, m_debugCanvas})
+    for (Entity canvas : {m_settingsCanvas, m_leaderboardCanvas, m_debugCanvas})
     {
         if (canvas != NULL_ENTITY && m_registry.IsAlive(canvas) && m_registry.HasComponent<CanvasComponent>(canvas))
         {
@@ -422,7 +432,7 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .Text = "LEVEL SELECT",
         .OnClick = [&context, this]() {
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
-            OpenModal(m_levelSelectCanvas);
+            context.Scenes.LoadScene<LevelSelectScene>();
         },
         .Position = {0.0f, startY + stepY},
         .Size = {btnWidth, btnHeight},
@@ -620,7 +630,7 @@ void MenuScene::CreateAudioTab(const GameContext& context)
             context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 100.0f);
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .OnPlus = [&context, this]() {
@@ -628,7 +638,7 @@ void MenuScene::CreateAudioTab(const GameContext& context)
             context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 100.0f);
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .BarsOut = &m_sfxVolumeBars,
@@ -929,96 +939,6 @@ void MenuScene::OpenSettingsTab(Entity targetCanvas)
             });
         }
     }
-}
-
-void MenuScene::CreateLevelSelectModal(const GameContext& context)
-{
-    m_levelSelectCanvas = m_registry.CreateEntity();
-    m_registry.AddComponent<CanvasComponent>(m_levelSelectCanvas, CanvasComponent{.IsEnabled = false});
-
-    // Subtle header accent line
-    UIFactory::CreatePanel(m_registry, m_levelSelectCanvas, PanelDescriptor{
-        .Position = {0.0f, -200.0f},
-        .Size = {620.0f, 2.0f},
-        .Tint = Color{60, 200, 120, 180}
-    });
-
-    // Header
-    UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
-        .Text = "LEVEL SELECT",
-        .Position = {0.0f, -250.0f},
-        .FontId = m_fontId,
-        .FontSize = 46.0f,
-        .Tint = Colors::Gold
-    });
-
-    // Level buttons grid
-    int totalLevels = std::clamp(m_levelManager.GetLevelCount(), 1, 6);
-    constexpr float btnW = 380.0f;
-    constexpr float btnH = 54.0f;
-    constexpr float startY = -150.0f;
-    constexpr float stepY = 66.0f;
-
-    for (int i = 0; i < totalLevels; ++i)
-    {
-        const int levelNum = i + 1;
-        const bool unlocked = m_levelManager.IsLevelUnlocked(levelNum);
-        const uint32_t high = m_levelManager.GetHighScoreForLevel(levelNum);
-
-        std::string label = "Level " + std::to_string(levelNum);
-        if (unlocked)
-        {
-            if (high > 0)
-            {
-                label += " (Best: " + std::to_string(high) + ")";
-            }
-            else
-            {
-                label += " [Unlocked]";
-            }
-        }
-        else
-        {
-            label += " [Locked]";
-        }
-
-        Color defaultColor = unlocked ? Color{35, 65, 95, 255} : Color{40, 42, 50, 180};
-        Color hoverColor = unlocked ? Color{50, 95, 140, 255} : Color{40, 42, 50, 180};
-        Color textColor = unlocked ? Colors::White : Color{120, 120, 130, 255};
-
-        UIFactory::CreateButton(m_registry, m_levelSelectCanvas, ButtonDescriptor{
-            .Text = label,
-            .OnClick = [&context, this, unlocked, i]() {
-                if (!unlocked) return;
-                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 90.0f);
-                PlayerPrefs::SetInt("SelectedLevel", i);
-                PlayerPrefs::Save();
-                context.Scenes.LoadScene<GameScene>();
-            },
-            .Position = {0.0f, startY + static_cast<float>(i) * stepY},
-            .Size = {btnW, btnH},
-            .DefaultColor = defaultColor,
-            .HoverColor = hoverColor,
-            .TextColor = textColor,
-            .FontId = m_fontId,
-            .FontSize = 30.0f
-        });
-    }
-
-    // Back Button
-    UIFactory::CreateButton(m_registry, m_levelSelectCanvas, ButtonDescriptor{
-        .Text = "BACK",
-        .OnClick = [this]() {
-            CloseModals();
-        },
-        .Position = {0.0f, 240.0f},
-        .Size = {320.0f, 54.0f},
-        .DefaultColor = Color{100, 35, 40, 255},
-        .HoverColor = Color{140, 50, 60, 255},
-        .PressedColor = Color{70, 25, 30, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f
-    });
 }
 
 void MenuScene::CreateLeaderboardModal(const GameContext& /*context*/)

@@ -145,6 +145,21 @@ bool LevelManager::IsLevelUnlocked(int levelNumber) const
     return levelNumber <= GetUnlockedLevel();
 }
 
+int LevelManager::GetHighestClearedLevel() const
+{
+    return std::max(0, PlayerPrefs::GetInt("HighestClearedLevel", 0));
+}
+
+void LevelManager::SetHighestClearedLevel(int levelNumber)
+{
+    int current = GetHighestClearedLevel();
+    if (levelNumber > current)
+    {
+        PlayerPrefs::SetInt("HighestClearedLevel", levelNumber);
+        PlayerPrefs::Save();
+    }
+}
+
 uint32_t LevelManager::GetHighScoreForLevel(int levelNumber) const
 {
     std::string key1 = "HighScore_Level_" + std::to_string(levelNumber);
@@ -177,7 +192,12 @@ bool LevelManager::SetHighScoreForLevel(int levelNumber, uint32_t score)
 
 void LevelManager::LoadFromPrefs()
 {
+    int cleared = PlayerPrefs::GetInt("HighestClearedLevel", 0);
     m_unlockedLevel = PlayerPrefs::GetInt("UnlockedLevel", 1);
+    if (cleared + 1 > m_unlockedLevel)
+    {
+        m_unlockedLevel = cleared + 1;
+    }
     if (m_unlockedLevel < 1) m_unlockedLevel = 1;
 }
 
