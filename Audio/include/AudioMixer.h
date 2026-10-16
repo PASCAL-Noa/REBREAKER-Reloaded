@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 #include <cstdint>
 #include <memory>
 
@@ -37,6 +38,10 @@ public:
     [[nodiscard]] bool  IsMusicPlaying() const;
     [[nodiscard]] const std::string& GetCurrentMusicPath() const;
     [[nodiscard]] float GetMusicTimeRemaining() const;
+
+    [[nodiscard]] std::vector<std::string> GetAvailableAudioDevices() const;
+    [[nodiscard]] std::string GetCurrentAudioDevice() const;
+    bool SetAudioDevice(const std::string& name) const;
 private:
     struct  Impl;
     std::unique_ptr<Impl> mp_impl;

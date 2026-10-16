@@ -86,29 +86,29 @@ void LevelSelectScene::RebuildUI(GameContext& context)
     m_canvas = m_registry.CreateEntity();
     m_registry.AddComponent<CanvasComponent>(m_canvas, CanvasComponent{.IsEnabled = true});
 
-    // 1. Title & Header
+    // 1. Title & Header (properly spaced from accent line)
     UIFactory::CreateText(m_registry, m_canvas, TextDescriptor{
         .Text = "LEVEL SELECT",
-        .Position = {0.0f, -360.0f},
+        .Position = {0.0f, -380.0f},
         .FontId = m_fontId,
-        .FontSize = 64.0f,
-        .Tint = Colors::Gold
+        .FontSize = 56.0f,
+        .Tint = Color{255, 220, 80, 255}
     });
 
-    // Accent line properly spaced below the title
+    // Accent line with generous breathing room
     UIFactory::CreatePanel(m_registry, m_canvas, PanelDescriptor{
-        .Position = {0.0f, -315.0f},
-        .Size = {640.0f, 3.0f},
-        .Tint = Color{60, 200, 255, 200}
+        .Position = {0.0f, -332.0f},
+        .Size = {680.0f, 3.0f},
+        .Tint = Color{60, 210, 255, 230}
     });
 
-    // Subtitle nicely spaced below the accent line
+    // Subtitle comfortably below the accent line
     UIFactory::CreateText(m_registry, m_canvas, TextDescriptor{
         .Text = "SELECT AN UNLOCKED STAGE  |  PRESS [1-5] OR CLICK CARD",
-        .Position = {0.0f, -280.0f},
+        .Position = {0.0f, -295.0f},
         .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Color{190, 215, 240, 230}
+        .FontSize = 22.0f,
+        .Tint = Color{200, 225, 255, 240}
     });
 
     const int totalLevels = m_levelManager.GetLevelCount();
@@ -133,10 +133,10 @@ void LevelSelectScene::RebuildUI(GameContext& context)
 
         const Vector2f cardCenter = { startX + static_cast<float>(slot) * stepX, kCardCenterY };
 
-        // Card Base Panel (semi-transparent dark background, distinct from text)
+        // Card Base Panel (clean arcade frame, high contrast)
         const Color bgTint = isCleared
-            ? Color{16, 26, 42, 230}
-            : (isUnlocked ? Color{14, 22, 34, 230} : Color{12, 14, 20, 210});
+            ? Color{22, 34, 54, 245}
+            : (isUnlocked ? Color{18, 28, 44, 245} : Color{14, 16, 24, 230});
 
         UIFactory::CreatePanel(m_registry, m_canvas, PanelDescriptor{
             .Position = cardCenter,
@@ -144,12 +144,23 @@ void LevelSelectScene::RebuildUI(GameContext& context)
             .Tint = bgTint
         });
 
+        // Card Header Bar (visually structures and highlights the stage title)
+        const Color headerTint = isCleared
+            ? Color{32, 54, 84, 255}
+            : (isUnlocked ? Color{26, 42, 68, 255} : Color{18, 22, 32, 255});
+
+        UIFactory::CreatePanel(m_registry, m_canvas, PanelDescriptor{
+            .Position = {cardCenter.X, cardCenter.Y - 170.0f},
+            .Size = {kCardW - 8.0f, 62.0f},
+            .Tint = headerTint
+        });
+
         // Stage Title
-        const Color stageColor = isUnlocked ? Colors::Gold : Color{110, 115, 130, 255};
+        const Color stageColor = isUnlocked ? Color{255, 230, 90, 255} : Color{130, 135, 150, 255};
         std::string stageNumStr = (levelNum < 10) ? ("STAGE 0" + std::to_string(levelNum)) : ("STAGE " + std::to_string(levelNum));
         UIFactory::CreateText(m_registry, m_canvas, TextDescriptor{
             .Text = stageNumStr,
-            .Position = {cardCenter.X, cardCenter.Y - 175.0f},
+            .Position = {cardCenter.X, cardCenter.Y - 180.0f},
             .FontId = m_fontId,
             .FontSize = 32.0f,
             .Tint = stageColor
@@ -160,45 +171,45 @@ void LevelSelectScene::RebuildUI(GameContext& context)
         {
             UIFactory::CreateText(m_registry, m_canvas, TextDescriptor{
                 .Text = "[ LOCKED ]",
-                .Position = {cardCenter.X, cardCenter.Y - 140.0f},
+                .Position = {cardCenter.X, cardCenter.Y - 146.0f},
                 .FontId = m_fontId,
-                .FontSize = 24.0f,
-                .Tint = Color{220, 65, 75, 255}
+                .FontSize = 20.0f,
+                .Tint = Color{255, 75, 85, 255}
             });
         }
         else if (isCleared)
         {
             UIFactory::CreateText(m_registry, m_canvas, TextDescriptor{
                 .Text = "[ CLEARED ]",
-                .Position = {cardCenter.X, cardCenter.Y - 140.0f},
+                .Position = {cardCenter.X, cardCenter.Y - 146.0f},
                 .FontId = m_fontId,
-                .FontSize = 24.0f,
-                .Tint = Color{80, 240, 140, 255}
+                .FontSize = 20.0f,
+                .Tint = Color{80, 255, 150, 255}
             });
         }
         else
         {
             UIFactory::CreateText(m_registry, m_canvas, TextDescriptor{
                 .Text = "[ UNLOCKED ]",
-                .Position = {cardCenter.X, cardCenter.Y - 140.0f},
+                .Position = {cardCenter.X, cardCenter.Y - 146.0f},
                 .FontId = m_fontId,
-                .FontSize = 24.0f,
-                .Tint = Color{70, 210, 255, 255}
+                .FontSize = 20.0f,
+                .Tint = Color{80, 220, 255, 255}
             });
         }
 
-        // Thumbnail frame placeholder (preview rendered on top)
+        // Thumbnail frame placeholder (crisp dark background)
         UIFactory::CreatePanel(m_registry, m_canvas, PanelDescriptor{
             .Position = {cardCenter.X, cardCenter.Y - 50.0f},
-            .Size = {210.0f, 96.0f},
-            .Tint = isUnlocked ? Color{8, 12, 18, 240} : Color{8, 8, 10, 240}
+            .Size = {214.0f, 100.0f},
+            .Tint = isUnlocked ? Color{8, 12, 18, 255} : Color{8, 8, 10, 255}
         });
 
-        // High Score Label & Value
-        const Color highLabelColor = isUnlocked ? Color{180, 195, 220, 240} : Color{90, 95, 110, 200};
+        // High Score Section
+        const Color highLabelColor = isUnlocked ? Color{190, 215, 255, 255} : Color{110, 115, 130, 200};
         UIFactory::CreateText(m_registry, m_canvas, TextDescriptor{
-            .Text = "HIGH SCORE",
-            .Position = {cardCenter.X, cardCenter.Y + 30.0f},
+            .Text = "BEST SCORE",
+            .Position = {cardCenter.X, cardCenter.Y + 32.0f},
             .FontId = m_fontId,
             .FontSize = 22.0f,
             .Tint = highLabelColor
@@ -207,13 +218,13 @@ void LevelSelectScene::RebuildUI(GameContext& context)
         const std::string scoreStr = (highScore > 0) ? std::to_string(highScore) : "---";
         const Color scoreColor = (highScore > 0)
             ? Colors::White
-            : (isUnlocked ? Color{130, 140, 160, 200} : Color{80, 85, 95, 180});
+            : (isUnlocked ? Color{150, 165, 190, 220} : Color{90, 95, 110, 180});
 
         UIFactory::CreateText(m_registry, m_canvas, TextDescriptor{
             .Text = scoreStr,
-            .Position = {cardCenter.X, cardCenter.Y + 68.0f},
+            .Position = {cardCenter.X, cardCenter.Y + 70.0f},
             .FontId = m_fontId,
-            .FontSize = 30.0f,
+            .FontSize = 32.0f,
             .Tint = scoreColor
         });
 
@@ -228,9 +239,9 @@ void LevelSelectScene::RebuildUI(GameContext& context)
                 },
                 .Position = {cardCenter.X, cardCenter.Y + 155.0f},
                 .Size = {200.0f, 48.0f},
-                .DefaultColor = Color{35, 90, 55, 255},
-                .HoverColor = Color{50, 140, 85, 255},
-                .PressedColor = Color{20, 60, 35, 255},
+                .DefaultColor = Color{25, 135, 80, 255},
+                .HoverColor = Color{45, 190, 115, 255},
+                .PressedColor = Color{15, 95, 55, 255},
                 .TextColor = Colors::White,
                 .FontId = m_fontId,
                 .FontSize = 26.0f
@@ -243,12 +254,12 @@ void LevelSelectScene::RebuildUI(GameContext& context)
                 .OnClick = nullptr,
                 .Position = {cardCenter.X, cardCenter.Y + 155.0f},
                 .Size = {200.0f, 48.0f},
-                .DefaultColor = Color{35, 38, 48, 160},
-                .HoverColor = Color{35, 38, 48, 160},
-                .PressedColor = Color{35, 38, 48, 160},
-                .TextColor = Color{90, 95, 110, 255},
+                .DefaultColor = Color{35, 40, 50, 200},
+                .HoverColor = Color{35, 40, 50, 200},
+                .PressedColor = Color{35, 40, 50, 200},
+                .TextColor = Color{120, 125, 140, 255},
                 .FontId = m_fontId,
-                .FontSize = 24.0f
+                .FontSize = 22.0f
             });
         }
     }
@@ -341,7 +352,7 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
     DefaultScene::OnUpdate(dt, context);
     mp_context = &context;
 
-    if (context.Input.IsKeyPress(KeyCode::Escape) || context.Input.IsKeyPress(KeyCode::B))
+    if (context.Input.IsMenuCancelTriggered() || context.Input.IsKeyPress(KeyCode::B))
     {
         if (m_clickSfxId != 0)
         {
@@ -352,10 +363,10 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
     }
 
     const int totalLevels = m_levelManager.GetLevelCount();
-    const int totalPages = std::max(1, (totalLevels + kCardsPerPage - 1) / kCardsPerPage);
+    const int totalPages = std::max(1, (totalLevels + kCardsPerPage - 1) / kCardsPerPage);\
 
-    // Left / Right arrow navigation keys
-    if (context.Input.IsKeyPress(KeyCode::Left))
+    // Left / Right page flip (keyboard or gamepad bumpers)
+    if (context.Input.IsKeyPress(KeyCode::Left) || context.Input.IsJoystickButtonPress(0, 4))
     {
         if (m_currentPage > 0)
         {
@@ -364,7 +375,7 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
             RebuildUI(context);
         }
     }
-    else if (context.Input.IsKeyPress(KeyCode::Right))
+    else if (context.Input.IsKeyPress(KeyCode::Right) || context.Input.IsJoystickButtonPress(0, 5))
     {
         if (m_currentPage < totalPages - 1)
         {
@@ -447,31 +458,31 @@ void LevelSelectScene::RenderThumbnailsAndEffects(const GameContext& context) co
         {
             // Vivid pulsating gold outline for selected card
             const float pulse = (std::sin(m_animTime * 6.0f) + 1.0f) * 0.5f;
-            const uint8_t alpha = static_cast<uint8_t>(200 + pulse * 55.0f);
-            context.Render.DrawRectangleOutline(kCardW + 6.0f, kCardH + 6.0f, Transform2D{Vector2f{cX, cY}}, Color{255, 215, 0, alpha}, 3.0f);
+            const uint8_t alpha = static_cast<uint8_t>(210 + pulse * 45.0f);
+            context.Render.DrawRectangleOutline(kCardW + 6.0f, kCardH + 6.0f, Transform2D{Vector2f{cX, cY}}, Color{255, 225, 50, alpha}, 3.5f);
         }
         else if (isHovered && isUnlocked)
         {
-            // Crisp cyan outline on hovered unlocked card
-            context.Render.DrawRectangleOutline(kCardW + 4.0f, kCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{80, 220, 255, 230}, 2.5f);
+            // Crisp glowing cyan outline on hovered unlocked card
+            context.Render.DrawRectangleOutline(kCardW + 4.0f, kCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{60, 230, 255, 255}, 3.0f);
         }
         else if (isHovered && !isUnlocked)
         {
             // Red tint outline on hovered locked card
-            context.Render.DrawRectangleOutline(kCardW + 4.0f, kCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{220, 60, 70, 180}, 2.0f);
+            context.Render.DrawRectangleOutline(kCardW + 4.0f, kCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{240, 70, 80, 220}, 2.5f);
         }
         else
         {
             // Subtle default border outline
-            const Color borderCol = isUnlocked ? Color{60, 95, 140, 140} : Color{45, 50, 65, 120};
+            const Color borderCol = isUnlocked ? Color{70, 115, 170, 200} : Color{50, 55, 75, 150};
             context.Render.DrawRectangleOutline(kCardW, kCardH, Transform2D{Vector2f{cX, cY}}, borderCol, 1.5f);
         }
 
         // 2. Thumbnail Frame Outline
         const float thumbBoxX = cX;
         const float thumbBoxY = cY - 50.0f;
-        const Color frameColor = isSelected ? Color{255, 215, 0, 200} : (isUnlocked ? Color{70, 140, 210, 160} : Color{50, 55, 70, 120});
-        context.Render.DrawRectangleOutline(210.0f, 96.0f, Transform2D{Vector2f{thumbBoxX, thumbBoxY}}, frameColor, 1.5f);
+        const Color frameColor = isSelected ? Color{255, 225, 50, 240} : (isUnlocked ? Color{80, 160, 240, 200} : Color{60, 65, 80, 150});
+        context.Render.DrawRectangleOutline(214.0f, 100.0f, Transform2D{Vector2f{thumbBoxX, thumbBoxY}}, frameColor, 1.8f);
 
         // 3. Level Pattern Miniature (Brick layout preview)
         if (static_cast<size_t>(levelIndex) < m_levelThumbnails.size())

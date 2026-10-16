@@ -457,3 +457,19 @@ float AudioMixer::GetMusicVolume() const
     if (!mp_impl) return 0.0f;
     return mp_impl->musicVolume;
 }
+
+std::vector<std::string> AudioMixer::GetAvailableAudioDevices() const
+{
+    return sf::PlaybackDevice::getAvailableDevices();
+}
+
+std::string AudioMixer::GetCurrentAudioDevice() const
+{
+    auto dev = sf::PlaybackDevice::getDevice();
+    return dev.value_or("Default Device");
+}
+
+bool AudioMixer::SetAudioDevice(const std::string& name) const
+{
+    return sf::PlaybackDevice::setDevice(name);
+}

@@ -1,6 +1,7 @@
 #include "System/Window.h"
 #include "System/InputTranslator.h"
 #include "Graphics/Renderer.h"
+#include <SFML/Window/Joystick.hpp>
 #include <optional>
 
 
@@ -36,6 +37,17 @@ void Window::Display()
 
 bool Window::PollEvents(InputManager& input, Renderer* renderer)
 {
+    static bool s_joysticksInitialized = false;
+    if (!s_joysticksInitialized)
+    {
+        sf::Joystick::update();
+        for (unsigned int i = 0; i < sf::Joystick::Count; ++i)
+        {
+            input.SetJoystickConnected(i, sf::Joystick::isConnected(i));
+        }
+        s_joysticksInitialized = true;
+    }
+
     const auto handleKey = [&input](auto sfKey, bool isPressed)
     {
         if (const KeyCode code = InputTranslator::TranslateKey(sfKey); code != KeyCode::Count)
@@ -65,6 +77,16 @@ bool Window::PollEvents(InputManager& input, Renderer* renderer)
             input.SetMouseWheelDelta(scroll->delta);
         else if (const auto* text = event->getIf<sf::Event::TextEntered>())
             input.AppendEnteredText(text->unicode);
+        else if (const auto* joyConn = event->getIf<sf::Event::JoystickConnected>())
+            input.SetJoystickConnected(joyConn->joystickId, true);
+        else if (const auto* joyDisconn = event->getIf<sf::Event::JoystickDisconnected>())
+            input.SetJoystickConnected(joyDisconn->joystickId, false);
+        else if (const auto* joyPress = event->getIf<sf::Event::JoystickButtonPressed>())
+            input.SetJoystickButton(joyPress->joystickId, joyPress->button, true);
+        else if (const auto* joyRelease = event->getIf<sf::Event::JoystickButtonReleased>())
+            input.SetJoystickButton(joyRelease->joystickId, joyRelease->button, false);
+        else if (const auto* joyMoved = event->getIf<sf::Event::JoystickMoved>())
+            input.SetJoystickAxis(joyMoved->joystickId, static_cast<unsigned int>(joyMoved->axis), joyMoved->position);
         else if (const auto* resize = event->getIf<sf::Event::Resized>())
         {
             m_config.Width = resize->size.x;

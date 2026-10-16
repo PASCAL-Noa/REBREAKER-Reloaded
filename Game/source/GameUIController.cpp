@@ -10,11 +10,13 @@
 #include "ECS/Components/UI/TextComponent.h"
 #include "ECS/Components/UI/TextInputComponent.h"
 #include "ECS/Components/UI/RectTransform.h"
+#include "ECS/Systems/UISystem.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/SpriteComponent.h"
 #include "ECS/Components/TweenComponent.h"
 #include "Math/EasingFunctions.h"
 #include "Core/PlayerPrefs.h"
+#include "Core/InputRemapManager.h"
 #include "Core/GameRules.h"
 #include "AudioMixer.h"
 #include "Graphics/Renderer.h"
@@ -170,8 +172,40 @@ void GameUIController::ShowState(GameUIState state)
 
 void GameUIController::OnUpdate(float dt)
 {
-    // 1. Escape key navigation for submenus / modals
-    if (m_context.Input.IsKeyPress(KeyCode::Escape))
+    // 0. Rebinding key capture
+    if (m_isRebinding && m_rebindAction != InputAction::Count)
+    {
+        KeyCode pressed = m_context.Input.GetLastKeyPressed();
+        if (pressed != KeyCode::Count)
+        {
+            if (pressed == KeyCode::Escape)
+            {
+                m_isRebinding = false;
+                m_rebindAction = InputAction::Count;
+                UpdateInputButtons();
+                return;
+            }
+
+            InputRemapManager::Get().SetBinding(m_rebindAction, pressed);
+            InputRemapManager::Get().SaveToPrefs();
+
+            m_isRebinding = false;
+            m_rebindAction = InputAction::Count;
+            UpdateInputButtons();
+            return;
+        }
+
+        if (m_context.Input.IsJoystickButtonPress(0, 1))
+        {
+            m_isRebinding = false;
+            m_rebindAction = InputAction::Count;
+            UpdateInputButtons();
+            return;
+        }
+    }
+
+    // 1. Escape or Gamepad B navigation for submenus / modals
+    if (m_context.Input.IsMenuCancelTriggered())
     {
         if (m_levelSelectCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas) &&
             m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled)
@@ -203,13 +237,13 @@ void GameUIController::OnUpdate(float dt)
         constexpr float kInGameCardCenterY = 0.0f;
         const int totalPages = std::max(1, (totalLevels + kInGameCardsPerPage - 1) / kInGameCardsPerPage);
 
-        if (m_context.Input.IsKeyPress(KeyCode::Left) && m_levelSelectPage > 0)
+        if ((m_context.Input.IsKeyPress(KeyCode::Left) || m_context.Input.IsJoystickButtonPress(0, 4)) && m_levelSelectPage > 0)
         {
             if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
             m_levelSelectPage--;
             RebuildLevelSelectCards();
         }
-        else if (m_context.Input.IsKeyPress(KeyCode::Right) && m_levelSelectPage < totalPages - 1)
+        else if ((m_context.Input.IsKeyPress(KeyCode::Right) || m_context.Input.IsJoystickButtonPress(0, 5)) && m_levelSelectPage < totalPages - 1)
         {
             if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
             m_levelSelectPage++;
@@ -539,6 +573,30 @@ void GameUIController::UpdatePowerUpTesterStatus(const std::string& statusText)
     }
 }
 
+void GameUIController::NavigatePowerUpTester(int delta)
+{
+    if (m_powerUpTesterButtons.empty()) return;
+    int count = static_cast<int>(m_powerUpTesterButtons.size());
+    m_powerUpTesterIndex = (m_powerUpTesterIndex + delta + count) % count;
+    if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 60.0f, 1.2f);
+}
+
+void GameUIController::ActivatePowerUpTesterSelected()
+{
+    if (m_powerUpTesterButtons.empty()) return;
+    if (m_powerUpTesterIndex < 0 || m_powerUpTesterIndex >= static_cast<int>(m_powerUpTesterButtons.size())) return;
+    Entity btn = m_powerUpTesterButtons[static_cast<size_t>(m_powerUpTesterIndex)];
+    if (m_registry.IsAlive(btn) && m_registry.HasComponent<ButtonComponent>(btn))
+    {
+        auto& bc = m_registry.GetComponent<ButtonComponent>(btn);
+        if (bc.OnClick)
+        {
+            bc.OnClick();
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 85.0f, 1.0f);
+        }
+    }
+}
+
 void GameUIController::SpawnComboText(const Vector2f& worldPos, int comboMultiplier, const Camera2D& camera)
 {
     if (m_textFeedback && m_uiCanvas != NULL_ENTITY)
@@ -634,6 +692,7 @@ void GameUIController::CreatePauseMenu()
             pauseCanvas.IsEnabled = false;
             auto& settingsCanvas = m_registry.GetComponent<CanvasComponent>(m_settingsLayoutCanvas);
             settingsCanvas.IsEnabled = true;
+            OpenSettingsTab(m_audioCanvas);
         },
         .Position = {0, 70.0f},
         .FontId = m_fontId
@@ -841,6 +900,63 @@ void GameUIController::CreateAudioTab()
     UpdateVolumeBars(m_sfxVolumeBars, m_context.Audio.GetSfxVolume());
     UpdateVolumeBars(m_musicVolumeBars, m_context.Audio.GetMusicVolume());
 
+    // Playback Device Selection
+    UIFactory::CreateText(m_registry, m_audioCanvas, TextDescriptor{
+        .Text = "DEVICE",
+        .Position = {rightPanelX * 0.5f - 110.0f, viewY * 0.1f + 45.0f},
+        .FontId = m_fontId,
+        .FontSize = 32.0f,
+        .Tint = Colors::White
+    });
+
+    auto formatDeviceText = [](const std::string& rawName) -> std::string {
+        if (rawName.empty()) return "< DEFAULT DEVICE >";
+        std::string shortName = rawName;
+        if (shortName.length() > 24)
+        {
+            shortName = shortName.substr(0, 22) + "...";
+        }
+        return "< " + shortName + " >";
+    };
+
+    m_audioDeviceBtn = UIFactory::CreateButton(m_registry, m_audioCanvas, ButtonDescriptor{
+        .Text = formatDeviceText(m_context.Audio.GetCurrentAudioDevice()),
+        .OnClick = [this, formatDeviceText]() {
+            auto devices = m_context.Audio.GetAvailableAudioDevices();
+            if (devices.empty()) return;
+
+            std::string current = m_context.Audio.GetCurrentAudioDevice();
+            size_t currentIdx = 0;
+            for (size_t i = 0; i < devices.size(); ++i)
+            {
+                if (devices[i] == current)
+                {
+                    currentIdx = i;
+                    break;
+                }
+            }
+            size_t nextIdx = (currentIdx + 1) % devices.size();
+            std::string newDevice = devices[nextIdx];
+            if (m_context.Audio.SetAudioDevice(newDevice))
+            {
+                PlayerPrefs::SetString("Audio_Device", newDevice);
+                PlayerPrefs::Save();
+                if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            }
+            if (m_registry.HasComponent<TextComponent>(m_audioDeviceBtn))
+            {
+                m_registry.GetComponent<TextComponent>(m_audioDeviceBtn).Text = formatDeviceText(newDevice);
+            }
+        },
+        .Position = {rightPanelX * 0.5f + 250.0f, viewY * 0.1f + 45.0f},
+        .Size = {480.0f, 54.0f},
+        .DefaultColor = Color{40, 55, 80, 255},
+        .HoverColor = Color{60, 85, 120, 255},
+        .PressedColor = Color{25, 38, 55, 255},
+        .FontId = m_fontId,
+        .FontSize = 24.0f
+    });
+
     UIFactory::CreatePanel(m_registry, m_audioCanvas, PanelDescriptor{
         .Position = {rightPanelX, 0.0f},
         .Size = {rightPanelWidth, viewY},
@@ -965,29 +1081,153 @@ void GameUIController::CreateInputsTab()
     m_registry.AddComponent<TweenComponent>(m_inputsCanvas, TweenComponent{});
 
     UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
-        .Text = "INPUTS",
-        .Position = {rightPanelX, -viewY * 0.2f},
+        .Text = "INPUT CONTROLS & REBINDING",
+        .Position = {rightPanelX, -viewY * 0.32f},
         .FontId = m_fontId,
-        .FontSize = 40.0f
+        .FontSize = 38.0f
     });
 
-    UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
-        .Text = "Left: Q",
-        .Position = {rightPanelX, -viewY * 0.1f},
+    UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
+        .Text = "Supports Keyboard & Gamepad (Left Stick / D-Pad / Triggers / A Button)",
+        .Position = {rightPanelX, -viewY * 0.25f},
+        .FontId = m_fontId,
+        .FontSize = 24.0f,
+        .Tint = Color{180, 210, 255, 200}
+    });
+
+    const float startY = -viewY * 0.14f;
+    const float stepY = 60.0f;
+    const Vector2f btnSize{380.0f, 50.0f};
+
+    // Move Left
+    m_leftRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "MOVE LEFT: ...",
+        .OnClick = [this]() {
+            m_isRebinding = true;
+            m_rebindAction = InputAction::MoveLeft;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY},
+        .Size = btnSize,
         .FontId = m_fontId
     });
 
-    UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
-        .Text = "Right: D",
-        .Position = {rightPanelX, viewY * 0.1f - 200.f},
+    // Move Right
+    m_rightRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "MOVE RIGHT: ...",
+        .OnClick = [this]() {
+            m_isRebinding = true;
+            m_rebindAction = InputAction::MoveRight;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY + stepY},
+        .Size = btnSize,
         .FontId = m_fontId
     });
+
+    // Launch Ball / Laser
+    m_launchRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "LAUNCH / LASER: ...",
+        .OnClick = [this]() {
+            m_isRebinding = true;
+            m_rebindAction = InputAction::LaunchBall;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY + stepY * 2.0f},
+        .Size = btnSize,
+        .FontId = m_fontId
+    });
+
+    // Pause Game
+    m_pauseRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "PAUSE: ...",
+        .OnClick = [this]() {
+            m_isRebinding = true;
+            m_rebindAction = InputAction::Pause;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY + stepY * 3.0f},
+        .Size = btnSize,
+        .FontId = m_fontId
+    });
+
+    // Reset Defaults
+    m_resetDefaultsBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "RESET DEFAULT BINDINGS",
+        .OnClick = [this]() {
+            InputRemapManager::Get().LoadDefaults();
+            InputRemapManager::Get().SaveToPrefs();
+            m_isRebinding = false;
+            m_rebindAction = InputAction::Count;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY + stepY * 4.2f},
+        .Size = btnSize,
+        .DefaultColor = Color{120, 60, 60, 255},
+        .HoverColor = Color{160, 80, 80, 255},
+        .PressedColor = Color{90, 40, 40, 255},
+        .FontId = m_fontId
+    });
+
+    // Status / instructions text
+    m_rebindStatusText = UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
+        .Text = "Click a binding button then press any key (or ESC to cancel)",
+        .Position = {rightPanelX, startY + stepY * 5.2f},
+        .FontId = m_fontId,
+        .FontSize = 24.0f,
+        .Tint = Color{255, 230, 100, 230}
+    });
+
+    UpdateInputButtons();
 
     UIFactory::CreatePanel(m_registry, m_inputsCanvas, PanelDescriptor{
         .Position = {rightPanelX, 0.0f},
         .Size = {rightPanelWidth, viewY},
         .Tint = Colors::Transparent
     });
+}
+
+void GameUIController::UpdateInputButtons()
+{
+    const auto formatBtnText = [this](InputAction act, const std::string& prefix, Entity btn)
+    {
+        if (!m_registry.HasComponent<TextComponent>(btn)) return;
+        auto& textComp = m_registry.GetComponent<TextComponent>(btn);
+
+        if (m_isRebinding && m_rebindAction == act)
+        {
+            textComp.Text = prefix + ": [PRESS A KEY...]";
+            return;
+        }
+
+        const auto& b = InputRemapManager::Get().GetBinding(act);
+        std::string keyStr(KeyCodeUtils::ToString(b.PrimaryKey));
+        if (b.SecondaryKey != KeyCode::Count)
+        {
+            keyStr += " / " + std::string(KeyCodeUtils::ToString(b.SecondaryKey));
+        }
+        textComp.Text = prefix + ": " + keyStr;
+    };
+
+    formatBtnText(InputAction::MoveLeft, "MOVE LEFT", m_leftRebindBtn);
+    formatBtnText(InputAction::MoveRight, "MOVE RIGHT", m_rightRebindBtn);
+    formatBtnText(InputAction::LaunchBall, "LAUNCH / LASER", m_launchRebindBtn);
+    formatBtnText(InputAction::Pause, "PAUSE", m_pauseRebindBtn);
+
+    if (m_registry.HasComponent<TextComponent>(m_rebindStatusText))
+    {
+        auto& status = m_registry.GetComponent<TextComponent>(m_rebindStatusText);
+        if (m_isRebinding)
+        {
+            status.Text = "PRESS ANY KEY TO REBIND (OR ESC TO CANCEL)";
+            status.Tint = Color{255, 100, 100, 255};
+        }
+        else
+        {
+            status.Text = "Click a binding button then press any key (or ESC to cancel)";
+            status.Tint = Color{255, 230, 100, 230};
+        }
+    }
 }
 
 void GameUIController::CreateGamerulesTab()
@@ -1075,8 +1315,6 @@ void GameUIController::CreateCheatsTab()
 void GameUIController::OpenSettingsTab(Entity targetCanvas)
 {
     if (m_activeTabCanvas == targetCanvas) {
-        m_registry.GetComponent<CanvasComponent>(targetCanvas).IsEnabled = false;
-        m_activeTabCanvas = NULL_ENTITY;
         return;
     }
 
@@ -1139,11 +1377,11 @@ void GameUIController::CreatePowerUpTesterUI()
 
     // Helper hint text
     UIFactory::CreateText(m_registry, m_powerUpTesterCanvas, TextDescriptor{
-        .Text = "[TAB] to toggle",
+        .Text = "[TAB]/[R3] Hide | [RS/LB-RB] Nav | [Y] Apply",
         .Position = {-155.0f, -295.0f},
         .FontId = m_fontId,
-        .FontSize = 22.0f,
-        .Tint = Color{180, 180, 180, 255},
+        .FontSize = 18.0f,
+        .Tint = Color{180, 210, 255, 240},
         .AnchorPoint = Anchor::MiddleRight,
         .TextCenter = true
     });
@@ -1158,6 +1396,9 @@ void GameUIController::CreatePowerUpTesterUI()
         .AnchorPoint = Anchor::MiddleRight,
         .TextCenter = true
     });
+
+    m_powerUpTesterButtons.clear();
+    m_powerUpTesterIndex = 0;
 
     struct PowerUpBtnDef {
         const char* text;
@@ -1183,7 +1424,7 @@ void GameUIController::CreatePowerUpTesterUI()
     for (size_t i = 0; i < 8; ++i)
     {
         PowerUpType pType = buttons[i].type;
-        UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+        Entity b = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
             .Text = buttons[i].text,
             .OnClick = [this, pType]() { m_scene.ApplyPowerUp(pType); },
             .Position = {-155.0f, startY + i * stepY},
@@ -1195,15 +1436,17 @@ void GameUIController::CreatePowerUpTesterUI()
             .TextColor = Colors::White,
             .FontId = m_fontId,
             .FontSize = 20.0f,
-            .AnchorPoint = Anchor::MiddleRight
+            .AnchorPoint = Anchor::MiddleRight,
+            .IgnoreMenuNavigation = true
         });
+        m_powerUpTesterButtons.push_back(b);
     }
 
     float actionY = startY + 8 * stepY + 6.0f;
     float actionStepY = 35.0f;
 
     // Drop capsule button
-    UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+    Entity btnDrop = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
         .Text = "Drop Capsule [P]",
         .OnClick = [this]() {
             m_scene.SpawnPowerUpAtPaddle();
@@ -1217,11 +1460,13 @@ void GameUIController::CreatePowerUpTesterUI()
         .TextColor = Colors::White,
         .FontId = m_fontId,
         .FontSize = 20.0f,
-        .AnchorPoint = Anchor::MiddleRight
+        .AnchorPoint = Anchor::MiddleRight,
+        .IgnoreMenuNavigation = true
     });
+    m_powerUpTesterButtons.push_back(btnDrop);
 
     // Drop all 8 capsules button
-    UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+    Entity btnDropAll = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
         .Text = "Drop All 8 [O]",
         .OnClick = [this]() { m_scene.SpawnAllPowerUps(); },
         .Position = {-155.0f, actionY + actionStepY},
@@ -1233,11 +1478,13 @@ void GameUIController::CreatePowerUpTesterUI()
         .TextColor = Colors::White,
         .FontId = m_fontId,
         .FontSize = 20.0f,
-        .AnchorPoint = Anchor::MiddleRight
+        .AnchorPoint = Anchor::MiddleRight,
+        .IgnoreMenuNavigation = true
     });
+    m_powerUpTesterButtons.push_back(btnDropAll);
 
     // Reset paddle / ball button
-    UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+    Entity btnReset = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
         .Text = "Reset Ball [R]",
         .OnClick = [this]() { m_scene.ResetBallAndPaddle(true); },
         .Position = {-155.0f, actionY + actionStepY * 2},
@@ -1249,11 +1496,13 @@ void GameUIController::CreatePowerUpTesterUI()
         .TextColor = Colors::White,
         .FontId = m_fontId,
         .FontSize = 20.0f,
-        .AnchorPoint = Anchor::MiddleRight
+        .AnchorPoint = Anchor::MiddleRight,
+        .IgnoreMenuNavigation = true
     });
+    m_powerUpTesterButtons.push_back(btnReset);
 
     // Respawn bricks button
-    UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+    Entity btnRespawn = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
         .Text = "Refill Bricks [B]",
         .OnClick = [this]() { m_scene.RespawnBricks(); },
         .Position = {-155.0f, actionY + actionStepY * 3},
@@ -1265,11 +1514,13 @@ void GameUIController::CreatePowerUpTesterUI()
         .TextColor = Colors::White,
         .FontId = m_fontId,
         .FontSize = 20.0f,
-        .AnchorPoint = Anchor::MiddleRight
+        .AnchorPoint = Anchor::MiddleRight,
+        .IgnoreMenuNavigation = true
     });
+    m_powerUpTesterButtons.push_back(btnRespawn);
 
     // Level +1 / Cycle button
-    UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+    Entity btnCycle = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
         .Text = "Level +1 / Cycle [U]",
         .OnClick = [this]() {
             int curLvl = PowerUpManager::Get().GetLevel(PowerUpType::MultiBall);
@@ -1292,11 +1543,13 @@ void GameUIController::CreatePowerUpTesterUI()
         .TextColor = Colors::White,
         .FontId = m_fontId,
         .FontSize = 22.0f,
-        .AnchorPoint = Anchor::MiddleRight
+        .AnchorPoint = Anchor::MiddleRight,
+        .IgnoreMenuNavigation = true
     });
+    m_powerUpTesterButtons.push_back(btnCycle);
 
     // Next Level button
-    UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+    Entity btnNext = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
         .Text = "Next Level [N]",
         .OnClick = [this]() { m_scene.AdvanceToNextLevel(); },
         .Position = {-155.0f, actionY + actionStepY * 5},
@@ -1308,8 +1561,10 @@ void GameUIController::CreatePowerUpTesterUI()
         .TextColor = Colors::White,
         .FontId = m_fontId,
         .FontSize = 20.0f,
-        .AnchorPoint = Anchor::MiddleRight
+        .AnchorPoint = Anchor::MiddleRight,
+        .IgnoreMenuNavigation = true
     });
+    m_powerUpTesterButtons.push_back(btnNext);
 }
 
 void GameUIController::CreateGameOverMenu()
@@ -1801,29 +2056,29 @@ void GameUIController::CreateLevelSelectModal()
         .AnchorPoint = Anchor::Center
     });
 
-    // Header Title
+    // Header Title (properly spaced from accent line)
     UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
         .Text = "LEVEL SELECT",
-        .Position = {0.0f, -360.0f},
+        .Position = {0.0f, -380.0f},
         .FontId = m_fontId,
-        .FontSize = 64.0f,
-        .Tint = Colors::Gold
+        .FontSize = 56.0f,
+        .Tint = Color{255, 220, 80, 255}
     });
 
-    // Accent line
+    // Accent line with generous breathing room
     UIFactory::CreatePanel(m_registry, m_levelSelectCanvas, PanelDescriptor{
-        .Position = {0.0f, -315.0f},
-        .Size = {640.0f, 3.0f},
-        .Tint = Color{60, 200, 255, 200}
+        .Position = {0.0f, -332.0f},
+        .Size = {680.0f, 3.0f},
+        .Tint = Color{60, 210, 255, 230}
     });
 
-    // Subtitle
+    // Subtitle comfortably below the accent line
     UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
         .Text = "SELECT AN UNLOCKED STAGE  |  PRESS [1-5] OR CLICK CARD",
-        .Position = {0.0f, -280.0f},
+        .Position = {0.0f, -295.0f},
         .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Color{190, 215, 240, 230}
+        .FontSize = 22.0f,
+        .Tint = Color{200, 225, 255, 240}
     });
 }
 
@@ -1897,10 +2152,10 @@ void GameUIController::RebuildLevelSelectCards()
 
         const Vector2f cardCenter = { startX + static_cast<float>(slot) * stepX, kInGameCardCenterY };
 
-        // Card Base Panel
+        // Card Base Panel (clean arcade frame, high contrast)
         const Color bgTint = isCleared
-            ? Color{16, 26, 42, 230}
-            : (isUnlocked ? Color{14, 22, 34, 230} : Color{12, 14, 20, 210});
+            ? Color{22, 34, 54, 245}
+            : (isUnlocked ? Color{18, 28, 44, 245} : Color{14, 16, 24, 230});
 
         Entity p = UIFactory::CreatePanel(m_registry, m_levelSelectCanvas, PanelDescriptor{
             .Position = cardCenter,
@@ -1909,12 +2164,24 @@ void GameUIController::RebuildLevelSelectCards()
         });
         m_levelSelectEntities.push_back(p);
 
+        // Card Header Bar (visually structures and highlights the stage title)
+        const Color headerTint = isCleared
+            ? Color{32, 54, 84, 255}
+            : (isUnlocked ? Color{26, 42, 68, 255} : Color{18, 22, 32, 255});
+
+        Entity pHeader = UIFactory::CreatePanel(m_registry, m_levelSelectCanvas, PanelDescriptor{
+            .Position = {cardCenter.X, cardCenter.Y - 170.0f},
+            .Size = {kInGameCardW - 8.0f, 62.0f},
+            .Tint = headerTint
+        });
+        m_levelSelectEntities.push_back(pHeader);
+
         // Stage Title
-        const Color stageColor = isUnlocked ? Colors::Gold : Color{110, 115, 130, 255};
+        const Color stageColor = isUnlocked ? Color{255, 230, 90, 255} : Color{130, 135, 150, 255};
         std::string stageNumStr = (levelNum < 10) ? ("STAGE 0" + std::to_string(levelNum)) : ("STAGE " + std::to_string(levelNum));
         Entity t1 = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
             .Text = stageNumStr,
-            .Position = {cardCenter.X, cardCenter.Y - 175.0f},
+            .Position = {cardCenter.X, cardCenter.Y - 180.0f},
             .FontId = m_fontId,
             .FontSize = 32.0f,
             .Tint = stageColor
@@ -1926,10 +2193,10 @@ void GameUIController::RebuildLevelSelectCards()
         {
             Entity tLock = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
                 .Text = "[ LOCKED ]",
-                .Position = {cardCenter.X, cardCenter.Y - 140.0f},
+                .Position = {cardCenter.X, cardCenter.Y - 146.0f},
                 .FontId = m_fontId,
-                .FontSize = 24.0f,
-                .Tint = Color{220, 65, 75, 255}
+                .FontSize = 20.0f,
+                .Tint = Color{255, 75, 85, 255}
             });
             m_levelSelectEntities.push_back(tLock);
         }
@@ -1937,10 +2204,10 @@ void GameUIController::RebuildLevelSelectCards()
         {
             Entity tClear = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
                 .Text = "[ CLEARED ]",
-                .Position = {cardCenter.X, cardCenter.Y - 140.0f},
+                .Position = {cardCenter.X, cardCenter.Y - 146.0f},
                 .FontId = m_fontId,
-                .FontSize = 24.0f,
-                .Tint = Color{65, 225, 120, 255}
+                .FontSize = 20.0f,
+                .Tint = Color{80, 255, 150, 255}
             });
             m_levelSelectEntities.push_back(tClear);
         }
@@ -1948,34 +2215,42 @@ void GameUIController::RebuildLevelSelectCards()
         {
             Entity tUn = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
                 .Text = "[ UNLOCKED ]",
-                .Position = {cardCenter.X, cardCenter.Y - 140.0f},
+                .Position = {cardCenter.X, cardCenter.Y - 146.0f},
                 .FontId = m_fontId,
-                .FontSize = 24.0f,
-                .Tint = Color{75, 180, 255, 255}
+                .FontSize = 20.0f,
+                .Tint = Color{80, 220, 255, 255}
             });
             m_levelSelectEntities.push_back(tUn);
         }
 
+        // Thumbnail frame placeholder (crisp dark background)
+        Entity pThumb = UIFactory::CreatePanel(m_registry, m_levelSelectCanvas, PanelDescriptor{
+            .Position = {cardCenter.X, cardCenter.Y - 50.0f},
+            .Size = {214.0f, 100.0f},
+            .Tint = isUnlocked ? Color{8, 12, 18, 255} : Color{8, 8, 10, 255}
+        });
+        m_levelSelectEntities.push_back(pThumb);
+
         // High score
         Entity tBest = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
             .Text = "BEST SCORE",
-            .Position = {cardCenter.X, cardCenter.Y + 30.0f},
+            .Position = {cardCenter.X, cardCenter.Y + 32.0f},
             .FontId = m_fontId,
-            .FontSize = 20.0f,
-            .Tint = Color{150, 160, 185, 220}
+            .FontSize = 22.0f,
+            .Tint = isUnlocked ? Color{190, 215, 255, 255} : Color{110, 115, 130, 200}
         });
         m_levelSelectEntities.push_back(tBest);
 
         const std::string scoreStr = (highScore > 0) ? std::to_string(highScore) : "---";
         const Color scoreColor = (highScore > 0)
             ? Colors::White
-            : (isUnlocked ? Color{130, 140, 160, 200} : Color{80, 85, 95, 180});
+            : (isUnlocked ? Color{150, 165, 190, 220} : Color{90, 95, 110, 180});
 
         Entity tScore = UIFactory::CreateText(m_registry, m_levelSelectCanvas, TextDescriptor{
             .Text = scoreStr,
-            .Position = {cardCenter.X, cardCenter.Y + 68.0f},
+            .Position = {cardCenter.X, cardCenter.Y + 70.0f},
             .FontId = m_fontId,
-            .FontSize = 30.0f,
+            .FontSize = 32.0f,
             .Tint = scoreColor
         });
         m_levelSelectEntities.push_back(tScore);
@@ -1993,9 +2268,9 @@ void GameUIController::RebuildLevelSelectCards()
                 },
                 .Position = {cardCenter.X, cardCenter.Y + 155.0f},
                 .Size = {200.0f, 48.0f},
-                .DefaultColor = Color{35, 90, 55, 255},
-                .HoverColor = Color{50, 140, 85, 255},
-                .PressedColor = Color{20, 60, 35, 255},
+                .DefaultColor = Color{25, 135, 80, 255},
+                .HoverColor = Color{45, 190, 115, 255},
+                .PressedColor = Color{15, 95, 55, 255},
                 .TextColor = Colors::White,
                 .FontId = m_fontId,
                 .FontSize = 26.0f
@@ -2009,12 +2284,12 @@ void GameUIController::RebuildLevelSelectCards()
                 .OnClick = nullptr,
                 .Position = {cardCenter.X, cardCenter.Y + 155.0f},
                 .Size = {200.0f, 48.0f},
-                .DefaultColor = Color{35, 38, 48, 160},
-                .HoverColor = Color{35, 38, 48, 160},
-                .PressedColor = Color{35, 38, 48, 160},
-                .TextColor = Color{90, 95, 110, 255},
+                .DefaultColor = Color{35, 40, 50, 200},
+                .HoverColor = Color{35, 40, 50, 200},
+                .PressedColor = Color{35, 40, 50, 200},
+                .TextColor = Color{120, 125, 140, 255},
                 .FontId = m_fontId,
-                .FontSize = 24.0f
+                .FontSize = 22.0f
             });
             m_levelSelectEntities.push_back(btn);
         }
@@ -2103,84 +2378,102 @@ void GameUIController::RebuildLevelSelectCards()
 
 void GameUIController::OnRender(GameContext& context)
 {
-    if (m_levelSelectCanvas == NULL_ENTITY || !m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas) ||
-        !m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled)
+    if (m_levelSelectCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelSelectCanvas) &&
+        m_registry.GetComponent<CanvasComponent>(m_levelSelectCanvas).IsEnabled)
     {
-        return;
-    }
+        const Vector2f viewSize = context.Render.GetLogicalViewSize();
+        const float screenCenterX = viewSize.X * 0.5f;
+        const float screenCenterY = viewSize.Y * 0.5f;
 
-    const Vector2f viewSize = context.Render.GetLogicalViewSize();
-    const float screenCenterX = viewSize.X * 0.5f;
-    const float screenCenterY = viewSize.Y * 0.5f;
+        auto& levelManager = m_scene.GetLevelManager();
+        const int totalLevels = levelManager.GetLevelCount();
+        const int startLevelIndex = m_levelSelectPage * kInGameCardsPerPage;
+        const int levelsOnThisPage = std::clamp(totalLevels - startLevelIndex, 0, kInGameCardsPerPage);
 
-    auto& levelManager = m_scene.GetLevelManager();
-    const int totalLevels = levelManager.GetLevelCount();
-    const int startLevelIndex = m_levelSelectPage * kInGameCardsPerPage;
-    const int levelsOnThisPage = std::clamp(totalLevels - startLevelIndex, 0, kInGameCardsPerPage);
+        constexpr float totalSpan = static_cast<float>(kInGameCardsPerPage) * kInGameCardW + static_cast<float>(kInGameCardsPerPage - 1) * kInGameCardGap;
+        constexpr float startX = -(totalSpan - kInGameCardW) * 0.5f;
+        constexpr float stepX = kInGameCardW + kInGameCardGap;
 
-    constexpr float totalSpan = static_cast<float>(kInGameCardsPerPage) * kInGameCardW + static_cast<float>(kInGameCardsPerPage - 1) * kInGameCardGap;
-    constexpr float startX = -(totalSpan - kInGameCardW) * 0.5f;
-    constexpr float stepX = kInGameCardW + kInGameCardGap;
-
-    for (int slot = 0; slot < levelsOnThisPage; ++slot)
-    {
-        const int levelIndex = startLevelIndex + slot;
-        const int levelNum = levelIndex + 1;
-        const bool isUnlocked = levelManager.IsLevelUnlocked(levelNum);
-        const bool isSelected = (levelIndex == m_selectedLevelCard);
-        const bool isHovered = (levelIndex == m_hoveredLevelCard);
-
-        const float cX = screenCenterX + startX + static_cast<float>(slot) * stepX;
-        const float cY = screenCenterY + kInGameCardCenterY;
-
-        // 1. Hover & Selection Outline Feedbacks
-        if (isSelected)
+        for (int slot = 0; slot < levelsOnThisPage; ++slot)
         {
-            const float pulse = (std::sin(m_levelSelectAnimTime * 6.0f) + 1.0f) * 0.5f;
-            const uint8_t alpha = static_cast<uint8_t>(200 + pulse * 55.0f);
-            context.Render.DrawRectangleOutline(kInGameCardW + 6.0f, kInGameCardH + 6.0f, Transform2D{Vector2f{cX, cY}}, Color{255, 215, 0, alpha}, 3.0f);
-        }
-        else if (isHovered && isUnlocked)
-        {
-            context.Render.DrawRectangleOutline(kInGameCardW + 4.0f, kInGameCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{80, 220, 255, 230}, 2.5f);
-        }
-        else if (isHovered && !isUnlocked)
-        {
-            context.Render.DrawRectangleOutline(kInGameCardW + 4.0f, kInGameCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{220, 60, 70, 180}, 2.0f);
-        }
-        else
-        {
-            const Color borderCol = isUnlocked ? Color{60, 95, 140, 140} : Color{45, 50, 65, 120};
-            context.Render.DrawRectangleOutline(kInGameCardW, kInGameCardH, Transform2D{Vector2f{cX, cY}}, borderCol, 1.5f);
-        }
+            const int levelIndex = startLevelIndex + slot;
+            const int levelNum = levelIndex + 1;
+            const bool isUnlocked = levelManager.IsLevelUnlocked(levelNum);
+            const bool isSelected = (levelIndex == m_selectedLevelCard);
+            const bool isHovered = (levelIndex == m_hoveredLevelCard);
 
-        // 2. Thumbnail Frame Outline
-        const float thumbBoxX = cX;
-        const float thumbBoxY = cY - 50.0f;
-        const Color frameColor = isSelected ? Color{255, 215, 0, 200} : (isUnlocked ? Color{70, 140, 210, 160} : Color{50, 55, 70, 120});
-        context.Render.DrawRectangleOutline(210.0f, 96.0f, Transform2D{Vector2f{thumbBoxX, thumbBoxY}}, frameColor, 1.5f);
+            const float cX = screenCenterX + startX + static_cast<float>(slot) * stepX;
+            const float cY = screenCenterY + kInGameCardCenterY;
 
-        // 3. Level Pattern Miniature (Brick layout preview)
-        if (static_cast<size_t>(levelIndex) < m_levelThumbnails.size())
-        {
-            const auto& thumb = m_levelThumbnails[static_cast<size_t>(levelIndex)];
-            for (const auto& b : thumb.Bricks)
+            // 1. Hover & Selection Outline Feedbacks
+            if (isSelected)
             {
-                Color brickTint = b.Tint;
-                if (!isUnlocked)
+                const float pulse = (std::sin(m_levelSelectAnimTime * 6.0f) + 1.0f) * 0.5f;
+                const uint8_t alpha = static_cast<uint8_t>(200 + pulse * 55.0f);
+                context.Render.DrawRectangleOutline(kInGameCardW + 6.0f, kInGameCardH + 6.0f, Transform2D{Vector2f{cX, cY}}, Color{255, 215, 0, alpha}, 3.0f);
+            }
+            else if (isHovered && isUnlocked)
+            {
+                context.Render.DrawRectangleOutline(kInGameCardW + 4.0f, kInGameCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{80, 220, 255, 230}, 2.5f);
+            }
+            else if (isHovered && !isUnlocked)
+            {
+                context.Render.DrawRectangleOutline(kInGameCardW + 4.0f, kInGameCardH + 4.0f, Transform2D{Vector2f{cX, cY}}, Color{220, 60, 70, 180}, 2.0f);
+            }
+            else
+            {
+                const Color borderCol = isUnlocked ? Color{60, 95, 140, 140} : Color{45, 50, 65, 120};
+                context.Render.DrawRectangleOutline(kInGameCardW, kInGameCardH, Transform2D{Vector2f{cX, cY}}, borderCol, 1.5f);
+            }
+
+            // 2. Thumbnail Frame Outline
+            const float thumbBoxX = cX;
+            const float thumbBoxY = cY - 50.0f;
+            const Color frameColor = isSelected ? Color{255, 215, 0, 200} : (isUnlocked ? Color{70, 140, 210, 160} : Color{50, 55, 70, 120});
+            context.Render.DrawRectangleOutline(210.0f, 96.0f, Transform2D{Vector2f{thumbBoxX, thumbBoxY}}, frameColor, 1.5f);
+
+            // 3. Level Pattern Miniature (Brick layout preview)
+            if (static_cast<size_t>(levelIndex) < m_levelThumbnails.size())
+            {
+                const auto& thumb = m_levelThumbnails[static_cast<size_t>(levelIndex)];
+                for (const auto& b : thumb.Bricks)
                 {
-                    uint8_t gray = static_cast<uint8_t>(b.Tint.r * 0.15f + b.Tint.g * 0.15f + b.Tint.b * 0.15f);
-                    brickTint = Color{gray, gray, gray, 120};
+                    Color brickTint = b.Tint;
+                    if (!isUnlocked)
+                    {
+                        uint8_t gray = static_cast<uint8_t>(b.Tint.r * 0.15f + b.Tint.g * 0.15f + b.Tint.b * 0.15f);
+                        brickTint = Color{gray, gray, gray, 120};
+                    }
+                    context.Render.DrawRectangle(b.W, b.H, Transform2D{Vector2f{thumbBoxX + b.RelX, thumbBoxY + b.RelY}}, brickTint);
                 }
-                context.Render.DrawRectangle(b.W, b.H, Transform2D{Vector2f{thumbBoxX + b.RelX, thumbBoxY + b.RelY}}, brickTint);
+            }
+
+            // 4. Locked overlay over preview if locked
+            if (!isUnlocked)
+            {
+                context.Render.DrawRectangle(206.0f, 92.0f, Transform2D{Vector2f{thumbBoxX, thumbBoxY}}, Color{0, 0, 0, 160});
+                context.Render.DrawText("LOCKED", m_fontId, 22.0f, Transform2D{Vector2f{thumbBoxX - 35.0f, thumbBoxY - 10.0f}}, Color{200, 60, 70, 220});
             }
         }
+    }
 
-        // 4. Locked overlay over preview if locked
-        if (!isUnlocked)
+    // 2. Power-Up Tester Gamepad Highlight Cursor
+    if (m_powerUpTesterActive && m_powerUpTesterCanvas != NULL_ENTITY &&
+        m_registry.HasComponent<CanvasComponent>(m_powerUpTesterCanvas) &&
+        m_registry.GetComponent<CanvasComponent>(m_powerUpTesterCanvas).IsEnabled)
+    {
+        if (m_powerUpTesterIndex >= 0 && m_powerUpTesterIndex < static_cast<int>(m_powerUpTesterButtons.size()))
         {
-            context.Render.DrawRectangle(206.0f, 92.0f, Transform2D{Vector2f{thumbBoxX, thumbBoxY}}, Color{0, 0, 0, 160});
-            context.Render.DrawText("LOCKED", m_fontId, 22.0f, Transform2D{Vector2f{thumbBoxX - 35.0f, thumbBoxY - 10.0f}}, Color{200, 60, 70, 220});
+            Entity btn = m_powerUpTesterButtons[static_cast<size_t>(m_powerUpTesterIndex)];
+            if (m_registry.IsAlive(btn) && m_registry.HasComponent<RectTransform>(btn))
+            {
+                const auto& rt = m_registry.GetComponent<RectTransform>(btn);
+                const Vector2f viewSize = context.Render.GetLogicalViewSize();
+                const Vector2f absPos = UISystem::GetAbsolutePosition(m_registry, btn, rt, viewSize);
+                const float pulse = (std::sin(m_levelSelectAnimTime * 8.0f) + 1.0f) * 0.5f;
+                const uint8_t alpha = static_cast<uint8_t>(200 + pulse * 55.0f);
+                context.Render.DrawRectangleOutline(rt.Size.X + 8.0f, rt.Size.Y + 8.0f, Transform2D{absPos}, Color{255, 230, 80, alpha}, 3.0f);
+            }
         }
     }
 }

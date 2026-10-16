@@ -8,13 +8,16 @@
 #include "Events/EventDispatcher.h"
 #include "Math/EasingFunctions.h"
 #include "ECS/Components/Transform2D.h"
+#include <optional>
 
 CheatManager::CheatManager(GameContext& context)
 {
     m_konamiSequence = {
-        KeyCode::Up, KeyCode::Up, KeyCode::Down, KeyCode::Down,
-        KeyCode::Left, KeyCode::Right, KeyCode::Left, KeyCode::Right,
-        KeyCode::B, KeyCode::A
+        KonamiCodeStep::Up, KonamiCodeStep::Up,
+        KonamiCodeStep::Down, KonamiCodeStep::Down,
+        KonamiCodeStep::Left, KonamiCodeStep::Right,
+        KonamiCodeStep::Left, KonamiCodeStep::Right,
+        KonamiCodeStep::B, KonamiCodeStep::A
     };
     
     m_sfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup.wav");
@@ -34,36 +37,60 @@ void CheatManager::Update(float dt, const GameContext& context)
 
     if (!m_konamiSequence.empty())
     {
-        if (context.Input.IsKeyPress(m_konamiSequence[m_konamiIndex]))
+        bool isUp = context.Input.IsMenuUpTriggered();
+        bool isDown = context.Input.IsMenuDownTriggered();
+        bool isLeft = context.Input.IsMenuLeftTriggered();
+        bool isRight = context.Input.IsMenuRightTriggered();
+        bool isB = context.Input.IsKeyPress(KeyCode::B) || context.Input.IsJoystickButtonPress(0, 1);
+        bool isA = context.Input.IsKeyPress(KeyCode::A) || context.Input.IsJoystickButtonPress(0, 0);
+
+        bool anyOtherJoyButton = false;
+        for (unsigned int b = 2; b < 16; ++b)
         {
-            m_konamiIndex++;
-            if (static_cast<size_t>(m_konamiIndex) >= m_konamiSequence.size())
+            if (context.Input.IsJoystickButtonPress(0, b))
             {
-                m_konamiIndex = 0;
-                if (!m_cheatTabUnlocked)
-                {
-                    m_cheatTabUnlocked = true;
-                    context.Rules.SetRule(Rule::Gameplay::CheatsUnlocked, true);
-                    m_activeCheatName = "CHEATS UNLOCKED";
-                    m_cheatWasActivated = true;
-                    m_cheatTimer = 5.0f;
-                    if (m_sfxId != 0) context.Audio.PlaySfx(m_sfxId, 100.0f);
-                }
+                anyOtherJoyButton = true;
+                break;
             }
         }
-        else
+
+        bool anyKeyPressed = (context.Input.GetLastKeyPressed() != KeyCode::Count);
+
+        std::optional<KonamiCodeStep> detectedStep = std::nullopt;
+        if (isUp) detectedStep = KonamiCodeStep::Up;
+        else if (isDown) detectedStep = KonamiCodeStep::Down;
+        else if (isLeft) detectedStep = KonamiCodeStep::Left;
+        else if (isRight) detectedStep = KonamiCodeStep::Right;
+        else if (isB) detectedStep = KonamiCodeStep::B;
+        else if (isA) detectedStep = KonamiCodeStep::A;
+
+        if (detectedStep.has_value())
         {
-            for (int i = 0; i < static_cast<int>(KeyCode::Count); ++i)
+            if (detectedStep.value() == m_konamiSequence[m_konamiIndex])
             {
-                if (context.Input.IsKeyPress(static_cast<KeyCode>(i)))
+                m_konamiIndex++;
+                if (static_cast<size_t>(m_konamiIndex) >= m_konamiSequence.size())
                 {
                     m_konamiIndex = 0;
-                    if (context.Input.IsKeyPress(m_konamiSequence[0])) {
-                        m_konamiIndex = 1;
+                    if (!m_cheatTabUnlocked)
+                    {
+                        m_cheatTabUnlocked = true;
+                        context.Rules.SetRule(Rule::Gameplay::CheatsUnlocked, true);
+                        m_activeCheatName = "CHEATS UNLOCKED";
+                        m_cheatWasActivated = true;
+                        m_cheatTimer = 5.0f;
+                        if (m_sfxId != 0) context.Audio.PlaySfx(m_sfxId, 100.0f);
                     }
-                    break;
                 }
             }
+            else
+            {
+                m_konamiIndex = (detectedStep.value() == KonamiCodeStep::Up) ? 1 : 0;
+            }
+        }
+        else if (anyKeyPressed || anyOtherJoyButton)
+        {
+            m_konamiIndex = 0;
         }
     }
 }

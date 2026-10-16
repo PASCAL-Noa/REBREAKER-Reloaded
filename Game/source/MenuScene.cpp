@@ -11,6 +11,7 @@
 #include "Core/GameContext.h"
 #include "Core/SceneManager.h"
 #include "Core/InputManager.h"
+#include "Core/InputRemapManager.h"
 #include "Core/PlayerPrefs.h"
 #include "Core/GameRules.h"
 #include "AudioMixer.h"
@@ -48,6 +49,12 @@ void MenuScene::OnInit(GameContext& context)
     float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
     context.Audio.SetSfxVolume(sfxVol);
     context.Audio.SetMusicVolume(musicVol);
+
+    std::string savedDevice = PlayerPrefs::GetString("Audio_Device", "");
+    if (!savedDevice.empty())
+    {
+        context.Audio.SetAudioDevice(savedDevice);
+    }
 
     // Play Main Menu background music in loop
     context.Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 60.0f, true);
@@ -110,8 +117,42 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
 {
     DefaultScene::OnUpdate(dt, context);
 
-    // Escape closes any open modal, or returns to main
-    if (context.Input.IsKeyPress(KeyCode::Escape))
+    // Rebinding input capture
+    if (m_isRebinding && m_rebindAction != InputAction::Count)
+    {
+        KeyCode pressed = context.Input.GetLastKeyPressed();
+        if (pressed != KeyCode::Count)
+        {
+            if (pressed == KeyCode::Escape)
+            {
+                // Cancel rebinding
+                m_isRebinding = false;
+                m_rebindAction = InputAction::Count;
+                UpdateInputButtons();
+                return;
+            }
+
+            // Assign primary key and save
+            InputRemapManager::Get().SetBinding(m_rebindAction, pressed);
+            InputRemapManager::Get().SaveToPrefs();
+
+            m_isRebinding = false;
+            m_rebindAction = InputAction::Count;
+            UpdateInputButtons();
+            return;
+        }
+
+        if (context.Input.IsJoystickButtonPress(0, 1))
+        {
+            m_isRebinding = false;
+            m_rebindAction = InputAction::Count;
+            UpdateInputButtons();
+            return;
+        }
+    }
+
+    // Escape or Gamepad B closes any open modal, or returns to main
+    if (context.Input.IsMenuCancelTriggered())
     {
         if (m_activeModal != NULL_ENTITY)
         {
@@ -120,10 +161,10 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
         }
     }
 
-    // Keyboard navigation shortcuts when no modal is open
+    // Navigation shortcuts when no modal is open
     if (m_activeModal == NULL_ENTITY)
     {
-        if (context.Input.IsKeyPress(KeyCode::Enter) || context.Input.IsKeyPress(KeyCode::Space) || context.Input.IsKeyPress(KeyCode::P))
+        if (context.Input.IsKeyPress(KeyCode::Enter) || context.Input.IsKeyPress(KeyCode::Space) || context.Input.IsKeyPress(KeyCode::P) || context.Input.IsJoystickButtonPress(0, 7))
         {
             context.Scenes.LoadScene<GameScene>();
             return;
@@ -241,6 +282,10 @@ void MenuScene::OpenModal(Entity modalCanvas)
     if (m_registry.IsAlive(m_mainCanvas) && m_registry.HasComponent<CanvasComponent>(m_mainCanvas))
     {
         m_registry.GetComponent<CanvasComponent>(m_mainCanvas).IsEnabled = false;
+    }
+    if (modalCanvas == m_settingsCanvas)
+    {
+        OpenSettingsTab(m_audioCanvas);
     }
 }
 
@@ -670,6 +715,63 @@ void MenuScene::CreateAudioTab(const GameContext& context)
     UpdateVolumeBars(m_sfxVolumeBars, context.Audio.GetSfxVolume());
     UpdateVolumeBars(m_musicVolumeBars, context.Audio.GetMusicVolume());
 
+    // Playback Device Selection
+    UIFactory::CreateText(m_registry, m_audioCanvas, TextDescriptor{
+        .Text = "DEVICE",
+        .Position = {rightPanelX * 0.5f - 110.0f, viewY * 0.1f + 45.0f},
+        .FontId = m_fontId,
+        .FontSize = 32.0f,
+        .Tint = Colors::White
+    });
+
+    auto formatDeviceText = [](const std::string& rawName) -> std::string {
+        if (rawName.empty()) return "< DEFAULT DEVICE >";
+        std::string shortName = rawName;
+        if (shortName.length() > 24)
+        {
+            shortName = shortName.substr(0, 22) + "...";
+        }
+        return "< " + shortName + " >";
+    };
+
+    m_audioDeviceBtn = UIFactory::CreateButton(m_registry, m_audioCanvas, ButtonDescriptor{
+        .Text = formatDeviceText(context.Audio.GetCurrentAudioDevice()),
+        .OnClick = [&context, this, formatDeviceText]() {
+            auto devices = context.Audio.GetAvailableAudioDevices();
+            if (devices.empty()) return;
+
+            std::string current = context.Audio.GetCurrentAudioDevice();
+            size_t currentIdx = 0;
+            for (size_t i = 0; i < devices.size(); ++i)
+            {
+                if (devices[i] == current)
+                {
+                    currentIdx = i;
+                    break;
+                }
+            }
+            size_t nextIdx = (currentIdx + 1) % devices.size();
+            std::string newDevice = devices[nextIdx];
+            if (context.Audio.SetAudioDevice(newDevice))
+            {
+                PlayerPrefs::SetString("Audio_Device", newDevice);
+                PlayerPrefs::Save();
+                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+            }
+            if (m_registry.HasComponent<TextComponent>(m_audioDeviceBtn))
+            {
+                m_registry.GetComponent<TextComponent>(m_audioDeviceBtn).Text = formatDeviceText(newDevice);
+            }
+        },
+        .Position = {rightPanelX * 0.5f + 250.0f, viewY * 0.1f + 45.0f},
+        .Size = {480.0f, 54.0f},
+        .DefaultColor = Color{40, 55, 80, 255},
+        .HoverColor = Color{60, 85, 120, 255},
+        .PressedColor = Color{25, 38, 55, 255},
+        .FontId = m_fontId,
+        .FontSize = 24.0f
+    });
+
     UIFactory::CreatePanel(m_registry, m_audioCanvas, PanelDescriptor{
         .Position = {rightPanelX, 0.0f},
         .Size = {rightPanelWidth, viewY},
@@ -806,29 +908,153 @@ void MenuScene::CreateInputsTab(const GameContext& context)
     m_registry.AddComponent<TweenComponent>(m_inputsCanvas, TweenComponent{});
 
     UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
-        .Text = "INPUTS",
-        .Position = {rightPanelX, -viewY * 0.2f},
+        .Text = "INPUT CONTROLS & REBINDING",
+        .Position = {rightPanelX, -viewY * 0.32f},
         .FontId = m_fontId,
-        .FontSize = 40.0f
+        .FontSize = 38.0f
     });
 
-    UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
-        .Text = "Left: Q",
-        .Position = {rightPanelX, -viewY * 0.1f},
+    UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
+        .Text = "Supports Keyboard & Gamepad (Left Stick / D-Pad / Triggers / A Button)",
+        .Position = {rightPanelX, -viewY * 0.25f},
+        .FontId = m_fontId,
+        .FontSize = 24.0f,
+        .Tint = Color{180, 210, 255, 200}
+    });
+
+    const float startY = -viewY * 0.14f;
+    const float stepY = 60.0f;
+    const Vector2f btnSize{380.0f, 50.0f};
+
+    // Move Left
+    m_leftRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "MOVE LEFT: ...",
+        .OnClick = [this]() {
+            m_isRebinding = true;
+            m_rebindAction = InputAction::MoveLeft;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY},
+        .Size = btnSize,
         .FontId = m_fontId
     });
-    
-    UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
-        .Text = "Right: D",
-        .Position = {rightPanelX, viewY * 0.1f - 200.0f},
+
+    // Move Right
+    m_rightRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "MOVE RIGHT: ...",
+        .OnClick = [this]() {
+            m_isRebinding = true;
+            m_rebindAction = InputAction::MoveRight;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY + stepY},
+        .Size = btnSize,
         .FontId = m_fontId
     });
+
+    // Launch Ball / Laser
+    m_launchRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "LAUNCH / LASER: ...",
+        .OnClick = [this]() {
+            m_isRebinding = true;
+            m_rebindAction = InputAction::LaunchBall;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY + stepY * 2.0f},
+        .Size = btnSize,
+        .FontId = m_fontId
+    });
+
+    // Pause Game
+    m_pauseRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "PAUSE: ...",
+        .OnClick = [this]() {
+            m_isRebinding = true;
+            m_rebindAction = InputAction::Pause;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY + stepY * 3.0f},
+        .Size = btnSize,
+        .FontId = m_fontId
+    });
+
+    // Reset Defaults
+    m_resetDefaultsBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "RESET DEFAULT BINDINGS",
+        .OnClick = [this]() {
+            InputRemapManager::Get().LoadDefaults();
+            InputRemapManager::Get().SaveToPrefs();
+            m_isRebinding = false;
+            m_rebindAction = InputAction::Count;
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, startY + stepY * 4.2f},
+        .Size = btnSize,
+        .DefaultColor = Color{120, 60, 60, 255},
+        .HoverColor = Color{160, 80, 80, 255},
+        .PressedColor = Color{90, 40, 40, 255},
+        .FontId = m_fontId
+    });
+
+    // Status / instructions text
+    m_rebindStatusText = UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
+        .Text = "Click a binding button then press any key (or ESC to cancel)",
+        .Position = {rightPanelX, startY + stepY * 5.2f},
+        .FontId = m_fontId,
+        .FontSize = 24.0f,
+        .Tint = Color{255, 230, 100, 230}
+    });
+
+    UpdateInputButtons();
 
     UIFactory::CreatePanel(m_registry, m_inputsCanvas, PanelDescriptor{
         .Position = {rightPanelX, 0.0f},
         .Size = {rightPanelWidth, viewY},
         .Tint = Colors::Transparent
     });
+}
+
+void MenuScene::UpdateInputButtons()
+{
+    const auto formatBtnText = [this](InputAction act, const std::string& prefix, Entity btn)
+    {
+        if (!m_registry.HasComponent<TextComponent>(btn)) return;
+        auto& textComp = m_registry.GetComponent<TextComponent>(btn);
+
+        if (m_isRebinding && m_rebindAction == act)
+        {
+            textComp.Text = prefix + ": [PRESS A KEY...]";
+            return;
+        }
+
+        const auto& b = InputRemapManager::Get().GetBinding(act);
+        std::string keyStr(KeyCodeUtils::ToString(b.PrimaryKey));
+        if (b.SecondaryKey != KeyCode::Count)
+        {
+            keyStr += " / " + std::string(KeyCodeUtils::ToString(b.SecondaryKey));
+        }
+        textComp.Text = prefix + ": " + keyStr;
+    };
+
+    formatBtnText(InputAction::MoveLeft, "MOVE LEFT", m_leftRebindBtn);
+    formatBtnText(InputAction::MoveRight, "MOVE RIGHT", m_rightRebindBtn);
+    formatBtnText(InputAction::LaunchBall, "LAUNCH / LASER", m_launchRebindBtn);
+    formatBtnText(InputAction::Pause, "PAUSE", m_pauseRebindBtn);
+
+    if (m_registry.HasComponent<TextComponent>(m_rebindStatusText))
+    {
+        auto& status = m_registry.GetComponent<TextComponent>(m_rebindStatusText);
+        if (m_isRebinding)
+        {
+            status.Text = "PRESS ANY KEY TO REBIND (OR ESC TO CANCEL)";
+            status.Tint = Color{255, 100, 100, 255};
+        }
+        else
+        {
+            status.Text = "Click a binding button then press any key (or ESC to cancel)";
+            status.Tint = Color{255, 230, 100, 230};
+        }
+    }
 }
 
 void MenuScene::CreateGamerulesTab(const GameContext& context)
@@ -901,8 +1127,6 @@ void MenuScene::CreateCheatsTab(const GameContext& context)
 void MenuScene::OpenSettingsTab(Entity targetCanvas)
 {
     if (m_activeTabCanvas == targetCanvas) {
-        m_registry.GetComponent<CanvasComponent>(targetCanvas).IsEnabled = false;
-        m_activeTabCanvas = NULL_ENTITY;
         return;
     }
 

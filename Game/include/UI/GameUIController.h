@@ -7,6 +7,7 @@
 #include "UI/TextFeedback.h"
 #include "LeaderboardManager.h"
 #include "LevelThumbnail.h"
+#include "Core/InputActions.h"
 #include <vector>
 #include <string>
 #include <memory>
@@ -47,6 +48,9 @@ public:
     [[nodiscard]] bool IsPowerUpTesterActive() const noexcept { return m_powerUpTesterActive; }
     void TogglePowerUpTester();
     void UpdatePowerUpTesterStatus(const std::string& statusText);
+    void NavigatePowerUpTester(int delta);
+    void ActivatePowerUpTesterSelected();
+    [[nodiscard]] int GetPowerUpTesterIndex() const noexcept { return m_powerUpTesterIndex; }
 
     // Text feedback
     void SpawnComboText(const Vector2f& worldPos, int comboMultiplier, const Camera2D& camera);
@@ -83,6 +87,7 @@ private:
 
     void OpenSettingsTab(Entity targetCanvas);
     void UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
+    void UpdateInputButtons();
 
     Registry&       m_registry;
     GameContext&    m_context;
@@ -119,12 +124,25 @@ private:
     Entity          m_shaderBtn = NULL_ENTITY;
     Entity          m_particlesBtn = NULL_ENTITY;
     Entity          m_cheatsTabBtn = NULL_ENTITY;
+    Entity          m_audioDeviceBtn = NULL_ENTITY;
     std::vector<Entity> m_sfxVolumeBars;
     std::vector<Entity> m_musicVolumeBars;
+
+    // Inputs rebinding widgets
+    Entity          m_leftRebindBtn = NULL_ENTITY;
+    Entity          m_rightRebindBtn = NULL_ENTITY;
+    Entity          m_launchRebindBtn = NULL_ENTITY;
+    Entity          m_pauseRebindBtn = NULL_ENTITY;
+    Entity          m_resetDefaultsBtn = NULL_ENTITY;
+    Entity          m_rebindStatusText = NULL_ENTITY;
+    InputAction     m_rebindAction = InputAction::Count;
+    bool            m_isRebinding = false;
 
     // PowerUp tester widgets
     bool            m_powerUpTesterActive = false;
     Entity          m_powerUpStatusText = NULL_ENTITY;
+    std::vector<Entity> m_powerUpTesterButtons;
+    int             m_powerUpTesterIndex = 0;
 
     // Game Over & Victory widgets
     Entity          m_gameOverTitleText = NULL_ENTITY;

@@ -58,7 +58,8 @@ Entity UIFactory::CreateButton(Registry& registry, Entity parent, const ButtonDe
         .DefaultColor = desc.DefaultColor,
         .HoverColor = desc.HoverColor,
         .PressedColor = desc.PressedColor,
-        .OnClick = desc.OnClick
+        .OnClick = desc.OnClick,
+        .IgnoreMenuNavigation = desc.IgnoreMenuNavigation
     });
     
     if (!desc.Text.empty())

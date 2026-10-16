@@ -25,4 +25,6 @@ struct ButtonComponent
     std::function<void()>   OnClick = nullptr;
     std::function<void()>   OnHoverEnter = nullptr;
     std::function<void()>   OnHoverExit = nullptr;
+
+    bool IgnoreMenuNavigation = false;
 };

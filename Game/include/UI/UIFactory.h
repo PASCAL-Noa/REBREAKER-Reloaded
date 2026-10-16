@@ -44,7 +44,8 @@ struct ButtonDescriptor
     float   FontSize = 30.0f;
     Anchor  AnchorPoint  = Anchor::Center;
     uint32_t    TextureId = 0;
-    uint8_t     _padding[4] = {0};
+    bool    IgnoreMenuNavigation = false;
+    uint8_t     _padding[3] = {0};
 };
 
 struct VolumeControlDescriptor

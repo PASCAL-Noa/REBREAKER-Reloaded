@@ -72,6 +72,6 @@ public:
                 return false;
             }
         }
-        return pOwner->GetContext()->Input.IsKeyPress(KeyCode::Space);
+        return pOwner->GetContext()->Input.IsActionTriggered(InputAction::LaunchBall) || pOwner->GetContext()->Input.IsKeyPress(KeyCode::Space);
     }
 };
