@@ -79,6 +79,9 @@ inline std::vector<LevelThumbnailData> LoadAllLevelThumbnails(const LevelManager
                 else if (ch == '2') brickColor = Colors::Yellow;
                 else if (ch == '3') brickColor = Colors::Red;
                 else if (ch == 'S' || ch == 's') brickColor = Color{255, 0, 255, 255};
+                else if (ch == 'M' || ch == 'm' || ch == 'U' || ch == 'u') brickColor = Color{180, 195, 210, 255};
+                else if (ch == 'B' || ch == 'b' || ch == 'X' || ch == 'x') brickColor = Color{255, 80, 20, 255};
+                else continue;
 
                 LevelBrickPreview brick;
                 brick.RelX = startRelX + static_cast<float>(c) * (brickW + gap);
@@ -88,7 +91,10 @@ inline std::vector<LevelThumbnailData> LoadAllLevelThumbnails(const LevelManager
                 brick.Tint = brickColor;
 
                 thumb.Bricks.push_back(brick);
-                thumb.BrickCount++;
+                if (ch != 'M' && ch != 'm' && ch != 'U' && ch != 'u')
+                {
+                    thumb.BrickCount++;
+                }
             }
         }
     }

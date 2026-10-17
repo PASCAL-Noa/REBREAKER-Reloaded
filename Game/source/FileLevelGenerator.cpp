@@ -63,10 +63,18 @@ int FileLevelGenerator::Generate(Registry& registry, GameContext& context, uint3
             {
                 type = BrickType::Hard;
             }
-            else if (c == 'S')
+            else if (c == 'S' || c == 's')
             {
                 type = BrickType::Special;
                 isSpecial = true;
+            }
+            else if (c == 'M' || c == 'm' || c == 'U' || c == 'u')
+            {
+                type = BrickType::Metal;
+            }
+            else if (c == 'B' || c == 'b' || c == 'X' || c == 'x')
+            {
+                type = BrickType::Bomb;
             }
             else
             {
@@ -78,7 +86,10 @@ int FileLevelGenerator::Generate(Registry& registry, GameContext& context, uint3
             float y = startY + static_cast<float>(row) * (bHeight + pad);
 
             BrickFactory::Create(registry, x, y, type, isSpecial, brickTexId);
-            brickCount++;
+            if (type != BrickType::Metal)
+            {
+                brickCount++;
+            }
         }
         row++;
     }

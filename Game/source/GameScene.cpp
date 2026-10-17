@@ -36,6 +36,8 @@
 #include <algorithm>
 #include <random>
 #include <cmath>
+#include <queue>
+#include <unordered_set>
 
 #include "Core/Debug.h"
 #include "Core/SceneManager.h"
@@ -171,7 +173,7 @@ void GameScene::OnInit(GameContext& context)
 
                 if (m_registry.HasComponent<BrickComponent>(other))
                 {
-                    HandleBrickCollision(other);
+                    HandleBrickCollision(other, NULL_ENTITY, /*isLaser=*/true);
                     m_registry.DestroyEntityDeferred(laser);
                     it = lasers.erase(it);
                     return;
@@ -205,7 +207,7 @@ void GameScene::OnInit(GameContext& context)
         bool isPaddle = (otherEntity == m_paddle);
         bool isBottomWall = (otherEntity == m_bottomWall);
 
-        HandleBrickCollision(otherEntity, ballEntity);
+        HandleBrickCollision(otherEntity, ballEntity, /*isLaser=*/false, /*isExplosion=*/false);
 
         if (isPaddle)
         {
@@ -333,6 +335,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     DefaultScene::OnUpdate(dt, context);
     mp_context = &context;
 
+    m_gameplayTime += dt;
     if (mp_state_machine)
     {
         mp_state_machine->Update();
@@ -477,6 +480,23 @@ void GameScene::OnRender(GameContext& context)
     context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{-800.0f, 450.0f}, Colors::White, 2.0f);
     context.Render.DrawLine(Vector2f{800.0f, -450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
     context.Render.DrawLine(Vector2f{-800.0f, 450.0f}, Vector2f{800.0f, 450.0f}, Colors::White, 2.0f);
+
+    // Visual accents for Metal (riveted steel plate outline) and Bomb (hazard pulsing rim + core)
+    m_registry.View<Transform2D, BoxCollider, BrickComponent>([&](Entity, const Transform2D& t, const BoxCollider& b, const BrickComponent& brick)
+    {
+        if (brick.IsUnbreakable)
+        {
+            context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, Color{225, 235, 250, 210}, -1.5f);
+            context.Render.DrawRectangleOutline(b.Size.X - 14.0f, b.Size.Y - 10.0f, t, Color{110, 130, 155, 160}, -1.0f);
+        }
+        else if (brick.IsBomb)
+        {
+            float pulse = (std::sin(m_gameplayTime * 6.5f) + 1.0f) * 0.5f;
+            Color pulseBorder{255, static_cast<uint8_t>(140 + 80 * pulse), 30, static_cast<uint8_t>(180 + 75 * pulse)};
+            context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, pulseBorder, -2.0f);
+            context.Render.DrawCircle(5.0f, t, Color{255, 250, 180, static_cast<uint8_t>(200 + 55 * pulse)});
+        }
+    });
 
 
     const bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
@@ -798,7 +818,7 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
         if (!m_registry.IsAlive(brickEntity) || m_registry.IsPendingDestroy(brickEntity)) continue;
         auto& brick = m_registry.GetComponent<BrickComponent>(brickEntity);
         brick.HitPoints = 0;
-        HandleBrickCollision(brickEntity, NULL_ENTITY);
+        HandleBrickCollision(brickEntity, NULL_ENTITY, /*isLaser=*/false, /*isExplosion=*/true);
     }
 
     SpawnFireExplosionParticles(explosionCenter, aoeRadius, 45);
@@ -1371,10 +1391,146 @@ void GameScene::HandleDeath()
     m_registry.GetComponent<TweenComponent>(m_ball).AddTween(scaleTween);
 }
 
-void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity)
+void GameScene::DetonateBombBrick(Entity initialBomb)
+{
+    if (!m_registry.IsAlive(initialBomb) || m_registry.IsPendingDestroy(initialBomb))
+        return;
+
+    std::queue<Entity> bombQueue;
+    std::unordered_set<Entity> processedBombs;
+
+    bombQueue.push(initialBomb);
+    processedBombs.insert(initialBomb);
+
+    if (mp_context)
+    {
+        mp_context->Audio.TriggerDucking(0.45f, 0.5f);
+        if (m_explosionSfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
+        }
+    }
+
+    TriggerPostProcessFlash(0.025f, 0.55f, Color{255, 140, 40, 255}, 0.25f, Color{255, 60, 20, 255});
+    TweenEffects::Shake(m_registry, m_camera, 0.25f, 12.0f);
+
+    while (!bombQueue.empty())
+    {
+        Entity currentBomb = bombQueue.front();
+        bombQueue.pop();
+
+        if (!m_registry.IsAlive(currentBomb)) continue;
+
+        Vector2f bombPos{0.0f, 0.0f};
+        if (m_registry.HasComponent<Transform2D>(currentBomb))
+        {
+            bombPos = m_registry.GetComponent<Transform2D>(currentBomb).Position;
+        }
+
+        SpawnFireExplosionParticles(bombPos, 85.0f, 35);
+
+        if (m_registry.HasComponent<BrickComponent>(currentBomb))
+        {
+            auto& bombComp = m_registry.GetComponent<BrickComponent>(currentBomb);
+            m_scoreManager.AddScore(bombComp.ScoreValue);
+            m_brickCount--;
+            mp_context->Events.Publish(BrickHitEvent(currentBomb, true, bombComp.IsSpecial, m_scoreManager.GetComboMultiplier(), bombPos));
+        }
+
+        m_registry.DestroyEntityDeferred(currentBomb);
+
+        // Brick spacing: Col = 110.0f (100 + 10 pad), Row = 40.0f (30 + 10 pad)
+        // 3x3 grid covers dx in [-125, 125], dy in [-55, 55]
+        constexpr float kMaxDx = 125.0f;
+        constexpr float kMaxDy = 55.0f;
+
+        std::vector<Entity> neighbors;
+        m_registry.View<Transform2D, BrickComponent>([&](Entity otherEntity, const Transform2D& otherTrans, const BrickComponent&)
+        {
+            if (otherEntity == currentBomb) return;
+            if (!m_registry.IsAlive(otherEntity) || m_registry.IsPendingDestroy(otherEntity)) return;
+            if (processedBombs.find(otherEntity) != processedBombs.end()) return;
+
+            float dx = std::abs(otherTrans.Position.X - bombPos.X);
+            float dy = std::abs(otherTrans.Position.Y - bombPos.Y);
+
+            if (dx <= kMaxDx && dy <= kMaxDy)
+            {
+                neighbors.push_back(otherEntity);
+            }
+        });
+
+        for (Entity neighbor : neighbors)
+        {
+            if (!m_registry.IsAlive(neighbor) || m_registry.IsPendingDestroy(neighbor)) continue;
+
+            auto& nBrick = m_registry.GetComponent<BrickComponent>(neighbor);
+
+            // Metal / Unbreakable bricks resist bomb shockwaves
+            if (nBrick.IsUnbreakable)
+            {
+                if (m_registry.HasComponent<Transform2D>(neighbor))
+                {
+                    const auto& nTrans = m_registry.GetComponent<Transform2D>(neighbor);
+                    SpawnExplosionParticles(nTrans.Position, Color{200, 210, 225, 255}, 8);
+                    TweenEffects::Shake(m_registry, neighbor, 0.12f, 3.0f);
+                }
+                continue;
+            }
+
+            // Chain reaction: If neighbor is a bomb, enqueue it without recursion!
+            if (nBrick.IsBomb)
+            {
+                if (processedBombs.find(neighbor) == processedBombs.end())
+                {
+                    processedBombs.insert(neighbor);
+                    bombQueue.push(neighbor);
+                }
+                continue;
+            }
+
+            // Destructible neighbor brick
+            Vector2f nPos{0.0f, 0.0f};
+            Color nColor = Colors::White;
+            if (m_registry.HasComponent<Transform2D>(neighbor))
+            {
+                nPos = m_registry.GetComponent<Transform2D>(neighbor).Position;
+            }
+            if (m_registry.HasComponent<SpriteComponent>(neighbor))
+            {
+                nColor = m_registry.GetComponent<SpriteComponent>(neighbor).Tint;
+            }
+
+            SpawnExplosionParticles(nPos, nColor, 15);
+
+            m_scoreManager.AddScore(nBrick.ScoreValue);
+            m_brickCount--;
+
+            mp_context->Events.Publish(BrickHitEvent(neighbor, true, nBrick.IsSpecial, m_scoreManager.GetComboMultiplier(), nPos));
+
+            if (nBrick.IsSpecial)
+            {
+                SpawnPowerUp(nPos);
+            }
+
+            m_registry.DestroyEntityDeferred(neighbor);
+        }
+    }
+}
+
+void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLaser, bool isExplosion)
 {
     if (m_registry.IsPendingDestroy(entity)) return;
     if (!m_registry.HasComponent<BrickComponent>(entity)) return;
+
+    auto& brick = m_registry.GetComponent<BrickComponent>(entity);
+
+    // 1. Bomb Bricks: Detonates on any strike (ball, laser, or explosion) and triggers chain reaction
+    if (brick.IsBomb)
+    {
+        DetonateBombBrick(entity);
+        return;
+    }
 
     bool isFireBall = false;
     if (ballEntity != NULL_ENTITY && m_registry.IsAlive(ballEntity) && m_registry.HasComponent<BallComponent>(ballEntity))
@@ -1392,8 +1548,54 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity)
         }
     }
 
-    auto& brick = m_registry.GetComponent<BrickComponent>(entity);
-    if (m_bigBallDuration > 0.0f || isFireBall || brick.HitPoints <= 1)
+    // 2. Metal / Unbreakable Bricks: Impenetrable to standard balls, destroyable only via FireBall or laser piercing
+    if (brick.IsUnbreakable)
+    {
+        if (isFireBall || isLaser || isExplosion)
+        {
+            brick.HitPoints = 0;
+            m_scoreManager.AddScore(brick.ScoreValue);
+
+            Vector2f contactPos{0.0f, 0.0f};
+            if (m_registry.HasComponent<Transform2D>(entity))
+            {
+                contactPos = m_registry.GetComponent<Transform2D>(entity).Position;
+                SpawnFireExplosionParticles(contactPos, 65.0f, 30);
+            }
+
+            mp_context->Events.Publish(BrickHitEvent(entity, true, false, m_scoreManager.GetComboMultiplier(), contactPos));
+
+            if (mp_context && m_explosionSfxId != 0)
+            {
+                mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
+            }
+
+            m_registry.DestroyEntityDeferred(entity);
+            return;
+        }
+        else
+        {
+            // Standard ball bounces off with spark feedback and high-pitch metallic clank
+            Vector2f contactPos{0.0f, 0.0f};
+            if (m_registry.HasComponent<Transform2D>(entity))
+            {
+                contactPos = m_registry.GetComponent<Transform2D>(entity).Position;
+                SpawnExplosionParticles(contactPos, Color{225, 235, 255, 255}, 8);
+                TweenEffects::Shake(m_registry, entity, 0.1f, 3.0f);
+            }
+
+            if (mp_context && m_bounceSfxId != 0)
+            {
+                mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f, 1.25f);
+            }
+
+            mp_context->Events.Publish(BrickHitEvent(entity, false, false, m_scoreManager.GetComboMultiplier(), contactPos));
+            return;
+        }
+    }
+
+    // 3. Normal & Multi-Hit Bricks
+    if (m_bigBallDuration > 0.0f || isFireBall || isLaser || isExplosion || brick.HitPoints <= 1)
     {
         brick.HitPoints = 0; // Destroyed in one hit or fatal damage
     }
@@ -1413,6 +1615,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity)
     {
         m_scoreManager.AddScore(0);
         
+        // Visual durability cracking stages for multi-hit bricks
         if (m_registry.HasComponent<SpriteComponent>(entity))
         {
             auto& sprite = m_registry.GetComponent<SpriteComponent>(entity);
@@ -1420,16 +1623,32 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity)
             {
                 sprite.Shader.OverlayTextureId = m_brickCrackTexId;
                 sprite.Shader.ShaderId = m_crackShaderId;
-                float ratio = static_cast<float>(brick.MaxHitPoints - brick.HitPoints) / static_cast<float>(brick.MaxHitPoints - 1);
-                if (ratio > 1.0f) ratio = 1.0f;
-                if (ratio < 0.0f) ratio = 0.0f;
-                sprite.Shader.ShaderValue = ratio;
+
+                float crackAmount = 0.5f;
+                if (brick.MaxHitPoints == 2)
+                {
+                    crackAmount = 0.85f;
+                }
+                else if (brick.MaxHitPoints == 3)
+                {
+                    crackAmount = (brick.HitPoints == 2) ? 0.45f : 0.95f;
+                }
+                else
+                {
+                    float damageRatio = static_cast<float>(brick.MaxHitPoints - brick.HitPoints) / static_cast<float>(brick.MaxHitPoints);
+                    if (damageRatio < 0.35f) crackAmount = 0.40f;
+                    else if (damageRatio < 0.70f) crackAmount = 0.70f;
+                    else crackAmount = 1.0f;
+                }
+
+                sprite.Shader.ShaderValue = crackAmount;
             }
             
             if (m_registry.HasComponent<Transform2D>(entity))
             {
                 const auto& transform = m_registry.GetComponent<Transform2D>(entity);
-                SpawnExplosionParticles(transform.Position, sprite.Tint, 5);
+                SpawnExplosionParticles(transform.Position, sprite.Tint, 6);
+                TweenEffects::Shake(m_registry, entity, 0.12f, 3.5f);
             }
         }
     }

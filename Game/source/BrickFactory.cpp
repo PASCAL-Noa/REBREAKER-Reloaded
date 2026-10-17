@@ -24,6 +24,8 @@ Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type
         case BrickType::Medium:  comp.HitPoints = 2; comp.ScoreValue = 100; tint = Colors::Yellow; break;
         case BrickType::Hard:    comp.HitPoints = 3; comp.ScoreValue = 200; tint = Colors::Red; break;
         case BrickType::Special: comp.HitPoints = 1; comp.ScoreValue = 500; comp.IsSpecial = true; tint = Color{255, 0, 255, 255}; break;
+        case BrickType::Metal:   comp.HitPoints = 999999; comp.ScoreValue = 500; comp.IsUnbreakable = true; tint = Color{180, 195, 210, 255}; break;
+        case BrickType::Bomb:    comp.HitPoints = 1; comp.ScoreValue = 150; comp.IsBomb = true; tint = Color{255, 80, 20, 255}; break;
         default:                 tint = Colors::White;
     }
     
