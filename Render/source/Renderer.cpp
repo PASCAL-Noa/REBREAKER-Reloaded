@@ -360,6 +360,19 @@ void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize
     }
 }
 
+void Renderer::DrawTextCentered(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color, BlendMode blendMode)
+{
+    if (sf::Font* font = m_resources.Get<sf::Font>(fontId))
+    {
+        sf::Text sfText(*font, text, static_cast<unsigned int>(fontSize));
+        const sf::FloatRect bounds = sfText.getLocalBounds();
+        sfText.setOrigin({bounds.position.x + bounds.size.x * 0.5f, bounds.position.y + bounds.size.y * 0.5f});
+        ApplyTransform(sfText, transform);
+        sfText.setFillColor(ToSfColor(color));
+        RenderItem(m_renderTexture, sfText, blendMode);
+    }
+}
+
 Vector2f Renderer::GetTextSize(const std::string& text, uint32_t fontId, float fontSize) const
 {
     if (sf::Font* font = m_resources.Get<sf::Font>(fontId))

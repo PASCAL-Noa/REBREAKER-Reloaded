@@ -58,7 +58,8 @@ Entity UIFactory::CreateButton(Registry& registry, Entity parent, const ButtonDe
         .DefaultColor = desc.DefaultColor,
         .HoverColor = desc.HoverColor,
         .PressedColor = desc.PressedColor,
-        .OnClick = desc.OnClick
+        .OnClick = desc.OnClick,
+        .IgnoreMenuNavigation = desc.IgnoreMenuNavigation
     });
     
     if (!desc.Text.empty())
@@ -91,7 +92,6 @@ void UIFactory::CreateVolumeControl(Registry& registry, Entity parent, const Vol
         .OnClick = desc.OnMinus,
         .Position = {desc.Position.X - 190.0f, desc.Position.Y},
         .Size = {60.0f, 60.0f},
-        .TextOffset = {-2.0f, -24.0f},
         .FontId = desc.FontId,
         .FontSize = 40.0f
     });
@@ -128,7 +128,6 @@ void UIFactory::CreateVolumeControl(Registry& registry, Entity parent, const Vol
         .OnClick = desc.OnPlus,
         .Position = {desc.Position.X + 545.0f, desc.Position.Y},
         .Size = {60.0f, 60.0f},
-        .TextOffset = {-2.0f, -20.0f},
         .FontId = desc.FontId,
         .FontSize = 40.0f
     });

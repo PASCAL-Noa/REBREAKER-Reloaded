@@ -8,6 +8,16 @@
 #include "Events/EventDispatcher.h"
 #include "Graphics/Renderer.h"
 
+enum class KonamiCodeStep : uint8_t
+{
+    Up,
+    Down,
+    Left,
+    Right,
+    B,
+    A
+};
+
 class CheatManager
 {
 public:
@@ -21,7 +31,7 @@ public:
     bool TryCheat(const std::string& code, const GameContext& context);
 
 private:
-    std::vector<KeyCode> m_konamiSequence;
+    std::vector<KonamiCodeStep> m_konamiSequence;
     int m_konamiIndex = 0;
     
     float m_cheatTimer = 0.0f;

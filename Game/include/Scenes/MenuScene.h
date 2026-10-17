@@ -6,6 +6,7 @@
 #include "ECS/Entity.h"
 #include "LeaderboardManager.h"
 #include "LevelManager.h"
+#include "Core/InputActions.h"
 
 struct StarParticle
 {
@@ -42,6 +43,7 @@ private:
     void    CreateGamerulesTab(const GameContext& context);
     void    CreateCheatsTab(const GameContext& context);
     void    OpenSettingsTab(Entity targetCanvas);
+    void    UpdateInputButtons();
 
     void    CreateLeaderboardModal(const GameContext& context);
     void    CreateDebugModal(const GameContext& context);
@@ -71,8 +73,22 @@ private:
     Entity  m_vsyncBtn = NULL_ENTITY;
     Entity  m_shaderBtn = NULL_ENTITY;
     Entity  m_particlesBtn = NULL_ENTITY;
+    Entity  m_audioDeviceBtn = NULL_ENTITY;
     std::vector<Entity> m_sfxVolumeBars;
     std::vector<Entity> m_musicVolumeBars;
+
+    // Inputs rebinding widgets
+    Entity  m_inputDeviceBtn = NULL_ENTITY;
+    Entity  m_leftRebindBtn = NULL_ENTITY;
+    Entity  m_rightRebindBtn = NULL_ENTITY;
+    Entity  m_launchRebindBtn = NULL_ENTITY;
+    Entity  m_pauseRebindBtn = NULL_ENTITY;
+    Entity  m_resetDefaultsBtn = NULL_ENTITY;
+    Entity  m_rebindStatusText = NULL_ENTITY;
+    InputAction m_rebindAction = InputAction::Count;
+    bool    m_isRebinding = false;
+    bool    m_rebindGamepadMode = false;
+    float   m_rebindTimer = 0.0f;
 
     LeaderboardManager  m_leaderboard;
     LevelManager        m_levelManager;

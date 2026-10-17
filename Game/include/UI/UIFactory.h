@@ -35,7 +35,7 @@ struct ButtonDescriptor
     std::function<void()>   OnClick = nullptr;
     Vector2f    Position = {0.0f, 0.0f};
     Vector2f    Size = {300.0f, 60.0f};
-    Vector2f    TextOffset = {0.0f, -10.0f};
+    Vector2f    TextOffset = {0.0f, 0.0f};
     Color   DefaultColor = Color{50, 50, 50, 255};
     Color   HoverColor   = Color{100, 100, 100, 255};
     Color   PressedColor = Color{30, 30, 30, 255};
@@ -44,7 +44,8 @@ struct ButtonDescriptor
     float   FontSize = 30.0f;
     Anchor  AnchorPoint  = Anchor::Center;
     uint32_t    TextureId = 0;
-    uint8_t     _padding[4] = {0};
+    bool    IgnoreMenuNavigation = false;
+    uint8_t     _padding[3] = {0};
 };
 
 struct VolumeControlDescriptor

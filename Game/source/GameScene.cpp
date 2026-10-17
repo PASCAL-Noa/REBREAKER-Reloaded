@@ -286,12 +286,24 @@ void GameScene::OnInit(GameContext& context)
         bool OnTest(GameScene* pOwner) override
         {
             if (!pOwner || !pOwner->CanUnpause()) return false;
-            return pOwner->GetContext()->Input.IsKeyPress(KeyCode::Escape);
+            return pOwner->GetContext()->Input.IsActionTriggered(InputAction::Pause) ||
+                   pOwner->GetContext()->Input.IsKeyPress(KeyCode::Escape) ||
+                   pOwner->GetContext()->Input.IsJoystickButtonPress(0, 1);
+        }
+    };
+
+    class PlayToPauseCondition : public Condition<GameScene>
+    {
+    public:
+        bool OnTest(GameScene* pOwner) override
+        {
+            if (!pOwner) return false;
+            return pOwner->GetContext()->Input.IsActionTriggered(InputAction::Pause) || pOwner->GetContext()->Input.IsKeyPress(KeyCode::Escape);
         }
     };
 
     State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
-    playingState->AddTransition(new Transition<GameScene>(new KeyPressCondition<GameScene>(KeyCode::Escape), static_cast<int>(SceneState::Paused)));
+    playingState->AddTransition(new Transition<GameScene>(new PlayToPauseCondition(), static_cast<int>(SceneState::Paused)));
     playingState->AddTransition(new Transition<GameScene>(new LivesCondition<GameScene>(), static_cast<int>(SceneState::GameOver)));
     playingState->AddTransition(new Transition<GameScene>(new LevelClearedCondition<GameScene>(), static_cast<int>(SceneState::LevelTransition)));
     playingState->AddTransition(new Transition<GameScene>(new VictoryCondition<GameScene>(), static_cast<int>(SceneState::Victory)));
@@ -339,6 +351,10 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         context.Events.Publish(GameStateChangedEvent(uiState));
     }
 
+    if (m_uiController && m_uiController->IsRebinding())
+    {
+        UISystem::SetNavigationEnabled(false);
+    }
     UISystem::OnUpdate(dt, m_registry, context);
 
     if (currentState == static_cast<int>(SceneState::LevelTransition))
@@ -518,7 +534,11 @@ void GameScene::OnRender(GameContext& context)
         stats += "\n[TAB] Open Power-Up Tester Tool";
     }
 
-    DrawDefaultUI(context, "REBREAKER", stats);
+    const bool modalOpen = (m_uiController && m_uiController->IsModalOrSubMenuOpen());
+    if (!modalOpen)
+    {
+        DrawDefaultUI(context, "REBREAKER", stats);
+    }
     UISystem::OnRender(m_registry, context);
     if (m_uiController)
     {
@@ -1091,9 +1111,33 @@ void GameScene::HandleInput(const float /*dt*/, const GameContext& context)
 
     bool testerActive = m_uiController && m_uiController->IsPowerUpTesterActive();
 
-    if (context.Input.IsKeyPress(KeyCode::Tab) || context.Input.IsKeyPress(KeyCode::T))
+    const bool toggleTester = context.Input.IsKeyPress(KeyCode::Tab) ||
+                              context.Input.IsKeyPress(KeyCode::T) ||
+                              context.Input.IsJoystickButtonPress(0, 9) || // R3 (Right Stick Click)
+                              context.Input.IsJoystickButtonPress(0, 6);   // Back / Select
+    if (toggleTester)
     {
         if (m_uiController) m_uiController->TogglePowerUpTester();
+        testerActive = m_uiController && m_uiController->IsPowerUpTesterActive();
+    }
+
+    if (testerActive && m_uiController)
+    {
+        // 2nd joystick (Right Stick Y) or Bumpers (LB / RB) navigation without impacting paddle
+        if (context.Input.IsGamepadRightStickUpTriggered(0) || context.Input.IsGamepadLeftBumperTriggered(0))
+        {
+            m_uiController->NavigatePowerUpTester(-1);
+        }
+        else if (context.Input.IsGamepadRightStickDownTriggered(0) || context.Input.IsGamepadRightBumperTriggered(0))
+        {
+            m_uiController->NavigatePowerUpTester(1);
+        }
+
+        // Apply/Trigger selected power-up with Gamepad Y (Button 3) or Enter
+        if (context.Input.IsJoystickButtonPress(0, 3) || context.Input.IsKeyPress(KeyCode::Enter))
+        {
+            m_uiController->ActivatePowerUpTesterSelected();
+        }
     }
 
     if (context.Input.IsKeyPress(KeyCode::Numpad1) || (testerActive && context.Input.IsKeyPress(KeyCode::Num1))) ApplyPowerUp(PowerUpType::MultiBall);

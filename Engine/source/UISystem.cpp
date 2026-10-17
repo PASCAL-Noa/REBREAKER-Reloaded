@@ -88,45 +88,310 @@ bool UISystem::IsParentEnabled(Registry& registry, Entity entity)
     return true;
 }
 
+namespace
+{
+    Entity s_focusedButton = NULL_ENTITY;
+    Vector2f s_lastMousePos{-9999.0f, -9999.0f};
+    bool s_usingGamepadOrNav = false;
+    bool s_navigationEnabled = true;
+
+    struct ButtonCandidate
+    {
+        Entity entity = NULL_ENTITY;
+        Vector2f pos{0.0f, 0.0f};
+    };
+}
+
+void UISystem::SetNavigationEnabled(bool enabled)
+{
+    s_navigationEnabled = enabled;
+    if (!enabled)
+    {
+        s_usingGamepadOrNav = false;
+    }
+}
+
+bool UISystem::IsNavigationEnabled()
+{
+    return s_navigationEnabled;
+}
+
 void UISystem::UpdateButtons(Registry& registry, const GameContext& context, const Vector2f& logicalMousePos, const Vector2f& viewSize)
 {
     const bool isLeftMouseDown = context.Input.IsMouseButtonDown(MouseButton::Left);
     const bool isLeftMousePress = context.Input.IsMouseButtonPress(MouseButton::Left);
     const bool isLeftMouseRelease = context.Input.IsMouseButtonRelease(MouseButton::Left);
 
+    const bool navUp = s_navigationEnabled && context.Input.IsMenuUpTriggered();
+    const bool navDown = s_navigationEnabled && context.Input.IsMenuDownTriggered();
+    const bool navLeft = s_navigationEnabled && context.Input.IsMenuLeftTriggered();
+    const bool navRight = s_navigationEnabled && context.Input.IsMenuRightTriggered();
+    const bool navSelect = s_navigationEnabled && context.Input.IsMenuSelectTriggered();
+
+    // Mouse movement detection switches back to mouse mode
+    float mouseDelta = std::abs(logicalMousePos.X - s_lastMousePos.X) + std::abs(logicalMousePos.Y - s_lastMousePos.Y);
+    if (mouseDelta > 2.0f || isLeftMousePress || isLeftMouseDown)
+    {
+        s_usingGamepadOrNav = false;
+        s_lastMousePos = logicalMousePos;
+    }
+
+    if (s_navigationEnabled && (navUp || navDown || navLeft || navRight || navSelect))
+    {
+        s_usingGamepadOrNav = true;
+    }
+
+    // Collect all active buttons
+    std::vector<ButtonCandidate> candidates;
     registry.View<RectTransform, ButtonComponent>([&](const Entity entity, const RectTransform& transform, ButtonComponent& button)
     {
+        if (button.IgnoreMenuNavigation) return;
         if (!transform.IsActive || !IsParentEnabled(registry, transform.Parent)) return;
+        if (!button.OnClick && !button.OnHoverEnter) return;
 
         Vector2f absolutePos = GetAbsolutePosition(registry, entity, transform, viewSize);
-        bool isHovered = IsPointInsideRect(logicalMousePos, absolutePos, transform.Size);
+        candidates.push_back({entity, absolutePos});
+    });
 
-        if (isHovered)
+    std::function<void()> onClickToCall = nullptr;
+
+    if (s_usingGamepadOrNav)
+    {
+        if (candidates.empty())
         {
-            if (isLeftMousePress)
-            {
-                button.State = ButtonState::Pressed;
-            }
-            else if (isLeftMouseRelease && button.State == ButtonState::Pressed)
-            {
-                button.State = ButtonState::Hovered;
-                if (button.OnClick) button.OnClick();
-            }
-            else if (!isLeftMouseDown && button.State != ButtonState::Hovered)
-            {
-                button.State = ButtonState::Hovered;
-                if (button.OnHoverEnter) button.OnHoverEnter();
-            }
+            s_focusedButton = NULL_ENTITY;
         }
         else
         {
-            if (button.State == ButtonState::Hovered && button.OnHoverExit)
+            // Verify current focus is still in candidate list
+            bool focusValid = false;
+            Vector2f currPos{0.0f, 0.0f};
+            for (const auto& c : candidates)
             {
-                button.OnHoverExit();
+                if (c.entity == s_focusedButton)
+                {
+                    focusValid = true;
+                    currPos = c.pos;
+                    break;
+                }
             }
-            button.State = ButtonState::Normal;
+
+            if (!focusValid)
+            {
+                s_focusedButton = candidates.front().entity;
+                currPos = candidates.front().pos;
+            }
+
+            if (navUp || navDown || navLeft || navRight)
+            {
+                Entity bestCandidate = s_focusedButton;
+                float bestScore = 1e9f;
+
+                if (navUp)
+                {
+                    // Look for candidates above current (Y < currPos.Y - 5)
+                    for (const auto& c : candidates)
+                    {
+                        if (c.entity == s_focusedButton) continue;
+                        float dy = c.pos.Y - currPos.Y;
+                        float dx = c.pos.X - currPos.X;
+                        if (dy < -5.0f)
+                        {
+                            float score = (-dy) + 1.5f * std::abs(dx);
+                            if (score < bestScore)
+                            {
+                                bestScore = score;
+                                bestCandidate = c.entity;
+                            }
+                        }
+                    }
+                    // Wrap to bottom-most if none found above
+                    if (bestCandidate == s_focusedButton)
+                    {
+                        float maxY = -1e9f;
+                        for (const auto& c : candidates)
+                        {
+                            if (c.pos.Y > maxY)
+                            {
+                                maxY = c.pos.Y;
+                                bestCandidate = c.entity;
+                            }
+                        }
+                    }
+                }
+                else if (navDown)
+                {
+                    // Look for candidates below current (Y > currPos.Y + 5)
+                    for (const auto& c : candidates)
+                    {
+                        if (c.entity == s_focusedButton) continue;
+                        float dy = c.pos.Y - currPos.Y;
+                        float dx = c.pos.X - currPos.X;
+                        if (dy > 5.0f)
+                        {
+                            float score = dy + 1.5f * std::abs(dx);
+                            if (score < bestScore)
+                            {
+                                bestScore = score;
+                                bestCandidate = c.entity;
+                            }
+                        }
+                    }
+                    // Wrap to top-most if none found below
+                    if (bestCandidate == s_focusedButton)
+                    {
+                        float minY = 1e9f;
+                        for (const auto& c : candidates)
+                        {
+                            if (c.pos.Y < minY)
+                            {
+                                minY = c.pos.Y;
+                                bestCandidate = c.entity;
+                            }
+                        }
+                    }
+                }
+                else if (navLeft)
+                {
+                    // Look for candidates to the left (X < currPos.X - 5)
+                    for (const auto& c : candidates)
+                    {
+                        if (c.entity == s_focusedButton) continue;
+                        float dx = c.pos.X - currPos.X;
+                        float dy = c.pos.Y - currPos.Y;
+                        if (dx < -5.0f)
+                        {
+                            float score = (-dx) + 1.5f * std::abs(dy);
+                            if (score < bestScore)
+                            {
+                                bestScore = score;
+                                bestCandidate = c.entity;
+                            }
+                        }
+                    }
+                    // Wrap to right-most
+                    if (bestCandidate == s_focusedButton)
+                    {
+                        float maxX = -1e9f;
+                        for (const auto& c : candidates)
+                        {
+                            if (c.pos.X > maxX)
+                            {
+                                maxX = c.pos.X;
+                                bestCandidate = c.entity;
+                            }
+                        }
+                    }
+                }
+                else if (navRight)
+                {
+                    // Look for candidates to the right (X > currPos.X + 5)
+                    for (const auto& c : candidates)
+                    {
+                        if (c.entity == s_focusedButton) continue;
+                        float dx = c.pos.X - currPos.X;
+                        float dy = c.pos.Y - currPos.Y;
+                        if (dx > 5.0f)
+                        {
+                            float score = dx + 1.5f * std::abs(dy);
+                            if (score < bestScore)
+                            {
+                                bestScore = score;
+                                bestCandidate = c.entity;
+                            }
+                        }
+                    }
+                    // Wrap to left-most
+                    if (bestCandidate == s_focusedButton)
+                    {
+                        float minX = 1e9f;
+                        for (const auto& c : candidates)
+                        {
+                            if (c.pos.X < minX)
+                            {
+                                minX = c.pos.X;
+                                bestCandidate = c.entity;
+                            }
+                        }
+                    }
+                }
+
+                s_focusedButton = bestCandidate;
+            }
+
+            // Apply focus states to all candidates
+            for (const auto& c : candidates)
+            {
+                if (!registry.HasComponent<ButtonComponent>(c.entity)) continue;
+                auto& button = registry.GetComponent<ButtonComponent>(c.entity);
+                if (c.entity == s_focusedButton)
+                {
+                    if (button.State != ButtonState::Hovered)
+                    {
+                        if (button.OnHoverEnter) button.OnHoverEnter();
+                    }
+                    button.State = ButtonState::Hovered;
+
+                    if (navSelect)
+                    {
+                        button.State = ButtonState::Pressed;
+                        onClickToCall = button.OnClick;
+                    }
+                }
+                else
+                {
+                    if (button.State == ButtonState::Hovered && button.OnHoverExit)
+                    {
+                        button.OnHoverExit();
+                    }
+                    button.State = ButtonState::Normal;
+                }
+            }
         }
-    });
+    }
+    else
+    {
+        // Mouse mode
+        registry.View<RectTransform, ButtonComponent>([&](const Entity entity, const RectTransform& transform, ButtonComponent& button)
+        {
+            if (!transform.IsActive || !IsParentEnabled(registry, transform.Parent)) return;
+
+            Vector2f absolutePos = GetAbsolutePosition(registry, entity, transform, viewSize);
+            bool isHovered = IsPointInsideRect(logicalMousePos, absolutePos, transform.Size);
+
+            if (isHovered)
+            {
+                s_focusedButton = entity;
+                if (isLeftMousePress)
+                {
+                    button.State = ButtonState::Pressed;
+                }
+                else if (isLeftMouseRelease && button.State == ButtonState::Pressed)
+                {
+                    button.State = ButtonState::Hovered;
+                    onClickToCall = button.OnClick;
+                }
+                else if (!isLeftMouseDown && button.State != ButtonState::Hovered)
+                {
+                    button.State = ButtonState::Hovered;
+                    if (button.OnHoverEnter) button.OnHoverEnter();
+                }
+            }
+            else
+            {
+                if (button.State == ButtonState::Hovered && button.OnHoverExit)
+                {
+                    button.OnHoverExit();
+                }
+                button.State = ButtonState::Normal;
+            }
+        });
+    }
+
+    if (onClickToCall)
+    {
+        onClickToCall();
+    }
 }
 
 void UISystem::UpdateDropdowns(Registry& registry, const GameContext& context, const Vector2f& logicalMousePos, const Vector2f& viewSize)
@@ -308,16 +573,15 @@ void UISystem::RenderText(Registry& registry, const GameContext& context, Entity
     const auto& textComp = registry.GetComponent<TextComponent>(entity);
     if (!textComp.Text.empty())
     {
-        Vector2f textPos = absolutePos;
+        Vector2f textPos = absolutePos + textComp.Offset;
         if (textComp.TextCenter)
         {
-            Vector2f textSize = context.Render.GetTextSize(textComp.Text, textComp.FontId, textComp.FontSize);
-            textPos.X -= textSize.X / 2.0f;
-            textPos.Y -= textSize.Y / 2.0f;
+            context.Render.DrawTextCentered(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
         }
-        textPos.X += textComp.Offset.X;
-        textPos.Y += textComp.Offset.Y;
-        context.Render.DrawText(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
+        else
+        {
+            context.Render.DrawText(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
+        }
     }
 }
 
@@ -390,12 +654,7 @@ void UISystem::RenderTextInput(Registry& registry, const GameContext& context, E
         }
     }
 
-    Transform2D textTransform = drawTransform;
-    Vector2f textSize = context.Render.GetTextSize(displayText, textInput.FontId, textInput.FontSize);
-    textTransform.Position.X -= textSize.X / 2.0f; 
-    textTransform.Position.Y -= textInput.FontSize / 1.5f;
-    
-    context.Render.DrawText(displayText, textInput.FontId, textInput.FontSize, textTransform, textColor);
+    context.Render.DrawTextCentered(displayText, textInput.FontId, textInput.FontSize, drawTransform, textColor);
 }
 
 void UISystem::OnRender(Registry& registry, const GameContext& context)
