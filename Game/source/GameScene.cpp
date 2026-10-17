@@ -805,6 +805,7 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
 
     if (mp_context)
     {
+        mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_explosionSfxId != 0)
             mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
         else if (m_despawnSfxId != 0)
@@ -973,12 +974,12 @@ void GameScene::OnGameOverEnter()
 
     if (mp_context)
     {
-        mp_context->Audio.StopMusic();
+        // Smoothly fade out stage music and fade in game-over stinger
+        mp_context->Audio.FadeToMusic("Resources/audio/music/Game-death.ogg", 0.6f, 50.0f, false);
         if (m_gameOverSfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_gameOverSfxId, 100.0f);
         }
-        mp_context->Audio.PlayMusic("Resources/audio/music/Game-death.ogg", 40.0f, false);
     }
 
     if (m_uiController)
@@ -996,8 +997,7 @@ void GameScene::OnGameOverExit()
 {
     if (mp_context)
     {
-        mp_context->Audio.StopMusic();
-        m_playlist.PlayNext(*mp_context);
+        m_playlist.PlayNext(*mp_context, 1.2f);
     }
     FullReset();
 }
@@ -1012,11 +1012,8 @@ void GameScene::OnVictoryEnter()
 
     if (mp_context)
     {
-        mp_context->Audio.StopMusic();
-        if (m_victorySfxId != 0)
-        {
-            mp_context->Audio.PlaySfx(m_victorySfxId, 100.0f);
-        }
+        // Smoothly fade out stage music and fade in victory stinger
+        mp_context->Audio.FadeToMusic("Resources/audio/sfx/victory.mp3", 0.6f, 85.0f, false);
     }
 
     if (m_uiController)
@@ -1033,8 +1030,7 @@ void GameScene::OnVictoryExit()
 {
     if (mp_context)
     {
-        mp_context->Audio.StopMusic();
-        m_playlist.PlayNext(*mp_context);
+        m_playlist.PlayNext(*mp_context, 1.2f);
     }
     m_levelManager.ResetToFirstLevel();
     LoadLevel(0, /*preserveStats=*/true);

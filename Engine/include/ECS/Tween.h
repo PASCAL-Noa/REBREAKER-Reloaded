@@ -52,8 +52,9 @@ public:
             }
             else
             {
-                if (m_config.OnComplete) m_config.OnComplete();
                 m_completed = true;
+                auto onComplete = std::move(m_config.OnComplete);
+                if (onComplete) onComplete();
                 return;
             }
         }

@@ -29,42 +29,48 @@ void InputManager::SetKeyState(const KeyCode key, const bool isDown)
 
 bool InputManager::IsKeyDown(const KeyCode key) const
 {
-    return m_currentKeys[static_cast<size_t>(key)];
+    const size_t index = static_cast<size_t>(key);
+    return (index < KEY_COUNT) ? m_currentKeys[index] : false;
 }
 
 bool InputManager::IsKeyPress(const KeyCode key) const
 {
     const size_t index = static_cast<size_t>(key);
-    return m_currentKeys[index] && !m_previousKeys[index];
+    return (index < KEY_COUNT) ? (m_currentKeys[index] && !m_previousKeys[index]) : false;
 }
 
 bool InputManager::IsKeyRelease(const KeyCode key) const
 {
     const size_t index = static_cast<size_t>(key);
-    return !m_currentKeys[index] && m_previousKeys[index];
+    return (index < KEY_COUNT) ? (!m_currentKeys[index] && m_previousKeys[index]) : false;
 }
 
 
 void InputManager::SetMouseButtonState(const MouseButton button, const bool isDown)
 {
-    m_currentMouse[static_cast<size_t>(button)] = isDown;
+    const size_t index = static_cast<size_t>(button);
+    if (index < MOUSE_COUNT)
+    {
+        m_currentMouse[index] = isDown;
+    }
 }
 
 bool InputManager::IsMouseButtonDown(const MouseButton button) const
 {
-    return m_currentMouse[static_cast<size_t>(button)];
+    const size_t index = static_cast<size_t>(button);
+    return (index < MOUSE_COUNT) ? m_currentMouse[index] : false;
 }
 
 bool InputManager::IsMouseButtonPress(const MouseButton button) const
 {
     const size_t index = static_cast<size_t>(button);
-    return m_currentMouse[index] && !m_previousMouse[index];
+    return (index < MOUSE_COUNT) ? (m_currentMouse[index] && !m_previousMouse[index]) : false;
 }
 
 bool InputManager::IsMouseButtonRelease(const MouseButton button) const
 {
     const size_t index = static_cast<size_t>(button);
-    return !m_currentMouse[index] && m_previousMouse[index];
+    return (index < MOUSE_COUNT) ? (!m_currentMouse[index] && m_previousMouse[index]) : false;
 }
 
 void InputManager::SetMousePosition(const float x, const float y)
