@@ -58,6 +58,7 @@ public:
     void OnRender(GameContext& context);
 
     [[nodiscard]] bool IsModalOrSubMenuOpen() const;
+    [[nodiscard]] bool IsRebinding() const noexcept { return m_isRebinding; }
     void CloseSettingsLayout();
     void OpenLevelSelectModal(Entity sourceCanvas);
     void CloseLevelSelectModal();
@@ -129,6 +130,7 @@ private:
     std::vector<Entity> m_musicVolumeBars;
 
     // Inputs rebinding widgets
+    Entity          m_inputDeviceBtn = NULL_ENTITY;
     Entity          m_leftRebindBtn = NULL_ENTITY;
     Entity          m_rightRebindBtn = NULL_ENTITY;
     Entity          m_launchRebindBtn = NULL_ENTITY;
@@ -137,6 +139,8 @@ private:
     Entity          m_rebindStatusText = NULL_ENTITY;
     InputAction     m_rebindAction = InputAction::Count;
     bool            m_isRebinding = false;
+    bool            m_rebindGamepadMode = false;
+    float           m_rebindTimer = 0.0f;
 
     // PowerUp tester widgets
     bool            m_powerUpTesterActive = false;
@@ -151,6 +155,8 @@ private:
     Entity          m_nameInputEntity = NULL_ENTITY;
     Entity          m_submitNameBtn = NULL_ENTITY;
     Entity          m_replayBtn = NULL_ENTITY;
+    Entity          m_gameOverLevelSelectBtn = NULL_ENTITY;
+    Entity          m_gameOverMainMenuBtn = NULL_ENTITY;
     std::vector<Entity> m_leaderboardRowTexts;
     std::string     m_enteredPlayerName = "PLAYER";
 

@@ -323,21 +323,68 @@ bool InputManager::IsGamepadActionActive(InputAction action, unsigned int id) co
         return false;
     }
 
+    const int mappedBtn = InputRemapManager::Get().GetGamepadBinding(action);
+    bool isMappedBtnDown = false;
+    if (mappedBtn >= 0 && static_cast<unsigned int>(mappedBtn) < MAX_JOYSTICK_BUTTONS)
+    {
+        isMappedBtnDown = IsJoystickButtonDown(id, static_cast<unsigned int>(mappedBtn));
+    }
+    else if (mappedBtn == 100) // D-Pad Left
+    {
+        isMappedBtnDown = (m_joystickAxes[id][6] < -35.0f);
+    }
+    else if (mappedBtn == 101) // D-Pad Right
+    {
+        isMappedBtnDown = (m_joystickAxes[id][6] > 35.0f);
+    }
+    else if (mappedBtn == 102) // D-Pad Up
+    {
+        isMappedBtnDown = (m_joystickAxes[id][7] > 35.0f);
+    }
+    else if (mappedBtn == 103) // D-Pad Down
+    {
+        isMappedBtnDown = (m_joystickAxes[id][7] < -35.0f);
+    }
+    else if (mappedBtn == 104) // Stick Left
+    {
+        isMappedBtnDown = (m_joystickAxes[id][0] < -35.0f);
+    }
+    else if (mappedBtn == 105) // Stick Right
+    {
+        isMappedBtnDown = (m_joystickAxes[id][0] > 35.0f);
+    }
+    else if (mappedBtn == 106) // Stick Up
+    {
+        isMappedBtnDown = (m_joystickAxes[id][1] < -35.0f);
+    }
+    else if (mappedBtn == 107) // Stick Down
+    {
+        isMappedBtnDown = (m_joystickAxes[id][1] > 35.0f);
+    }
+    else if (mappedBtn == 108) // LT
+    {
+        isMappedBtnDown = (m_joystickAxes[id][2] < -35.0f);
+    }
+    else if (mappedBtn == 109) // RT
+    {
+        isMappedBtnDown = (m_joystickAxes[id][2] > 35.0f);
+    }
+
     switch (action)
     {
         case InputAction::MoveLeft:
-            return GetGamepadMoveX(id) < -0.3f;
+            return GetGamepadMoveX(id) < -0.3f || isMappedBtnDown;
         case InputAction::MoveRight:
-            return GetGamepadMoveX(id) > 0.3f;
+            return GetGamepadMoveX(id) > 0.3f || isMappedBtnDown;
         case InputAction::LaunchBall:
         case InputAction::FireLaser:
-            // A Button (0), X Button (2), Right Trigger (Axis 2)
-            return IsJoystickButtonDown(id, 0) || IsJoystickButtonDown(id, 2) || (m_joystickAxes[id][2] > 40.0f);
+            // Bound button OR A Button (0) OR Right Trigger (Axis 2)
+            return isMappedBtnDown || IsJoystickButtonDown(id, 0) || (m_joystickAxes[id][2] > 40.0f);
         case InputAction::Pause:
-            // Start / Menu button (7 or 6)
-            return IsJoystickButtonDown(id, 7) || IsJoystickButtonDown(id, 6);
+            // Bound button OR Start / Menu button (7)
+            return isMappedBtnDown || IsJoystickButtonDown(id, 7);
         default:
-            return false;
+            return isMappedBtnDown;
     }
 }
 
@@ -348,20 +395,114 @@ bool InputManager::IsGamepadActionTriggered(InputAction action, unsigned int id)
         return false;
     }
 
+    const int mappedBtn = InputRemapManager::Get().GetGamepadBinding(action);
+    bool isMappedBtnPress = false;
+    if (mappedBtn >= 0 && static_cast<unsigned int>(mappedBtn) < MAX_JOYSTICK_BUTTONS)
+    {
+        isMappedBtnPress = IsJoystickButtonPress(id, static_cast<unsigned int>(mappedBtn));
+    }
+    else if (mappedBtn == 100) // D-Pad Left
+    {
+        isMappedBtnPress = (m_joystickAxes[id][6] < -35.0f) && !(m_previousJoyAxes[id][6] < -35.0f);
+    }
+    else if (mappedBtn == 101) // D-Pad Right
+    {
+        isMappedBtnPress = (m_joystickAxes[id][6] > 35.0f) && !(m_previousJoyAxes[id][6] > 35.0f);
+    }
+    else if (mappedBtn == 102) // D-Pad Up
+    {
+        isMappedBtnPress = (m_joystickAxes[id][7] > 35.0f) && !(m_previousJoyAxes[id][7] > 35.0f);
+    }
+    else if (mappedBtn == 103) // D-Pad Down
+    {
+        isMappedBtnPress = (m_joystickAxes[id][7] < -35.0f) && !(m_previousJoyAxes[id][7] < -35.0f);
+    }
+    else if (mappedBtn == 104) // Stick Left
+    {
+        isMappedBtnPress = (m_joystickAxes[id][0] < -35.0f) && !(m_previousJoyAxes[id][0] < -35.0f);
+    }
+    else if (mappedBtn == 105) // Stick Right
+    {
+        isMappedBtnPress = (m_joystickAxes[id][0] > 35.0f) && !(m_previousJoyAxes[id][0] > 35.0f);
+    }
+    else if (mappedBtn == 106) // Stick Up
+    {
+        isMappedBtnPress = (m_joystickAxes[id][1] < -35.0f) && !(m_previousJoyAxes[id][1] < -35.0f);
+    }
+    else if (mappedBtn == 107) // Stick Down
+    {
+        isMappedBtnPress = (m_joystickAxes[id][1] > 35.0f) && !(m_previousJoyAxes[id][1] > 35.0f);
+    }
+    else if (mappedBtn == 108) // LT
+    {
+        isMappedBtnPress = (m_joystickAxes[id][2] < -35.0f) && !(m_previousJoyAxes[id][2] < -35.0f);
+    }
+    else if (mappedBtn == 109) // RT
+    {
+        isMappedBtnPress = (m_joystickAxes[id][2] > 35.0f) && !(m_previousJoyAxes[id][2] > 35.0f);
+    }
+
     switch (action)
     {
         case InputAction::MoveLeft:
-            return GetGamepadMoveX(id) < -0.4f;
+            return GetGamepadMoveX(id) < -0.4f || isMappedBtnPress;
         case InputAction::MoveRight:
-            return GetGamepadMoveX(id) > 0.4f;
+            return GetGamepadMoveX(id) > 0.4f || isMappedBtnPress;
         case InputAction::LaunchBall:
         case InputAction::FireLaser:
-            return IsJoystickButtonPress(id, 0) || IsJoystickButtonPress(id, 2);
+            return isMappedBtnPress || IsJoystickButtonPress(id, 0);
         case InputAction::Pause:
-            return IsJoystickButtonPress(id, 7) || IsJoystickButtonPress(id, 6);
+            return isMappedBtnPress || IsJoystickButtonPress(id, 7);
         default:
-            return false;
+            return isMappedBtnPress;
     }
+}
+
+int InputManager::GetAnyGamepadInputTriggered(unsigned int id) const
+{
+    if (id >= MAX_JOYSTICKS || !m_joystickConnected[id])
+    {
+        return -1;
+    }
+
+    // 1. Buttons 0 to 15
+    for (unsigned int btn = 0; btn < 16; ++btn)
+    {
+        if (IsJoystickButtonPress(id, btn))
+        {
+            return static_cast<int>(btn);
+        }
+    }
+
+    constexpr float threshold = 40.0f;
+
+    // 2. D-Pad directions (Axis 6: POV X, Axis 7: POV Y)
+    if (m_joystickAxes[id][6] < -threshold && !(m_previousJoyAxes[id][6] < -threshold))
+        return 100; // D-Pad Left
+    if (m_joystickAxes[id][6] > threshold && !(m_previousJoyAxes[id][6] > threshold))
+        return 101; // D-Pad Right
+    if (m_joystickAxes[id][7] > threshold && !(m_previousJoyAxes[id][7] > threshold))
+        return 102; // D-Pad Up
+    if (m_joystickAxes[id][7] < -threshold && !(m_previousJoyAxes[id][7] < -threshold))
+        return 103; // D-Pad Down
+
+    // 3. Left Stick directions (Axis 0: X, Axis 1: Y)
+    if (m_joystickAxes[id][0] < -threshold && !(m_previousJoyAxes[id][0] < -threshold))
+        return 104; // Stick Left
+    if (m_joystickAxes[id][0] > threshold && !(m_previousJoyAxes[id][0] > threshold))
+        return 105; // Stick Right
+    if (m_joystickAxes[id][1] < -threshold && !(m_previousJoyAxes[id][1] < -threshold))
+        return 106; // Stick Up
+    if (m_joystickAxes[id][1] > threshold && !(m_previousJoyAxes[id][1] > threshold))
+        return 107; // Stick Down
+
+    // 4. Triggers (Axis 2)
+    if (m_joystickAxes[id][2] < -threshold && !(m_previousJoyAxes[id][2] < -threshold))
+        return 108; // LT
+    if (m_joystickAxes[id][2] > threshold && !(m_previousJoyAxes[id][2] > threshold))
+        return 109; // RT
+
+    return -1;
 }
 
 float InputManager::GetGamepadRightStickY(unsigned int id) const

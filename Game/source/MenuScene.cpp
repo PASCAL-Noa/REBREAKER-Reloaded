@@ -120,35 +120,79 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     // Rebinding input capture
     if (m_isRebinding && m_rebindAction != InputAction::Count)
     {
-        KeyCode pressed = context.Input.GetLastKeyPressed();
-        if (pressed != KeyCode::Count)
+        m_rebindTimer -= dt;
+        if (m_rebindTimer <= 0.0f)
         {
-            if (pressed == KeyCode::Escape)
+            // 5-second timeout expired -> cancel rebinding gracefully
+            m_isRebinding = false;
+            m_rebindAction = InputAction::Count;
+            UISystem::SetNavigationEnabled(true);
+            UpdateInputButtons();
+            return;
+        }
+
+        UISystem::SetNavigationEnabled(false);
+
+        if (!m_rebindGamepadMode)
+        {
+            // Keyboard capture
+            KeyCode pressed = context.Input.GetLastKeyPressed();
+            if (pressed != KeyCode::Count)
             {
-                // Cancel rebinding
+                if (pressed == KeyCode::Escape)
+                {
+                    m_isRebinding = false;
+                    m_rebindAction = InputAction::Count;
+                    UISystem::SetNavigationEnabled(true);
+                    UpdateInputButtons();
+                    return;
+                }
+
+                InputRemapManager::Get().SetBinding(m_rebindAction, pressed);
+                InputRemapManager::Get().SaveToPrefs();
+
                 m_isRebinding = false;
                 m_rebindAction = InputAction::Count;
+                UISystem::SetNavigationEnabled(true);
+                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                UpdateInputButtons();
+                return;
+            }
+        }
+        else
+        {
+            // Gamepad capture (ESC cancels; Back button 6 cancels after debounce)
+            if (context.Input.IsKeyPress(KeyCode::Escape) || (m_rebindTimer < 4.85f && context.Input.IsJoystickButtonPress(0, 6) && m_rebindAction != InputAction::Pause))
+            {
+                m_isRebinding = false;
+                m_rebindAction = InputAction::Count;
+                UISystem::SetNavigationEnabled(true);
                 UpdateInputButtons();
                 return;
             }
 
-            // Assign primary key and save
-            InputRemapManager::Get().SetBinding(m_rebindAction, pressed);
-            InputRemapManager::Get().SaveToPrefs();
+            // Debounce 150ms so activation button is not bound immediately
+            if (m_rebindTimer < 4.85f)
+            {
+                int joyInput = context.Input.GetAnyGamepadInputTriggered(0);
+                if (joyInput >= 0)
+                {
+                    InputRemapManager::Get().SetGamepadBinding(m_rebindAction, joyInput);
+                    InputRemapManager::Get().SaveToPrefs();
 
-            m_isRebinding = false;
-            m_rebindAction = InputAction::Count;
-            UpdateInputButtons();
-            return;
+                    m_isRebinding = false;
+                    m_rebindAction = InputAction::Count;
+                    UISystem::SetNavigationEnabled(true);
+                    if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                    UpdateInputButtons();
+                    return;
+                }
+            }
         }
 
-        if (context.Input.IsJoystickButtonPress(0, 1))
-        {
-            m_isRebinding = false;
-            m_rebindAction = InputAction::Count;
-            UpdateInputButtons();
-            return;
-        }
+        // Live countdown text update
+        UpdateInputButtons();
+        return;
     }
 
     // Escape or Gamepad B closes any open modal, or returns to main
@@ -907,24 +951,43 @@ void MenuScene::CreateInputsTab(const GameContext& context)
     m_registry.AddComponent<CanvasComponent>(m_inputsCanvas, CanvasComponent{.IsEnabled = false});
     m_registry.AddComponent<TweenComponent>(m_inputsCanvas, TweenComponent{});
 
+    // 1. Title strictly aligned with AUDIO & RENDER (-viewY * 0.2f)
     UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
         .Text = "INPUT CONTROLS & REBINDING",
-        .Position = {rightPanelX, -viewY * 0.32f},
+        .Position = {rightPanelX, -viewY * 0.2f},
         .FontId = m_fontId,
-        .FontSize = 38.0f
+        .FontSize = 40.0f
     });
 
-    UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
-        .Text = "Supports Keyboard & Gamepad (Left Stick / D-Pad / Triggers / A Button)",
-        .Position = {rightPanelX, -viewY * 0.25f},
+    // 2. Target Device Selector Button
+    m_inputDeviceBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
+        .Text = "TARGET DEVICE: [ KEYBOARD ]",
+        .OnClick = [this]() {
+            m_rebindGamepadMode = !m_rebindGamepadMode;
+            if (m_isRebinding)
+            {
+                m_isRebinding = false;
+                m_rebindAction = InputAction::Count;
+            }
+            if (m_registry.HasComponent<TextComponent>(m_inputDeviceBtn))
+            {
+                m_registry.GetComponent<TextComponent>(m_inputDeviceBtn).Text =
+                    m_rebindGamepadMode ? "TARGET DEVICE: [ GAMEPAD CONTROLLER ]" : "TARGET DEVICE: [ KEYBOARD ]";
+            }
+            UpdateInputButtons();
+        },
+        .Position = {rightPanelX, -viewY * 0.11f},
+        .Size = {500.0f, 48.0f},
+        .DefaultColor = Color{45, 65, 95, 255},
+        .HoverColor = Color{65, 95, 140, 255},
+        .PressedColor = Color{30, 45, 70, 255},
         .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Color{180, 210, 255, 200}
+        .FontSize = 26.0f
     });
 
-    const float startY = -viewY * 0.14f;
-    const float stepY = 60.0f;
-    const Vector2f btnSize{380.0f, 50.0f};
+    const float startY = -viewY * 0.03f;
+    const float stepY = 56.0f;
+    const Vector2f btnSize{500.0f, 46.0f};
 
     // Move Left
     m_leftRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
@@ -932,11 +995,13 @@ void MenuScene::CreateInputsTab(const GameContext& context)
         .OnClick = [this]() {
             m_isRebinding = true;
             m_rebindAction = InputAction::MoveLeft;
+            m_rebindTimer = 5.0f;
             UpdateInputButtons();
         },
         .Position = {rightPanelX, startY},
         .Size = btnSize,
-        .FontId = m_fontId
+        .FontId = m_fontId,
+        .FontSize = 26.0f
     });
 
     // Move Right
@@ -945,11 +1010,13 @@ void MenuScene::CreateInputsTab(const GameContext& context)
         .OnClick = [this]() {
             m_isRebinding = true;
             m_rebindAction = InputAction::MoveRight;
+            m_rebindTimer = 5.0f;
             UpdateInputButtons();
         },
         .Position = {rightPanelX, startY + stepY},
         .Size = btnSize,
-        .FontId = m_fontId
+        .FontId = m_fontId,
+        .FontSize = 26.0f
     });
 
     // Launch Ball / Laser
@@ -958,11 +1025,13 @@ void MenuScene::CreateInputsTab(const GameContext& context)
         .OnClick = [this]() {
             m_isRebinding = true;
             m_rebindAction = InputAction::LaunchBall;
+            m_rebindTimer = 5.0f;
             UpdateInputButtons();
         },
         .Position = {rightPanelX, startY + stepY * 2.0f},
         .Size = btnSize,
-        .FontId = m_fontId
+        .FontId = m_fontId,
+        .FontSize = 26.0f
     });
 
     // Pause Game
@@ -971,11 +1040,13 @@ void MenuScene::CreateInputsTab(const GameContext& context)
         .OnClick = [this]() {
             m_isRebinding = true;
             m_rebindAction = InputAction::Pause;
+            m_rebindTimer = 5.0f;
             UpdateInputButtons();
         },
         .Position = {rightPanelX, startY + stepY * 3.0f},
         .Size = btnSize,
-        .FontId = m_fontId
+        .FontId = m_fontId,
+        .FontSize = 26.0f
     });
 
     // Reset Defaults
@@ -990,16 +1061,17 @@ void MenuScene::CreateInputsTab(const GameContext& context)
         },
         .Position = {rightPanelX, startY + stepY * 4.2f},
         .Size = btnSize,
-        .DefaultColor = Color{120, 60, 60, 255},
-        .HoverColor = Color{160, 80, 80, 255},
-        .PressedColor = Color{90, 40, 40, 255},
-        .FontId = m_fontId
+        .DefaultColor = Color{120, 50, 55, 255},
+        .HoverColor = Color{160, 70, 75, 255},
+        .PressedColor = Color{80, 30, 35, 255},
+        .FontId = m_fontId,
+        .FontSize = 26.0f
     });
 
     // Status / instructions text
     m_rebindStatusText = UIFactory::CreateText(m_registry, m_inputsCanvas, TextDescriptor{
-        .Text = "Click a binding button then press any key (or ESC to cancel)",
-        .Position = {rightPanelX, startY + stepY * 5.2f},
+        .Text = "Click a binding button to remap (5s timeout)",
+        .Position = {rightPanelX, startY + stepY * 5.1f},
         .FontId = m_fontId,
         .FontSize = 24.0f,
         .Tint = Color{255, 230, 100, 230}
@@ -1016,24 +1088,41 @@ void MenuScene::CreateInputsTab(const GameContext& context)
 
 void MenuScene::UpdateInputButtons()
 {
-    const auto formatBtnText = [this](InputAction act, const std::string& prefix, Entity btn)
+    const int secondsLeft = std::max(1, static_cast<int>(std::ceil(m_rebindTimer)));
+
+    const auto formatBtnText = [this, secondsLeft](InputAction act, const std::string& prefix, Entity btn)
     {
         if (!m_registry.HasComponent<TextComponent>(btn)) return;
         auto& textComp = m_registry.GetComponent<TextComponent>(btn);
 
         if (m_isRebinding && m_rebindAction == act)
         {
-            textComp.Text = prefix + ": [PRESS A KEY...]";
+            if (m_rebindGamepadMode)
+            {
+                textComp.Text = prefix + ": [PRESS GAMEPAD BTN (" + std::to_string(secondsLeft) + "s)...]";
+            }
+            else
+            {
+                textComp.Text = prefix + ": [PRESS A KEY (" + std::to_string(secondsLeft) + "s)...]";
+            }
             return;
         }
 
-        const auto& b = InputRemapManager::Get().GetBinding(act);
-        std::string keyStr(KeyCodeUtils::ToString(b.PrimaryKey));
-        if (b.SecondaryKey != KeyCode::Count)
+        if (m_rebindGamepadMode)
         {
-            keyStr += " / " + std::string(KeyCodeUtils::ToString(b.SecondaryKey));
+            int joyBtn = InputRemapManager::Get().GetGamepadBinding(act);
+            textComp.Text = prefix + ": " + InputRemapManager::GamepadButtonToString(joyBtn);
         }
-        textComp.Text = prefix + ": " + keyStr;
+        else
+        {
+            const auto& b = InputRemapManager::Get().GetBinding(act);
+            std::string keyStr(KeyCodeUtils::ToString(b.PrimaryKey));
+            if (b.SecondaryKey != KeyCode::Count)
+            {
+                keyStr += " / " + std::string(KeyCodeUtils::ToString(b.SecondaryKey));
+            }
+            textComp.Text = prefix + ": " + keyStr;
+        }
     };
 
     formatBtnText(InputAction::MoveLeft, "MOVE LEFT", m_leftRebindBtn);
@@ -1046,12 +1135,16 @@ void MenuScene::UpdateInputButtons()
         auto& status = m_registry.GetComponent<TextComponent>(m_rebindStatusText);
         if (m_isRebinding)
         {
-            status.Text = "PRESS ANY KEY TO REBIND (OR ESC TO CANCEL)";
-            status.Tint = Color{255, 100, 100, 255};
+            status.Text = m_rebindGamepadMode
+                ? ("PRESS ANY GAMEPAD BUTTON (" + std::to_string(secondsLeft) + "s) | ESC / BACK TO CANCEL")
+                : ("PRESS ANY KEY (" + std::to_string(secondsLeft) + "s) | ESC TO CANCEL");
+            status.Tint = Color{255, 110, 110, 255};
         }
         else
         {
-            status.Text = "Click a binding button then press any key (or ESC to cancel)";
+            status.Text = m_rebindGamepadMode
+                ? "Click an action then press a Gamepad Button (5s limit)"
+                : "Click an action then press any Keyboard Key (5s limit)";
             status.Tint = Color{255, 230, 100, 230};
         }
     }

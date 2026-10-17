@@ -14,6 +14,8 @@ public:
     static void OnUpdate(float dt, Registry& registry, const GameContext& context);
     static void OnRender(Registry& registry, const GameContext& context);
     static Vector2f GetAbsolutePosition(Registry& registry, Entity entity, const RectTransform& transform, const Vector2f& viewSize);
+    static void SetNavigationEnabled(bool enabled);
+    static bool IsNavigationEnabled();
 
 private:
     static bool IsPointInsideRect(const Vector2f& point, const Vector2f& rectPos, const Vector2f& rectSize);

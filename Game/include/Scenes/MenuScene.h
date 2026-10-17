@@ -78,6 +78,7 @@ private:
     std::vector<Entity> m_musicVolumeBars;
 
     // Inputs rebinding widgets
+    Entity  m_inputDeviceBtn = NULL_ENTITY;
     Entity  m_leftRebindBtn = NULL_ENTITY;
     Entity  m_rightRebindBtn = NULL_ENTITY;
     Entity  m_launchRebindBtn = NULL_ENTITY;
@@ -86,6 +87,8 @@ private:
     Entity  m_rebindStatusText = NULL_ENTITY;
     InputAction m_rebindAction = InputAction::Count;
     bool    m_isRebinding = false;
+    bool    m_rebindGamepadMode = false;
+    float   m_rebindTimer = 0.0f;
 
     LeaderboardManager  m_leaderboard;
     LevelManager        m_levelManager;

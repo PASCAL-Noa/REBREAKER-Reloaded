@@ -351,6 +351,10 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         context.Events.Publish(GameStateChangedEvent(uiState));
     }
 
+    if (m_uiController && m_uiController->IsRebinding())
+    {
+        UISystem::SetNavigationEnabled(false);
+    }
     UISystem::OnUpdate(dt, m_registry, context);
 
     if (currentState == static_cast<int>(SceneState::LevelTransition))
@@ -530,7 +534,11 @@ void GameScene::OnRender(GameContext& context)
         stats += "\n[TAB] Open Power-Up Tester Tool";
     }
 
-    DrawDefaultUI(context, "REBREAKER", stats);
+    const bool modalOpen = (m_uiController && m_uiController->IsModalOrSubMenuOpen());
+    if (!modalOpen)
+    {
+        DrawDefaultUI(context, "REBREAKER", stats);
+    }
     UISystem::OnRender(m_registry, context);
     if (m_uiController)
     {

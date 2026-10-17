@@ -93,6 +93,7 @@ namespace
     Entity s_focusedButton = NULL_ENTITY;
     Vector2f s_lastMousePos{-9999.0f, -9999.0f};
     bool s_usingGamepadOrNav = false;
+    bool s_navigationEnabled = true;
 
     struct ButtonCandidate
     {
@@ -101,17 +102,31 @@ namespace
     };
 }
 
+void UISystem::SetNavigationEnabled(bool enabled)
+{
+    s_navigationEnabled = enabled;
+    if (!enabled)
+    {
+        s_usingGamepadOrNav = false;
+    }
+}
+
+bool UISystem::IsNavigationEnabled()
+{
+    return s_navigationEnabled;
+}
+
 void UISystem::UpdateButtons(Registry& registry, const GameContext& context, const Vector2f& logicalMousePos, const Vector2f& viewSize)
 {
     const bool isLeftMouseDown = context.Input.IsMouseButtonDown(MouseButton::Left);
     const bool isLeftMousePress = context.Input.IsMouseButtonPress(MouseButton::Left);
     const bool isLeftMouseRelease = context.Input.IsMouseButtonRelease(MouseButton::Left);
 
-    const bool navUp = context.Input.IsMenuUpTriggered();
-    const bool navDown = context.Input.IsMenuDownTriggered();
-    const bool navLeft = context.Input.IsMenuLeftTriggered();
-    const bool navRight = context.Input.IsMenuRightTriggered();
-    const bool navSelect = context.Input.IsMenuSelectTriggered();
+    const bool navUp = s_navigationEnabled && context.Input.IsMenuUpTriggered();
+    const bool navDown = s_navigationEnabled && context.Input.IsMenuDownTriggered();
+    const bool navLeft = s_navigationEnabled && context.Input.IsMenuLeftTriggered();
+    const bool navRight = s_navigationEnabled && context.Input.IsMenuRightTriggered();
+    const bool navSelect = s_navigationEnabled && context.Input.IsMenuSelectTriggered();
 
     // Mouse movement detection switches back to mouse mode
     float mouseDelta = std::abs(logicalMousePos.X - s_lastMousePos.X) + std::abs(logicalMousePos.Y - s_lastMousePos.Y);
@@ -121,7 +136,7 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
         s_lastMousePos = logicalMousePos;
     }
 
-    if (navUp || navDown || navLeft || navRight || navSelect)
+    if (s_navigationEnabled && (navUp || navDown || navLeft || navRight || navSelect))
     {
         s_usingGamepadOrNav = true;
     }
@@ -558,16 +573,15 @@ void UISystem::RenderText(Registry& registry, const GameContext& context, Entity
     const auto& textComp = registry.GetComponent<TextComponent>(entity);
     if (!textComp.Text.empty())
     {
-        Vector2f textPos = absolutePos;
+        Vector2f textPos = absolutePos + textComp.Offset;
         if (textComp.TextCenter)
         {
-            Vector2f textSize = context.Render.GetTextSize(textComp.Text, textComp.FontId, textComp.FontSize);
-            textPos.X -= textSize.X / 2.0f;
-            textPos.Y -= textSize.Y / 2.0f;
+            context.Render.DrawTextCentered(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
         }
-        textPos.X += textComp.Offset.X;
-        textPos.Y += textComp.Offset.Y;
-        context.Render.DrawText(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
+        else
+        {
+            context.Render.DrawText(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
+        }
     }
 }
 
@@ -640,12 +654,7 @@ void UISystem::RenderTextInput(Registry& registry, const GameContext& context, E
         }
     }
 
-    Transform2D textTransform = drawTransform;
-    Vector2f textSize = context.Render.GetTextSize(displayText, textInput.FontId, textInput.FontSize);
-    textTransform.Position.X -= textSize.X / 2.0f; 
-    textTransform.Position.Y -= textInput.FontSize / 1.5f;
-    
-    context.Render.DrawText(displayText, textInput.FontId, textInput.FontSize, textTransform, textColor);
+    context.Render.DrawTextCentered(displayText, textInput.FontId, textInput.FontSize, drawTransform, textColor);
 }
 
 void UISystem::OnRender(Registry& registry, const GameContext& context)

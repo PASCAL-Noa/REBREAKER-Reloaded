@@ -64,6 +64,7 @@ public:
     [[nodiscard]] bool IsGamepadDirectionTriggered(GamepadDirection dir, unsigned int id = 0) const;
     [[nodiscard]] bool IsGamepadActionTriggered(InputAction action, unsigned int id = 0) const;
     [[nodiscard]] bool IsGamepadActionActive(InputAction action, unsigned int id = 0) const;
+    [[nodiscard]] int GetAnyGamepadInputTriggered(unsigned int id = 0) const;
 
     // Unified menu navigation triggers (Keyboard + Gamepad)
     [[nodiscard]] bool IsMenuUpTriggered() const;
