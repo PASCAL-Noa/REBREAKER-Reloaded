@@ -56,8 +56,8 @@ void MenuScene::OnInit(GameContext& context)
         context.Audio.SetAudioDevice(savedDevice);
     }
 
-    // Play Main Menu background music in loop
-    context.Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 60.0f, true);
+    // Play Main Menu background music smoothly in loop
+    context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
 
     bool vsync = PlayerPrefs::GetBool("VSync", false);
     context.Render.GetWindow().SetVSync(vsync);

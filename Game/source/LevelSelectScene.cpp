@@ -44,7 +44,7 @@ void LevelSelectScene::OnInit(GameContext& context)
     m_levelManager.PreloadLevels(context.Resources);
 
     // Keep menu music playing across menu navigation
-    context.Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 60.0f, true);
+    context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
 
     m_selectedLevelIndex = 0;
     m_currentPage = 0;

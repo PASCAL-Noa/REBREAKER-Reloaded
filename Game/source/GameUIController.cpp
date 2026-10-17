@@ -849,7 +849,7 @@ void GameUIController::CreatePauseMenu()
     UIFactory::CreateButton(m_registry, m_pauseCanvas, ButtonDescriptor{
         .Text = "QUIT",
         .OnClick = [this]() {
-            m_context.Audio.StopMusic();
+            m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             m_context.Scenes.LoadScene<MenuScene>();
         },
         .Position = {0, 150.0f},
@@ -1790,7 +1790,7 @@ void GameUIController::CreateGameOverMenu()
     m_gameOverMainMenuBtn = UIFactory::CreateButton(m_registry, m_gameOverCanvas, ButtonDescriptor{
         .Text = "MAIN MENU [ESC]",
         .OnClick = [this]() {
-            m_context.Audio.StopMusic();
+            m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             m_context.Scenes.LoadScene<MenuScene>();
         },
         .Position = {260.0f, 310.0f},
@@ -2074,7 +2074,7 @@ void GameUIController::CreateVictoryMenu()
     UIFactory::CreateButton(m_registry, m_victoryCanvas, ButtonDescriptor{
         .Text = "MAIN MENU [ESC]",
         .OnClick = [this]() {
-            m_context.Audio.StopMusic();
+            m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             m_context.Scenes.LoadScene<MenuScene>();
         },
         .Position = {160.0f, 175.0f},
