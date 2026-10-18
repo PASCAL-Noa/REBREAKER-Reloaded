@@ -6,7 +6,9 @@ enum class BrickType : uint32_t
     Light,
     Medium,
     Hard,
-    Special
+    Special,
+    Metal,
+    Bomb
 };
 
 struct BrickComponent
@@ -16,4 +18,6 @@ struct BrickComponent
     uint32_t    HitPoints = 1;
     uint32_t    MaxHitPoints = 1;
     bool        IsSpecial = false;
+    bool        IsUnbreakable = false;
+    bool        IsBomb = false;
 };

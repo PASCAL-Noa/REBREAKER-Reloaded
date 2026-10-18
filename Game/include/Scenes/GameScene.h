@@ -103,7 +103,8 @@ protected:
     void    HandleInput(float dt, const GameContext& context);
 
     void    HandleDeath();
-    void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY);
+    void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY, bool isLaser = false, bool isExplosion = false);
+    void    DetonateBombBrick(Entity bombEntity);
     void    HandlePaddleCollision(Entity ballEntity);
     void    HandleBallBottomCollision(Entity ballEntity);
 
@@ -180,4 +181,5 @@ protected:
     PostProcessParams   m_postProcessParams;
     Entity              m_bgTweenEntity = NULL_ENTITY;
     uint32_t            m_currentComboMultiplier = 0;
+    float               m_gameplayTime = 0.0f;
 };

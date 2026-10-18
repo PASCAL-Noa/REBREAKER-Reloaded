@@ -143,11 +143,23 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
                 if (m_registry.HasComponent<BallComponent>(e1))
                 {
                     const auto& ballComp = m_registry.GetComponent<BallComponent>(e1);
-                    if ((ballComp.IsBig && PowerUpManager::Get().Big().PiercesBricks) || ballComp.IsFireBall)
+                    if (m_registry.HasComponent<BrickComponent>(e2))
                     {
-                        if (m_registry.HasComponent<BrickComponent>(e2))
+                        const auto& brickComp = m_registry.GetComponent<BrickComponent>(e2);
+                        if (brickComp.IsUnbreakable)
                         {
-                            isPiercing = true;
+                            // Metal / Unbreakable bricks are impenetrable to standard & big balls; only FireBall pierces!
+                            if (ballComp.IsFireBall)
+                            {
+                                isPiercing = true;
+                            }
+                        }
+                        else
+                        {
+                            if ((ballComp.IsBig && PowerUpManager::Get().Big().PiercesBricks) || ballComp.IsFireBall)
+                            {
+                                isPiercing = true;
+                            }
                         }
                     }
                 }
