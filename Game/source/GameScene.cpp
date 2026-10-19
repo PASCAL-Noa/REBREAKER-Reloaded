@@ -80,6 +80,8 @@ void GameScene::OnInit(GameContext& context)
     m_bounceSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
     m_despawnSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_despawn.wav");
     m_explosionSfxId = context.Resources.LoadResource("Resources/audio/sfx/brick_destroy.wav");
+    m_fireballBurnSfxId = context.Resources.LoadResource("Resources/audio/sfx/fireball_burn.wav");
+    m_fireballExplosionSfxId = context.Resources.LoadResource("Resources/audio/sfx/fireball_explode.wav");
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
     m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
     m_gameOverSfxId = context.Resources.LoadResource("Resources/audio/sfx/game_over.mp3");
@@ -91,6 +93,11 @@ void GameScene::OnInit(GameContext& context)
 
     mp_paddleSystem = m_systemManager.AddSystem<PaddleSystem>(m_registry, context);
     mp_ballSystem = m_systemManager.AddSystem<BallSystem>(m_registry, context);
+    int savedTrail = PlayerPrefs::GetInt("SelectedBallTrail", static_cast<int>(TrailCosmeticId::DefaultNeon));
+    if (savedTrail >= 0 && savedTrail <= static_cast<int>(TrailCosmeticId::Rainbow))
+    {
+        mp_ballSystem->SetBallTrailCosmetic(static_cast<TrailCosmeticId>(savedTrail));
+    }
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
     m_systemManager.AddSystem<AnimatorSystem>(m_registry);
@@ -411,6 +418,38 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         m_levelManager.SetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber(), m_scoreManager.GetScore());
 
         context.Events.Publish(ScoreChangedEvent(m_scoreManager.GetScore(), m_scoreManager.GetComboMultiplier()));
+    }
+
+    // Fireball ambient burning audio loop management
+    bool hasActiveFireball = false;
+    if (currentState == static_cast<int>(SceneState::Playing) && mp_ballSystem)
+    {
+        for (Entity b : mp_ballSystem->GetBalls())
+        {
+            if (m_registry.IsAlive(b) && m_registry.HasComponent<BallComponent>(b))
+            {
+                if (m_registry.GetComponent<BallComponent>(b).IsFireBall)
+                {
+                    hasActiveFireball = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (hasActiveFireball)
+    {
+        if (m_fireballBurnSfxId != 0)
+        {
+            context.Audio.PlayLoopingSfx(m_fireballBurnSfxId, 65.0f);
+        }
+    }
+    else
+    {
+        if (m_fireballBurnSfxId != 0 && context.Audio.IsLoopingSfxPlaying(m_fireballBurnSfxId))
+        {
+            context.Audio.StopLoopingSfx(m_fireballBurnSfxId);
+        }
     }
 
     // 1. Dynamic background color modulation reacting to combo multipliers
@@ -832,7 +871,9 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
     if (mp_context)
     {
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
-        if (m_explosionSfxId != 0)
+        if (m_fireballExplosionSfxId != 0)
+            mp_context->Audio.PlaySfx(m_fireballExplosionSfxId, 100.0f);
+        else if (m_explosionSfxId != 0)
             mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
         else if (m_despawnSfxId != 0)
             mp_context->Audio.PlaySfx(m_despawnSfxId, 90.0f);
@@ -878,6 +919,10 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
 
 void GameScene::OnDestroy(GameContext& context)
 {
+    if (m_fireballBurnSfxId != 0)
+    {
+        context.Audio.StopLoopingSfx(m_fireballBurnSfxId);
+    }
     m_uiController.reset();
     mp_state_machine.reset();
     mp_levelGenerator.reset();
@@ -1238,6 +1283,10 @@ void GameScene::ResetBallAndPaddle(bool smooth)
     m_tempoBallDuration = 0.0f;
     m_tempoBallStacks = 0;
     m_bigBallDuration = 0.0f;
+    if (mp_context && m_fireballBurnSfxId != 0)
+    {
+        mp_context->Audio.StopLoopingSfx(m_fireballBurnSfxId);
+    }
     if (mp_ballSystem)
     {
         mp_ballSystem->SetTempoBallActive(false);
@@ -1248,6 +1297,12 @@ void GameScene::ResetBallAndPaddle(bool smooth)
     }
     if (m_registry.IsAlive(m_ball))
     {
+        if (m_registry.HasComponent<TrailComponent>(m_ball))
+        {
+            auto& tc = m_registry.GetComponent<TrailComponent>(m_ball);
+            tc.Clear();
+            tc.Config = TrailPresets::GetPreset(mp_ballSystem ? mp_ballSystem->GetBallTrailCosmetic() : TrailCosmeticId::DefaultNeon);
+        }
         if (m_registry.HasComponent<BallComponent>(m_ball))
         {
             auto& bc = m_registry.GetComponent<BallComponent>(m_ball);

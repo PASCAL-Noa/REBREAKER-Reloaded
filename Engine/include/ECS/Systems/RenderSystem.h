@@ -24,4 +24,7 @@ private:
 
     Renderer& m_renderer;
     std::vector<RenderItem> m_renderQueue;
-};
+
+    void RenderTrails();
+};
+

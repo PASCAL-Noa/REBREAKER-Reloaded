@@ -29,6 +29,7 @@ struct AudioMixer::Impl
 {
     ResourceManager& resourceManager;
     std::list<SoundInstance> sfxPool;
+    std::unordered_map<uint32_t, sf::Sound> loopingSfx;
     std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> lastTriggerTime;
 
     // Ducking state: lower music by 30-50% during heavy streaks, restoring over 0.5s
@@ -235,8 +236,64 @@ void AudioMixer::StopSfx() const
         item.sound.stop();
     }
     mp_impl->sfxPool.clear();
+
+    for (auto& [id, sound] : mp_impl->loopingSfx)
+    {
+        sound.stop();
+    }
+    mp_impl->loopingSfx.clear();
+
     mp_impl->lastTriggerTime.clear();
     mp_impl->recentSfxTriggers.clear();
+}
+
+void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) const
+{
+    if (!mp_impl) return;
+
+    auto it = mp_impl->loopingSfx.find(soundId);
+    if (it != mp_impl->loopingSfx.end())
+    {
+        float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
+        it->second.setVolume(finalVolume);
+        it->second.setPitch(pitch);
+        if (it->second.getStatus() != sf::SoundSource::Status::Playing)
+        {
+            it->second.play();
+        }
+        return;
+    }
+
+    sf::SoundBuffer* buffer = mp_impl->resourceManager.Get<sf::SoundBuffer>(soundId);
+    if (!buffer) return;
+
+    auto [emplacedIt, inserted] = mp_impl->loopingSfx.try_emplace(soundId, *buffer);
+    if (inserted)
+    {
+        float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
+        emplacedIt->second.setLooping(true);
+        emplacedIt->second.setVolume(finalVolume);
+        emplacedIt->second.setPitch(pitch);
+        emplacedIt->second.play();
+    }
+}
+
+void AudioMixer::StopLoopingSfx(uint32_t soundId) const
+{
+    if (!mp_impl) return;
+    auto it = mp_impl->loopingSfx.find(soundId);
+    if (it != mp_impl->loopingSfx.end())
+    {
+        it->second.stop();
+        mp_impl->loopingSfx.erase(it);
+    }
+}
+
+bool AudioMixer::IsLoopingSfxPlaying(uint32_t soundId) const
+{
+    if (!mp_impl) return false;
+    auto it = mp_impl->loopingSfx.find(soundId);
+    return (it != mp_impl->loopingSfx.end() && it->second.getStatus() == sf::SoundSource::Status::Playing);
 }
 
 void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop) const
@@ -520,12 +577,20 @@ void AudioMixer::SetMasterVolume(float volume) const
     {
         item.sound.setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
     }
+    for (auto& [id, sound] : mp_impl->loopingSfx)
+    {
+        sound.setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
+    }
 }
 
 void AudioMixer::SetSfxVolume(float volume) const
 {
     if (!mp_impl) return;
     mp_impl->sfxVolume = volume;
+    for (auto& [id, sound] : mp_impl->loopingSfx)
+    {
+        sound.setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
+    }
 }
 
 void AudioMixer::SetMusicVolume(float volume) const
