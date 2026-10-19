@@ -139,13 +139,18 @@ TEST_SUITE("Registry Lifecycle & Entity Recycling Tests")
         Entity e0 = registry.CreateEntity();
         Entity e1 = registry.CreateEntity();
 
+        CHECK(registry.IsAlive(e0));
+        CHECK(registry.IsAlive(e1));
+
         registry.AddComponent<Position>(e0, Position{10.0f, 20.0f});
         CHECK(registry.HasComponent<Position>(e0));
 
         // Destroy e0
         registry.DestroyEntity(e0);
         CHECK_FALSE(registry.IsAlive(e0));
+        CHECK(registry.IsAlive(e1));
         CHECK(registry.GetActiveEntityCount() == 1);
+
 
         // Position component should be removed from destroyed entity
         CHECK_FALSE(registry.HasComponent<Position>(e0));
