@@ -17,6 +17,10 @@ public:
     static void SetNavigationEnabled(bool enabled);
     static bool IsNavigationEnabled();
 
+    static void SetDefaultAudio(uint32_t hoverSoundId, uint32_t clickSoundId);
+    static uint32_t GetDefaultHoverSound();
+    static uint32_t GetDefaultClickSound();
+
 private:
     static bool IsPointInsideRect(const Vector2f& point, const Vector2f& rectPos, const Vector2f& rectSize);
     static bool IsParentEnabled(Registry& registry, Entity entity);

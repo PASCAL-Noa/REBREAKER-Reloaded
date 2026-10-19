@@ -26,5 +26,12 @@ private:
     uint32_t    m_sfxPaddleHit = 0;
     uint32_t    m_sfxBallDeath = 0;
     uint32_t    m_sfxPowerUp = 0;
+    uint32_t    m_sfxPowerUpLaser = 0;
+    uint32_t    m_sfxPowerUpFireball = 0;
+    uint32_t    m_sfxPowerUpBuff = 0;
+    uint32_t    m_sfxPowerUpShrink = 0;
+    uint32_t    m_sfxPowerUpLife = 0;
+    uint32_t    m_sfxPowerUpTempo = 0;
     uint32_t    m_sfxCombo = 0;
 };
+

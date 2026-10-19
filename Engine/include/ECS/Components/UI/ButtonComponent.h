@@ -22,9 +22,14 @@ struct ButtonComponent
     uint32_t    HoverTextureId = 0;
     uint32_t    PressedTextureId = 0;
 
+    uint32_t    HoverSoundId = 0;
+    uint32_t    ClickSoundId = 0;
+    bool        SuppressUniversalSfx = false;
+
     std::function<void()>   OnClick = nullptr;
     std::function<void()>   OnHoverEnter = nullptr;
     std::function<void()>   OnHoverExit = nullptr;
 
     bool IgnoreMenuNavigation = false;
 };
+

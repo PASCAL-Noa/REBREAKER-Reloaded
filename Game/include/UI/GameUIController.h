@@ -54,6 +54,8 @@ public:
 
     // Text feedback
     void SpawnComboText(const Vector2f& worldPos, int comboMultiplier, const Camera2D& camera);
+    void SpawnPowerUpText(PowerUpType type, const Vector2f& worldPos, const Camera2D& camera);
+
 
     void OnRender(GameContext& context);
 
