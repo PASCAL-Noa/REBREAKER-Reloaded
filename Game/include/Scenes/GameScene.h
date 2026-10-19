@@ -135,6 +135,8 @@ protected:
     uint32_t    m_bounceSfxId = 0;
     uint32_t    m_despawnSfxId = 0;
     uint32_t    m_explosionSfxId = 0;
+    uint32_t    m_fireballBurnSfxId = 0;
+    uint32_t    m_fireballExplosionSfxId = 0;
     uint32_t    m_fireTexId = 0;
     uint32_t    m_heartTexId = 0;
     uint32_t    m_gameOverSfxId = 0;

@@ -21,6 +21,7 @@ void BallSystem::OnUpdate(float dt)
     UpdateBallPhysics(dt);
     UpdateFireBalls(dt);
     UpdateLasers(dt);
+    UpdateTrails(dt);
 }
 
 void BallSystem::SetPlayfieldBounds(float minX, float maxX, float minY, float maxY)
@@ -52,6 +53,17 @@ Entity BallSystem::CreateBall(const Vector2f& position, const Vector2f& velocity
     }
     m_registry.AddComponent<BallComponent>(ball, ballComp);
 
+    TrailComponent trailComp{};
+    if (isTempo)
+    {
+        trailComp.Config = TrailPresets::GetPreset(TrailCosmeticId::ElectricViolet);
+    }
+    else
+    {
+        trailComp.Config = TrailPresets::GetPreset(m_activeTrailCosmetic);
+    }
+    m_registry.AddComponent<TrailComponent>(ball, trailComp);
+
     m_balls.push_back(ball);
     return ball;
 }
@@ -61,6 +73,12 @@ void BallSystem::RegisterBall(Entity ball)
     if (std::find(m_balls.begin(), m_balls.end(), ball) == m_balls.end())
     {
         m_balls.push_back(ball);
+    }
+    if (!m_registry.HasComponent<TrailComponent>(ball))
+    {
+        TrailComponent tc{};
+        tc.Config = TrailPresets::GetPreset(m_activeTrailCosmetic);
+        m_registry.AddComponent<TrailComponent>(ball, tc);
     }
 }
 
@@ -82,6 +100,10 @@ void BallSystem::ClearBalls(Entity preserveBall)
     if (preserveBall != NULL_ENTITY && m_registry.IsAlive(preserveBall))
     {
         m_balls.push_back(preserveBall);
+        if (m_registry.HasComponent<TrailComponent>(preserveBall))
+        {
+            m_registry.GetComponent<TrailComponent>(preserveBall).Clear();
+        }
     }
 }
 
@@ -270,3 +292,127 @@ void BallSystem::UpdateFireBalls(float dt)
         }
     }
 }
+
+void BallSystem::SetBallTrailCosmetic(TrailCosmeticId cosmetic)
+{
+    m_activeTrailCosmetic = cosmetic;
+    for (Entity ball : m_balls)
+    {
+        if (m_registry.IsAlive(ball) && m_registry.HasComponent<TrailComponent>(ball))
+        {
+            auto& tc = m_registry.GetComponent<TrailComponent>(ball);
+            bool isFire = false;
+            if (m_registry.HasComponent<BallComponent>(ball))
+            {
+                isFire = m_registry.GetComponent<BallComponent>(ball).IsFireBall;
+            }
+            if (!isFire)
+            {
+                tc.Config = TrailPresets::GetPreset(cosmetic);
+            }
+        }
+    }
+}
+
+void BallSystem::UpdateTrails(float dt)
+{
+    constexpr size_t MAX_TRAIL_POINTS = 64;
+
+    m_registry.View<Transform2D, TrailComponent>([this, dt](Entity entity, Transform2D& transform, TrailComponent& trail)
+    {
+        // 1. Synchronize cosmetic state with ball modifiers (FireBall, TempoBall, etc.)
+        if (m_registry.HasComponent<BallComponent>(entity))
+        {
+            const auto& bc = m_registry.GetComponent<BallComponent>(entity);
+            if (bc.IsFireBall)
+            {
+                if (trail.Config.CosmeticId != TrailCosmeticId::FireStreak)
+                {
+                    trail.Config = TrailPresets::GetPreset(TrailCosmeticId::FireStreak);
+                }
+            }
+            else if (m_isTempoActive)
+            {
+                if (trail.Config.CosmeticId != TrailCosmeticId::ElectricViolet)
+                {
+                    trail.Config = TrailPresets::GetPreset(TrailCosmeticId::ElectricViolet);
+                }
+            }
+            else
+            {
+                if (trail.Config.CosmeticId != m_activeTrailCosmetic)
+                {
+                    trail.Config = TrailPresets::GetPreset(m_activeTrailCosmetic);
+                }
+            }
+        }
+
+        // 2. Age existing points and prune expired ones
+        for (auto& pt : trail.Points)
+        {
+            pt.Age += dt;
+        }
+
+        while (!trail.Points.empty() && trail.Points.back().Age >= trail.Config.Lifetime)
+        {
+            trail.Points.pop_back();
+        }
+
+        // 3. Movement check: stationary or docked balls should not emit new points,
+        // allowing existing points to naturally age and shrink away without abrupt popping.
+        bool isMoving = true;
+        if (m_registry.HasComponent<RigidBody>(entity))
+        {
+            const auto& rb = m_registry.GetComponent<RigidBody>(entity);
+            if (rb.IsKinematic || rb.Velocity.LengthSquared() < 25.0f) // < 5 px/s
+            {
+                isMoving = false;
+            }
+        }
+
+        Vector2f currentPos = transform.Position;
+
+        if (!trail.HasRecordedFirst)
+        {
+            trail.LastRecordedPos = currentPos;
+            trail.HasRecordedFirst = true;
+            return;
+        }
+
+        if (isMoving)
+        {
+            Vector2f delta = currentPos - trail.LastRecordedPos;
+            float dist = delta.Length();
+
+            if (dist >= trail.Config.MinPointDistance)
+            {
+                // Subdivide if moving fast to prevent sharp angular kinks or gaps
+                if (dist > trail.Config.MaxPointDistance && trail.Config.MaxPointDistance > 0.0f)
+                {
+                    int steps = static_cast<int>(std::floor(dist / trail.Config.MaxPointDistance));
+                    steps = std::min(steps, 4);
+                    for (int s = 1; s <= steps; ++s)
+                    {
+                        float alpha = static_cast<float>(s) / static_cast<float>(steps + 1);
+                        Vector2f subPos = trail.LastRecordedPos + delta * alpha;
+                        trail.Points.push_front(TrailPoint{subPos, 0.0f, trail.Config.StartWidth, trail.Config.StartColor});
+                    }
+                }
+
+                trail.Points.push_front(TrailPoint{currentPos, 0.0f, trail.Config.StartWidth, trail.Config.StartColor});
+                trail.LastRecordedPos = currentPos;
+
+                if (trail.Points.size() > MAX_TRAIL_POINTS)
+                {
+                    trail.Points.resize(MAX_TRAIL_POINTS);
+                }
+            }
+        }
+        else
+        {
+            // Ball is stationary or docked on paddle
+            trail.LastRecordedPos = currentPos;
+        }
+    });
+}
+

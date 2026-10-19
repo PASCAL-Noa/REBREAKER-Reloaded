@@ -23,6 +23,9 @@ public:
 
     void    PlaySfx(uint32_t soundId, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
     void    StopSfx() const;
+    void    PlayLoopingSfx(uint32_t soundId, float volume = 100.0f, float pitch = 1.0f) const;
+    void    StopLoopingSfx(uint32_t soundId) const;
+    [[nodiscard]] bool IsLoopingSfxPlaying(uint32_t soundId) const;
 
     void    PlayMusic(const std::string& filepath, float volume = 100.0f, bool loop = true) const;
     void    FadeToMusic(const std::string& filepath, float fadeDuration = 1.5f, float volume = 100.0f, bool loop = true) const;
