@@ -30,3 +30,6 @@ add_subdirectory(Render)
 add_subdirectory(Audio)
 add_subdirectory(Engine)
 add_subdirectory(Game)
+
+enable_testing()
+add_subdirectory(Tests)

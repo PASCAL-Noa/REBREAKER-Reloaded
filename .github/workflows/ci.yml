@@ -61,3 +61,7 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release --parallel
+
+      - name: Run Tests
+        run: ctest --test-dir build --output-on-failure -C Release
+
