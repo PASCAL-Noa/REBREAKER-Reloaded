@@ -748,6 +748,15 @@ void GameUIController::SpawnComboText(const Vector2f& worldPos, int comboMultipl
     }
 }
 
+void GameUIController::SpawnPowerUpText(PowerUpType type, const Vector2f& worldPos, const Camera2D& camera)
+{
+    if (m_textFeedback && m_uiCanvas != NULL_ENTITY)
+    {
+        m_textFeedback->SpawnPowerUpText(m_uiCanvas, worldPos, type, camera);
+    }
+}
+
+
 // -------------------------------------------------------------------------------------------------
 // UI Builders
 // -------------------------------------------------------------------------------------------------

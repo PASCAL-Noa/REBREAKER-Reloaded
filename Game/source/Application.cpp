@@ -1,6 +1,8 @@
 #include "Application.h"
 #include "Core/PlayerPrefs.h"
+#include "ECS/Systems/UISystem.h"
 #include "Scenes/MenuScene.h"
+
 
 Application::Application(const WindowConfig& config)
     : m_window(config),
@@ -25,6 +27,11 @@ void Application::Init()
     float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
     m_audioMixer.SetSfxVolume(sfxVol);
     m_audioMixer.SetMusicVolume(musicVol);
+
+    uint32_t clickSfx = m_resourceManager.LoadResource("Resources/audio/sfx/ui_click.wav");
+    uint32_t hoverSfx = m_resourceManager.LoadResource("Resources/audio/sfx/ui_hover.wav");
+    UISystem::SetDefaultAudio(hoverSfx, clickSfx);
+
 
     // Register global rules
     m_context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", true, RuleAccess::Public);

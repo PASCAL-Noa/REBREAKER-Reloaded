@@ -7,6 +7,7 @@
 #include <string>
 
 #include "ECS/Components/Camera2D.h"
+#include "ECS/Components/PowerUpComponent.h"
 
 class TextFeedback
 {
@@ -18,7 +19,9 @@ public:
     void OnUpdate(float dt, uint32_t comboMultiplier, uint32_t score);
 
     void SpawnComboText(Entity canvasParent, const Vector2f& worldPosition, uint32_t comboMultiplier, const Camera2D& worldCamera);
+    void SpawnPowerUpText(Entity canvasParent, const Vector2f& worldPosition, PowerUpType type, const Camera2D& worldCamera);
     void SetFlamePosition(const struct RectTransform& referenceTransform, float xOffset, float yOffset = 0.0f) const;
+
 
 private:
     Registry& m_registry;

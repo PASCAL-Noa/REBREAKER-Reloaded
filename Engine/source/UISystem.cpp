@@ -1,7 +1,9 @@
 #include "../include/ECS/Systems/UISystem.h"
 
 #include "Core/InputManager.h"
+#include "AudioMixer.h"
 #include "ECS/Components/UI/CanvasComponent.h"
+
 #include "ECS/Components/UI/ButtonComponent.h"
 #include "ECS/Components/UI/DropdownComponent.h"
 #include "ECS/Components/UI/PanelComponent.h"
@@ -95,6 +97,9 @@ namespace
     bool s_usingGamepadOrNav = false;
     bool s_navigationEnabled = true;
 
+    uint32_t s_defaultHoverSound = 0;
+    uint32_t s_defaultClickSound = 0;
+
     struct ButtonCandidate
     {
         Entity entity = NULL_ENTITY;
@@ -102,7 +107,24 @@ namespace
     };
 }
 
+void UISystem::SetDefaultAudio(uint32_t hoverSoundId, uint32_t clickSoundId)
+{
+    s_defaultHoverSound = hoverSoundId;
+    s_defaultClickSound = clickSoundId;
+}
+
+uint32_t UISystem::GetDefaultHoverSound()
+{
+    return s_defaultHoverSound;
+}
+
+uint32_t UISystem::GetDefaultClickSound()
+{
+    return s_defaultClickSound;
+}
+
 void UISystem::SetNavigationEnabled(bool enabled)
+
 {
     s_navigationEnabled = enabled;
     if (!enabled)
@@ -154,6 +176,8 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
     });
 
     std::function<void()> onClickToCall = nullptr;
+    Entity clickedEntity = NULL_ENTITY;
+
 
     if (s_usingGamepadOrNav)
     {
@@ -329,12 +353,18 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
                     if (button.State != ButtonState::Hovered)
                     {
                         if (button.OnHoverEnter) button.OnHoverEnter();
+                        if (!button.SuppressUniversalSfx)
+                        {
+                            uint32_t snd = button.HoverSoundId != 0 ? button.HoverSoundId : s_defaultHoverSound;
+                            if (snd != 0) context.Audio.PlaySfx(snd, 70.0f, 1.0f);
+                        }
                     }
                     button.State = ButtonState::Hovered;
 
                     if (navSelect)
                     {
                         button.State = ButtonState::Pressed;
+                        clickedEntity = c.entity;
                         onClickToCall = button.OnClick;
                     }
                 }
@@ -369,12 +399,18 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
                 else if (isLeftMouseRelease && button.State == ButtonState::Pressed)
                 {
                     button.State = ButtonState::Hovered;
+                    clickedEntity = entity;
                     onClickToCall = button.OnClick;
                 }
                 else if (!isLeftMouseDown && button.State != ButtonState::Hovered)
                 {
                     button.State = ButtonState::Hovered;
                     if (button.OnHoverEnter) button.OnHoverEnter();
+                    if (!button.SuppressUniversalSfx)
+                    {
+                        uint32_t snd = button.HoverSoundId != 0 ? button.HoverSoundId : s_defaultHoverSound;
+                        if (snd != 0) context.Audio.PlaySfx(snd, 70.0f, 1.0f);
+                    }
                 }
             }
             else
@@ -388,10 +424,21 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
         });
     }
 
+    if (clickedEntity != NULL_ENTITY && registry.HasComponent<ButtonComponent>(clickedEntity))
+    {
+        const auto& btn = registry.GetComponent<ButtonComponent>(clickedEntity);
+        if (!btn.SuppressUniversalSfx)
+        {
+            uint32_t snd = btn.ClickSoundId != 0 ? btn.ClickSoundId : s_defaultClickSound;
+            if (snd != 0) context.Audio.PlaySfx(snd, 85.0f, 1.0f);
+        }
+    }
+
     if (onClickToCall)
     {
         onClickToCall();
     }
+
 }
 
 void UISystem::UpdateDropdowns(Registry& registry, const GameContext& context, const Vector2f& logicalMousePos, const Vector2f& viewSize)

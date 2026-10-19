@@ -503,8 +503,7 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
     // 1. Play
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "PLAY",
-        .OnClick = [&context, this]() {
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 90.0f);
+        .OnClick = [&context]() {
             context.Scenes.LoadScene<GameScene>();
         },
         .Position = {0.0f, startY},
@@ -519,8 +518,7 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
     // 2. Level Select
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "LEVEL SELECT",
-        .OnClick = [&context, this]() {
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        .OnClick = [&context]() {
             context.Scenes.LoadScene<LevelSelectScene>();
         },
         .Position = {0.0f, startY + stepY},
@@ -535,8 +533,7 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
     // 3. Leaderboard
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "LEADERBOARD",
-        .OnClick = [&context, this]() {
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        .OnClick = [this]() {
             OpenModal(m_leaderboardCanvas);
         },
         .Position = {0.0f, startY + stepY * 2.0f},
@@ -551,8 +548,7 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
     // 4. Settings
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "SETTINGS",
-        .OnClick = [&context, this]() {
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        .OnClick = [this]() {
             OpenModal(m_settingsCanvas);
             OpenSettingsTab(m_audioCanvas);
         },
@@ -568,8 +564,7 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
     // 5. Debug / Samples
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "SAMPLES & TESTS [TAB]",
-        .OnClick = [&context, this]() {
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        .OnClick = [this]() {
             OpenModal(m_debugCanvas);
         },
         .Position = {0.0f, startY + stepY * 4.0f},
@@ -580,6 +575,7 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .FontId = m_fontId,
         .FontSize = 32.0f
     });
+
 
     // 6. Quit
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{

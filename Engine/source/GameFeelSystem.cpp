@@ -18,7 +18,14 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_sfxPaddleHit = context.Resources.LoadResource("Resources/audio/sfx/paddle_hit.wav");
     m_sfxBallDeath = context.Resources.LoadResource("Resources/audio/sfx/ball_despawn.wav");
     m_sfxPowerUp = context.Resources.LoadResource("Resources/audio/sfx/powerup.wav");
+    m_sfxPowerUpLaser = context.Resources.LoadResource("Resources/audio/sfx/powerup_laser.wav");
+    m_sfxPowerUpFireball = context.Resources.LoadResource("Resources/audio/sfx/powerup_fireball.wav");
+    m_sfxPowerUpBuff = context.Resources.LoadResource("Resources/audio/sfx/powerup_buff.wav");
+    m_sfxPowerUpShrink = context.Resources.LoadResource("Resources/audio/sfx/powerup_shrink.wav");
+    m_sfxPowerUpLife = context.Resources.LoadResource("Resources/audio/sfx/powerup_life.wav");
+    m_sfxPowerUpTempo = context.Resources.LoadResource("Resources/audio/sfx/powerup_tempo.wav");
     m_sfxCombo = context.Resources.LoadResource("Resources/audio/sfx/combo.wav");
+
 
     m_brickHitSub = m_context.Events.SubscribeScoped<BrickHitEvent>([this](const BrickHitEvent& e)
     {
@@ -64,10 +71,47 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
         });
     });
 
-    m_powerUpSub = m_context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& /*e*/)
+    m_powerUpSub = m_context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
     {
-        m_context.Audio.PlaySfx(m_sfxPowerUp, 100.0f);
+        uint32_t sfx = (m_sfxPowerUpBuff != 0) ? m_sfxPowerUpBuff : m_sfxPowerUp;
+        float pitch = 1.0f;
+        float volume = 100.0f;
+
+        switch (e.Type)
+        {
+            case PowerUpType::LaserPaddle:
+                sfx = (m_sfxPowerUpLaser != 0) ? m_sfxPowerUpLaser : m_sfxPowerUp;
+                break;
+            case PowerUpType::FireBall:
+                sfx = (m_sfxPowerUpFireball != 0) ? m_sfxPowerUpFireball : m_sfxPowerUp;
+                break;
+            case PowerUpType::ShrinkPaddle:
+                sfx = (m_sfxPowerUpShrink != 0) ? m_sfxPowerUpShrink : m_sfxPowerUp;
+                break;
+            case PowerUpType::ExtraLife:
+                sfx = (m_sfxPowerUpLife != 0) ? m_sfxPowerUpLife : m_sfxPowerUp;
+                break;
+            case PowerUpType::TempoBall:
+                sfx = (m_sfxPowerUpTempo != 0) ? m_sfxPowerUpTempo : m_sfxPowerUp;
+                break;
+            case PowerUpType::MultiBall:
+                sfx = (m_sfxPowerUpBuff != 0) ? m_sfxPowerUpBuff : m_sfxPowerUp;
+                pitch = 1.15f;
+                break;
+            case PowerUpType::BigBall:
+                sfx = (m_sfxPowerUpBuff != 0) ? m_sfxPowerUpBuff : m_sfxPowerUp;
+                pitch = 0.85f;
+                break;
+            case PowerUpType::ExpandPaddle:
+            default:
+                sfx = (m_sfxPowerUpBuff != 0) ? m_sfxPowerUpBuff : m_sfxPowerUp;
+                pitch = 1.0f;
+                break;
+        }
+
+        m_context.Audio.PlaySfx(sfx, volume, pitch);
     });
+
 }
 
 void GameFeelSystem::OnUpdate(float /*dt*/)

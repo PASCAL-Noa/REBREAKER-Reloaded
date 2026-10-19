@@ -122,7 +122,13 @@ void GameScene::OnInit(GameContext& context)
     m_powerUpSub = context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
     {
         ApplyPowerUp(e.Type);
+        if (m_uiController && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+        {
+            const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+            m_uiController->SpawnPowerUpText(e.Type, paddleTrans.Position, m_registry.GetComponent<Camera2D>(m_camera));
+        }
     });
+
 
     m_nextLevelSub = context.Events.SubscribeScoped<NextLevelEvent>([this](const NextLevelEvent&)
     {
