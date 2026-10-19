@@ -1,7 +1,9 @@
 #include <doctest/doctest.h>
 #include "Math/Vector2.h"
 #include "Math/Physics.h"
+#include "Math/EasingFunctions.h"
 #include "ECS/Components/Transform2D.h"
+
 #include "ECS/Components/BoxCollider.h"
 #include "ECS/Components/CircleCollider.h"
 
@@ -67,7 +69,34 @@ TEST_SUITE("Math Utilities Tests")
         CHECK(Physics::Clamp(-5.0f, 0.0f, 10.0f) == doctest::Approx(0.0f));
         CHECK(Physics::Clamp(15.0f, 0.0f, 10.0f) == doctest::Approx(10.0f));
     }
+
+    TEST_CASE("EasingFunctions interpolation routines")
+    {
+        auto linear = EasingFunctions::GetFunction(EasingFunctions::EasingType::Linear);
+        CHECK(linear(0.0f) == doctest::Approx(0.0f));
+        CHECK(linear(0.5f) == doctest::Approx(0.5f));
+        CHECK(linear(1.0f) == doctest::Approx(1.0f));
+
+        auto quadIn = EasingFunctions::GetFunction(EasingFunctions::EasingType::EaseInQuad);
+        CHECK(quadIn(0.0f) == doctest::Approx(0.0f));
+        CHECK(quadIn(0.5f) == doctest::Approx(0.25f));
+        CHECK(quadIn(1.0f) == doctest::Approx(1.0f));
+
+        auto quadOut = EasingFunctions::GetFunction(EasingFunctions::EasingType::EaseOutQuad);
+        CHECK(quadOut(0.0f) == doctest::Approx(0.0f));
+        CHECK(quadOut(0.5f) == doctest::Approx(0.75f));
+        CHECK(quadOut(1.0f) == doctest::Approx(1.0f));
+
+        auto cubicIn = EasingFunctions::GetFunction(EasingFunctions::EasingType::EaseInCubic);
+        CHECK(cubicIn(0.0f) == doctest::Approx(0.0f));
+        CHECK(cubicIn(1.0f) == doctest::Approx(1.0f));
+
+        auto bounceOut = EasingFunctions::GetFunction(EasingFunctions::EasingType::EaseOutBounce);
+        CHECK(bounceOut(0.0f) == doctest::Approx(0.0f));
+        CHECK(bounceOut(1.0f) == doctest::Approx(1.0f));
+    }
 }
+
 
 TEST_SUITE("Collision Detection Algorithms Tests")
 {
