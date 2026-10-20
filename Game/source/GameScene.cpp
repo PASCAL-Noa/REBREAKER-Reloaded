@@ -82,6 +82,12 @@ void GameScene::OnInit(GameContext& context)
     m_explosionSfxId = context.Resources.LoadResource("Resources/audio/sfx/brick_destroy.wav");
     m_fireballBurnSfxId = context.Resources.LoadResource("Resources/audio/sfx/fireball_burn.wav");
     m_fireballExplosionSfxId = context.Resources.LoadResource("Resources/audio/sfx/fireball_explode.wav");
+    m_countdownReadySfxId = context.Resources.LoadResource("Resources/audio/sfx/countdown_ready.wav");
+    m_countdown3SfxId = context.Resources.LoadResource("Resources/audio/sfx/countdown_3.wav");
+    m_countdown2SfxId = context.Resources.LoadResource("Resources/audio/sfx/countdown_2.wav");
+    m_countdown1SfxId = context.Resources.LoadResource("Resources/audio/sfx/countdown_1.wav");
+    m_countdownGoSfxId = context.Resources.LoadResource("Resources/audio/sfx/countdown_go.wav");
+    m_countdownWhooshSfxId = context.Resources.LoadResource("Resources/audio/sfx/countdown_whoosh.wav");
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
     m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
     m_gameOverSfxId = context.Resources.LoadResource("Resources/audio/sfx/game_over.mp3");
@@ -293,7 +299,20 @@ void GameScene::OnInit(GameContext& context)
     PlayerPrefs::Save();
     LoadLevel(startLevel, false);
 
-    mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 5);
+    mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 6);
+
+    class PauseToCountdownCondition : public Condition<GameScene>
+    {
+    public:
+        bool OnTest(GameScene* pOwner) override
+        {
+            if (!pOwner || !pOwner->CanUnpause()) return false;
+            if (!pOwner->IsCountdownActive()) return false;
+            return pOwner->GetContext()->Input.IsActionTriggered(InputAction::Pause) ||
+                   pOwner->GetContext()->Input.IsKeyPress(KeyCode::Escape) ||
+                   pOwner->GetContext()->Input.IsJoystickButtonPress(0, 1);
+        }
+    };
 
     class PauseToPlayCondition : public Condition<GameScene>
     {
@@ -301,9 +320,19 @@ void GameScene::OnInit(GameContext& context)
         bool OnTest(GameScene* pOwner) override
         {
             if (!pOwner || !pOwner->CanUnpause()) return false;
+            if (pOwner->IsCountdownActive()) return false;
             return pOwner->GetContext()->Input.IsActionTriggered(InputAction::Pause) ||
                    pOwner->GetContext()->Input.IsKeyPress(KeyCode::Escape) ||
                    pOwner->GetContext()->Input.IsJoystickButtonPress(0, 1);
+        }
+    };
+
+    class CountdownCompleteCondition : public Condition<GameScene>
+    {
+    public:
+        bool OnTest(GameScene* pOwner) override
+        {
+            return pOwner && pOwner->IsCountdownComplete();
         }
     };
 
@@ -317,6 +346,10 @@ void GameScene::OnInit(GameContext& context)
         }
     };
 
+    State<GameScene>* countdownState = mp_state_machine->CreateState(static_cast<int>(SceneState::Countdown));
+    countdownState->AddTransition(new Transition<GameScene>(new CountdownCompleteCondition(), static_cast<int>(SceneState::Playing)));
+    countdownState->AddTransition(new Transition<GameScene>(new PlayToPauseCondition(), static_cast<int>(SceneState::Paused)));
+
     State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
     playingState->AddTransition(new Transition<GameScene>(new PlayToPauseCondition(), static_cast<int>(SceneState::Paused)));
     playingState->AddTransition(new Transition<GameScene>(new LivesCondition<GameScene>(), static_cast<int>(SceneState::GameOver)));
@@ -324,6 +357,7 @@ void GameScene::OnInit(GameContext& context)
     playingState->AddTransition(new Transition<GameScene>(new VictoryCondition<GameScene>(), static_cast<int>(SceneState::Victory)));
 
     State<GameScene>* pauseState = mp_state_machine->CreateState(static_cast<int>(SceneState::Paused));
+    pauseState->AddTransition(new Transition<GameScene>(new PauseToCountdownCondition(), static_cast<int>(SceneState::Countdown)));
     pauseState->AddTransition(new Transition<GameScene>(new PauseToPlayCondition(), static_cast<int>(SceneState::Playing)));
 
     State<GameScene>* gameOverState = mp_state_machine->CreateState(static_cast<int>(SceneState::GameOver));
@@ -336,11 +370,10 @@ void GameScene::OnInit(GameContext& context)
 
     State<GameScene>* levelTransitionState = mp_state_machine->CreateState(static_cast<int>(SceneState::LevelTransition));
     levelTransitionState->AddAction(new NextLevelAction<GameScene>());
-    levelTransitionState->AddTransition(new Transition<GameScene>(new LevelTransitionCompleteCondition<GameScene>(), static_cast<int>(SceneState::Playing)));
+    levelTransitionState->AddTransition(new Transition<GameScene>(new LevelTransitionCompleteCondition<GameScene>(), static_cast<int>(SceneState::Countdown)));
 
-    mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
-    context.Events.Publish(GameStateChangedEvent(GameUIState::Playing));
     context.Events.Publish(LivesChangedEvent(m_lives));
+    StartCountdown();
 }
 
 void GameScene::OnUpdate(const float dt, GameContext& context)
@@ -348,7 +381,6 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     DefaultScene::OnUpdate(dt, context);
     mp_context = &context;
 
-    m_gameplayTime += dt;
     if (mp_state_machine)
     {
         mp_state_machine->Update();
@@ -363,6 +395,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         else if (currentState == static_cast<int>(SceneState::GameOver)) uiState = GameUIState::GameOver;
         else if (currentState == static_cast<int>(SceneState::Victory)) uiState = GameUIState::Victory;
         else if (currentState == static_cast<int>(SceneState::LevelTransition)) uiState = GameUIState::LevelTransition;
+        else if (currentState == static_cast<int>(SceneState::Countdown)) uiState = GameUIState::Countdown;
 
         context.Events.Publish(GameStateChangedEvent(uiState));
     }
@@ -372,6 +405,75 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         UISystem::SetNavigationEnabled(false);
     }
     UISystem::OnUpdate(dt, m_registry, context);
+
+    if (currentState == static_cast<int>(SceneState::Countdown))
+    {
+        if (m_countdownActive)
+        {
+            m_countdownTimer -= dt;
+
+            // Trigger subtle breath whoosh as the current word/numeral fades out (last ~0.28s)
+            if (m_countdownTimer <= static_cast<float>(m_countdownLastSecond - 1) + 0.28f &&
+                m_countdownWhooshPlayedForSecond != m_countdownLastSecond)
+            {
+                m_countdownWhooshPlayedForSecond = m_countdownLastSecond;
+                if (m_countdownWhooshSfxId != 0)
+                {
+                    context.Audio.PlaySfx(m_countdownWhooshSfxId, 45.0f);
+                }
+            }
+
+            int currentSec = std::clamp(static_cast<int>(std::ceil(m_countdownTimer)), 1, 4);
+            if (currentSec < m_countdownLastSecond && m_countdownTimer > 0.0f)
+            {
+                m_countdownLastSecond = currentSec;
+                if (currentSec == 3 && m_countdown3SfxId != 0)
+                {
+                    context.Audio.PlaySfx(m_countdown3SfxId, 100.0f);
+                }
+                else if (currentSec == 2 && m_countdown2SfxId != 0)
+                {
+                    context.Audio.PlaySfx(m_countdown2SfxId, 100.0f);
+                }
+                else if (currentSec == 1 && m_countdown1SfxId != 0)
+                {
+                    context.Audio.PlaySfx(m_countdown1SfxId, 100.0f);
+                }
+            }
+
+            if (m_countdownTimer <= 0.0f)
+            {
+                m_countdownTimer = 0.0f;
+                m_countdownActive = false;
+                m_countdownGoTimer = 0.65f;
+
+                if (m_countdownGoSfxId != 0)
+                {
+                    context.Audio.PlaySfx(m_countdownGoSfxId, 100.0f);
+                }
+
+                if (mp_paddleSystem)
+                {
+                    mp_paddleSystem->SetInputEnabled(true);
+                }
+
+                if (mp_state_machine)
+                {
+                    mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+                }
+                context.Events.Publish(GameStateChangedEvent(GameUIState::Playing));
+            }
+        }
+    }
+
+    if (m_countdownGoTimer > 0.0f)
+    {
+        m_countdownGoTimer -= dt;
+        if (m_countdownGoTimer < 0.0f)
+        {
+            m_countdownGoTimer = 0.0f;
+        }
+    }
 
     if (currentState == static_cast<int>(SceneState::LevelTransition))
     {
@@ -397,6 +499,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
 
     if (currentState == static_cast<int>(SceneState::Playing))
     {
+        m_gameplayTime += dt;
         m_playlist.Update(context);
         HandleInput(dt, context);
         UpdatePowerUpTimers(dt);
@@ -491,7 +594,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     m_postProcessParams.VignetteColor.g = static_cast<uint8_t>(m_postProcessParams.VignetteColor.g + (kBaseVigColor.g - m_postProcessParams.VignetteColor.g) * decayAlpha);
     m_postProcessParams.VignetteColor.b = static_cast<uint8_t>(m_postProcessParams.VignetteColor.b + (kBaseVigColor.b - m_postProcessParams.VignetteColor.b) * decayAlpha);
 
-    const bool canControlPaddle = (currentState == static_cast<int>(SceneState::Playing) || currentState == static_cast<int>(SceneState::LevelTransition));
+    const bool canControlPaddle = (currentState == static_cast<int>(SceneState::Playing) || currentState == static_cast<int>(SceneState::LevelTransition)) && !m_countdownActive;
     if (mp_paddleSystem)
     {
         mp_paddleSystem->SetInputEnabled(canControlPaddle);
@@ -568,6 +671,13 @@ void GameScene::OnRender(GameContext& context)
         else if (state == static_cast<int>(SceneState::GameOver)) gameStateStr = "GAME OVER - PRESS SPACE TO REPLAY";
         else if (state == static_cast<int>(SceneState::Victory)) gameStateStr = "VICTORY - ALL LEVELS CLEARED! PRESS SPACE TO RESET";
         else if (state == static_cast<int>(SceneState::LevelTransition)) gameStateStr = "STAGE CLEAR! ADVANCING TO LEVEL " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + "...";
+        else if (state == static_cast<int>(SceneState::Countdown))
+        {
+            if (m_countdownActive)
+                gameStateStr = (m_countdownLastSecond == 4) ? "READY..." : ("READY... " + std::to_string(m_countdownLastSecond));
+            else
+                gameStateStr = "READY... GO!";
+        }
     }
 
     std::string debugStr = showDebug ? "ON" : "OFF";
@@ -1032,6 +1142,36 @@ void GameScene::CompleteLevelTransition()
     {
         m_playlist.PlayNext(*mp_context, 1.5f);
     }
+    if (!m_countdownActive)
+    {
+        StartCountdown();
+    }
+}
+
+void GameScene::StartCountdown()
+{
+    m_countdownTimer = 4.0f;
+    m_countdownGoTimer = 0.0f;
+    m_countdownLastSecond = 4;
+    m_countdownWhooshPlayedForSecond = 0;
+    m_countdownActive = true;
+
+    if (mp_state_machine && mp_state_machine->GetCurrentState() != static_cast<int>(SceneState::Countdown))
+    {
+        mp_state_machine->SetState(static_cast<int>(SceneState::Countdown));
+    }
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetInputEnabled(false);
+    }
+    if (mp_context)
+    {
+        mp_context->Events.Publish(GameStateChangedEvent(GameUIState::Countdown));
+        if (m_countdownReadySfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_countdownReadySfxId, 100.0f);
+        }
+    }
 }
 
 bool GameScene::IsLevelTransitionComplete() const
@@ -1105,6 +1245,7 @@ void GameScene::OnVictoryExit()
     }
     m_levelManager.ResetToFirstLevel();
     LoadLevel(0, /*preserveStats=*/true);
+    StartCountdown();
 }
 
 bool GameScene::CanUnpause() const
@@ -1125,7 +1266,14 @@ void GameScene::ResumeGame()
 {
     if (mp_state_machine)
     {
-        mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+        if (m_countdownActive)
+        {
+            mp_state_machine->SetState(static_cast<int>(SceneState::Countdown));
+        }
+        else
+        {
+            mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+        }
     }
 }
 
@@ -1133,7 +1281,7 @@ void GameScene::OnReplayRequested()
 {
     if (mp_state_machine)
     {
-        mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+        mp_state_machine->SetState(static_cast<int>(SceneState::Countdown));
     }
     else
     {
@@ -1149,6 +1297,7 @@ void GameScene::FullReset()
     }
     m_levelManager.ResetToFirstLevel();
     LoadLevel(0, /*preserveStats=*/false);
+    StartCountdown();
 }
 
 void GameScene::HandleInput(const float /*dt*/, const GameContext& context)

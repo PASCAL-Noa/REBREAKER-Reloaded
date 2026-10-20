@@ -28,7 +28,8 @@ enum class SceneState : int
     Paused = 1,
     GameOver = 2,
     Victory = 3,
-    LevelTransition = 4
+    LevelTransition = 4,
+    Countdown = 5
 };
 
 enum class BallState
@@ -73,6 +74,14 @@ public:
     [[nodiscard]] bool                IsLevelTransitionComplete() const;
     [[nodiscard]] float               GetTransitionTimer() const { return m_levelTransitionTimer; }
     void    SetTransitionTimer(float timer) { m_levelTransitionTimer = timer; }
+
+    // Countdown & Ready Sequence
+    void    StartCountdown();
+    [[nodiscard]] bool  IsCountdownActive() const noexcept { return m_countdownActive; }
+    [[nodiscard]] bool  IsCountdownComplete() const noexcept { return !m_countdownActive; }
+    [[nodiscard]] float GetCountdownTimer() const noexcept { return m_countdownTimer; }
+    [[nodiscard]] float GetCountdownGoTimer() const noexcept { return m_countdownGoTimer; }
+    [[nodiscard]] int   GetCountdownSecond() const noexcept { return m_countdownLastSecond; }
 
     // State Machine Lifecycle Hooks
     void    OnGameOverEnter();
@@ -143,6 +152,18 @@ protected:
     uint32_t    m_levelClearSfxId = 0;
     uint32_t    m_victorySfxId = 0;
     uint32_t    m_scoreRecordedSfxId = 0;
+    uint32_t    m_countdownReadySfxId = 0;
+    uint32_t    m_countdown3SfxId = 0;
+    uint32_t    m_countdown2SfxId = 0;
+    uint32_t    m_countdown1SfxId = 0;
+    uint32_t    m_countdownGoSfxId = 0;
+    uint32_t    m_countdownWhooshSfxId = 0;
+
+    float       m_countdownTimer = 0.0f;
+    float       m_countdownGoTimer = 0.0f;
+    int         m_countdownLastSecond = 0;
+    int         m_countdownWhooshPlayedForSecond = 0;
+    bool        m_countdownActive = false;
 
     LeaderboardManager m_leaderboard;
     ScoreManager       m_scoreManager;

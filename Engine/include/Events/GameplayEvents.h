@@ -54,7 +54,8 @@ enum class GameUIState
     Paused,
     GameOver,
     Victory,
-    LevelTransition
+    LevelTransition,
+    Countdown
 };
 
 struct GameStateChangedEvent : public Event
