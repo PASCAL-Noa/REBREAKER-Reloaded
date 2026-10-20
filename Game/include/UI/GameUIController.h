@@ -58,6 +58,7 @@ public:
 
 
     void OnRender(GameContext& context);
+    void RenderCountdown(GameContext& context);
 
     [[nodiscard]] bool IsModalOrSubMenuOpen() const;
     [[nodiscard]] bool IsRebinding() const noexcept { return m_isRebinding; }

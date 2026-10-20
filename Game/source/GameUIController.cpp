@@ -113,7 +113,7 @@ void GameUIController::ShowState(GameUIState state)
     if (m_uiCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_uiCanvas))
     {
         m_registry.GetComponent<CanvasComponent>(m_uiCanvas).IsEnabled =
-            (state == GameUIState::Playing || (state == GameUIState::Paused && !isSettingsOpen && !isLevelSelectOpen));
+            (state == GameUIState::Playing || state == GameUIState::Countdown || (state == GameUIState::Paused && !isSettingsOpen && !isLevelSelectOpen));
     }
 
     if (state != GameUIState::Paused)
@@ -316,7 +316,7 @@ void GameUIController::OnUpdate(float dt)
                     if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
                     CloseLevelSelectModal();
                     m_scene.LoadLevel(lvlIdx, /*preserveStats=*/false);
-                    m_scene.ResumeGame();
+                    m_scene.StartCountdown();
                     return;
                 }
             }
@@ -331,7 +331,7 @@ void GameUIController::OnUpdate(float dt)
                 if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
                 CloseLevelSelectModal();
                 m_scene.LoadLevel(lvlIdx, /*preserveStats=*/false);
-                m_scene.ResumeGame();
+                m_scene.StartCountdown();
                 return;
             }
         }
@@ -369,7 +369,7 @@ void GameUIController::OnUpdate(float dt)
                         if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
                         CloseLevelSelectModal();
                         m_scene.LoadLevel(lvlIdx, /*preserveStats=*/false);
-                        m_scene.ResumeGame();
+                        m_scene.StartCountdown();
                         return;
                     }
                 }
@@ -2194,7 +2194,7 @@ void GameUIController::CloseSettingsLayout()
     }
     if (m_uiCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_uiCanvas))
     {
-        m_registry.GetComponent<CanvasComponent>(m_uiCanvas).IsEnabled = (m_currentState == GameUIState::Playing || m_currentState == GameUIState::Paused);
+        m_registry.GetComponent<CanvasComponent>(m_uiCanvas).IsEnabled = (m_currentState == GameUIState::Playing || m_currentState == GameUIState::Countdown || m_currentState == GameUIState::Paused);
     }
 }
 
@@ -2245,7 +2245,7 @@ void GameUIController::CloseLevelSelectModal()
     }
     if (m_uiCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_uiCanvas))
     {
-        m_registry.GetComponent<CanvasComponent>(m_uiCanvas).IsEnabled = (m_currentState == GameUIState::Playing || m_currentState == GameUIState::Paused);
+        m_registry.GetComponent<CanvasComponent>(m_uiCanvas).IsEnabled = (m_currentState == GameUIState::Playing || m_currentState == GameUIState::Countdown || m_currentState == GameUIState::Paused);
     }
 }
 
@@ -2477,5 +2477,101 @@ void GameUIController::OnRender(GameContext& context)
                 context.Render.DrawRectangleOutline(rt.Size.X + 8.0f, rt.Size.Y + 8.0f, Transform2D{absPos}, Color{255, 230, 80, alpha}, 3.0f);
             }
         }
+    }
+
+    // 3. Stage start & respawn 'READY... 3... 2... 1... GO!' sequence
+    RenderCountdown(context);
+}
+
+void GameUIController::RenderCountdown(GameContext& context)
+{
+    const bool isCountdown = m_scene.IsCountdownActive();
+    const float goTimer = m_scene.GetCountdownGoTimer();
+
+    if (!isCountdown && goTimer <= 0.0f) return;
+
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+    const float screenCenterX = viewSize.X * 0.5f;
+    const float screenCenterY = viewSize.Y * 0.5f;
+
+    if (isCountdown)
+    {
+        const float timer = m_scene.GetCountdownTimer();
+        const int sec = std::clamp(static_cast<int>(std::ceil(timer)), 1, 4);
+        float t = 1.0f - (timer - static_cast<float>(sec - 1));
+        t = std::clamp(t, 0.0f, 1.0f);
+
+        // 1. Scale punch with damped oscillation bounce
+        const float punch = 1.0f + 0.85f * std::exp(-7.0f * t) * std::cos(11.0f * t);
+        const float baseFontSize = (sec == 4) ? 130.0f : 160.0f;
+        const float fontSize = std::max(20.0f, baseFontSize * punch);
+
+        // 2. Rotation wobble: alternating slight tilt decaying to zero
+        const float wobbleSign = (sec % 2 == 1) ? 1.0f : -1.0f;
+        const float wobbleDeg = wobbleSign * 7.5f * std::exp(-6.0f * t) * std::cos(9.0f * t);
+
+        // 3. Alpha fade per second: holds steady then fades smoothly near end of each second
+        const float alphaRatio = (t < 0.70f) ? 1.0f : std::clamp((1.0f - t) / 0.30f, 0.0f, 1.0f);
+        const auto alpha = static_cast<uint8_t>(255.0f * alphaRatio);
+
+        // Color styling per phase tick
+        Color mainColor = Color{0, 240, 255, alpha};
+        Color glowColor = Color{0, 110, 240, static_cast<uint8_t>(alpha * 0.5f)};
+        if (sec == 3)
+        {
+            mainColor = Color{0, 230, 255, alpha};
+            glowColor = Color{0, 100, 220, static_cast<uint8_t>(alpha * 0.5f)};
+        }
+        else if (sec == 2)
+        {
+            mainColor = Color{255, 220, 60, alpha};
+            glowColor = Color{255, 130, 20, static_cast<uint8_t>(alpha * 0.5f)};
+        }
+        else if (sec == 1)
+        {
+            mainColor = Color{255, 80, 50, alpha};
+            glowColor = Color{200, 20, 20, static_cast<uint8_t>(alpha * 0.5f)};
+        }
+
+        const std::string displayText = (sec == 4) ? "READY" : std::to_string(sec);
+
+        // --- NUMERAL / READY (Centered directly in viewport) ---
+        const Vector2f numPos{screenCenterX, screenCenterY};
+
+        // Drop shadow / glow offset
+        context.Render.DrawTextCentered(displayText, m_fontId, fontSize,
+            Transform2D{numPos + Vector2f{4.0f, 4.0f}, wobbleDeg, Vector2f{1.0f, 1.0f}},
+            glowColor);
+
+        // Main text
+        context.Render.DrawTextCentered(displayText, m_fontId, fontSize,
+            Transform2D{numPos, wobbleDeg, Vector2f{1.0f, 1.0f}},
+            mainColor);
+    }
+    else if (goTimer > 0.0f)
+    {
+        const float t_go = std::clamp(1.0f - (goTimer / 0.65f), 0.0f, 1.0f);
+        const float punchGo = 1.0f + 1.25f * std::exp(-6.5f * t_go) * std::cos(9.0f * t_go);
+        const float goFontSize = std::max(20.0f, 160.0f * punchGo);
+
+        const float wobbleDeg = 4.0f * std::exp(-5.0f * t_go) * std::cos(8.0f * t_go);
+
+        const float alphaRatio = (t_go < 0.40f) ? 1.0f : std::clamp((1.0f - t_go) / 0.60f, 0.0f, 1.0f);
+        const auto alphaGo = static_cast<uint8_t>(255.0f * alphaRatio);
+
+        const Color goMain{50, 255, 120, alphaGo};
+        const Color goGlow{20, 180, 70, static_cast<uint8_t>(alphaGo * 0.5f)};
+
+        const Vector2f goPos{screenCenterX, screenCenterY};
+
+        // Shadow / Glow
+        context.Render.DrawTextCentered("GO!", m_fontId, goFontSize,
+            Transform2D{goPos + Vector2f{4.0f, 4.0f}, wobbleDeg, Vector2f{1.0f, 1.0f}},
+            goGlow);
+
+        // Main "GO!"
+        context.Render.DrawTextCentered("GO!", m_fontId, goFontSize,
+            Transform2D{goPos, wobbleDeg, Vector2f{1.0f, 1.0f}},
+            goMain);
     }
 }
