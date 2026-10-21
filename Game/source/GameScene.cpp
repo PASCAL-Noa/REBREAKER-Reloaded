@@ -704,9 +704,10 @@ void GameScene::OnRender(GameContext& context)
     {
         context.Render.BeginLightingPass(m_currentTheme.AmbientLight);
 
-        // 1. Dynamic light sources (point and cone) from ECS entities
-        m_registry.View<Transform2D, LightSourceComponent>([&](Entity, const Transform2D& t, const LightSourceComponent& light)
+        // 1. Dynamic light sources (point and cone) from ECS entities (lanterns, standard balls, etc.)
+        m_registry.View<Transform2D, LightSourceComponent>([&](Entity e, const Transform2D& t, const LightSourceComponent& light)
         {
+            if (e == m_paddle) return; // Handled with size-reactive multi-emission below
             if (!light.IsActive || light.Intensity <= 0.0f || light.Radius <= 0.0f) return;
 
             if (light.Type == LightType::Point)
@@ -719,7 +720,45 @@ void GameScene::OnRender(GameContext& context)
             }
         });
 
-        // 2. Decaying explosion light flashes (bomb detonations, fireball explosions)
+        // 2. Extra radiant fire core for active FireBalls
+        if (mp_ballSystem)
+        {
+            for (Entity b : mp_ballSystem->GetBalls())
+            {
+                if (!m_registry.IsAlive(b) || !m_registry.HasComponent<BallComponent>(b)) continue;
+                const auto& bc = m_registry.GetComponent<BallComponent>(b);
+                if (bc.IsFireBall && m_registry.HasComponent<Transform2D>(b))
+                {
+                    const auto& bPos = m_registry.GetComponent<Transform2D>(b).Position;
+                    // White-hot inner core
+                    context.Render.DrawPointLight(bPos, 85.0f, Color{255, 240, 160, 255}, 1.7f, BlendMode::Add);
+                }
+            }
+        }
+
+        // 3. Paddle dynamic light emission (proportional to paddle size)
+        if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+        {
+            const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+            const float paddleScaleX = pTrans.Scale.X;
+            const float halfWidth = 60.0f * paddleScaleX; // base width is 120.0f
+            const Vector2f pLeft{pTrans.Position.X - halfWidth, pTrans.Position.Y};
+            const Vector2f pRight{pTrans.Position.X + halfWidth, pTrans.Position.Y};
+
+            // A. Paddle body glow (capsule light spanning the full paddle length)
+            const float bodyRadius = 110.0f * std::sqrt(paddleScaleX);
+            const float bodyIntensity = 1.35f * std::clamp(paddleScaleX, 0.7f, 1.5f);
+            context.Render.DrawCapsuleLight(pLeft, pRight, bodyRadius, Color{190, 235, 255, 255}, bodyIntensity, BlendMode::Add);
+
+            // B. Paddle upward spotlight (widens and reaches further as paddle scales up)
+            const float coneAngle = 65.0f + 25.0f * (paddleScaleX - 1.0f);
+            const float coneRadius = 420.0f * (0.8f + 0.2f * paddleScaleX);
+            const float coneIntensity = 1.3f * std::clamp(paddleScaleX, 0.7f, 1.4f);
+            const Vector2f coneApex{pTrans.Position.X, pTrans.Position.Y - 10.0f};
+            context.Render.DrawConeLight(coneApex, coneRadius, -90.0f, coneAngle, Color{210, 240, 255, 255}, coneIntensity, BlendMode::Add);
+        }
+
+        // 4. Decaying explosion light flashes (bomb detonations, fireball explosions)
         for (const auto& flash : m_lightFlashes)
         {
             if (flash.Intensity > 0.0f && flash.Radius > 0.0f)

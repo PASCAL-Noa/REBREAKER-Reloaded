@@ -186,4 +186,67 @@ TEST_SUITE("2D Dynamic Lighting System Tests")
             CHECK(metalCount >= 8);
         }
     }
+
+    TEST_CASE("Paddle size-reactive light scaling (standard, expanded, shrunk)")
+    {
+        auto computePaddleLight = [](float scaleX) {
+            float width = 120.0f * scaleX;
+            float bodyRadius = 110.0f * std::sqrt(scaleX);
+            float bodyIntensity = 1.35f * std::clamp(scaleX, 0.7f, 1.5f);
+            float coneAngle = 65.0f + 25.0f * (scaleX - 1.0f);
+            float coneRadius = 420.0f * (0.8f + 0.2f * scaleX);
+            return std::make_tuple(width, bodyRadius, bodyIntensity, coneAngle, coneRadius);
+        };
+
+        // Standard paddle (scale 1.0x)
+        auto [stdW, stdBodyR, stdBodyI, stdAngle, stdConeR] = computePaddleLight(1.0f);
+        CHECK(stdW == doctest::Approx(120.0f));
+        CHECK(stdBodyR == doctest::Approx(110.0f));
+        CHECK(stdBodyI == doctest::Approx(1.35f));
+        CHECK(stdAngle == doctest::Approx(65.0f));
+        CHECK(stdConeR == doctest::Approx(420.0f));
+
+        // Expanded paddle (scale 1.5x) - emits significantly MORE light and wider spotlight
+        auto [expW, expBodyR, expBodyI, expAngle, expConeR] = computePaddleLight(1.5f);
+        CHECK(expW == doctest::Approx(180.0f));
+        CHECK(expBodyR > stdBodyR);
+        CHECK(expBodyI > stdBodyI);
+        CHECK(expAngle > stdAngle);
+        CHECK(expConeR > stdConeR);
+
+        // Shrunk paddle (scale 0.7x) - emits LESS light with tighter spotlight
+        auto [shrW, shrBodyR, shrBodyI, shrAngle, shrConeR] = computePaddleLight(0.7f);
+        CHECK(shrW == doctest::Approx(84.0f));
+        CHECK(shrBodyR < stdBodyR);
+        CHECK(shrBodyI < stdBodyI);
+        CHECK(shrAngle < stdAngle);
+        CHECK(shrConeR < stdConeR);
+    }
+
+    TEST_CASE("FireBall dynamic light properties and contrast with standard ball")
+    {
+        // Standard ball
+        float stdRadius = 180.0f;
+        float stdIntensity = 1.25f;
+        Color stdColor{225, 240, 255, 255};
+
+        // FireBall (cruising)
+        float fireRadius = 310.0f;
+        float fireIntensity = 1.75f;
+        Color fireColor{255, 150, 30, 255};
+
+        // FireBall (fuse active - impending explosion)
+        float fuseRadius = 360.0f;
+        float fuseIntensity = 2.1f;
+        Color fuseColor{255, 95, 20, 255};
+
+        CHECK(fireRadius > stdRadius);
+        CHECK(fireIntensity > stdIntensity);
+        CHECK(fireColor.r == 255);
+        CHECK(fireColor.g < stdColor.g); // Warm fiery hue
+
+        CHECK(fuseRadius > fireRadius);
+        CHECK(fuseIntensity > fireIntensity);
+        CHECK(fuseColor.r == 255);
+    }
 }

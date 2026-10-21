@@ -661,6 +661,103 @@ void Renderer::DrawConeLight(const Vector2f& position, float radius, float direc
     m_lightMapTexture.draw(fanVertices.data(), fanVertices.size(), sf::PrimitiveType::TriangleFan, states);
 }
 
+void Renderer::DrawCapsuleLight(const Vector2f& start, const Vector2f& end, float radius, Color color, float intensity, BlendMode blendMode)
+{
+    if (radius <= 0.0f || intensity <= 0.0f) return;
+
+    const float dx = end.X - start.X;
+    const float dy = end.Y - start.Y;
+    const float len = std::sqrt(dx * dx + dy * dy);
+
+    if (len < 0.001f)
+    {
+        DrawPointLight(start, radius, color, intensity, blendMode);
+        return;
+    }
+
+    const float clampedIntensity = std::clamp(intensity, 0.0f, 2.0f);
+    const auto r = static_cast<uint8_t>(std::clamp(static_cast<float>(color.r) * clampedIntensity, 0.0f, 255.0f));
+    const auto g = static_cast<uint8_t>(std::clamp(static_cast<float>(color.g) * clampedIntensity, 0.0f, 255.0f));
+    const auto b = static_cast<uint8_t>(std::clamp(static_cast<float>(color.b) * clampedIntensity, 0.0f, 255.0f));
+    const auto a = static_cast<uint8_t>(std::clamp(static_cast<float>(color.a) * std::min(1.0f, clampedIntensity), 0.0f, 255.0f));
+
+    const sf::Color centerColor(r, g, b, a);
+    const sf::Color edgeColor(0, 0, 0, 0);
+
+    const float tx = dx / len;
+    const float ty = dy / len;
+    const float nx = -ty;
+    const float ny = tx;
+
+    sf::RenderStates states;
+    states.blendMode = ToSfBlendMode(blendMode);
+
+    // 1. Central rectangular falloff body
+    const sf::Vector2f c1(start.X, start.Y);
+    const sf::Vector2f c2(end.X, end.Y);
+    const sf::Vector2f t1(start.X + nx * radius, start.Y + ny * radius);
+    const sf::Vector2f t2(end.X + nx * radius, end.Y + ny * radius);
+    const sf::Vector2f b1(start.X - nx * radius, start.Y - ny * radius);
+    const sf::Vector2f b2(end.X - nx * radius, end.Y - ny * radius);
+
+    std::vector<sf::Vertex> bodyVertices;
+    bodyVertices.reserve(12);
+
+    // Top quad
+    bodyVertices.emplace_back(c1, centerColor);
+    bodyVertices.emplace_back(c2, centerColor);
+    bodyVertices.emplace_back(t2, edgeColor);
+
+    bodyVertices.emplace_back(c1, centerColor);
+    bodyVertices.emplace_back(t2, edgeColor);
+    bodyVertices.emplace_back(t1, edgeColor);
+
+    // Bottom quad
+    bodyVertices.emplace_back(c1, centerColor);
+    bodyVertices.emplace_back(b1, edgeColor);
+    bodyVertices.emplace_back(b2, edgeColor);
+
+    bodyVertices.emplace_back(c1, centerColor);
+    bodyVertices.emplace_back(b2, edgeColor);
+    bodyVertices.emplace_back(c2, centerColor);
+
+    m_lightMapTexture.draw(bodyVertices.data(), bodyVertices.size(), sf::PrimitiveType::Triangles, states);
+
+    // 2. End-cap semicircles
+    constexpr int kCapSegments = 16;
+    constexpr float kPi = 3.14159265f;
+
+    // Right cap at `end`
+    std::vector<sf::Vertex> rightCap;
+    rightCap.reserve(kCapSegments + 2);
+    rightCap.emplace_back(c2, centerColor);
+    for (int i = 0; i <= kCapSegments; ++i)
+    {
+        const float angle = -kPi * 0.5f + (static_cast<float>(i) / static_cast<float>(kCapSegments)) * kPi;
+        const float cosA = std::cos(angle);
+        const float sinA = std::sin(angle);
+        const float px = end.X + (tx * cosA - ty * sinA) * radius;
+        const float py = end.Y + (ty * cosA + tx * sinA) * radius;
+        rightCap.emplace_back(sf::Vector2f(px, py), edgeColor);
+    }
+    m_lightMapTexture.draw(rightCap.data(), rightCap.size(), sf::PrimitiveType::TriangleFan, states);
+
+    // Left cap at `start`
+    std::vector<sf::Vertex> leftCap;
+    leftCap.reserve(kCapSegments + 2);
+    leftCap.emplace_back(c1, centerColor);
+    for (int i = 0; i <= kCapSegments; ++i)
+    {
+        const float angle = kPi * 0.5f + (static_cast<float>(i) / static_cast<float>(kCapSegments)) * kPi;
+        const float cosA = std::cos(angle);
+        const float sinA = std::sin(angle);
+        const float px = start.X + (tx * cosA - ty * sinA) * radius;
+        const float py = start.Y + (ty * cosA + tx * sinA) * radius;
+        leftCap.emplace_back(sf::Vector2f(px, py), edgeColor);
+    }
+    m_lightMapTexture.draw(leftCap.data(), leftCap.size(), sf::PrimitiveType::TriangleFan, states);
+}
+
 void Renderer::EndLightingPass(BlendMode compositeBlendMode)
 {
     m_lightMapTexture.display();

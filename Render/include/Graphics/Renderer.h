@@ -52,6 +52,7 @@ public:
     void                BeginLightingPass(Color ambientDarkness);
     void                DrawPointLight(const Vector2f& position, float radius, Color color, float intensity = 1.0f, BlendMode blendMode = BlendMode::Add);
     void                DrawConeLight(const Vector2f& position, float radius, float directionDeg, float coneAngleDeg, Color color, float intensity = 1.0f, BlendMode blendMode = BlendMode::Add);
+    void                DrawCapsuleLight(const Vector2f& start, const Vector2f& end, float radius, Color color, float intensity = 1.0f, BlendMode blendMode = BlendMode::Add);
     void                EndLightingPass(BlendMode compositeBlendMode = BlendMode::Multiply);
 
     Vector2f            GetTextureSize(uint32_t textureId) const;
