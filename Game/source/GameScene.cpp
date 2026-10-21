@@ -279,6 +279,16 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<TweenComponent>(m_paddle, TweenComponent{});
     m_registry.AddComponent<PaddleComponent>(m_paddle, PaddleComponent{});
 
+    LightSourceComponent paddleLight{};
+    paddleLight.Type = LightType::Cone;
+    paddleLight.LightColor = Color{200, 235, 255, 255};
+    paddleLight.Radius = 450.0f;
+    paddleLight.Intensity = 1.3f;
+    paddleLight.DirectionDeg = -90.0f; // points straight up into the field
+    paddleLight.ConeAngleDeg = 80.0f;  // wide coverage beam
+    paddleLight.InnerRadius = 30.0f;
+    m_registry.AddComponent<LightSourceComponent>(m_paddle, paddleLight);
+
     m_uiController = std::make_unique<GameUIController>(m_registry, *mp_context, *this);
     m_uiController->OnInit(m_fontId, m_heartTexId, m_fireTexId, m_bounceSfxId, m_scoreRecordedSfxId);
 
@@ -527,6 +537,24 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         context.Events.Publish(ScoreChangedEvent(m_scoreManager.GetScore(), m_scoreManager.GetComboMultiplier()));
     }
 
+    if (currentState != static_cast<int>(SceneState::Paused))
+    {
+        for (auto it = m_lightFlashes.begin(); it != m_lightFlashes.end(); )
+        {
+            it->Lifetime -= dt;
+            if (it->Lifetime <= 0.0f)
+            {
+                it = m_lightFlashes.erase(it);
+            }
+            else
+            {
+                const float t = it->Lifetime / it->InitialLifetime;
+                it->Intensity = it->InitialIntensity * t;
+                ++it;
+            }
+        }
+    }
+
     // Fireball ambient burning audio loop management
     bool hasActiveFireball = false;
     if (currentState == static_cast<int>(SceneState::Playing) && mp_ballSystem)
@@ -648,8 +676,14 @@ void GameScene::OnRender(GameContext& context)
             context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, pulseBorder, -2.0f);
             context.Render.DrawCircle(5.0f, t, Color{255, 250, 180, static_cast<uint8_t>(200 + 55 * pulse)});
         }
+        else if (brick.IsLantern)
+        {
+            float pulse = (std::sin(m_gameplayTime * 4.5f) + 1.0f) * 0.5f;
+            Color lanternBorder{255, 235, 120, static_cast<uint8_t>(180 + 75 * pulse)};
+            context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, lanternBorder, -2.0f);
+            context.Render.DrawCircle(6.0f, t, Color{255, 245, 180, static_cast<uint8_t>(200 + 55 * pulse)});
+        }
     });
-
 
     const bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
     if (showDebug)
@@ -663,6 +697,38 @@ void GameScene::OnRender(GameContext& context)
             Color color = c.IsColliding ? Colors::Red : Colors::Green;
             context.Render.DrawCircleOutline(c.Radius, t, color, -2.0f);
         });
+    }
+
+    // 2D Dynamic Lighting Pass
+    if (m_currentTheme.HasLighting())
+    {
+        context.Render.BeginLightingPass(m_currentTheme.AmbientLight);
+
+        // 1. Dynamic light sources (point and cone) from ECS entities
+        m_registry.View<Transform2D, LightSourceComponent>([&](Entity, const Transform2D& t, const LightSourceComponent& light)
+        {
+            if (!light.IsActive || light.Intensity <= 0.0f || light.Radius <= 0.0f) return;
+
+            if (light.Type == LightType::Point)
+            {
+                context.Render.DrawPointLight(t.Position, light.Radius, light.LightColor, light.Intensity, light.Blend);
+            }
+            else if (light.Type == LightType::Cone)
+            {
+                context.Render.DrawConeLight(t.Position, light.Radius, light.DirectionDeg + t.Rotation, light.ConeAngleDeg, light.LightColor, light.Intensity, light.Blend);
+            }
+        });
+
+        // 2. Decaying explosion light flashes (bomb detonations, fireball explosions)
+        for (const auto& flash : m_lightFlashes)
+        {
+            if (flash.Intensity > 0.0f && flash.Radius > 0.0f)
+            {
+                context.Render.DrawPointLight(flash.Position, flash.Radius, flash.LightColor, flash.Intensity, BlendMode::Add);
+            }
+        }
+
+        context.Render.EndLightingPass(BlendMode::Multiply);
     }
 
     context.Render.ResetCamera();
@@ -981,6 +1047,7 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
     }
 
     SpawnFireExplosionParticles(explosionCenter, aoeRadius, 45);
+    SpawnLightFlash(explosionCenter, 500.0f, Color{255, 170, 60, 255}, 2.2f, 0.45f);
 
     if (mp_context)
     {
@@ -1655,6 +1722,7 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
         }
 
         SpawnFireExplosionParticles(bombPos, 85.0f, 35);
+        SpawnLightFlash(bombPos, 650.0f, Color{255, 210, 110, 255}, 2.6f, 0.55f);
 
         if (m_registry.HasComponent<BrickComponent>(currentBomb))
         {
@@ -2516,6 +2584,20 @@ void GameScene::RespawnBricks()
         m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
     }
 }
+
+void GameScene::SpawnLightFlash(const Vector2f& position, float radius, const Color& color, float intensity, float duration)
+{
+    LightFlash flash;
+    flash.Position = position;
+    flash.Radius = radius;
+    flash.LightColor = color;
+    flash.Intensity = intensity;
+    flash.InitialIntensity = intensity;
+    flash.Lifetime = duration;
+    flash.InitialLifetime = duration;
+    m_lightFlashes.push_back(flash);
+}
+
 
 
 

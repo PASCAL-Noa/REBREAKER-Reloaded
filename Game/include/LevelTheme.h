@@ -23,6 +23,12 @@ struct LevelTheme
 
     Color VignetteBaseColor{0, 0, 0, 255};
     float VignetteBaseIntensity = 0.25f;
+    Color AmbientLight{255, 255, 255, 255};
+
+    [[nodiscard]] bool HasLighting() const noexcept
+    {
+        return AmbientLight.r < 255 || AmbientLight.g < 255 || AmbientLight.b < 255;
+    }
 };
 
 class LevelThemeCatalog

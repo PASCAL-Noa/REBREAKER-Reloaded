@@ -6,6 +6,7 @@
 #include "ECS/Components/CircleCollider.h"
 #include "ECS/Components/SpriteComponent.h"
 #include "ECS/Components/TweenComponent.h"
+#include "ECS/Components/LightSourceComponent.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Data/Color.h"
 #include <algorithm>
@@ -64,6 +65,14 @@ Entity BallSystem::CreateBall(const Vector2f& position, const Vector2f& velocity
     }
     m_registry.AddComponent<TrailComponent>(ball, trailComp);
 
+    LightSourceComponent lightComp{};
+    lightComp.Type = LightType::Point;
+    lightComp.LightColor = isTempo ? Color{210, 160, 255, 255} : Color{225, 240, 255, 255};
+    lightComp.Radius = isBig ? 240.0f : 180.0f;
+    lightComp.Intensity = 1.25f;
+    lightComp.InnerRadius = 15.0f;
+    m_registry.AddComponent<LightSourceComponent>(ball, lightComp);
+
     m_balls.push_back(ball);
     return ball;
 }
@@ -79,6 +88,16 @@ void BallSystem::RegisterBall(Entity ball)
         TrailComponent tc{};
         tc.Config = TrailPresets::GetPreset(m_activeTrailCosmetic);
         m_registry.AddComponent<TrailComponent>(ball, tc);
+    }
+    if (!m_registry.HasComponent<LightSourceComponent>(ball))
+    {
+        LightSourceComponent lightComp{};
+        lightComp.Type = LightType::Point;
+        lightComp.LightColor = Color{225, 240, 255, 255};
+        lightComp.Radius = 180.0f;
+        lightComp.Intensity = 1.25f;
+        lightComp.InnerRadius = 15.0f;
+        m_registry.AddComponent<LightSourceComponent>(ball, lightComp);
     }
 }
 
@@ -248,6 +267,14 @@ void BallSystem::UpdateFireBalls(float dt)
         if (m_registry.HasComponent<RigidBody>(b))
         {
             vel = m_registry.GetComponent<RigidBody>(b).Velocity;
+        }
+
+        if (m_registry.HasComponent<LightSourceComponent>(b))
+        {
+            auto& light = m_registry.GetComponent<LightSourceComponent>(b);
+            light.LightColor = bc.IsFuseActive ? Color{255, 110, 30, 255} : Color{255, 170, 50, 255};
+            light.Radius = 240.0f;
+            light.Intensity = 1.4f;
         }
 
         // Emit dynamic trail particles
