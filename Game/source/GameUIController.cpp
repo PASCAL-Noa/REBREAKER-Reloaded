@@ -521,7 +521,9 @@ void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
 
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
-        m_registry.GetComponent<TextComponent>(m_gameOverStatusText).Text = "ENTER YOUR PSEUDO [PRESS ENTER OR SAVE]:";
+        auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
+        statusComp.Text = "ENTER YOUR PSEUDO [PRESS ENTER OR SAVE]:";
+        statusComp.Tint = Color{120, 230, 255, 255};
     }
 
     if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_nameInputEntity))
@@ -584,7 +586,9 @@ void GameUIController::SetupVictory(uint32_t finalScore)
 
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
-        m_registry.GetComponent<TextComponent>(m_gameOverStatusText).Text = "CHAMPION! ENTER YOUR PSEUDO:";
+        auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
+        statusComp.Text = "CHAMPION! ENTER YOUR PSEUDO:";
+        statusComp.Tint = Color{255, 215, 0, 255};
     }
 
     if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_nameInputEntity))
@@ -639,6 +643,52 @@ bool GameUIController::IsTypingName() const
     return false;
 }
 
+void GameUIController::PromptEnterName()
+{
+    if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
+    {
+        m_registry.GetComponent<TextInputComponent>(m_nameInputEntity).IsFocused = true;
+    }
+
+    if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
+    {
+        auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
+        statusComp.Text = "PLEASE ENTER YOUR PSEUDO BEFORE PROCEEDING!";
+        statusComp.Tint = Color{255, 75, 75, 255};
+    }
+
+    if (m_bounceSfxId != 0)
+    {
+        m_context.Audio.PlaySfx(m_bounceSfxId, 90.0f);
+    }
+}
+
+bool GameUIController::TryConfirmNameBeforeProceeding()
+{
+    if (!m_enteredPlayerName.empty())
+    {
+        return true;
+    }
+
+    if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
+    {
+        auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
+        std::string trimmed = input.Text;
+        trimmed.erase(0, trimmed.find_first_not_of(" \t\n\r"));
+        if (trimmed.find_last_not_of(" \t\n\r") != std::string::npos)
+            trimmed.erase(trimmed.find_last_not_of(" \t\n\r") + 1);
+
+        if (!trimmed.empty())
+        {
+            SubmitHighScore(trimmed, m_scene.GetScoreManager().GetScore(), m_scene.GetCurrentLevel());
+            return true;
+        }
+    }
+
+    PromptEnterName();
+    return false;
+}
+
 void GameUIController::RefreshLeaderboardUI()
 {
     const auto& entries = m_scene.GetLeaderboard().GetEntries();
@@ -683,7 +733,9 @@ void GameUIController::SubmitHighScore(const std::string& name, uint32_t score, 
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
         std::string rankMsg = (rank > 0 && rank <= 5) ? ("RANK #" + std::to_string(rank) + " - CONGRATULATIONS!") : "PSEUDO SAVED!";
-        m_registry.GetComponent<TextComponent>(m_gameOverStatusText).Text = rankMsg;
+        auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
+        statusComp.Text = rankMsg;
+        statusComp.Tint = Color{50, 255, 120, 255};
     }
 
     if (m_scoreRecordedSfxId != 0)
@@ -1764,6 +1816,10 @@ void GameUIController::CreateGameOverMenu()
     m_replayBtn = UIFactory::CreateButton(m_registry, m_gameOverCanvas, ButtonDescriptor{
         .Text = "REPLAY [SPACE]",
         .OnClick = [this]() {
+            if (!TryConfirmNameBeforeProceeding())
+            {
+                return;
+            }
             m_scene.OnReplayRequested();
         },
         .Position = {-260.0f, 310.0f},
@@ -1781,6 +1837,10 @@ void GameUIController::CreateGameOverMenu()
     m_gameOverLevelSelectBtn = UIFactory::CreateButton(m_registry, m_gameOverCanvas, ButtonDescriptor{
         .Text = "LEVEL SELECT",
         .OnClick = [this]() {
+            if (!TryConfirmNameBeforeProceeding())
+            {
+                return;
+            }
             if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
             OpenLevelSelectModal(m_gameOverCanvas);
         },
@@ -1799,6 +1859,10 @@ void GameUIController::CreateGameOverMenu()
     m_gameOverMainMenuBtn = UIFactory::CreateButton(m_registry, m_gameOverCanvas, ButtonDescriptor{
         .Text = "MAIN MENU [ESC]",
         .OnClick = [this]() {
+            if (!TryConfirmNameBeforeProceeding())
+            {
+                return;
+            }
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             m_context.Scenes.LoadScene<MenuScene>();
         },
@@ -1820,7 +1884,17 @@ void GameUIController::CreateGameOverMenu()
             if (m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
             {
                 auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
-                SubmitHighScore(input.Text, m_scene.GetScoreManager().GetScore(), m_scene.GetCurrentLevel());
+                std::string trimmed = input.Text;
+                trimmed.erase(0, trimmed.find_first_not_of(" \t\n\r"));
+                if (trimmed.find_last_not_of(" \t\n\r") != std::string::npos)
+                    trimmed.erase(trimmed.find_last_not_of(" \t\n\r") + 1);
+
+                if (trimmed.empty())
+                {
+                    PromptEnterName();
+                    return;
+                }
+                SubmitHighScore(trimmed, m_scene.GetScoreManager().GetScore(), m_scene.GetCurrentLevel());
             }
         },
         .Position = {170.0f, 195.0f},
@@ -1838,7 +1912,17 @@ void GameUIController::CreateGameOverMenu()
     m_nameInputEntity = UIFactory::CreateTextInput(m_registry, m_gameOverCanvas, TextInputDescriptor{
         .Placeholder = "YOUR NAME",
         .OnSubmit = [this](const std::string& name) {
-            SubmitHighScore(name, m_scene.GetScoreManager().GetScore(), m_scene.GetCurrentLevel());
+            std::string trimmed = name;
+            trimmed.erase(0, trimmed.find_first_not_of(" \t\n\r"));
+            if (trimmed.find_last_not_of(" \t\n\r") != std::string::npos)
+                trimmed.erase(trimmed.find_last_not_of(" \t\n\r") + 1);
+
+            if (trimmed.empty())
+            {
+                PromptEnterName();
+                return;
+            }
+            SubmitHighScore(trimmed, m_scene.GetScoreManager().GetScore(), m_scene.GetCurrentLevel());
         },
         .Position = {-100.0f, 195.0f},
         .Size = {360.0f, 54.0f},

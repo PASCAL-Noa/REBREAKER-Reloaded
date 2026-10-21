@@ -362,11 +362,11 @@ void GameScene::OnInit(GameContext& context)
 
     State<GameScene>* gameOverState = mp_state_machine->CreateState(static_cast<int>(SceneState::GameOver));
     gameOverState->AddAction(new GameOverAction<GameScene>());
-    gameOverState->AddTransition(new Transition<GameScene>(new GameOverReplayCondition<GameScene>(), static_cast<int>(SceneState::Playing)));
+    gameOverState->AddTransition(new Transition<GameScene>(new GameOverReplayCondition<GameScene>(), static_cast<int>(SceneState::Countdown)));
 
     State<GameScene>* victoryState = mp_state_machine->CreateState(static_cast<int>(SceneState::Victory));
     victoryState->AddAction(new VictoryAction<GameScene>());
-    victoryState->AddTransition(new Transition<GameScene>(new GameOverReplayCondition<GameScene>(), static_cast<int>(SceneState::Playing)));
+    victoryState->AddTransition(new Transition<GameScene>(new GameOverReplayCondition<GameScene>(), static_cast<int>(SceneState::Countdown)));
 
     State<GameScene>* levelTransitionState = mp_state_machine->CreateState(static_cast<int>(SceneState::LevelTransition));
     levelTransitionState->AddAction(new NextLevelAction<GameScene>());
@@ -492,6 +492,10 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     {
         if (context.Input.IsKeyPress(KeyCode::Escape))
         {
+            if (m_uiController && !m_uiController->TryConfirmNameBeforeProceeding())
+            {
+                return;
+            }
             context.Scenes.LoadScene<MenuScene>();
             return;
         }
@@ -1260,6 +1264,19 @@ bool GameScene::CanUnpause() const
 bool GameScene::IsTypingName()
 {
     return m_uiController && m_uiController->IsTypingName();
+}
+
+bool GameScene::TryConfirmNameBeforeProceeding()
+{
+    return m_uiController ? m_uiController->TryConfirmNameBeforeProceeding() : true;
+}
+
+void GameScene::PromptEnterName()
+{
+    if (m_uiController)
+    {
+        m_uiController->PromptEnterName();
+    }
 }
 
 void GameScene::ResumeGame()

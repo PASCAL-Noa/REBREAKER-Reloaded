@@ -22,15 +22,19 @@ public:
 
     void SetState(int stateIndex)
     {
-        if (m_currentState >= 0 && m_currentState < static_cast<int>(m_states.size()))
+        if (stateIndex == m_currentState || m_isChangingState) return;
+
+        m_isChangingState = true;
+        int previousState = m_currentState;
+        m_currentState = stateIndex;
+
+        if (previousState >= 0 && previousState < static_cast<int>(m_states.size()))
         {
-            if (m_states[m_currentState])
+            if (m_states[previousState])
             {
-                m_states[m_currentState]->End();
+                m_states[previousState]->End();
             }
         }
-
-        m_currentState = stateIndex;
 
         if (m_currentState >= 0 && m_currentState < static_cast<int>(m_states.size()))
         {
@@ -39,6 +43,8 @@ public:
                 m_states[m_currentState]->Start();
             }
         }
+
+        m_isChangingState = false;
     }
 
     void Update()
@@ -63,4 +69,5 @@ private:
     T* m_owner;
     std::vector<std::unique_ptr<State<T>>> m_states;
     int m_currentState;
+    bool m_isChangingState = false;
 };

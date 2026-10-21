@@ -7,6 +7,8 @@ struct Color
     uint8_t g = 255;
     uint8_t b = 255;
     uint8_t a = 255;
+
+    constexpr bool operator==(const Color& other) const = default;
 };
 
 namespace Colors

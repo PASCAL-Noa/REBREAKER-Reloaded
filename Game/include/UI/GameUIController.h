@@ -42,6 +42,9 @@ public:
     void RefreshLeaderboardUI();
     void SubmitHighScore(const std::string& name, uint32_t score, int levelNumber);
     [[nodiscard]] bool IsTypingName() const;
+    [[nodiscard]] bool HasEnteredPlayerName() const { return !m_enteredPlayerName.empty(); }
+    bool TryConfirmNameBeforeProceeding();
+    void PromptEnterName();
 
     // Power-Up Tester
     void SetPowerUpTesterActive(bool active);

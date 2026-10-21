@@ -1,6 +1,7 @@
 #pragma once
 #include "System/Window.h"
 #include "Resources/ResourceManager.h"
+#include "Data/SceneTransitionType.h"
 #include "Data/Color.h"
 #include "Data/BlendMode.h"
 #include "Data/PrimitiveType.h"
@@ -45,6 +46,7 @@ public:
     void                DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness = 2.0f);
     void                DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, float thickness = 1.0f);
     void                DrawScannerEffect(float width, float height, const Transform2D& transform, Color color, float time, uint32_t shaderId);
+    void                DrawSceneTransition(SceneTransitionType type, float progress, Color color = Colors::Black);
     Vector2f            GetTextureSize(uint32_t textureId) const;
     Vector2f            GetTextSize(const std::string& text, uint32_t fontId, float fontSize) const;
 
