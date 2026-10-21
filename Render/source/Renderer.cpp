@@ -457,3 +457,114 @@ Vector2f Renderer::GetTextureSize(uint32_t textureId) const
     }
     return Vector2f{0.0f, 0.0f};
 }
+
+void Renderer::DrawSceneTransition(SceneTransitionType type, float progress, Color color)
+{
+    if (type == SceneTransitionType::None || progress <= 0.0001f)
+    {
+        return;
+    }
+
+    progress = std::clamp(progress, 0.0f, 1.0f);
+
+    const sf::View prevView = m_renderTexture.getView();
+    const Vector2f viewSize = GetLogicalViewSize();
+    sf::View overlayView(sf::Vector2f(viewSize.X / 2.0f, viewSize.Y / 2.0f), sf::Vector2f(viewSize.X, viewSize.Y));
+    overlayView.setViewport(GetLetterboxViewport());
+    m_renderTexture.setView(overlayView);
+
+    if (type == SceneTransitionType::FadeBlack || type == SceneTransitionType::FadeWhite || type == SceneTransitionType::CrossFade)
+    {
+        Color fadeCol = color;
+        if (type == SceneTransitionType::FadeBlack) fadeCol = Colors::Black;
+        else if (type == SceneTransitionType::FadeWhite) fadeCol = Colors::White;
+
+        const auto alpha = static_cast<uint8_t>(std::clamp(progress * 255.0f, 0.0f, 255.0f));
+        sf::RectangleShape rect(sf::Vector2f(viewSize.X, viewSize.Y));
+        rect.setPosition({0.0f, 0.0f});
+        rect.setFillColor(sf::Color(fadeCol.r, fadeCol.g, fadeCol.b, alpha));
+        m_renderTexture.draw(rect);
+    }
+    else if (type == SceneTransitionType::IrisWipe)
+    {
+        const float cx = viewSize.X * 0.5f;
+        const float cy = viewSize.Y * 0.5f;
+        const float maxRadius = std::sqrt(cx * cx + cy * cy) + 40.0f;
+        const float irisRadius = maxRadius * (1.0f - progress);
+
+        if (irisRadius <= 1.0f || progress >= 0.999f)
+        {
+            // Fully covered: solid rectangle
+            sf::RectangleShape rect(sf::Vector2f(viewSize.X, viewSize.Y));
+            rect.setPosition({0.0f, 0.0f});
+            rect.setFillColor(ToSfColor(color));
+            m_renderTexture.draw(rect);
+        }
+        else
+        {
+            // Ring of triangles: outer edge covers whole viewport, inner circle is the aperture
+            constexpr int kSegments = 64;
+            const float outerRadius = maxRadius * 1.3f;
+            std::vector<sf::Vertex> ringVertices;
+            ringVertices.reserve((kSegments + 1) * 2);
+
+            const sf::Color sfCol = ToSfColor(color);
+            constexpr float kPi = 3.14159265f;
+
+            for (int i = 0; i <= kSegments; ++i)
+            {
+                const float angle = static_cast<float>(i) * (2.0f * kPi / static_cast<float>(kSegments));
+                const float cosA = std::cos(angle);
+                const float sinA = std::sin(angle);
+
+                ringVertices.emplace_back(sf::Vector2f(cx + irisRadius * cosA, cy + irisRadius * sinA), sfCol);
+                ringVertices.emplace_back(sf::Vector2f(cx + outerRadius * cosA, cy + outerRadius * sinA), sfCol);
+            }
+
+            m_renderTexture.draw(ringVertices.data(), ringVertices.size(), sf::PrimitiveType::TriangleStrip);
+
+            // Subtle luminous cyan iris rim
+            sf::CircleShape irisBorder(irisRadius);
+            irisBorder.setOrigin({irisRadius, irisRadius});
+            irisBorder.setPosition({cx, cy});
+            irisBorder.setFillColor(sf::Color::Transparent);
+            irisBorder.setOutlineThickness(2.5f);
+            irisBorder.setOutlineColor(sf::Color(0, 220, 255, static_cast<uint8_t>(180 * (1.0f - progress))));
+            m_renderTexture.draw(irisBorder);
+        }
+    }
+    else if (type == SceneTransitionType::CurtainWipe)
+    {
+        const float halfW = viewSize.X * 0.5f;
+        const float curtainW = halfW * progress;
+
+        // Left curtain
+        sf::RectangleShape left(sf::Vector2f(curtainW, viewSize.Y));
+        left.setPosition({0.0f, 0.0f});
+        left.setFillColor(ToSfColor(color));
+        m_renderTexture.draw(left);
+
+        // Right curtain
+        sf::RectangleShape right(sf::Vector2f(curtainW, viewSize.Y));
+        right.setPosition({viewSize.X - curtainW, 0.0f});
+        right.setFillColor(ToSfColor(color));
+        m_renderTexture.draw(right);
+
+        // Neon border strip along meeting edges
+        if (curtainW > 0.0f && progress < 0.999f)
+        {
+            sf::RectangleShape leftBorder(sf::Vector2f(2.0f, viewSize.Y));
+            leftBorder.setPosition({curtainW - 2.0f, 0.0f});
+            leftBorder.setFillColor(sf::Color(0, 230, 255, 200));
+            m_renderTexture.draw(leftBorder);
+
+            sf::RectangleShape rightBorder(sf::Vector2f(2.0f, viewSize.Y));
+            rightBorder.setPosition({viewSize.X - curtainW, 0.0f});
+            rightBorder.setFillColor(sf::Color(0, 230, 255, 200));
+            m_renderTexture.draw(rightBorder);
+        }
+    }
+
+    m_renderTexture.setView(prevView);
+}
+

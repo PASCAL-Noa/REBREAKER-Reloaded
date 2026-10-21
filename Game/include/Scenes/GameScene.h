@@ -97,6 +97,8 @@ public:
     [[nodiscard]] ScoreManager&             GetScoreManager() { return m_scoreManager; }
     [[nodiscard]] const ScoreManager&       GetScoreManager() const { return m_scoreManager; }
     [[nodiscard]] bool                      IsTypingName();
+    [[nodiscard]] bool                      TryConfirmNameBeforeProceeding();
+    void                                    PromptEnterName();
     void    ResumeGame();
     void    OnReplayRequested();
 

@@ -140,9 +140,9 @@ bool UISystem::IsNavigationEnabled()
 
 void UISystem::UpdateButtons(Registry& registry, const GameContext& context, const Vector2f& logicalMousePos, const Vector2f& viewSize)
 {
-    const bool isLeftMouseDown = context.Input.IsMouseButtonDown(MouseButton::Left);
-    const bool isLeftMousePress = context.Input.IsMouseButtonPress(MouseButton::Left);
-    const bool isLeftMouseRelease = context.Input.IsMouseButtonRelease(MouseButton::Left);
+    const bool isLeftMouseDown = s_navigationEnabled && context.Input.IsMouseButtonDown(MouseButton::Left);
+    const bool isLeftMousePress = s_navigationEnabled && context.Input.IsMouseButtonPress(MouseButton::Left);
+    const bool isLeftMouseRelease = s_navigationEnabled && context.Input.IsMouseButtonRelease(MouseButton::Left);
 
     const bool navUp = s_navigationEnabled && context.Input.IsMenuUpTriggered();
     const bool navDown = s_navigationEnabled && context.Input.IsMenuDownTriggered();

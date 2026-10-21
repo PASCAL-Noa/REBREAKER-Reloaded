@@ -72,6 +72,18 @@ public:
                 return false;
             }
         }
-        return pOwner->GetContext()->Input.IsActionTriggered(InputAction::LaunchBall) || pOwner->GetContext()->Input.IsKeyPress(KeyCode::Space);
+        const bool replayTriggered = pOwner->GetContext()->Input.IsActionTriggered(InputAction::LaunchBall) || pOwner->GetContext()->Input.IsKeyPress(KeyCode::Space);
+        if (replayTriggered)
+        {
+            if constexpr (requires { pOwner->TryConfirmNameBeforeProceeding(); })
+            {
+                return pOwner->TryConfirmNameBeforeProceeding();
+            }
+            else
+            {
+                return true;
+            }
+        }
+        return false;
     }
 };
