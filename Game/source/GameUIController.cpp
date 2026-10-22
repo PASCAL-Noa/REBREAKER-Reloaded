@@ -2562,9 +2562,6 @@ void GameUIController::OnRender(GameContext& context)
             }
         }
     }
-
-    // 3. Stage start & respawn 'READY... 3... 2... 1... GO!' sequence
-    RenderCountdown(context);
 }
 
 void GameUIController::RenderCountdown(GameContext& context)

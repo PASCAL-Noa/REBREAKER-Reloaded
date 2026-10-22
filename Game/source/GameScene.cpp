@@ -789,40 +789,46 @@ void GameScene::OnRender(GameContext& context)
         }
     }
 
-    std::string debugStr = showDebug ? "ON" : "OFF";
-    std::string shaderStr = context.Rules.GetRule(Rule::Graphics::EnableShader) ? "ON" : "OFF";
-    std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
-    std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
-
-    std::string stats = "Level: " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + " / " + std::to_string(m_levelManager.GetLevelCount()) +
-                        " (Unlocked: " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")" +
-                        " | Theme: " + m_currentTheme.Name;
-    stats += "\nLevel Best: " + std::to_string(m_levelManager.GetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber())) +
-             " | Global Best: " + std::to_string(m_scoreManager.GetHighScore());
-    stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
-    stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
-    stats += "\nState : " + gameStateStr;
-    if (m_uiController && m_uiController->IsPowerUpTesterActive())
-    {
-        const auto& paddleBox = m_registry.GetComponent<BoxCollider>(m_paddle);
-        const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
-        const auto& paddleComp = m_registry.GetComponent<PaddleComponent>(m_paddle);
-        stats += "\n[POWER-UP DEBUG ON] Lv:" + std::to_string(PowerUpManager::Get().GetLevel(PowerUpType::MultiBall)) +
-                 " | Balls: " + std::to_string(mp_ballSystem ? mp_ballSystem->GetBallCount() : 0) +
-                 " | Paddle: " + std::to_string(static_cast<int>(paddleBox.GetEffectiveSize(paddleTrans.Scale).X)) + "px" +
-                 " | Laser: " + (paddleComp.HasLaser ? "ON" : "OFF") +
-                 " | Keys: 1-7, P, O, R, B, U | [TAB] Hide";
-    }
-    else
-    {
-        stats += "\n[TAB] Open Power-Up Tester Tool";
-    }
-
     const bool modalOpen = (m_uiController && m_uiController->IsModalOrSubMenuOpen());
-    if (!modalOpen)
+    if (showDebug && !modalOpen)
     {
+        std::string debugStr = showDebug ? "ON" : "OFF";
+        std::string shaderStr = context.Rules.GetRule(Rule::Graphics::EnableShader) ? "ON" : "OFF";
+        std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
+        std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
+
+        std::string stats = "Level: " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + " / " + std::to_string(m_levelManager.GetLevelCount()) +
+                            " (Unlocked: " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")" +
+                            " | Theme: " + m_currentTheme.Name;
+        stats += "\nLevel Best: " + std::to_string(m_levelManager.GetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber())) +
+                 " | Global Best: " + std::to_string(m_scoreManager.GetHighScore());
+        stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
+        stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
+        stats += "\nState : " + gameStateStr;
+        if (m_uiController && m_uiController->IsPowerUpTesterActive())
+        {
+            const auto& paddleBox = m_registry.GetComponent<BoxCollider>(m_paddle);
+            const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+            const auto& paddleComp = m_registry.GetComponent<PaddleComponent>(m_paddle);
+            stats += "\n[POWER-UP DEBUG ON] Lv:" + std::to_string(PowerUpManager::Get().GetLevel(PowerUpType::MultiBall)) +
+                     " | Balls: " + std::to_string(mp_ballSystem ? mp_ballSystem->GetBallCount() : 0) +
+                     " | Paddle: " + std::to_string(static_cast<int>(paddleBox.GetEffectiveSize(paddleTrans.Scale).X)) + "px" +
+                     " | Laser: " + (paddleComp.HasLaser ? "ON" : "OFF") +
+                     " | Keys: 1-7, P, O, R, B, U | [TAB] Hide";
+        }
+        else
+        {
+            stats += "\n[TAB] Open Power-Up Tester Tool";
+        }
+
         DrawDefaultUI(context, "REBREAKER", stats);
     }
+
+    if (m_uiController)
+    {
+        m_uiController->RenderCountdown(context);
+    }
+
     UISystem::OnRender(m_registry, context);
     if (m_uiController)
     {
