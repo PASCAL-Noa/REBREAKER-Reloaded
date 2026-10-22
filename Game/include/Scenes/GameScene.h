@@ -17,6 +17,7 @@
 #include "UI/GameUIController.h"
 #include "AmbientBackground.h"
 #include "Data/PostProcessParams.h"
+#include "ECS/Components/LightSourceComponent.h"
 #include <vector>
 #include <memory>
 
@@ -207,4 +208,18 @@ protected:
     Entity              m_bgTweenEntity = NULL_ENTITY;
     uint32_t            m_currentComboMultiplier = 0;
     float               m_gameplayTime = 0.0f;
+
+    // Dynamic decaying light flashes (bombs, fireball explosions)
+    struct LightFlash
+    {
+        Vector2f Position;
+        float Radius = 550.0f;
+        Color LightColor{255, 210, 120, 255};
+        float Intensity = 2.0f;
+        float InitialIntensity = 2.0f;
+        float Lifetime = 0.45f;
+        float InitialLifetime = 0.45f;
+    };
+    std::vector<LightFlash> m_lightFlashes;
+    void SpawnLightFlash(const Vector2f& position, float radius = 550.0f, const Color& color = Color{255, 210, 120, 255}, float intensity = 2.0f, float duration = 0.45f);
 };

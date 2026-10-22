@@ -10,7 +10,13 @@ static sf::Color ToSfColor(const Color& c)
 
 static sf::BlendMode ToSfBlendMode(const BlendMode& mode)
 {
-    return (mode == BlendMode::Add) ? sf::BlendAdd : sf::BlendAlpha;
+    switch (mode)
+    {
+        case BlendMode::Add:      return sf::BlendAdd;
+        case BlendMode::Multiply: return sf::BlendMultiply;
+        case BlendMode::Alpha:
+        default:                  return sf::BlendAlpha;
+    }
 }
 
 static sf::PrimitiveType ToSfPrimitiveType(const PrimitiveType type)
@@ -51,6 +57,8 @@ Renderer::Renderer(Window& window, ResourceManager& resources) : m_window(window
 
     (void)m_renderTexture.resize(m_window.GetNative().getSize(), settings);
     m_renderTexture.setSmooth(true);
+    (void)m_lightMapTexture.resize(m_window.GetNative().getSize(), settings);
+    m_lightMapTexture.setSmooth(true);
     ResetCamera();
 }
 
@@ -63,6 +71,8 @@ void Renderer::BeginDraw(Color clearColor)
         settings.antiAliasingLevel = 4;
         (void)m_renderTexture.resize(winSize, settings);
         m_renderTexture.setSmooth(true);
+        (void)m_lightMapTexture.resize(winSize, settings);
+        m_lightMapTexture.setSmooth(true);
         ResetCamera();
     }
     m_renderTexture.clear(sf::Color(clearColor.r, clearColor.g, clearColor.b, clearColor.a));
@@ -173,6 +183,8 @@ void Renderer::OnWindowResized(unsigned int width, unsigned int height)
         settings.antiAliasingLevel = 4;
         (void)m_renderTexture.resize({width, height}, settings);
         m_renderTexture.setSmooth(true);
+        (void)m_lightMapTexture.resize({width, height}, settings);
+        m_lightMapTexture.setSmooth(true);
         ResetCamera();
     }
 }
@@ -567,4 +579,201 @@ void Renderer::DrawSceneTransition(SceneTransitionType type, float progress, Col
 
     m_renderTexture.setView(prevView);
 }
+
+void Renderer::BeginLightingPass(Color ambientDarkness)
+{
+    // Match current camera view and clear to ambient darkness level
+    m_lightMapTexture.setView(m_renderTexture.getView());
+    m_lightMapTexture.clear(sf::Color(ambientDarkness.r, ambientDarkness.g, ambientDarkness.b, ambientDarkness.a));
+}
+
+void Renderer::DrawPointLight(const Vector2f& position, float radius, Color color, float intensity, BlendMode blendMode)
+{
+    if (radius <= 0.0f || intensity <= 0.0f) return;
+
+    constexpr int kSegments = 36;
+    constexpr float kPi = 3.14159265f;
+
+    const float clampedIntensity = std::clamp(intensity, 0.0f, 2.0f);
+    const auto r = static_cast<uint8_t>(std::clamp(static_cast<float>(color.r) * clampedIntensity, 0.0f, 255.0f));
+    const auto g = static_cast<uint8_t>(std::clamp(static_cast<float>(color.g) * clampedIntensity, 0.0f, 255.0f));
+    const auto b = static_cast<uint8_t>(std::clamp(static_cast<float>(color.b) * clampedIntensity, 0.0f, 255.0f));
+    const auto a = static_cast<uint8_t>(std::clamp(static_cast<float>(color.a) * std::min(1.0f, clampedIntensity), 0.0f, 255.0f));
+
+    const sf::Color centerColor(r, g, b, a);
+    const sf::Color edgeColor(0, 0, 0, 0);
+
+    // Triangle fan with center vertex and outer circle vertices
+    std::vector<sf::Vertex> fanVertices;
+    fanVertices.reserve(kSegments + 2);
+    fanVertices.emplace_back(sf::Vector2f(position.X, position.Y), centerColor);
+
+    for (int i = 0; i <= kSegments; ++i)
+    {
+        const float angle = static_cast<float>(i) * (2.0f * kPi / static_cast<float>(kSegments));
+        fanVertices.emplace_back(
+            sf::Vector2f(position.X + radius * std::cos(angle), position.Y + radius * std::sin(angle)),
+            edgeColor
+        );
+    }
+
+    sf::RenderStates states;
+    states.blendMode = ToSfBlendMode(blendMode);
+    m_lightMapTexture.draw(fanVertices.data(), fanVertices.size(), sf::PrimitiveType::TriangleFan, states);
+}
+
+void Renderer::DrawConeLight(const Vector2f& position, float radius, float directionDeg, float coneAngleDeg, Color color, float intensity, BlendMode blendMode)
+{
+    if (radius <= 0.0f || intensity <= 0.0f || coneAngleDeg <= 0.0f) return;
+
+    constexpr int kSegments = 24;
+    constexpr float kDegToRad = 3.14159265f / 180.0f;
+
+    const float clampedIntensity = std::clamp(intensity, 0.0f, 2.0f);
+    const auto r = static_cast<uint8_t>(std::clamp(static_cast<float>(color.r) * clampedIntensity, 0.0f, 255.0f));
+    const auto g = static_cast<uint8_t>(std::clamp(static_cast<float>(color.g) * clampedIntensity, 0.0f, 255.0f));
+    const auto b = static_cast<uint8_t>(std::clamp(static_cast<float>(color.b) * clampedIntensity, 0.0f, 255.0f));
+    const auto a = static_cast<uint8_t>(std::clamp(static_cast<float>(color.a) * std::min(1.0f, clampedIntensity), 0.0f, 255.0f));
+
+    const sf::Color apexColor(r, g, b, a);
+    const sf::Color edgeColor(0, 0, 0, 0);
+
+    const float halfCone = (coneAngleDeg * 0.5f) * kDegToRad;
+    const float centerRad = directionDeg * kDegToRad;
+    const float startAngle = centerRad - halfCone;
+    const float totalAngle = coneAngleDeg * kDegToRad;
+
+    std::vector<sf::Vertex> fanVertices;
+    fanVertices.reserve(kSegments + 2);
+    fanVertices.emplace_back(sf::Vector2f(position.X, position.Y), apexColor);
+
+    for (int i = 0; i <= kSegments; ++i)
+    {
+        const float angle = startAngle + (static_cast<float>(i) / static_cast<float>(kSegments)) * totalAngle;
+        fanVertices.emplace_back(
+            sf::Vector2f(position.X + radius * std::cos(angle), position.Y + radius * std::sin(angle)),
+            edgeColor
+        );
+    }
+
+    sf::RenderStates states;
+    states.blendMode = ToSfBlendMode(blendMode);
+    m_lightMapTexture.draw(fanVertices.data(), fanVertices.size(), sf::PrimitiveType::TriangleFan, states);
+}
+
+void Renderer::DrawCapsuleLight(const Vector2f& start, const Vector2f& end, float radius, Color color, float intensity, BlendMode blendMode)
+{
+    if (radius <= 0.0f || intensity <= 0.0f) return;
+
+    const float dx = end.X - start.X;
+    const float dy = end.Y - start.Y;
+    const float len = std::sqrt(dx * dx + dy * dy);
+
+    if (len < 0.001f)
+    {
+        DrawPointLight(start, radius, color, intensity, blendMode);
+        return;
+    }
+
+    const float clampedIntensity = std::clamp(intensity, 0.0f, 2.0f);
+    const auto r = static_cast<uint8_t>(std::clamp(static_cast<float>(color.r) * clampedIntensity, 0.0f, 255.0f));
+    const auto g = static_cast<uint8_t>(std::clamp(static_cast<float>(color.g) * clampedIntensity, 0.0f, 255.0f));
+    const auto b = static_cast<uint8_t>(std::clamp(static_cast<float>(color.b) * clampedIntensity, 0.0f, 255.0f));
+    const auto a = static_cast<uint8_t>(std::clamp(static_cast<float>(color.a) * std::min(1.0f, clampedIntensity), 0.0f, 255.0f));
+
+    const sf::Color centerColor(r, g, b, a);
+    const sf::Color edgeColor(0, 0, 0, 0);
+
+    const float tx = dx / len;
+    const float ty = dy / len;
+    const float nx = -ty;
+    const float ny = tx;
+
+    sf::RenderStates states;
+    states.blendMode = ToSfBlendMode(blendMode);
+
+    // 1. Central rectangular falloff body
+    const sf::Vector2f c1(start.X, start.Y);
+    const sf::Vector2f c2(end.X, end.Y);
+    const sf::Vector2f t1(start.X + nx * radius, start.Y + ny * radius);
+    const sf::Vector2f t2(end.X + nx * radius, end.Y + ny * radius);
+    const sf::Vector2f b1(start.X - nx * radius, start.Y - ny * radius);
+    const sf::Vector2f b2(end.X - nx * radius, end.Y - ny * radius);
+
+    std::vector<sf::Vertex> bodyVertices;
+    bodyVertices.reserve(12);
+
+    // Top quad
+    bodyVertices.emplace_back(c1, centerColor);
+    bodyVertices.emplace_back(c2, centerColor);
+    bodyVertices.emplace_back(t2, edgeColor);
+
+    bodyVertices.emplace_back(c1, centerColor);
+    bodyVertices.emplace_back(t2, edgeColor);
+    bodyVertices.emplace_back(t1, edgeColor);
+
+    // Bottom quad
+    bodyVertices.emplace_back(c1, centerColor);
+    bodyVertices.emplace_back(b1, edgeColor);
+    bodyVertices.emplace_back(b2, edgeColor);
+
+    bodyVertices.emplace_back(c1, centerColor);
+    bodyVertices.emplace_back(b2, edgeColor);
+    bodyVertices.emplace_back(c2, centerColor);
+
+    m_lightMapTexture.draw(bodyVertices.data(), bodyVertices.size(), sf::PrimitiveType::Triangles, states);
+
+    // 2. End-cap semicircles
+    constexpr int kCapSegments = 16;
+    constexpr float kPi = 3.14159265f;
+
+    // Right cap at `end`
+    std::vector<sf::Vertex> rightCap;
+    rightCap.reserve(kCapSegments + 2);
+    rightCap.emplace_back(c2, centerColor);
+    for (int i = 0; i <= kCapSegments; ++i)
+    {
+        const float angle = -kPi * 0.5f + (static_cast<float>(i) / static_cast<float>(kCapSegments)) * kPi;
+        const float cosA = std::cos(angle);
+        const float sinA = std::sin(angle);
+        const float px = end.X + (tx * cosA - ty * sinA) * radius;
+        const float py = end.Y + (ty * cosA + tx * sinA) * radius;
+        rightCap.emplace_back(sf::Vector2f(px, py), edgeColor);
+    }
+    m_lightMapTexture.draw(rightCap.data(), rightCap.size(), sf::PrimitiveType::TriangleFan, states);
+
+    // Left cap at `start`
+    std::vector<sf::Vertex> leftCap;
+    leftCap.reserve(kCapSegments + 2);
+    leftCap.emplace_back(c1, centerColor);
+    for (int i = 0; i <= kCapSegments; ++i)
+    {
+        const float angle = kPi * 0.5f + (static_cast<float>(i) / static_cast<float>(kCapSegments)) * kPi;
+        const float cosA = std::cos(angle);
+        const float sinA = std::sin(angle);
+        const float px = start.X + (tx * cosA - ty * sinA) * radius;
+        const float py = start.Y + (ty * cosA + tx * sinA) * radius;
+        leftCap.emplace_back(sf::Vector2f(px, py), edgeColor);
+    }
+    m_lightMapTexture.draw(leftCap.data(), leftCap.size(), sf::PrimitiveType::TriangleFan, states);
+}
+
+void Renderer::EndLightingPass(BlendMode compositeBlendMode)
+{
+    m_lightMapTexture.display();
+
+    // Composite light map over m_renderTexture in normalized screen overlay space
+    const sf::View prevView = m_renderTexture.getView();
+    const sf::Vector2u texSize = m_renderTexture.getSize();
+    const sf::View screenView(sf::FloatRect({0.0f, 0.0f}, {static_cast<float>(texSize.x), static_cast<float>(texSize.y)}));
+    m_renderTexture.setView(screenView);
+
+    sf::Sprite lightSprite(m_lightMapTexture.getTexture());
+    sf::RenderStates states;
+    states.blendMode = ToSfBlendMode(compositeBlendMode);
+    m_renderTexture.draw(lightSprite, states);
+
+    m_renderTexture.setView(prevView);
+}
+
 

@@ -279,6 +279,16 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<TweenComponent>(m_paddle, TweenComponent{});
     m_registry.AddComponent<PaddleComponent>(m_paddle, PaddleComponent{});
 
+    LightSourceComponent paddleLight{};
+    paddleLight.Type = LightType::Cone;
+    paddleLight.LightColor = Color{200, 235, 255, 255};
+    paddleLight.Radius = 450.0f;
+    paddleLight.Intensity = 1.3f;
+    paddleLight.DirectionDeg = -90.0f; // points straight up into the field
+    paddleLight.ConeAngleDeg = 80.0f;  // wide coverage beam
+    paddleLight.InnerRadius = 30.0f;
+    m_registry.AddComponent<LightSourceComponent>(m_paddle, paddleLight);
+
     m_uiController = std::make_unique<GameUIController>(m_registry, *mp_context, *this);
     m_uiController->OnInit(m_fontId, m_heartTexId, m_fireTexId, m_bounceSfxId, m_scoreRecordedSfxId);
 
@@ -527,6 +537,24 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         context.Events.Publish(ScoreChangedEvent(m_scoreManager.GetScore(), m_scoreManager.GetComboMultiplier()));
     }
 
+    if (currentState != static_cast<int>(SceneState::Paused))
+    {
+        for (auto it = m_lightFlashes.begin(); it != m_lightFlashes.end(); )
+        {
+            it->Lifetime -= dt;
+            if (it->Lifetime <= 0.0f)
+            {
+                it = m_lightFlashes.erase(it);
+            }
+            else
+            {
+                const float t = it->Lifetime / it->InitialLifetime;
+                it->Intensity = it->InitialIntensity * t;
+                ++it;
+            }
+        }
+    }
+
     // Fireball ambient burning audio loop management
     bool hasActiveFireball = false;
     if (currentState == static_cast<int>(SceneState::Playing) && mp_ballSystem)
@@ -648,8 +676,14 @@ void GameScene::OnRender(GameContext& context)
             context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, pulseBorder, -2.0f);
             context.Render.DrawCircle(5.0f, t, Color{255, 250, 180, static_cast<uint8_t>(200 + 55 * pulse)});
         }
+        else if (brick.IsLantern)
+        {
+            float pulse = (std::sin(m_gameplayTime * 4.5f) + 1.0f) * 0.5f;
+            Color lanternBorder{255, 235, 120, static_cast<uint8_t>(180 + 75 * pulse)};
+            context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, lanternBorder, -2.0f);
+            context.Render.DrawCircle(6.0f, t, Color{255, 245, 180, static_cast<uint8_t>(200 + 55 * pulse)});
+        }
     });
-
 
     const bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
     if (showDebug)
@@ -663,6 +697,77 @@ void GameScene::OnRender(GameContext& context)
             Color color = c.IsColliding ? Colors::Red : Colors::Green;
             context.Render.DrawCircleOutline(c.Radius, t, color, -2.0f);
         });
+    }
+
+    // 2D Dynamic Lighting Pass
+    if (m_currentTheme.HasLighting())
+    {
+        context.Render.BeginLightingPass(m_currentTheme.AmbientLight);
+
+        // 1. Dynamic light sources (point and cone) from ECS entities (lanterns, standard balls, etc.)
+        m_registry.View<Transform2D, LightSourceComponent>([&](Entity e, const Transform2D& t, const LightSourceComponent& light)
+        {
+            if (e == m_paddle) return; // Handled with size-reactive multi-emission below
+            if (!light.IsActive || light.Intensity <= 0.0f || light.Radius <= 0.0f) return;
+
+            if (light.Type == LightType::Point)
+            {
+                context.Render.DrawPointLight(t.Position, light.Radius, light.LightColor, light.Intensity, light.Blend);
+            }
+            else if (light.Type == LightType::Cone)
+            {
+                context.Render.DrawConeLight(t.Position, light.Radius, light.DirectionDeg + t.Rotation, light.ConeAngleDeg, light.LightColor, light.Intensity, light.Blend);
+            }
+        });
+
+        // 2. Extra radiant fire core for active FireBalls
+        if (mp_ballSystem)
+        {
+            for (Entity b : mp_ballSystem->GetBalls())
+            {
+                if (!m_registry.IsAlive(b) || !m_registry.HasComponent<BallComponent>(b)) continue;
+                const auto& bc = m_registry.GetComponent<BallComponent>(b);
+                if (bc.IsFireBall && m_registry.HasComponent<Transform2D>(b))
+                {
+                    const auto& bPos = m_registry.GetComponent<Transform2D>(b).Position;
+                    // White-hot inner core
+                    context.Render.DrawPointLight(bPos, 85.0f, Color{255, 240, 160, 255}, 1.7f, BlendMode::Add);
+                }
+            }
+        }
+
+        // 3. Paddle dynamic light emission (proportional to paddle size)
+        if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+        {
+            const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+            const float paddleScaleX = pTrans.Scale.X;
+            const float halfWidth = 60.0f * paddleScaleX; // base width is 120.0f
+            const Vector2f pLeft{pTrans.Position.X - halfWidth, pTrans.Position.Y};
+            const Vector2f pRight{pTrans.Position.X + halfWidth, pTrans.Position.Y};
+
+            // A. Paddle body glow (capsule light spanning the full paddle length)
+            const float bodyRadius = 110.0f * std::sqrt(paddleScaleX);
+            const float bodyIntensity = 1.35f * std::clamp(paddleScaleX, 0.7f, 1.5f);
+            context.Render.DrawCapsuleLight(pLeft, pRight, bodyRadius, Color{190, 235, 255, 255}, bodyIntensity, BlendMode::Add);
+
+            // B. Paddle upward spotlight (widens and reaches further as paddle scales up)
+            const float coneAngle = 65.0f + 25.0f * (paddleScaleX - 1.0f);
+            const float coneRadius = 420.0f * (0.8f + 0.2f * paddleScaleX);
+            const float coneIntensity = 1.3f * std::clamp(paddleScaleX, 0.7f, 1.4f);
+            const Vector2f coneApex{pTrans.Position.X, pTrans.Position.Y - 10.0f};
+            context.Render.DrawConeLight(coneApex, coneRadius, -90.0f, coneAngle, Color{210, 240, 255, 255}, coneIntensity, BlendMode::Add);
+        }
+
+        // 4. Decaying explosion light flashes (bomb detonations, fireball explosions)
+        for (const auto& flash : m_lightFlashes)
+        {
+            if (flash.Intensity > 0.0f && flash.Radius > 0.0f)
+            {
+                context.Render.DrawPointLight(flash.Position, flash.Radius, flash.LightColor, flash.Intensity, BlendMode::Add);
+            }
+        }
+
+        context.Render.EndLightingPass(BlendMode::Multiply);
     }
 
     context.Render.ResetCamera();
@@ -684,40 +789,46 @@ void GameScene::OnRender(GameContext& context)
         }
     }
 
-    std::string debugStr = showDebug ? "ON" : "OFF";
-    std::string shaderStr = context.Rules.GetRule(Rule::Graphics::EnableShader) ? "ON" : "OFF";
-    std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
-    std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
-
-    std::string stats = "Level: " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + " / " + std::to_string(m_levelManager.GetLevelCount()) +
-                        " (Unlocked: " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")" +
-                        " | Theme: " + m_currentTheme.Name;
-    stats += "\nLevel Best: " + std::to_string(m_levelManager.GetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber())) +
-             " | Global Best: " + std::to_string(m_scoreManager.GetHighScore());
-    stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
-    stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
-    stats += "\nState : " + gameStateStr;
-    if (m_uiController && m_uiController->IsPowerUpTesterActive())
-    {
-        const auto& paddleBox = m_registry.GetComponent<BoxCollider>(m_paddle);
-        const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
-        const auto& paddleComp = m_registry.GetComponent<PaddleComponent>(m_paddle);
-        stats += "\n[POWER-UP DEBUG ON] Lv:" + std::to_string(PowerUpManager::Get().GetLevel(PowerUpType::MultiBall)) +
-                 " | Balls: " + std::to_string(mp_ballSystem ? mp_ballSystem->GetBallCount() : 0) +
-                 " | Paddle: " + std::to_string(static_cast<int>(paddleBox.GetEffectiveSize(paddleTrans.Scale).X)) + "px" +
-                 " | Laser: " + (paddleComp.HasLaser ? "ON" : "OFF") +
-                 " | Keys: 1-7, P, O, R, B, U | [TAB] Hide";
-    }
-    else
-    {
-        stats += "\n[TAB] Open Power-Up Tester Tool";
-    }
-
     const bool modalOpen = (m_uiController && m_uiController->IsModalOrSubMenuOpen());
-    if (!modalOpen)
+    if (showDebug && !modalOpen)
     {
+        std::string debugStr = showDebug ? "ON" : "OFF";
+        std::string shaderStr = context.Rules.GetRule(Rule::Graphics::EnableShader) ? "ON" : "OFF";
+        std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
+        std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
+
+        std::string stats = "Level: " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + " / " + std::to_string(m_levelManager.GetLevelCount()) +
+                            " (Unlocked: " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")" +
+                            " | Theme: " + m_currentTheme.Name;
+        stats += "\nLevel Best: " + std::to_string(m_levelManager.GetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber())) +
+                 " | Global Best: " + std::to_string(m_scoreManager.GetHighScore());
+        stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
+        stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
+        stats += "\nState : " + gameStateStr;
+        if (m_uiController && m_uiController->IsPowerUpTesterActive())
+        {
+            const auto& paddleBox = m_registry.GetComponent<BoxCollider>(m_paddle);
+            const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+            const auto& paddleComp = m_registry.GetComponent<PaddleComponent>(m_paddle);
+            stats += "\n[POWER-UP DEBUG ON] Lv:" + std::to_string(PowerUpManager::Get().GetLevel(PowerUpType::MultiBall)) +
+                     " | Balls: " + std::to_string(mp_ballSystem ? mp_ballSystem->GetBallCount() : 0) +
+                     " | Paddle: " + std::to_string(static_cast<int>(paddleBox.GetEffectiveSize(paddleTrans.Scale).X)) + "px" +
+                     " | Laser: " + (paddleComp.HasLaser ? "ON" : "OFF") +
+                     " | Keys: 1-7, P, O, R, B, U | [TAB] Hide";
+        }
+        else
+        {
+            stats += "\n[TAB] Open Power-Up Tester Tool";
+        }
+
         DrawDefaultUI(context, "REBREAKER", stats);
     }
+
+    if (m_uiController)
+    {
+        m_uiController->RenderCountdown(context);
+    }
+
     UISystem::OnRender(m_registry, context);
     if (m_uiController)
     {
@@ -981,6 +1092,7 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
     }
 
     SpawnFireExplosionParticles(explosionCenter, aoeRadius, 45);
+    SpawnLightFlash(explosionCenter, 500.0f, Color{255, 170, 60, 255}, 2.2f, 0.45f);
 
     if (mp_context)
     {
@@ -1655,6 +1767,7 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
         }
 
         SpawnFireExplosionParticles(bombPos, 85.0f, 35);
+        SpawnLightFlash(bombPos, 650.0f, Color{255, 210, 110, 255}, 2.6f, 0.55f);
 
         if (m_registry.HasComponent<BrickComponent>(currentBomb))
         {
@@ -2516,6 +2629,20 @@ void GameScene::RespawnBricks()
         m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
     }
 }
+
+void GameScene::SpawnLightFlash(const Vector2f& position, float radius, const Color& color, float intensity, float duration)
+{
+    LightFlash flash;
+    flash.Position = position;
+    flash.Radius = radius;
+    flash.LightColor = color;
+    flash.Intensity = intensity;
+    flash.InitialIntensity = intensity;
+    flash.Lifetime = duration;
+    flash.InitialLifetime = duration;
+    m_lightFlashes.push_back(flash);
+}
+
 
 
 

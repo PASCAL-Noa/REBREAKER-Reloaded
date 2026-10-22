@@ -76,6 +76,10 @@ int FileLevelGenerator::Generate(Registry& registry, GameContext& context, uint3
             {
                 type = BrickType::Bomb;
             }
+            else if (c == 'L' || c == 'l')
+            {
+                type = BrickType::Lantern;
+            }
             else
             {
                 // Ignore any character that does not strictly match an allowed tile type

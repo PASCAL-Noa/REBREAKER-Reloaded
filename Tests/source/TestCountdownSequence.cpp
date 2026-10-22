@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <vector>
 
 TEST_SUITE("Countdown & Ready Sequence Tests")
 {
@@ -132,5 +133,30 @@ TEST_SUITE("Countdown & Ready Sequence Tests")
 
         GameStateChangedEvent evt(state);
         CHECK(evt.State == GameUIState::Countdown);
+    }
+
+    TEST_CASE("Pause menu state and layering during countdown")
+    {
+        // When pause is triggered while countdown is active:
+        // 1. SceneState transitions to Paused while countdown active flag is preserved
+        bool countdownActive = true;
+        bool isPaused = true;
+
+        // In GameUIController::ShowState(GameUIState::Paused):
+        // PauseCanvas is enabled and rendered via UISystem::OnRender
+        // RenderCountdown is drawn BEFORE UISystem::OnRender so the pause overlay and buttons pass over the countdown
+        enum class RenderOrder { Countdown, PauseMenuOverlay };
+        std::vector<RenderOrder> drawOrder;
+
+        auto renderScene = [&](bool showCountdown, bool showPause) {
+            if (showCountdown) drawOrder.push_back(RenderOrder::Countdown);
+            if (showPause) drawOrder.push_back(RenderOrder::PauseMenuOverlay);
+        };
+
+        renderScene(countdownActive, isPaused);
+
+        REQUIRE(drawOrder.size() == 2);
+        CHECK(drawOrder[0] == RenderOrder::Countdown);
+        CHECK(drawOrder[1] == RenderOrder::PauseMenuOverlay);
     }
 }

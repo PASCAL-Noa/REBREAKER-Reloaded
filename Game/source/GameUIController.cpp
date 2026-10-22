@@ -581,7 +581,7 @@ void GameUIController::SetupVictory(uint32_t finalScore)
     if (m_gameOverScoreText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverScoreText))
     {
         m_registry.GetComponent<TextComponent>(m_gameOverScoreText).Text =
-            "VICTORY SCORE: " + std::to_string(finalScore) + "  |  ALL 5 STAGES CLEARED!";
+            "VICTORY SCORE: " + std::to_string(finalScore) + "  |  ALL " + std::to_string(m_scene.GetLevelCount()) + " STAGES CLEARED!";
     }
 
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
@@ -2562,9 +2562,6 @@ void GameUIController::OnRender(GameContext& context)
             }
         }
     }
-
-    // 3. Stage start & respawn 'READY... 3... 2... 1... GO!' sequence
-    RenderCountdown(context);
 }
 
 void GameUIController::RenderCountdown(GameContext& context)

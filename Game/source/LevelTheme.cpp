@@ -1,7 +1,7 @@
 #include "LevelTheme.h"
 #include <array>
 
-static const std::array<LevelTheme, 5> s_themes = {{
+static const std::array<LevelTheme, 6> s_themes = {{
     // Level 1: Cyber Odyssey (Neon Blue & Electric Cyan)
     LevelTheme{
         .Name = "CYBER ODYSSEY",
@@ -100,6 +100,27 @@ static const std::array<LevelTheme, 5> s_themes = {{
         },
         .VignetteBaseColor = Color{16, 3, 4, 255},
         .VignetteBaseIntensity = 0.28f
+    },
+
+    // Level 6: Void Core (Pitch Black Deep Space / Limited Vision)
+    LevelTheme{
+        .Name = "VOID CORE",
+        .BgBase1 = Color{4, 4, 8, 255},
+        .BgBase2 = Color{8, 8, 14, 255},
+        .GridColor = Color{60, 40, 100, 20},
+        .DustColor = Color{120, 100, 200, 35},
+        .GridSpeed = 10.0f,
+        .DustSpeedY = -10.0f,
+        .ComboColors = {
+            Color{4, 4, 8, 255},
+            Color{10, 8, 20, 255},
+            Color{18, 12, 36, 255},
+            Color{30, 16, 54, 255},
+            Color{45, 20, 75, 255}
+        },
+        .VignetteBaseColor = Color{0, 0, 0, 255},
+        .VignetteBaseIntensity = 0.35f,
+        .AmbientLight = Color{12, 12, 18, 255} // Deep ambient darkness mask
     }
 }};
 

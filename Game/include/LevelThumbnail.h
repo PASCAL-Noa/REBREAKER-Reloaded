@@ -81,6 +81,7 @@ inline std::vector<LevelThumbnailData> LoadAllLevelThumbnails(const LevelManager
                 else if (ch == 'S' || ch == 's') brickColor = Color{255, 0, 255, 255};
                 else if (ch == 'M' || ch == 'm' || ch == 'U' || ch == 'u') brickColor = Color{180, 195, 210, 255};
                 else if (ch == 'B' || ch == 'b' || ch == 'X' || ch == 'x') brickColor = Color{255, 80, 20, 255};
+                else if (ch == 'L' || ch == 'l') brickColor = Color{255, 235, 120, 255};
                 else continue;
 
                 LevelBrickPreview brick;

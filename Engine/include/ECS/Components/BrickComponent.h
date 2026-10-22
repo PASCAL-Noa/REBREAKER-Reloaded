@@ -8,7 +8,8 @@ enum class BrickType : uint32_t
     Hard,
     Special,
     Metal,
-    Bomb
+    Bomb,
+    Lantern
 };
 
 struct BrickComponent
@@ -20,4 +21,5 @@ struct BrickComponent
     bool        IsSpecial = false;
     bool        IsUnbreakable = false;
     bool        IsBomb = false;
+    bool        IsLantern = false;
 };

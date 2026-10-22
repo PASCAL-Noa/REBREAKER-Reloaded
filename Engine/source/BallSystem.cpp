@@ -6,6 +6,7 @@
 #include "ECS/Components/CircleCollider.h"
 #include "ECS/Components/SpriteComponent.h"
 #include "ECS/Components/TweenComponent.h"
+#include "ECS/Components/LightSourceComponent.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Data/Color.h"
 #include <algorithm>
@@ -64,6 +65,14 @@ Entity BallSystem::CreateBall(const Vector2f& position, const Vector2f& velocity
     }
     m_registry.AddComponent<TrailComponent>(ball, trailComp);
 
+    LightSourceComponent lightComp{};
+    lightComp.Type = LightType::Point;
+    lightComp.LightColor = isTempo ? Color{210, 160, 255, 255} : Color{225, 240, 255, 255};
+    lightComp.Radius = isBig ? 240.0f : 180.0f;
+    lightComp.Intensity = 1.25f;
+    lightComp.InnerRadius = 15.0f;
+    m_registry.AddComponent<LightSourceComponent>(ball, lightComp);
+
     m_balls.push_back(ball);
     return ball;
 }
@@ -79,6 +88,16 @@ void BallSystem::RegisterBall(Entity ball)
         TrailComponent tc{};
         tc.Config = TrailPresets::GetPreset(m_activeTrailCosmetic);
         m_registry.AddComponent<TrailComponent>(ball, tc);
+    }
+    if (!m_registry.HasComponent<LightSourceComponent>(ball))
+    {
+        LightSourceComponent lightComp{};
+        lightComp.Type = LightType::Point;
+        lightComp.LightColor = Color{225, 240, 255, 255};
+        lightComp.Radius = 180.0f;
+        lightComp.Intensity = 1.25f;
+        lightComp.InnerRadius = 15.0f;
+        m_registry.AddComponent<LightSourceComponent>(ball, lightComp);
     }
 }
 
@@ -241,54 +260,90 @@ void BallSystem::UpdateFireBalls(float dt)
     {
         if (!m_registry.IsAlive(b) || !m_registry.HasComponent<BallComponent>(b)) continue;
         auto& bc = m_registry.GetComponent<BallComponent>(b);
-        if (!bc.IsFireBall) continue;
 
-        auto& bTrans = m_registry.GetComponent<Transform2D>(b);
-        Vector2f vel{0.0f, 0.0f};
-        if (m_registry.HasComponent<RigidBody>(b))
+        if (!m_registry.HasComponent<LightSourceComponent>(b))
         {
-            vel = m_registry.GetComponent<RigidBody>(b).Velocity;
+            m_registry.AddComponent<LightSourceComponent>(b, LightSourceComponent{});
         }
+        auto& light = m_registry.GetComponent<LightSourceComponent>(b);
+        light.Type = LightType::Point;
+        light.IsActive = true;
 
-        // Emit dynamic trail particles
-        bc.TrailTimer += dt;
-        const float trailInterval = bc.IsFuseActive ? 0.015f : 0.03f;
-        while (bc.TrailTimer >= trailInterval)
+        if (bc.IsFireBall)
         {
-            bc.TrailTimer -= trailInterval;
-            if (m_onFireTrail)
+            auto& bTrans = m_registry.GetComponent<Transform2D>(b);
+            Vector2f vel{0.0f, 0.0f};
+            if (m_registry.HasComponent<RigidBody>(b))
             {
-                m_onFireTrail(bTrans.Position, vel, bc.IsFuseActive);
+                vel = m_registry.GetComponent<RigidBody>(b).Velocity;
+            }
+
+            // Blazing dynamic firelight with heat oscillation and flicker
+            const float flicker = 0.18f * std::sin((bc.FuseTimer + bc.TrailTimer) * 28.0f + static_cast<float>(b) * 1.5f);
+            if (bc.IsFuseActive)
+            {
+                light.LightColor = Color{255, 95, 20, 255};
+                light.Radius = 360.0f + 30.0f * flicker;
+                light.Intensity = 2.1f + flicker;
+                light.InnerRadius = 35.0f;
+            }
+            else
+            {
+                light.LightColor = Color{255, 150, 30, 255};
+                light.Radius = 310.0f + 20.0f * flicker;
+                light.Intensity = 1.75f + flicker;
+                light.InnerRadius = 25.0f;
+            }
+
+            // Emit dynamic trail particles
+            bc.TrailTimer += dt;
+            const float trailInterval = bc.IsFuseActive ? 0.015f : 0.03f;
+            while (bc.TrailTimer >= trailInterval)
+            {
+                bc.TrailTimer -= trailInterval;
+                if (m_onFireTrail)
+                {
+                    m_onFireTrail(bTrans.Position, vel, bc.IsFuseActive);
+                }
+            }
+
+            // If the fuse has started (first brick was pierced)
+            if (bc.IsFuseActive)
+            {
+                bc.FuseTimer -= dt;
+
+                // Visual warning: fast pulsating intensity and tint
+                if (m_registry.HasComponent<SpriteComponent>(b))
+                {
+                    auto& spr = m_registry.GetComponent<SpriteComponent>(b);
+                    float blink = std::sin((fireCfg.FuseDuration - bc.FuseTimer) * 22.0f);
+                    if (blink > 0.0f)
+                    {
+                        spr.Tint = Color{255, 240, 80, 255};
+                    }
+                    else
+                    {
+                        spr.Tint = Color{255, 50, 10, 255};
+                    }
+                }
+
+                if (bc.FuseTimer <= 0.0f)
+                {
+                    if (m_onFireExplode)
+                    {
+                        m_onFireExplode(b, bTrans.Position);
+                    }
+                }
             }
         }
-
-        // If the fuse has started (first brick was pierced)
-        if (bc.IsFuseActive)
+        else
         {
-            bc.FuseTimer -= dt;
-
-            // Visual warning: fast pulsating intensity and tint
-            if (m_registry.HasComponent<SpriteComponent>(b))
-            {
-                auto& spr = m_registry.GetComponent<SpriteComponent>(b);
-                float blink = std::sin((fireCfg.FuseDuration - bc.FuseTimer) * 22.0f);
-                if (blink > 0.0f)
-                {
-                    spr.Tint = Color{255, 240, 80, 255};
-                }
-                else
-                {
-                    spr.Tint = Color{255, 50, 10, 255};
-                }
-            }
-
-            if (bc.FuseTimer <= 0.0f)
-            {
-                if (m_onFireExplode)
-                {
-                    m_onFireExplode(b, bTrans.Position);
-                }
-            }
+            // Standard or Tempo ball light
+            const bool isTempo = m_registry.HasComponent<SpriteComponent>(b) && (m_registry.GetComponent<SpriteComponent>(b).Tint.r == 210);
+            light.LightColor = isTempo ? Color{210, 160, 255, 255} : (bc.IsBig ? Color{255, 205, 140, 255} : Color{225, 240, 255, 255});
+            light.Radius = bc.IsBig ? 250.0f : 180.0f;
+            light.Intensity = 1.25f;
+            light.InnerRadius = 15.0f;
         }
     }
 }

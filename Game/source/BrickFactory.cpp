@@ -4,6 +4,7 @@
 #include "ECS/Components/RigidBody.h"
 #include "ECS/Components/SpriteComponent.h"
 #include "ECS/Components/TweenComponent.h"
+#include "ECS/Components/LightSourceComponent.h"
 
 Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type, bool isSpecial, uint32_t texId)
 {
@@ -26,6 +27,7 @@ Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type
         case BrickType::Special: comp.HitPoints = 1; comp.ScoreValue = 500; comp.IsSpecial = true; tint = Color{255, 0, 255, 255}; break;
         case BrickType::Metal:   comp.HitPoints = 999999; comp.ScoreValue = 500; comp.IsUnbreakable = true; tint = Color{180, 195, 210, 255}; break;
         case BrickType::Bomb:    comp.HitPoints = 1; comp.ScoreValue = 150; comp.IsBomb = true; tint = Color{255, 80, 20, 255}; break;
+        case BrickType::Lantern: comp.HitPoints = 1; comp.ScoreValue = 120; comp.IsLantern = true; tint = Color{255, 235, 120, 255}; break;
         default:                 tint = Colors::White;
     }
     
@@ -33,6 +35,17 @@ Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type
 
     registry.AddComponent<BrickComponent>(brick, comp);
     registry.AddComponent<SpriteComponent>(brick, SpriteComponent{texId, tint});
+
+    if (comp.IsLantern)
+    {
+        LightSourceComponent lanternLight{};
+        lanternLight.Type = LightType::Point;
+        lanternLight.LightColor = Color{255, 235, 130, 255};
+        lanternLight.Radius = 230.0f;
+        lanternLight.Intensity = 1.25f;
+        lanternLight.InnerRadius = 20.0f;
+        registry.AddComponent<LightSourceComponent>(brick, lanternLight);
+    }
 
     return brick;
 }

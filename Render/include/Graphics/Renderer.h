@@ -47,6 +47,14 @@ public:
     void                DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, float thickness = 1.0f);
     void                DrawScannerEffect(float width, float height, const Transform2D& transform, Color color, float time, uint32_t shaderId);
     void                DrawSceneTransition(SceneTransitionType type, float progress, Color color = Colors::Black);
+
+    // 2D Dynamic Lighting Pipeline
+    void                BeginLightingPass(Color ambientDarkness);
+    void                DrawPointLight(const Vector2f& position, float radius, Color color, float intensity = 1.0f, BlendMode blendMode = BlendMode::Add);
+    void                DrawConeLight(const Vector2f& position, float radius, float directionDeg, float coneAngleDeg, Color color, float intensity = 1.0f, BlendMode blendMode = BlendMode::Add);
+    void                DrawCapsuleLight(const Vector2f& start, const Vector2f& end, float radius, Color color, float intensity = 1.0f, BlendMode blendMode = BlendMode::Add);
+    void                EndLightingPass(BlendMode compositeBlendMode = BlendMode::Multiply);
+
     Vector2f            GetTextureSize(uint32_t textureId) const;
     Vector2f            GetTextSize(const std::string& text, uint32_t fontId, float fontSize) const;
 
@@ -56,5 +64,6 @@ private:
     Window&             m_window;
     ResourceManager&    m_resources;
     sf::RenderTexture   m_renderTexture;
+    sf::RenderTexture   m_lightMapTexture;
     std::vector<sf::Vertex> m_vertexScratch;
 };

@@ -3,5 +3,6 @@
 enum class BlendMode
 {
     Alpha,
-    Add
+    Add,
+    Multiply
 };
