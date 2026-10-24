@@ -32,6 +32,7 @@
 #include "ECS/Components/PaddleComponent.h"
 #include "ECS/Components/BallComponent.h"
 #include "PowerUps/PowerUpConfig.h"
+#include "Core/ProfileManager.h"
 #include <string>
 #include <algorithm>
 #include <random>
@@ -1491,8 +1492,14 @@ void GameScene::OnGameOverEnter()
 
     if (m_uiController)
     {
-        m_levelManager.SetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber(), m_scoreManager.GetScore());
-        m_uiController->SetupGameOver(m_scoreManager.GetScore(), m_levelManager.GetCurrentLevelNumber());
+        uint32_t finalScore = m_scoreManager.GetScore();
+        uint32_t earnedCredits = ProfileManager::ConvertScoreToCredits(finalScore);
+        PowerUpManager::Get().AddCoins(static_cast<int>(earnedCredits));
+        ProfileManager::Get().AddLifetimeScore(finalScore);
+        ProfileManager::Get().AddLifetimeCredits(earnedCredits);
+
+        m_levelManager.SetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber(), finalScore);
+        m_uiController->SetupGameOver(finalScore, m_levelManager.GetCurrentLevelNumber());
     }
 }
 
@@ -1514,7 +1521,13 @@ void GameScene::OnVictoryEnter()
     m_scoreManager.BreakCombo();
 
     int curLevel = m_levelManager.GetCurrentLevelNumber();
-    m_levelManager.SetHighScoreForLevel(curLevel, m_scoreManager.GetScore());
+    uint32_t finalScore = m_scoreManager.GetScore();
+    uint32_t earnedCredits = ProfileManager::ConvertScoreToCredits(finalScore);
+    PowerUpManager::Get().AddCoins(static_cast<int>(earnedCredits));
+    ProfileManager::Get().AddLifetimeScore(finalScore);
+    ProfileManager::Get().AddLifetimeCredits(earnedCredits);
+
+    m_levelManager.SetHighScoreForLevel(curLevel, finalScore);
     m_levelManager.SetHighestClearedLevel(curLevel);
 
     if (mp_context)
@@ -1525,7 +1538,7 @@ void GameScene::OnVictoryEnter()
 
     if (m_uiController)
     {
-        m_uiController->SetupVictory(m_scoreManager.GetScore());
+        m_uiController->SetupVictory(finalScore);
     }
 }
 

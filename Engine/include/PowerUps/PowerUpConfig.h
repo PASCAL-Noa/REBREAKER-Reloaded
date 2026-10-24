@@ -256,6 +256,22 @@ struct GhostBallConfig
     }
 };
 
+// Configuration for Item Brick Regeneration (Groundwork for dynamic respawn)
+struct ItemBrickRegenConfig
+{
+    int   Level = 1;
+    int   MaxLevel = 5;
+    float BaseCooldown = 30.0f;
+    float CooldownReductionPerLevel = 3.5f;
+
+    float GetEffectiveCooldown() const {
+        return std::max(10.0f, BaseCooldown - (Level - 1) * CooldownReductionPerLevel);
+    }
+    int GetUpgradeCost() const {
+        return 120 * Level;
+    }
+};
+
 class PowerUpManager
 {
 public:
@@ -275,6 +291,7 @@ public:
     BottomBarrierConfig& Barrier()    { return m_barrier; }
     MagnetConfig&       Magnet()      { return m_magnet; }
     GhostBallConfig&    Ghost()       { return m_ghost; }
+    ItemBrickRegenConfig& ItemRegen() { return m_itemRegen; }
 
     const MultiBallConfig&    MultiBall() const { return m_multiBall; }
     const PaddleSizeConfig&   Expand()    const { return m_expand; }
@@ -289,6 +306,7 @@ public:
     const BottomBarrierConfig& Barrier()  const { return m_barrier; }
     const MagnetConfig&       Magnet()    const { return m_magnet; }
     const GhostBallConfig&    Ghost()     const { return m_ghost; }
+    const ItemBrickRegenConfig& ItemRegen() const { return m_itemRegen; }
 
     // Leveling & Upgrades API
     int  GetLevel(PowerUpType type) const;
@@ -297,6 +315,12 @@ public:
     bool Upgrade(PowerUpType type);
     int  GetUpgradeCost(PowerUpType type) const;
     int  GetMaxLevel(PowerUpType type) const;
+
+    // Descriptive Metadata API for Shop & Workshop UI
+    std::string GetName(PowerUpType type) const;
+    std::string GetDescription(PowerUpType type) const;
+    std::string GetCurrentTierInfo(PowerUpType type) const;
+    std::string GetNextTierInfo(PowerUpType type) const;
 
     // Currency API (for future economy / shop system)
     int  GetCoins() const { return m_coins; }
@@ -323,6 +347,7 @@ private:
     BottomBarrierConfig m_barrier;
     MagnetConfig        m_magnet;
     GhostBallConfig     m_ghost;
+    ItemBrickRegenConfig m_itemRegen;
 
     int m_coins = 0;
 };

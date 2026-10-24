@@ -7,6 +7,8 @@
 #include "LeaderboardManager.h"
 #include "LevelManager.h"
 #include "Core/InputActions.h"
+#include "PowerUps/PowerUpConfig.h"
+#include "Core/ProfileManager.h"
 
 struct StarParticle
 {
@@ -16,6 +18,26 @@ struct StarParticle
     float Size = 2.0f;
     float Alpha = 180.0f;
     float TwinkleFreq = 2.0f;
+};
+
+struct UpgradeCardWidgets
+{
+    Entity RootPanel = NULL_ENTITY;
+    Entity TitleText = NULL_ENTITY;
+    Entity DescText = NULL_ENTITY;
+    Entity CurrentTierText = NULL_ENTITY;
+    Entity NextTierText = NULL_ENTITY;
+    Entity UpgradeBtn = NULL_ENTITY;
+    PowerUpType Type = PowerUpType::MultiBall;
+};
+
+struct UltimateCardWidgets
+{
+    Entity RootPanel = NULL_ENTITY;
+    Entity TitleText = NULL_ENTITY;
+    Entity DescText = NULL_ENTITY;
+    Entity EquipBtn = NULL_ENTITY;
+    UltimateAbilityType Type = UltimateAbilityType::NovaShockwave;
 };
 
 class MenuScene : public DefaultScene
@@ -48,6 +70,10 @@ private:
     void    CreateLeaderboardModal(const GameContext& context);
     void    CreateDebugModal(const GameContext& context);
 
+    void    CreateWorkshopModal(const GameContext& context);
+    void    OpenWorkshopTab(Entity targetCanvas);
+    void    RefreshWorkshopUI();
+
     void    PreloadGameAssets(GameContext& context);
 
     void    OpenModal(Entity modalCanvas);
@@ -66,7 +92,20 @@ private:
     Entity  m_cheatsTabBtn = NULL_ENTITY;
     Entity  m_leaderboardCanvas = NULL_ENTITY;
     Entity  m_debugCanvas = NULL_ENTITY;
+    Entity  m_workshopCanvas = NULL_ENTITY;
+    Entity  m_workshopUpgradesCanvas = NULL_ENTITY;
+    Entity  m_workshopUltimatesCanvas = NULL_ENTITY;
+    Entity  m_workshopProfileCanvas = NULL_ENTITY;
+    Entity  m_workshopActiveTabCanvas = NULL_ENTITY;
+    Entity  m_workshopBankText = NULL_ENTITY;
+    Entity  m_workshopPageText = NULL_ENTITY;
+    Entity  m_workshopProfileNameText = NULL_ENTITY;
+    Entity  m_workshopProfileStatsText = NULL_ENTITY;
     Entity  m_activeModal = NULL_ENTITY;
+
+    std::vector<UpgradeCardWidgets> m_upgradeCards;
+    std::vector<UltimateCardWidgets> m_ultimateCards;
+    int     m_workshopCurrentPage = 0;
 
     // Settings widgets
     Entity  m_fsBtn = NULL_ENTITY;
