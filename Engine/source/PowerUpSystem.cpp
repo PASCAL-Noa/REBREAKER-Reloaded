@@ -6,6 +6,7 @@
 #include "ECS/Components/BoxCollider.h"
 #include "Events/GameplayEvents.h"
 #include "Math/Physics.h"
+#include "PowerUps/PowerUpConfig.h"
 
 PowerUpSystem::PowerUpSystem(Registry& registry, EventDispatcher& events)
     : System(registry), m_events(events)
@@ -14,6 +15,32 @@ PowerUpSystem::PowerUpSystem(Registry& registry, EventDispatcher& events)
 
 void PowerUpSystem::OnUpdate(float dt)
 {
+    // 0. Magnet Paddle: Passively pull falling capsules towards the paddle center
+    m_registry.View<Transform2D, PaddleComponent>(
+        [this, dt](Entity, const Transform2D& paddleTrans, const PaddleComponent& paddleComp)
+    {
+        if (!paddleComp.HasMagnet) return;
+
+        const auto& magnetCfg = PowerUpManager::Get().Magnet();
+        const float magnetRadius = magnetCfg.MagnetRadius;
+        const float pullSpeed = magnetCfg.GetEffectivePullSpeed();
+
+        m_registry.View<Transform2D, PowerUpComponent>(
+            [&](Entity, Transform2D& powerUpTrans, PowerUpComponent& powerUp)
+        {
+            if (powerUp.IsCollected) return;
+
+            Vector2f toPaddle = paddleTrans.Position - powerUpTrans.Position;
+            float dist = toPaddle.Length();
+            if (dist > 1.0f && dist <= magnetRadius)
+            {
+                Vector2f dir = toPaddle / dist;
+                powerUpTrans.Position.X += dir.X * pullSpeed * dt;
+                powerUpTrans.Position.Y += std::max(0.0f, dir.Y) * (pullSpeed * 0.7f) * dt;
+            }
+        });
+    });
+
     // 1. Check collision between falling bonus capsules and the paddle
     m_registry.View<Transform2D, BoxCollider, PaddleComponent>(
         [this](Entity paddleEntity, Transform2D& paddleTrans, BoxCollider& paddleBox, PaddleComponent&)

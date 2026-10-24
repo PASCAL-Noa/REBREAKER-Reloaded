@@ -6,6 +6,7 @@
 #include "ECS/Components/TweenComponent.h"
 #include "Graphics/Renderer.h"
 #include "TweenEffects/TweenEffects.h"
+#include <random>
 
 TextFeedback::TextFeedback(Registry& registry, GameContext& context, uint32_t fontId, uint32_t fireTexId)
     : m_registry(registry), m_context(context), m_fontId(fontId), m_fireTexId(fireTexId)
@@ -148,68 +149,70 @@ void TextFeedback::SpawnComboText(Entity canvasParent, const Vector2f& worldPosi
     tweenComp.AddTween(fadeTween);
 }
 
-void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& worldPosition, PowerUpType type, const Camera2D& worldCamera)
+void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& /*worldPosition*/, PowerUpType type, const Camera2D& /*worldCamera*/)
 {
     std::string text;
-    Color color = Colors::White;
+    const Color color = Color{255, 230, 30, 255}; // Yellow text feedback as requested
 
     switch (type)
     {
         case PowerUpType::MultiBall:
             text = "+MULTI-BALL";
-            color = Color{80, 220, 255, 255};
             break;
         case PowerUpType::ExpandPaddle:
             text = "+EXPAND PADDLE";
-            color = Color{90, 255, 130, 255};
             break;
         case PowerUpType::ShrinkPaddle:
             text = "-SHRINK PADDLE";
-            color = Color{255, 75, 75, 255};
             break;
-        case PowerUpType::LaserPaddle:
-            text = "+LASER PADDLE";
-            color = Color{255, 215, 0, 255};
+        case PowerUpType::Storm:
+            text = "+THUNDERSTORM";
             break;
         case PowerUpType::TempoBall:
             text = "+TEMPO SPEED";
-            color = Color{210, 140, 255, 255};
             break;
         case PowerUpType::ExtraLife:
             text = "+1 LIFE";
-            color = Color{255, 105, 180, 255};
             break;
         case PowerUpType::BigBall:
             text = "+BIG BALL";
-            color = Color{60, 190, 255, 255};
             break;
         case PowerUpType::FireBall:
             text = "+FIREBALL";
-            color = Color{255, 120, 20, 255};
+            break;
+        case PowerUpType::StickyPaddle:
+            text = "+STICKY PADDLE";
+            break;
+        case PowerUpType::BottomBarrier:
+            text = "+BOTTOM BARRIER";
+            break;
+        case PowerUpType::MagnetPaddle:
+            text = "+MAGNET PADDLE";
+            break;
+        case PowerUpType::GhostBall:
+            text = "+GHOST BALL";
             break;
     }
 
-    // Map world pos to physical screen pos
-    m_context.Render.SetCamera(worldCamera);
-    Vector2f physicalPixel = m_context.Render.MapCoordsToPixel(worldPosition);
-    m_context.Render.ResetCamera();
-    Vector2f uiPosition = m_context.Render.MapPixelToCoords(physicalPixel);
-
-    // Center above the paddle
-    uiPosition.Y -= 35.0f;
+    // Pick a random position across the safe play area of the screen
+    const Vector2f viewSize = m_context.Render.GetLogicalViewSize();
+    static std::mt19937 rng(1337);
+    std::uniform_real_distribution<float> distX(viewSize.X * 0.20f, viewSize.X * 0.75f);
+    std::uniform_real_distribution<float> distY(viewSize.Y * 0.25f, viewSize.Y * 0.70f);
+    Vector2f uiPosition{distX(rng), distY(rng)};
 
     Entity ft = m_registry.CreateEntity();
     m_registry.AddComponent<RectTransform>(ft, RectTransform{
         .Position = uiPosition,
-        .Size = {300.0f, 60.0f},
-        .AnchorPoint = Anchor::Center,
+        .Size = {360.0f, 60.0f},
+        .AnchorPoint = Anchor::TopLeft,
         .Parent = canvasParent
     });
 
     m_registry.AddComponent<TextComponent>(ft, TextComponent{
         .Text = text,
         .FontId = m_fontId,
-        .FontSize = 26.0f,
+        .FontSize = 28.0f,
         .Tint = color,
         .TextCenter = true
     });
@@ -222,7 +225,7 @@ void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& worldPo
     TweenConfig<float> moveTween;
     moveTween.Start = uiPosition.Y;
     moveTween.End = uiPosition.Y - 65.0f;
-    moveTween.Duration = 1.1f;
+    moveTween.Duration = 1.2f;
     moveTween.Ease = EasingFunctions::EasingType::EaseOutCubic;
     moveTween.Setter = [reg, ft](float val) {
         if (reg->HasComponent<RectTransform>(ft)) {
@@ -232,8 +235,8 @@ void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& worldPo
 
     // 2. Scale / Font Size Punch
     TweenConfig<float> punchTween;
-    punchTween.Start = 38.0f;
-    punchTween.End = 26.0f;
+    punchTween.Start = 42.0f;
+    punchTween.End = 28.0f;
     punchTween.Duration = 0.28f;
     punchTween.Ease = EasingFunctions::EasingType::EaseOutBack;
     punchTween.Setter = [reg, ft](float val) {
@@ -246,7 +249,7 @@ void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& worldPo
     TweenConfig<float> fadeTween;
     fadeTween.Start = 255.0f;
     fadeTween.End = 0.0f;
-    fadeTween.Duration = 1.1f;
+    fadeTween.Duration = 1.2f;
     fadeTween.Ease = EasingFunctions::EasingType::EaseInQuad;
     fadeTween.Setter = [reg, ft](float val) {
         if (reg->HasComponent<TextComponent>(ft)) {
@@ -263,7 +266,6 @@ void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& worldPo
 }
 
 void TextFeedback::SetFlamePosition(const RectTransform& referenceTransform, float xOffset, float yOffset) const
-
 {
     if (m_registry.HasComponent<RectTransform>(m_comboFlame))
     {

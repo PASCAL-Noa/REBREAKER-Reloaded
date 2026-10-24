@@ -1015,9 +1015,9 @@ void MenuScene::CreateInputsTab(const GameContext& context)
         .FontSize = 26.0f
     });
 
-    // Launch Ball / Laser
+    // Launch Ball / Storm
     m_launchRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
-        .Text = "LAUNCH / LASER: ...",
+        .Text = "LAUNCH / STORM: ...",
         .OnClick = [this]() {
             m_isRebinding = true;
             m_rebindAction = InputAction::LaunchBall;
@@ -1123,7 +1123,7 @@ void MenuScene::UpdateInputButtons()
 
     formatBtnText(InputAction::MoveLeft, "MOVE LEFT", m_leftRebindBtn);
     formatBtnText(InputAction::MoveRight, "MOVE RIGHT", m_rightRebindBtn);
-    formatBtnText(InputAction::LaunchBall, "LAUNCH / LASER", m_launchRebindBtn);
+    formatBtnText(InputAction::LaunchBall, "LAUNCH / STORM", m_launchRebindBtn);
     formatBtnText(InputAction::Pause, "PAUSE", m_pauseRebindBtn);
 
     if (m_registry.HasComponent<TextComponent>(m_rebindStatusText))

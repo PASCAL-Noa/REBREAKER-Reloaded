@@ -6,11 +6,16 @@ enum class PowerUpType : uint8_t
     MultiBall,
     ExpandPaddle,
     ShrinkPaddle,
-    LaserPaddle,
+    Storm,
     TempoBall,
     ExtraLife,
     BigBall,
-    FireBall
+    FireBall,
+    StickyPaddle,
+    BottomBarrier,
+    MagnetPaddle,
+    GhostBall,
+    LaserPaddle = Storm
 };
 
 struct PowerUpComponent

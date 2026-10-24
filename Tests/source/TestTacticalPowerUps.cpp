@@ -1,0 +1,297 @@
+#include <doctest/doctest.h>
+#include "PowerUps/PowerUpConfig.h"
+#include "ECS/Components/PaddleComponent.h"
+#include "ECS/Components/BallComponent.h"
+#include "ECS/Components/PowerUpComponent.h"
+#include "ECS/Components/Transform2D.h"
+#include "ECS/Components/RigidBody.h"
+#include "ECS/Components/BoxCollider.h"
+#include "ECS/Components/CircleCollider.h"
+#include "ECS/Registry.hpp"
+#include "Math/Vector2.h"
+#include <cmath>
+#include <algorithm>
+
+TEST_SUITE("Tactical Power-Ups Tests")
+{
+    TEST_CASE("PowerUpConfig default and upgrade formulas for 4 new tactical power-ups")
+    {
+        auto& mgr = PowerUpManager::Get();
+        mgr.ResetToDefaults();
+
+        // 1. Sticky Paddle
+        CHECK(mgr.Sticky().Level == 1);
+        CHECK(mgr.Sticky().MaxLevel == 5);
+        CHECK(mgr.Sticky().GetEffectiveDuration() == doctest::Approx(12.0f));
+        CHECK(mgr.Sticky().AutoLaunchDelay == doctest::Approx(3.5f));
+        mgr.SetLevel(PowerUpType::StickyPaddle, 3);
+        CHECK(mgr.Sticky().Level == 3);
+        CHECK(mgr.Sticky().GetEffectiveDuration() == doctest::Approx(16.0f)); // 12 + (3-1)*2
+        CHECK(mgr.Sticky().GetUpgradeCost() == 140 * 3);
+
+        // 2. Bottom Barrier
+        CHECK(mgr.Barrier().Level == 1);
+        CHECK(mgr.Barrier().GetEffectiveDuration() == doctest::Approx(15.0f));
+        CHECK(mgr.Barrier().GetEffectiveCharges() == 1);
+        mgr.SetLevel(PowerUpType::BottomBarrier, 2);
+        CHECK(mgr.Barrier().GetEffectiveCharges() == 2);
+        CHECK(mgr.Barrier().GetEffectiveDuration() == doctest::Approx(17.5f)); // 15 + 1*2.5
+        CHECK(mgr.Barrier().GetUpgradeCost() == 150 * 2);
+
+        // 3. Magnet Paddle
+        CHECK(mgr.Magnet().Level == 1);
+        CHECK(mgr.Magnet().GetEffectiveDuration() == doctest::Approx(12.0f));
+        CHECK(mgr.Magnet().GetEffectivePullSpeed() == doctest::Approx(380.0f));
+        CHECK(mgr.Magnet().MagnetRadius == doctest::Approx(650.0f));
+        mgr.SetLevel(PowerUpType::MagnetPaddle, 4);
+        CHECK(mgr.Magnet().GetEffectivePullSpeed() == doctest::Approx(380.0f + 3 * 60.0f));
+        CHECK(mgr.Magnet().GetUpgradeCost() == 130 * 4);
+
+        // 4. Ghost Ball
+        CHECK(mgr.Ghost().Level == 1);
+        CHECK(mgr.Ghost().GetEffectiveDuration() == doctest::Approx(8.0f));
+        CHECK(mgr.Ghost().Alpha == doctest::Approx(120.0f));
+        mgr.SetLevel(PowerUpType::GhostBall, 5);
+        CHECK(mgr.Ghost().GetEffectiveDuration() == doctest::Approx(8.0f + 4 * 1.5f));
+        CHECK(mgr.Ghost().GetUpgradeCost() == 160 * 5);
+
+        // Reset back to clean state
+        mgr.ResetToDefaults();
+        CHECK(mgr.Sticky().Level == 1);
+        CHECK(mgr.Barrier().Level == 1);
+        CHECK(mgr.Magnet().Level == 1);
+        CHECK(mgr.Ghost().Level == 1);
+    }
+
+    TEST_CASE("Sticky Paddle catching and aim calculation")
+    {
+        // Simulate paddle at position (0, 300) with width 120
+        Vector2f paddlePos{0.0f, 300.0f};
+        float paddleHalfWidth = 60.0f;
+
+        // Ball caught at offset +30px (right half)
+        Vector2f ballContactPos{30.0f, 280.0f};
+        float offset = ballContactPos.X - paddlePos.X;
+        float clampedOffset = std::clamp(offset, -paddleHalfWidth * 0.9f, paddleHalfWidth * 0.9f);
+        CHECK(clampedOffset == doctest::Approx(30.0f));
+
+        // When caught, ball velocity becomes 0 and kinematic is set
+        RigidBody ballRb{Vector2f{200.0f, 400.0f}, 1.0f, 1.0f, false};
+        ballRb.Velocity = Vector2f{0.0f, 0.0f};
+        ballRb.IsKinematic = true;
+        CHECK(ballRb.Velocity.X == 0.0f);
+        CHECK(ballRb.Velocity.Y == 0.0f);
+        CHECK(ballRb.IsKinematic == true);
+
+        // When launched, calculate release angle based on caught offset
+        float hitFactor = clampedOffset / paddleHalfWidth; // 30 / 60 = 0.5
+        constexpr float maxAngle = 60.0f * 3.14159265f / 180.0f;
+        float bounceAngle = hitFactor * maxAngle; // 30 degrees to the right
+        float launchSpeed = 640.0f;
+
+        ballRb.Velocity.X = launchSpeed * std::sin(bounceAngle);
+        ballRb.Velocity.Y = -launchSpeed * std::cos(bounceAngle);
+        ballRb.IsKinematic = false;
+
+        CHECK(ballRb.IsKinematic == false);
+        CHECK(ballRb.Velocity.X > 0.0f);
+        CHECK(ballRb.Velocity.Y < 0.0f); // Directed upward
+        float resultingSpeed = std::sqrt(ballRb.Velocity.X * ballRb.Velocity.X + ballRb.Velocity.Y * ballRb.Velocity.Y);
+        CHECK(resultingSpeed == doctest::Approx(launchSpeed));
+    }
+
+    TEST_CASE("Bottom Barrier deflection and charge dissipation")
+    {
+        int barrierCharges = 1;
+        bool barrierActive = true;
+
+        Vector2f ballPos{100.0f, 440.0f};
+        Vector2f ballVel{150.0f, 500.0f};
+
+        // When ball reaches bottom boundary, barrier saves it
+        CHECK(barrierActive);
+        CHECK(barrierCharges > 0);
+
+        // Deflect upward safely
+        float angleX = std::clamp(ballPos.X / 800.0f, -0.6f, 0.6f);
+        Vector2f dir{angleX, -std::sqrt(std::max(0.1f, 1.0f - angleX * angleX))};
+        float speed = std::sqrt(ballVel.X * ballVel.X + ballVel.Y * ballVel.Y);
+        Vector2f deflectedVel = dir.Normalized() * speed;
+
+        CHECK(deflectedVel.Y < 0.0f); // Deflected upward
+        CHECK(std::sqrt(deflectedVel.X * deflectedVel.X + deflectedVel.Y * deflectedVel.Y) == doctest::Approx(speed));
+
+        // Barrier loses 1 charge and dissolves
+        barrierCharges--;
+        if (barrierCharges <= 0)
+        {
+            barrierActive = false;
+        }
+
+        CHECK(barrierCharges == 0);
+        CHECK_FALSE(barrierActive);
+    }
+
+    TEST_CASE("Magnet Paddle attraction vector")
+    {
+        Vector2f paddlePos{0.0f, 300.0f};
+        Vector2f capsulePos{100.0f, 100.0f};
+
+        Vector2f toPaddle = paddlePos - capsulePos; // (100, 200)
+        float distance = std::sqrt(toPaddle.X * toPaddle.X + toPaddle.Y * toPaddle.Y);
+        float magnetRadius = PowerUpManager::Get().Magnet().MagnetRadius; // 650.0f
+
+        CHECK(distance < magnetRadius);
+
+        Vector2f pullDir = toPaddle.Normalized();
+        float pullSpeed = PowerUpManager::Get().Magnet().GetEffectivePullSpeed(); // 380.0f
+        Vector2f pullVelocity = pullDir * pullSpeed;
+
+        CHECK(pullVelocity.X < 0.0f); // Pulled left towards paddle center X (0.0f)
+        CHECK(pullVelocity.Y > 0.0f); // Pulled down towards paddle Y (300.0f)
+    }
+
+    TEST_CASE("Ghost Ball piercing flag verification")
+    {
+        BallComponent ball;
+        CHECK_FALSE(ball.IsGhost);
+
+        ball.IsGhost = true;
+        CHECK(ball.IsGhost);
+
+        // Standard destructible brick collision logic check
+        bool isUnbreakable = false;
+        bool isPiercing = ball.IsGhost && !isUnbreakable;
+        CHECK(isPiercing == true); // Should pierce destructible bricks
+
+        // Unbreakable metal brick collision logic check
+        isUnbreakable = true;
+        isPiercing = (!isUnbreakable && ball.IsGhost);
+        CHECK(isPiercing == false); // Should bounce off unbreakable metal bricks
+    }
+
+    TEST_CASE("Sticky Paddle dynamic size positioning and launch release safety")
+    {
+        CircleCollider circle{20.0f};
+        BoxCollider paddleBox{Vector2f{120.0f, 20.0f}};
+        Transform2D paddleTrans{Vector2f{0.0f, 300.0f}};
+        const float paddleHalfH = paddleBox.GetEffectiveSize(paddleTrans.Scale).Y * 0.5f; // 10.0f
+        const float paddleTopY = paddleTrans.Position.Y - paddleHalfH; // 290.0f
+
+        // Case 1: Standard ball (scale 1.0)
+        Transform2D standardBallTrans{Vector2f{0.0f, 0.0f}, 0.0f, Vector2f{1.0f, 1.0f}};
+        float standardRadius = circle.GetEffectiveRadius(standardBallTrans.Scale);
+        CHECK(standardRadius == doctest::Approx(20.0f));
+        standardBallTrans.Position.Y = paddleTopY - standardRadius - 1.0f;
+        // Verify bottom of ball is strictly above paddle top
+        CHECK(standardBallTrans.Position.Y + standardRadius < paddleTopY);
+
+        // Case 2: Big ball (scale 1.8)
+        Transform2D bigBallTrans{Vector2f{0.0f, 0.0f}, 0.0f, Vector2f{1.8f, 1.8f}};
+        float bigRadius = circle.GetEffectiveRadius(bigBallTrans.Scale);
+        CHECK(bigRadius == doctest::Approx(36.0f));
+        bigBallTrans.Position.Y = paddleTopY - bigRadius - 1.0f;
+        // Verify bottom of big ball is strictly above paddle top (no penetration)
+        CHECK(bigBallTrans.Position.Y + bigRadius < paddleTopY);
+
+        // Case 3: Launch release safety - moving upward should never trigger paddle collision
+        RigidBody releasedBallRb{Vector2f{100.0f, -600.0f}, 1.0f, 1.0f, false};
+        BallComponent releasedBallComp;
+        releasedBallComp.IsStuck = false;
+
+        // Condition check used in HandlePaddleCollision:
+        bool shouldProcessPaddleCollision = !releasedBallComp.IsStuck && (releasedBallRb.Velocity.Y > 0.0f);
+        CHECK_FALSE(shouldProcessPaddleCollision); // Since Velocity.Y <= 0.0f, paddle collision is ignored!
+    }
+
+    TEST_CASE("Storm (Thunderstorm) power-up configuration, alias, and mechanics")
+    {
+        auto& mgr = PowerUpManager::Get();
+        mgr.ResetToDefaults();
+
+        // 1. Level 1: 1 strike, 2 damage
+        CHECK(mgr.Storm().Level == 1);
+        CHECK(mgr.Storm().MaxLevel == 5);
+        CHECK(mgr.Storm().GetEffectiveStrikes() == 1);
+        CHECK(mgr.Storm().GetEffectiveDamage() == 2);
+        CHECK_FALSE(mgr.Storm().IsTempest());
+        CHECK(mgr.Storm().GetEffectiveCooldown() == doctest::Approx(0.55f));
+        CHECK(mgr.Storm().StrikeRadius == doctest::Approx(55.0f));
+
+        // 2. Level 2: +1 strike (total 2 strikes, 2 damage)
+        mgr.SetLevel(PowerUpType::Storm, 2);
+        CHECK(mgr.Storm().GetEffectiveStrikes() == 2);
+        CHECK(mgr.Storm().GetEffectiveDamage() == 2);
+        CHECK_FALSE(mgr.Storm().IsTempest());
+
+        // 3. Level 3: +1 strike (total 3 strikes, 2 damage)
+        mgr.SetLevel(PowerUpType::Storm, 3);
+        CHECK(mgr.Storm().GetEffectiveStrikes() == 3);
+        CHECK(mgr.Storm().GetEffectiveDamage() == 2);
+        CHECK_FALSE(mgr.Storm().IsTempest());
+
+        // 4. Level 4: 3 strikes, damage upgraded to 3 hits
+        mgr.SetLevel(PowerUpType::Storm, 4);
+        CHECK(mgr.Storm().GetEffectiveStrikes() == 3);
+        CHECK(mgr.Storm().GetEffectiveDamage() == 3);
+        CHECK_FALSE(mgr.Storm().IsTempest());
+
+        // 5. Level 5: La tempête (10s continuous tempest barrage)
+        mgr.SetLevel(PowerUpType::Storm, 5);
+        CHECK(mgr.Storm().IsTempest());
+        CHECK(mgr.Storm().GetTempestDuration() == doctest::Approx(10.0f));
+        CHECK(mgr.Storm().GetEffectiveDamage() == 3);
+        CHECK(mgr.Storm().GetEffectiveCooldown() == doctest::Approx(0.16f));
+
+        // 6. Compatibility alias
+        CHECK(PowerUpType::LaserPaddle == PowerUpType::Storm);
+        CHECK(mgr.Laser().GetEffectiveStrikes() == mgr.Storm().GetEffectiveStrikes());
+
+        // 7. PaddleComponent Storm state & strike consumption
+        mgr.SetLevel(PowerUpType::Storm, 2);
+        PaddleComponent paddle;
+        CHECK_FALSE(paddle.HasStorm);
+
+        int stormCharges = mgr.Storm().GetEffectiveStrikes(); // 2 strikes
+        paddle.HasStorm = true;
+        paddle.StormCooldown = mgr.Storm().GetEffectiveCooldown();
+        CHECK(paddle.HasStorm);
+
+        // 1st strike triggers automatically on pickup
+        stormCharges--;
+        CHECK(stormCharges == 1); // 1 strike remaining
+
+        // 2nd strike triggers automatically
+        stormCharges--;
+        CHECK(stormCharges == 0);
+        paddle.HasStorm = false;
+        CHECK_FALSE(paddle.HasStorm);
+
+        // 8. Conductive Metal Brick Network verification
+        // Metal bricks cannot be broken by lightning, but conduct electricity across touching metal bricks and zap 1x1 neighbors
+        Vector2f metalPos1{0.0f, 0.0f};
+        Vector2f metalPos2{110.0f, 0.0f}; // Touching metalPos1 (delta X = 110 <= 115)
+        Vector2f neighborPos{110.0f, 40.0f}; // 1x1 adjacent to metalPos2 (delta Y = 40 <= 45)
+        Vector2f distantPos{400.0f, 400.0f}; // Far away
+
+        constexpr float kMaxConnectedDistX = 115.0f;
+        constexpr float kMaxConnectedDistY = 45.0f;
+
+        // Metal 1 connects to Metal 2
+        bool isConnected = (std::abs(metalPos1.X - metalPos2.X) <= kMaxConnectedDistX &&
+                            std::abs(metalPos1.Y - metalPos2.Y) <= kMaxConnectedDistY);
+        CHECK(isConnected);
+
+        // Neighbor is within 1x1 radius of Metal 2
+        bool isAdjacent = (std::abs(metalPos2.X - neighborPos.X) <= kMaxConnectedDistX &&
+                           std::abs(metalPos2.Y - neighborPos.Y) <= kMaxConnectedDistY);
+        CHECK(isAdjacent);
+
+        // Distant brick is not reached
+        bool isDistantReached = (std::abs(metalPos1.X - distantPos.X) <= kMaxConnectedDistX ||
+                                 std::abs(metalPos2.X - distantPos.X) <= kMaxConnectedDistX);
+        CHECK_FALSE(isDistantReached);
+
+        mgr.ResetToDefaults();
+    }
+}

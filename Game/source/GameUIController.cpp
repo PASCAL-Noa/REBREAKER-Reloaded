@@ -1356,9 +1356,9 @@ void GameUIController::CreateInputsTab()
         .FontSize = 26.0f
     });
 
-    // Launch Ball / Laser
+    // Launch Ball / Storm
     m_launchRebindBtn = UIFactory::CreateButton(m_registry, m_inputsCanvas, ButtonDescriptor{
-        .Text = "LAUNCH / LASER: ...",
+        .Text = "LAUNCH / STORM: ...",
         .OnClick = [this]() {
             m_isRebinding = true;
             m_rebindAction = InputAction::LaunchBall;
@@ -1464,7 +1464,7 @@ void GameUIController::UpdateInputButtons()
 
     formatBtnText(InputAction::MoveLeft, "MOVE LEFT", m_leftRebindBtn);
     formatBtnText(InputAction::MoveRight, "MOVE RIGHT", m_rightRebindBtn);
-    formatBtnText(InputAction::LaunchBall, "LAUNCH / LASER", m_launchRebindBtn);
+    formatBtnText(InputAction::LaunchBall, "LAUNCH / STORM", m_launchRebindBtn);
     formatBtnText(InputAction::Pause, "PAUSE", m_pauseRebindBtn);
 
     if (m_registry.HasComponent<TextComponent>(m_rebindStatusText))
@@ -1601,17 +1601,17 @@ void GameUIController::CreatePowerUpTesterUI()
     // Dark semi-transparent panel on right side of the screen
     UIFactory::CreatePanel(m_registry, m_powerUpTesterCanvas, PanelDescriptor{
         .Position = {-155.0f, 0.0f},
-        .Size = {290.0f, 790.0f},
-        .Tint = Color{15, 20, 30, 220},
+        .Size = {290.0f, 960.0f},
+        .Tint = Color{15, 20, 30, 225},
         .AnchorPoint = Anchor::MiddleRight
     });
 
     // Title
     UIFactory::CreateText(m_registry, m_powerUpTesterCanvas, TextDescriptor{
         .Text = "POWER-UP TESTER",
-        .Position = {-155.0f, -330.0f},
+        .Position = {-155.0f, -440.0f},
         .FontId = m_fontId,
-        .FontSize = 32.0f,
+        .FontSize = 28.0f,
         .Tint = Colors::Yellow,
         .AnchorPoint = Anchor::MiddleRight,
         .TextCenter = true
@@ -1620,9 +1620,9 @@ void GameUIController::CreatePowerUpTesterUI()
     // Helper hint text
     UIFactory::CreateText(m_registry, m_powerUpTesterCanvas, TextDescriptor{
         .Text = "[TAB]/[R3] Hide | [RS/LB-RB] Nav | [Y] Apply",
-        .Position = {-155.0f, -295.0f},
+        .Position = {-155.0f, -408.0f},
         .FontId = m_fontId,
-        .FontSize = 18.0f,
+        .FontSize = 16.0f,
         .Tint = Color{180, 210, 255, 240},
         .AnchorPoint = Anchor::MiddleRight,
         .TextCenter = true
@@ -1631,9 +1631,9 @@ void GameUIController::CreatePowerUpTesterUI()
     // Active power-up indicators
     m_powerUpStatusText = UIFactory::CreateText(m_registry, m_powerUpTesterCanvas, TextDescriptor{
         .Text = "",
-        .Position = {-155.0f, -265.0f},
+        .Position = {-155.0f, -380.0f},
         .FontId = m_fontId,
-        .FontSize = 18.0f,
+        .FontSize = 16.0f,
         .Tint = Color{255, 230, 100, 255},
         .AnchorPoint = Anchor::MiddleRight,
         .TextCenter = true
@@ -1653,38 +1653,42 @@ void GameUIController::CreatePowerUpTesterUI()
         {"1. Multi-Ball", PowerUpType::MultiBall, Color{0, 120, 160, 255}, Color{0, 180, 220, 255}},
         {"2. Expand Paddle", PowerUpType::ExpandPaddle, Color{30, 130, 50, 255}, Color{50, 180, 80, 255}},
         {"3. Shrink Paddle", PowerUpType::ShrinkPaddle, Color{150, 40, 40, 255}, Color{200, 60, 60, 255}},
-        {"4. Laser Paddle", PowerUpType::LaserPaddle, Color{160, 120, 20, 255}, Color{220, 170, 30, 255}},
+        {"4. Storm", PowerUpType::Storm, Color{180, 140, 20, 255}, Color{240, 200, 30, 255}},
         {"5. Tempo Ball", PowerUpType::TempoBall, Color{110, 40, 160, 255}, Color{150, 60, 210, 255}},
         {"6. Extra Life", PowerUpType::ExtraLife, Color{160, 50, 110, 255}, Color{210, 70, 150, 255}},
         {"7. Big Ball", PowerUpType::BigBall, Color{180, 80, 15, 255}, Color{230, 110, 25, 255}},
-        {"8. Fire Ball", PowerUpType::FireBall, Color{190, 40, 10, 255}, Color{240, 80, 15, 255}}
+        {"8. Fire Ball", PowerUpType::FireBall, Color{190, 40, 10, 255}, Color{240, 80, 15, 255}},
+        {"9. Sticky Paddle", PowerUpType::StickyPaddle, Color{160, 110, 20, 255}, Color{215, 155, 30, 255}},
+        {"0. Bottom Barrier", PowerUpType::BottomBarrier, Color{0, 140, 180, 255}, Color{0, 195, 240, 255}},
+        {"M. Magnet Paddle", PowerUpType::MagnetPaddle, Color{140, 35, 170, 255}, Color{190, 50, 230, 255}},
+        {"H. Ghost Ball", PowerUpType::GhostBall, Color{70, 140, 170, 255}, Color{110, 190, 225, 255}}
     };
 
-    float startY = -240.0f;
-    float stepY = 35.0f;
+    float startY = -350.0f;
+    float stepY = 31.0f;
 
-    for (size_t i = 0; i < 8; ++i)
+    for (size_t i = 0; i < 12; ++i)
     {
         PowerUpType pType = buttons[i].type;
         Entity b = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
             .Text = buttons[i].text,
             .OnClick = [this, pType]() { m_scene.ApplyPowerUp(pType); },
             .Position = {-155.0f, startY + i * stepY},
-            .Size = {260.0f, 32.0f},
+            .Size = {260.0f, 27.0f},
             .DefaultColor = buttons[i].normalColor,
             .HoverColor = buttons[i].hoverColor,
             .PressedColor = Color{20, 20, 20, 255},
             .TextColor = Colors::White,
             .FontId = m_fontId,
-            .FontSize = 20.0f,
+            .FontSize = 17.0f,
             .AnchorPoint = Anchor::MiddleRight,
             .IgnoreMenuNavigation = true
         });
         m_powerUpTesterButtons.push_back(b);
     }
 
-    float actionY = startY + 8 * stepY + 6.0f;
-    float actionStepY = 35.0f;
+    float actionY = startY + 12 * stepY + 8.0f;
+    float actionStepY = 31.0f;
 
     // Drop capsule button
     Entity btnDrop = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
@@ -1693,30 +1697,30 @@ void GameUIController::CreatePowerUpTesterUI()
             m_scene.SpawnPowerUpAtPaddle();
         },
         .Position = {-155.0f, actionY},
-        .Size = {260.0f, 32.0f},
+        .Size = {260.0f, 27.0f},
         .DefaultColor = Color{60, 60, 80, 255},
         .HoverColor = Color{90, 90, 120, 255},
         .PressedColor = Color{30, 30, 40, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 20.0f,
+        .FontSize = 17.0f,
         .AnchorPoint = Anchor::MiddleRight,
         .IgnoreMenuNavigation = true
     });
     m_powerUpTesterButtons.push_back(btnDrop);
 
-    // Drop all 8 capsules button
+    // Drop all 12 capsules button
     Entity btnDropAll = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
-        .Text = "Drop All 8 [O]",
+        .Text = "Drop All 12 [O]",
         .OnClick = [this]() { m_scene.SpawnAllPowerUps(); },
         .Position = {-155.0f, actionY + actionStepY},
-        .Size = {260.0f, 32.0f},
+        .Size = {260.0f, 27.0f},
         .DefaultColor = Color{60, 60, 80, 255},
         .HoverColor = Color{90, 90, 120, 255},
         .PressedColor = Color{30, 30, 40, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 20.0f,
+        .FontSize = 17.0f,
         .AnchorPoint = Anchor::MiddleRight,
         .IgnoreMenuNavigation = true
     });
@@ -1727,13 +1731,13 @@ void GameUIController::CreatePowerUpTesterUI()
         .Text = "Reset Ball [R]",
         .OnClick = [this]() { m_scene.ResetBallAndPaddle(true); },
         .Position = {-155.0f, actionY + actionStepY * 2},
-        .Size = {260.0f, 32.0f},
+        .Size = {260.0f, 27.0f},
         .DefaultColor = Color{70, 70, 70, 255},
         .HoverColor = Color{100, 100, 100, 255},
         .PressedColor = Color{30, 30, 30, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 20.0f,
+        .FontSize = 17.0f,
         .AnchorPoint = Anchor::MiddleRight,
         .IgnoreMenuNavigation = true
     });
@@ -1744,13 +1748,13 @@ void GameUIController::CreatePowerUpTesterUI()
         .Text = "Refill Bricks [B]",
         .OnClick = [this]() { m_scene.RespawnBricks(); },
         .Position = {-155.0f, actionY + actionStepY * 3},
-        .Size = {260.0f, 32.0f},
+        .Size = {260.0f, 27.0f},
         .DefaultColor = Color{70, 70, 70, 255},
         .HoverColor = Color{100, 100, 100, 255},
         .PressedColor = Color{30, 30, 30, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 20.0f,
+        .FontSize = 17.0f,
         .AnchorPoint = Anchor::MiddleRight,
         .IgnoreMenuNavigation = true
     });
@@ -1765,20 +1769,24 @@ void GameUIController::CreatePowerUpTesterUI()
             PowerUpManager::Get().SetLevel(PowerUpType::MultiBall, nextLvl);
             PowerUpManager::Get().SetLevel(PowerUpType::ExpandPaddle, nextLvl);
             PowerUpManager::Get().SetLevel(PowerUpType::ShrinkPaddle, nextLvl);
-            PowerUpManager::Get().SetLevel(PowerUpType::LaserPaddle, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::Storm, nextLvl);
             PowerUpManager::Get().SetLevel(PowerUpType::TempoBall, nextLvl);
             PowerUpManager::Get().SetLevel(PowerUpType::ExtraLife, nextLvl);
             PowerUpManager::Get().SetLevel(PowerUpType::BigBall, nextLvl);
             PowerUpManager::Get().SetLevel(PowerUpType::FireBall, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::StickyPaddle, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::BottomBarrier, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::MagnetPaddle, nextLvl);
+            PowerUpManager::Get().SetLevel(PowerUpType::GhostBall, nextLvl);
         },
         .Position = {-155.0f, actionY + actionStepY * 4},
-        .Size = {260.0f, 34.0f},
+        .Size = {260.0f, 29.0f},
         .DefaultColor = Color{110, 70, 25, 255},
         .HoverColor = Color{150, 100, 35, 255},
         .PressedColor = Color{40, 25, 10, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 22.0f,
+        .FontSize = 17.0f,
         .AnchorPoint = Anchor::MiddleRight,
         .IgnoreMenuNavigation = true
     });

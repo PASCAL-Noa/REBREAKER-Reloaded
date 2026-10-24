@@ -47,7 +47,7 @@ void LevelManager::Initialize(const std::string& levelsDirectory)
 
     if (m_levelFiles.empty())
     {
-        for (int i = 1; i <= 6; ++i)
+        for (int i = 1; i <= 7; ++i)
         {
             std::ostringstream oss;
             oss << m_levelsDirectory << "/level" << std::setw(2) << std::setfill('0') << i << ".txt";

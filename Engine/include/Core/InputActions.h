@@ -22,9 +22,10 @@ enum class InputAction : uint8_t
     MoveLeft,
     MoveRight,
     LaunchBall,
-    FireLaser,
+    TriggerStorm,
     Pause,
-    Count
+    Count,
+    FireLaser = TriggerStorm
 };
 
 namespace KeyCodeUtils

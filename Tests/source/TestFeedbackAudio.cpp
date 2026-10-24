@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <string>
+#include <fstream>
 #include "ECS/Components/UI/ButtonComponent.h"
 
 #include "ECS/Systems/UISystem.h"
@@ -68,15 +69,19 @@ TEST_SUITE("UI Feedback & Audio Tests")
             {
                 case PowerUpType::LaserPaddle:
                 case PowerUpType::FireBall:
+                case PowerUpType::GhostBall:
                     return "Offensive";
                 case PowerUpType::MultiBall:
                 case PowerUpType::ExpandPaddle:
                 case PowerUpType::BigBall:
+                case PowerUpType::StickyPaddle:
                     return "Buff";
                 case PowerUpType::ShrinkPaddle:
                     return "Hazard";
                 case PowerUpType::ExtraLife:
                 case PowerUpType::TempoBall:
+                case PowerUpType::BottomBarrier:
+                case PowerUpType::MagnetPaddle:
                     return "Utility";
                 default:
                     return "Unknown";
@@ -84,12 +89,30 @@ TEST_SUITE("UI Feedback & Audio Tests")
         };
 
         CHECK(std::string(getArchetype(PowerUpType::LaserPaddle)) == "Offensive");
+        CHECK(std::string(getArchetype(PowerUpType::Storm)) == "Offensive");
         CHECK(std::string(getArchetype(PowerUpType::FireBall)) == "Offensive");
+        CHECK(std::string(getArchetype(PowerUpType::GhostBall)) == "Offensive");
         CHECK(std::string(getArchetype(PowerUpType::MultiBall)) == "Buff");
         CHECK(std::string(getArchetype(PowerUpType::ExpandPaddle)) == "Buff");
         CHECK(std::string(getArchetype(PowerUpType::BigBall)) == "Buff");
+        CHECK(std::string(getArchetype(PowerUpType::StickyPaddle)) == "Buff");
         CHECK(std::string(getArchetype(PowerUpType::ShrinkPaddle)) == "Hazard");
         CHECK(std::string(getArchetype(PowerUpType::ExtraLife)) == "Utility");
         CHECK(std::string(getArchetype(PowerUpType::TempoBall)) == "Utility");
+        CHECK(std::string(getArchetype(PowerUpType::BottomBarrier)) == "Utility");
+        CHECK(std::string(getArchetype(PowerUpType::MagnetPaddle)) == "Utility");
+    }
+
+    TEST_CASE("Storm audio SFX assets verification (lightning.wav and conduction.wav)")
+    {
+        auto fileExists = [](const std::string& path) -> bool {
+            std::ifstream f(path, std::ios::binary);
+            if (f.is_open()) return true;
+            std::ifstream fAlt("../" + path, std::ios::binary);
+            return fAlt.is_open();
+        };
+
+        CHECK(fileExists("Resources/audio/sfx/lightning.wav"));
+        CHECK(fileExists("Resources/audio/sfx/conduction.wav"));
     }
 }

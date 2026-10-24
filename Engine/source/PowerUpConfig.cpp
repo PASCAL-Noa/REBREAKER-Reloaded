@@ -25,11 +25,15 @@ int PowerUpManager::GetLevel(PowerUpType type) const
         case PowerUpType::MultiBall:    return m_multiBall.Level;
         case PowerUpType::ExpandPaddle: return m_expand.Level;
         case PowerUpType::ShrinkPaddle: return m_shrink.Level;
-        case PowerUpType::LaserPaddle:  return m_laser.Level;
+        case PowerUpType::Storm:        return m_storm.Level;
         case PowerUpType::TempoBall:    return m_tempo.Level;
         case PowerUpType::ExtraLife:    return m_life.Level;
         case PowerUpType::BigBall:      return m_big.Level;
         case PowerUpType::FireBall:     return m_fireBall.Level;
+        case PowerUpType::StickyPaddle: return m_sticky.Level;
+        case PowerUpType::BottomBarrier: return m_barrier.Level;
+        case PowerUpType::MagnetPaddle: return m_magnet.Level;
+        case PowerUpType::GhostBall:    return m_ghost.Level;
         default:                        return 1;
     }
 }
@@ -41,11 +45,15 @@ int PowerUpManager::GetMaxLevel(PowerUpType type) const
         case PowerUpType::MultiBall:    return m_multiBall.MaxLevel;
         case PowerUpType::ExpandPaddle: return m_expand.MaxLevel;
         case PowerUpType::ShrinkPaddle: return m_shrink.MaxLevel;
-        case PowerUpType::LaserPaddle:  return m_laser.MaxLevel;
+        case PowerUpType::Storm:        return m_storm.MaxLevel;
         case PowerUpType::TempoBall:    return m_tempo.MaxLevel;
         case PowerUpType::ExtraLife:    return m_life.MaxLevel;
         case PowerUpType::BigBall:      return m_big.MaxLevel;
         case PowerUpType::FireBall:     return m_fireBall.MaxLevel;
+        case PowerUpType::StickyPaddle: return m_sticky.MaxLevel;
+        case PowerUpType::BottomBarrier: return m_barrier.MaxLevel;
+        case PowerUpType::MagnetPaddle: return m_magnet.MaxLevel;
+        case PowerUpType::GhostBall:    return m_ghost.MaxLevel;
         default:                        return 5;
     }
 }
@@ -60,11 +68,15 @@ void PowerUpManager::SetLevel(PowerUpType type, int level)
         case PowerUpType::MultiBall:    m_multiBall.Level = clamped; break;
         case PowerUpType::ExpandPaddle: m_expand.Level = clamped; break;
         case PowerUpType::ShrinkPaddle: m_shrink.Level = clamped; break;
-        case PowerUpType::LaserPaddle:  m_laser.Level = clamped; break;
+        case PowerUpType::Storm:        m_storm.Level = clamped; break;
         case PowerUpType::TempoBall:    m_tempo.Level = clamped; break;
         case PowerUpType::ExtraLife:    m_life.Level = clamped; break;
         case PowerUpType::BigBall:      m_big.Level = clamped; break;
         case PowerUpType::FireBall:     m_fireBall.Level = clamped; break;
+        case PowerUpType::StickyPaddle: m_sticky.Level = clamped; break;
+        case PowerUpType::BottomBarrier: m_barrier.Level = clamped; break;
+        case PowerUpType::MagnetPaddle: m_magnet.Level = clamped; break;
+        case PowerUpType::GhostBall:    m_ghost.Level = clamped; break;
         default: break;
     }
     SaveToPrefs();
@@ -77,11 +89,15 @@ int PowerUpManager::GetUpgradeCost(PowerUpType type) const
         case PowerUpType::MultiBall:    return m_multiBall.GetUpgradeCost();
         case PowerUpType::ExpandPaddle: return m_expand.GetUpgradeCost();
         case PowerUpType::ShrinkPaddle: return m_shrink.GetUpgradeCost();
-        case PowerUpType::LaserPaddle:  return m_laser.GetUpgradeCost();
+        case PowerUpType::Storm:        return m_storm.GetUpgradeCost();
         case PowerUpType::TempoBall:    return m_tempo.GetUpgradeCost();
         case PowerUpType::ExtraLife:    return m_life.GetUpgradeCost();
         case PowerUpType::BigBall:      return m_big.GetUpgradeCost();
         case PowerUpType::FireBall:     return m_fireBall.GetUpgradeCost();
+        case PowerUpType::StickyPaddle: return m_sticky.GetUpgradeCost();
+        case PowerUpType::BottomBarrier: return m_barrier.GetUpgradeCost();
+        case PowerUpType::MagnetPaddle: return m_magnet.GetUpgradeCost();
+        case PowerUpType::GhostBall:    return m_ghost.GetUpgradeCost();
         default:                        return 100;
     }
 }
@@ -147,13 +163,9 @@ void PowerUpManager::LoadFromPrefs()
     m_shrink.BaseScale         = PlayerPrefs::GetFloat("PowerUp_Shrink_BaseScale", m_shrink.BaseScale);
     m_shrink.ScaleStepPerLevel = PlayerPrefs::GetFloat("PowerUp_Shrink_ScaleStep", m_shrink.ScaleStepPerLevel);
 
-    // Laser Paddle
-    m_laser.Level                     = PlayerPrefs::GetInt("PowerUp_Laser_Level", m_laser.Level);
-    m_laser.BaseDuration              = PlayerPrefs::GetFloat("PowerUp_Laser_BaseDuration", m_laser.BaseDuration);
-    m_laser.DurationPerLevel          = PlayerPrefs::GetFloat("PowerUp_Laser_DurationPerLvl", m_laser.DurationPerLevel);
-    m_laser.BaseCooldown              = PlayerPrefs::GetFloat("PowerUp_Laser_BaseCooldown", m_laser.BaseCooldown);
-    m_laser.CooldownReductionPerLevel = PlayerPrefs::GetFloat("PowerUp_Laser_CooldownRed", m_laser.CooldownReductionPerLevel);
-    m_laser.ProjectileSpeed           = PlayerPrefs::GetFloat("PowerUp_Laser_ProjSpeed", m_laser.ProjectileSpeed);
+    // Storm (Thunderstorm)
+    m_storm.Level        = PlayerPrefs::GetInt("PowerUp_Storm_Level", PlayerPrefs::GetInt("PowerUp_Laser_Level", m_storm.Level));
+    m_storm.StrikeRadius = PlayerPrefs::GetFloat("PowerUp_Storm_StrikeRadius", m_storm.StrikeRadius);
 
     // Tempo Ball
     m_tempo.Level              = PlayerPrefs::GetInt("PowerUp_Tempo_Level", m_tempo.Level);
@@ -186,6 +198,33 @@ void PowerUpManager::LoadFromPrefs()
     m_fireBall.BaseAoERadius      = PlayerPrefs::GetFloat("PowerUp_Fire_BaseAoE", m_fireBall.BaseAoERadius);
     m_fireBall.AoERadiusPerLevel  = PlayerPrefs::GetFloat("PowerUp_Fire_AoEBonus", m_fireBall.AoERadiusPerLevel);
     m_fireBall.FuseDuration       = PlayerPrefs::GetFloat("PowerUp_Fire_FuseDuration", m_fireBall.FuseDuration);
+
+    // Sticky Paddle
+    m_sticky.Level             = PlayerPrefs::GetInt("PowerUp_Sticky_Level", m_sticky.Level);
+    m_sticky.BaseDuration      = PlayerPrefs::GetFloat("PowerUp_Sticky_BaseDuration", m_sticky.BaseDuration);
+    m_sticky.DurationPerLevel  = PlayerPrefs::GetFloat("PowerUp_Sticky_DurationPerLvl", m_sticky.DurationPerLevel);
+    m_sticky.AutoLaunchDelay   = PlayerPrefs::GetFloat("PowerUp_Sticky_AutoLaunch", m_sticky.AutoLaunchDelay);
+
+    // Bottom Barrier
+    m_barrier.Level            = PlayerPrefs::GetInt("PowerUp_Barrier_Level", m_barrier.Level);
+    m_barrier.BaseDuration     = PlayerPrefs::GetFloat("PowerUp_Barrier_BaseDuration", m_barrier.BaseDuration);
+    m_barrier.DurationPerLevel = PlayerPrefs::GetFloat("PowerUp_Barrier_DurationPerLvl", m_barrier.DurationPerLevel);
+    m_barrier.BaseCharges      = PlayerPrefs::GetInt("PowerUp_Barrier_BaseCharges", m_barrier.BaseCharges);
+    m_barrier.ChargesPerLevel  = PlayerPrefs::GetInt("PowerUp_Barrier_ChargesPerLvl", m_barrier.ChargesPerLevel);
+
+    // Magnet Paddle
+    m_magnet.Level             = PlayerPrefs::GetInt("PowerUp_Magnet_Level", m_magnet.Level);
+    m_magnet.BaseDuration      = PlayerPrefs::GetFloat("PowerUp_Magnet_BaseDuration", m_magnet.BaseDuration);
+    m_magnet.DurationPerLevel  = PlayerPrefs::GetFloat("PowerUp_Magnet_DurationPerLvl", m_magnet.DurationPerLevel);
+    m_magnet.MagnetRadius      = PlayerPrefs::GetFloat("PowerUp_Magnet_Radius", m_magnet.MagnetRadius);
+    m_magnet.BasePullSpeed     = PlayerPrefs::GetFloat("PowerUp_Magnet_BasePull", m_magnet.BasePullSpeed);
+    m_magnet.PullSpeedPerLevel = PlayerPrefs::GetFloat("PowerUp_Magnet_PullBonus", m_magnet.PullSpeedPerLevel);
+
+    // Ghost Ball
+    m_ghost.Level              = PlayerPrefs::GetInt("PowerUp_Ghost_Level", m_ghost.Level);
+    m_ghost.BaseDuration       = PlayerPrefs::GetFloat("PowerUp_Ghost_BaseDuration", m_ghost.BaseDuration);
+    m_ghost.DurationPerLevel   = PlayerPrefs::GetFloat("PowerUp_Ghost_DurationPerLvl", m_ghost.DurationPerLevel);
+    m_ghost.Alpha              = PlayerPrefs::GetFloat("PowerUp_Ghost_Alpha", m_ghost.Alpha);
 }
 
 void PowerUpManager::SaveToPrefs()
@@ -212,13 +251,14 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetFloat("PowerUp_Shrink_BaseScale", m_shrink.BaseScale);
     PlayerPrefs::SetFloat("PowerUp_Shrink_ScaleStep", m_shrink.ScaleStepPerLevel);
 
-    // Laser
-    PlayerPrefs::SetInt("PowerUp_Laser_Level", m_laser.Level);
-    PlayerPrefs::SetFloat("PowerUp_Laser_BaseDuration", m_laser.BaseDuration);
-    PlayerPrefs::SetFloat("PowerUp_Laser_DurationPerLvl", m_laser.DurationPerLevel);
-    PlayerPrefs::SetFloat("PowerUp_Laser_BaseCooldown", m_laser.BaseCooldown);
-    PlayerPrefs::SetFloat("PowerUp_Laser_CooldownRed", m_laser.CooldownReductionPerLevel);
-    PlayerPrefs::SetFloat("PowerUp_Laser_ProjSpeed", m_laser.ProjectileSpeed);
+    // Storm (Thunderstorm)
+    PlayerPrefs::SetInt("PowerUp_Storm_Level", m_storm.Level);
+    PlayerPrefs::SetFloat("PowerUp_Storm_StrikeRadius", m_storm.StrikeRadius);
+    // Backward compatibility sync
+    PlayerPrefs::SetInt("PowerUp_Laser_Level", m_storm.Level);
+    PlayerPrefs::SetFloat("PowerUp_Laser_BaseDuration", static_cast<float>(m_storm.GetEffectiveStrikes()));
+    PlayerPrefs::SetFloat("PowerUp_Laser_BaseCooldown", m_storm.GetEffectiveCooldown());
+    PlayerPrefs::SetFloat("PowerUp_Laser_ProjSpeed", m_storm.ProjectileSpeed);
 
     // Tempo
     PlayerPrefs::SetInt("PowerUp_Tempo_Level", m_tempo.Level);
@@ -252,6 +292,33 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetFloat("PowerUp_Fire_AoEBonus", m_fireBall.AoERadiusPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Fire_FuseDuration", m_fireBall.FuseDuration);
 
+    // Sticky Paddle
+    PlayerPrefs::SetInt("PowerUp_Sticky_Level", m_sticky.Level);
+    PlayerPrefs::SetFloat("PowerUp_Sticky_BaseDuration", m_sticky.BaseDuration);
+    PlayerPrefs::SetFloat("PowerUp_Sticky_DurationPerLvl", m_sticky.DurationPerLevel);
+    PlayerPrefs::SetFloat("PowerUp_Sticky_AutoLaunch", m_sticky.AutoLaunchDelay);
+
+    // Bottom Barrier
+    PlayerPrefs::SetInt("PowerUp_Barrier_Level", m_barrier.Level);
+    PlayerPrefs::SetFloat("PowerUp_Barrier_BaseDuration", m_barrier.BaseDuration);
+    PlayerPrefs::SetFloat("PowerUp_Barrier_DurationPerLvl", m_barrier.DurationPerLevel);
+    PlayerPrefs::SetInt("PowerUp_Barrier_BaseCharges", m_barrier.BaseCharges);
+    PlayerPrefs::SetInt("PowerUp_Barrier_ChargesPerLvl", m_barrier.ChargesPerLevel);
+
+    // Magnet Paddle
+    PlayerPrefs::SetInt("PowerUp_Magnet_Level", m_magnet.Level);
+    PlayerPrefs::SetFloat("PowerUp_Magnet_BaseDuration", m_magnet.BaseDuration);
+    PlayerPrefs::SetFloat("PowerUp_Magnet_DurationPerLvl", m_magnet.DurationPerLevel);
+    PlayerPrefs::SetFloat("PowerUp_Magnet_Radius", m_magnet.MagnetRadius);
+    PlayerPrefs::SetFloat("PowerUp_Magnet_BasePull", m_magnet.BasePullSpeed);
+    PlayerPrefs::SetFloat("PowerUp_Magnet_PullBonus", m_magnet.PullSpeedPerLevel);
+
+    // Ghost Ball
+    PlayerPrefs::SetInt("PowerUp_Ghost_Level", m_ghost.Level);
+    PlayerPrefs::SetFloat("PowerUp_Ghost_BaseDuration", m_ghost.BaseDuration);
+    PlayerPrefs::SetFloat("PowerUp_Ghost_DurationPerLvl", m_ghost.DurationPerLevel);
+    PlayerPrefs::SetFloat("PowerUp_Ghost_Alpha", m_ghost.Alpha);
+
     PlayerPrefs::Save();
 }
 
@@ -264,11 +331,15 @@ void PowerUpManager::ResetToDefaults()
     m_shrink.ScaleStepPerLevel = -0.05f;
     m_shrink.BaseDuration = 8.0f;
     m_shrink.DurationPerLevel = 1.0f;
-    m_laser     = LaserConfig{};
+    m_storm     = StormConfig{};
     m_tempo     = TempoBallConfig{};
     m_life      = ExtraLifeConfig{};
     m_big       = BigBallConfig{};
     m_fireBall  = FireBallConfig{};
+    m_sticky    = StickyPaddleConfig{};
+    m_barrier   = BottomBarrierConfig{};
+    m_magnet    = MagnetConfig{};
+    m_ghost     = GhostBallConfig{};
     m_coins     = 0;
 
     SaveToPrefs();

@@ -18,6 +18,7 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
     m_sfxPaddleHit = context.Resources.LoadResource("Resources/audio/sfx/paddle_hit.wav");
     m_sfxBallDeath = context.Resources.LoadResource("Resources/audio/sfx/ball_despawn.wav");
     m_sfxPowerUp = context.Resources.LoadResource("Resources/audio/sfx/powerup.wav");
+    m_sfxPowerUpStorm = context.Resources.LoadResource("Resources/audio/sfx/lightning.wav");
     m_sfxPowerUpLaser = context.Resources.LoadResource("Resources/audio/sfx/powerup_laser.wav");
     m_sfxPowerUpFireball = context.Resources.LoadResource("Resources/audio/sfx/powerup_fireball.wav");
     m_sfxPowerUpBuff = context.Resources.LoadResource("Resources/audio/sfx/powerup_buff.wav");
@@ -79,8 +80,8 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
 
         switch (e.Type)
         {
-            case PowerUpType::LaserPaddle:
-                sfx = (m_sfxPowerUpLaser != 0) ? m_sfxPowerUpLaser : m_sfxPowerUp;
+            case PowerUpType::Storm:
+                sfx = (m_sfxPowerUpStorm != 0) ? m_sfxPowerUpStorm : ((m_sfxPowerUpLaser != 0) ? m_sfxPowerUpLaser : m_sfxPowerUp);
                 break;
             case PowerUpType::FireBall:
                 sfx = (m_sfxPowerUpFireball != 0) ? m_sfxPowerUpFireball : m_sfxPowerUp;
