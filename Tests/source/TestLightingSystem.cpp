@@ -149,10 +149,19 @@ TEST_SUITE("2D Dynamic Lighting System Tests")
     TEST_CASE("Level 06 'Void Core' layout file verification")
     {
         // Check level06.txt contains 12 columns, Lanterns, Bombs, and Metal bricks
-        std::ifstream file("Resources/levels/level06.txt");
-        if (!file.is_open())
+        const std::string candidates[] = {
+            "Resources/levels/level06.txt",
+            "../Resources/levels/level06.txt",
+            "../../Resources/levels/level06.txt",
+            "bin/Resources/levels/level06.txt",
+            "../bin/Resources/levels/level06.txt",
+            "../../bin/Resources/levels/level06.txt"
+        };
+        std::ifstream file;
+        for (const auto& path : candidates)
         {
-            file.open("../Resources/levels/level06.txt");
+            file.open(path);
+            if (file.is_open()) break;
         }
 
         if (file.is_open())
@@ -252,10 +261,19 @@ TEST_SUITE("2D Dynamic Lighting System Tests")
 
     TEST_CASE("Level 07 'Storm Vault' layout and conductive lighting verification")
     {
-        std::ifstream file("Resources/levels/level07.txt");
-        if (!file.is_open())
+        const std::string candidates[] = {
+            "Resources/levels/level07.txt",
+            "../Resources/levels/level07.txt",
+            "../../Resources/levels/level07.txt",
+            "bin/Resources/levels/level07.txt",
+            "../bin/Resources/levels/level07.txt",
+            "../../bin/Resources/levels/level07.txt"
+        };
+        std::ifstream file;
+        for (const auto& path : candidates)
         {
-            file.open("../Resources/levels/level07.txt");
+            file.open(path);
+            if (file.is_open()) break;
         }
 
         if (file.is_open())

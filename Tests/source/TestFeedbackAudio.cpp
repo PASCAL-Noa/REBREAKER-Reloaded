@@ -106,10 +106,23 @@ TEST_SUITE("UI Feedback & Audio Tests")
     TEST_CASE("Storm audio SFX assets verification (lightning.wav and conduction.wav)")
     {
         auto fileExists = [](const std::string& path) -> bool {
-            std::ifstream f(path, std::ios::binary);
-            if (f.is_open()) return true;
-            std::ifstream fAlt("../" + path, std::ios::binary);
-            return fAlt.is_open();
+            const std::string candidates[] = {
+                path,
+                "../" + path,
+                "../../" + path,
+                "bin/" + path,
+                "../bin/" + path,
+                "../../bin/" + path,
+                "bin/Release/" + path,
+                "../bin/Release/" + path,
+                "../../bin/Release/" + path
+            };
+            for (const auto& candidate : candidates)
+            {
+                std::ifstream f(candidate, std::ios::binary);
+                if (f.is_open()) return true;
+            }
+            return false;
         };
 
         CHECK(fileExists("Resources/audio/sfx/lightning.wav"));
