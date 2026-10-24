@@ -34,6 +34,7 @@ int PowerUpManager::GetLevel(PowerUpType type) const
         case PowerUpType::BottomBarrier: return m_barrier.Level;
         case PowerUpType::MagnetPaddle: return m_magnet.Level;
         case PowerUpType::GhostBall:    return m_ghost.Level;
+        case PowerUpType::ItemRegen:    return m_itemRegen.Level;
         default:                        return 1;
     }
 }
@@ -54,6 +55,7 @@ int PowerUpManager::GetMaxLevel(PowerUpType type) const
         case PowerUpType::BottomBarrier: return m_barrier.MaxLevel;
         case PowerUpType::MagnetPaddle: return m_magnet.MaxLevel;
         case PowerUpType::GhostBall:    return m_ghost.MaxLevel;
+        case PowerUpType::ItemRegen:    return m_itemRegen.MaxLevel;
         default:                        return 5;
     }
 }
@@ -77,6 +79,7 @@ void PowerUpManager::SetLevel(PowerUpType type, int level)
         case PowerUpType::BottomBarrier: m_barrier.Level = clamped; break;
         case PowerUpType::MagnetPaddle: m_magnet.Level = clamped; break;
         case PowerUpType::GhostBall:    m_ghost.Level = clamped; break;
+        case PowerUpType::ItemRegen:    m_itemRegen.Level = clamped; break;
         default: break;
     }
     SaveToPrefs();
@@ -98,6 +101,7 @@ int PowerUpManager::GetUpgradeCost(PowerUpType type) const
         case PowerUpType::BottomBarrier: return m_barrier.GetUpgradeCost();
         case PowerUpType::MagnetPaddle: return m_magnet.GetUpgradeCost();
         case PowerUpType::GhostBall:    return m_ghost.GetUpgradeCost();
+        case PowerUpType::ItemRegen:    return m_itemRegen.GetUpgradeCost();
         default:                        return 100;
     }
 }
@@ -225,6 +229,11 @@ void PowerUpManager::LoadFromPrefs()
     m_ghost.BaseDuration       = PlayerPrefs::GetFloat("PowerUp_Ghost_BaseDuration", m_ghost.BaseDuration);
     m_ghost.DurationPerLevel   = PlayerPrefs::GetFloat("PowerUp_Ghost_DurationPerLvl", m_ghost.DurationPerLevel);
     m_ghost.Alpha              = PlayerPrefs::GetFloat("PowerUp_Ghost_Alpha", m_ghost.Alpha);
+
+    // Item Brick Regen
+    m_itemRegen.Level          = PlayerPrefs::GetInt("PowerUp_ItemRegen_Level", m_itemRegen.Level);
+    m_itemRegen.BaseCooldown   = PlayerPrefs::GetFloat("PowerUp_ItemRegen_BaseCooldown", m_itemRegen.BaseCooldown);
+    m_itemRegen.CooldownReductionPerLevel = PlayerPrefs::GetFloat("PowerUp_ItemRegen_CooldownReduction", m_itemRegen.CooldownReductionPerLevel);
 }
 
 void PowerUpManager::SaveToPrefs()
@@ -319,6 +328,11 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetFloat("PowerUp_Ghost_DurationPerLvl", m_ghost.DurationPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Ghost_Alpha", m_ghost.Alpha);
 
+    // Item Brick Regen
+    PlayerPrefs::SetInt("PowerUp_ItemRegen_Level", m_itemRegen.Level);
+    PlayerPrefs::SetFloat("PowerUp_ItemRegen_BaseCooldown", m_itemRegen.BaseCooldown);
+    PlayerPrefs::SetFloat("PowerUp_ItemRegen_CooldownReduction", m_itemRegen.CooldownReductionPerLevel);
+
     PlayerPrefs::Save();
 }
 
@@ -340,7 +354,146 @@ void PowerUpManager::ResetToDefaults()
     m_barrier   = BottomBarrierConfig{};
     m_magnet    = MagnetConfig{};
     m_ghost     = GhostBallConfig{};
+    m_itemRegen = ItemBrickRegenConfig{};
     m_coins     = 0;
 
     SaveToPrefs();
+}
+
+std::string PowerUpManager::GetName(PowerUpType type) const
+{
+    switch (type)
+    {
+        case PowerUpType::MultiBall:    return "MULTI-BALL";
+        case PowerUpType::ExpandPaddle: return "EXPAND PADDLE";
+        case PowerUpType::ShrinkPaddle: return "SHRINK PADDLE";
+        case PowerUpType::Storm:        return "STORM THUNDER";
+        case PowerUpType::TempoBall:    return "TEMPO BALL";
+        case PowerUpType::ExtraLife:    return "EXTRA LIFE";
+        case PowerUpType::BigBall:      return "BIG CRUSH BALL";
+        case PowerUpType::FireBall:     return "FIRE BALL AOE";
+        case PowerUpType::StickyPaddle: return "STICKY CATCH";
+        case PowerUpType::BottomBarrier:return "BOTTOM FORCEFIELD";
+        case PowerUpType::MagnetPaddle: return "MAGNET PADDLE";
+        case PowerUpType::GhostBall:    return "GHOST PHASE BALL";
+        case PowerUpType::ItemRegen:    return "ITEM BRICK REGEN";
+        default:                        return "UNKNOWN";
+    }
+}
+
+std::string PowerUpManager::GetDescription(PowerUpType type) const
+{
+    switch (type)
+    {
+        case PowerUpType::MultiBall:
+            return "Splits active balls into multiple secondary balls.";
+        case PowerUpType::ExpandPaddle:
+            return "Expands paddle width for enhanced ball control & retention.";
+        case PowerUpType::ShrinkPaddle:
+            return "Compact paddle size hazard (rewards precision & challenge).";
+        case PowerUpType::Storm:
+            return "Strikes thunderbolts damaging bricks & conducting through metal circuits.";
+        case PowerUpType::TempoBall:
+            return "Dynamic ball pacing: fast towards bricks, slow approaching paddle.";
+        case PowerUpType::ExtraLife:
+            return "Instantly grants one reserve heart to the paddle (cap 6).";
+        case PowerUpType::BigBall:
+            return "Massive kinetic sphere piercing and shattering regular bricks on contact.";
+        case PowerUpType::FireBall:
+            return "Incendiary blast dealing explosive area-of-effect damage to adjacent bricks.";
+        case PowerUpType::StickyPaddle:
+            return "Catches ball on contact, allowing strategic repositioning and manual re-launch.";
+        case PowerUpType::BottomBarrier:
+            return "Deploys a reflective laser bottom forcefield saving balls from draining.";
+        case PowerUpType::MagnetPaddle:
+            return "Generates a gravitational pull drawing power-up capsules toward the paddle.";
+        case PowerUpType::GhostBall:
+            return "Phases cleanly through standard bricks without rebounding.";
+        case PowerUpType::ItemRegen:
+            return "Reduces the respawn cooldown of item capsule bricks on the field.";
+        default:
+            return "";
+    }
+}
+
+std::string PowerUpManager::GetCurrentTierInfo(PowerUpType type) const
+{
+    int lvl = GetLevel(type);
+    switch (type)
+    {
+        case PowerUpType::MultiBall:
+            return "+" + std::to_string(m_multiBall.GetBallsToSpawn()) + " extra balls per split (cap 12)";
+        case PowerUpType::ExpandPaddle:
+            return "Scale: " + std::to_string(static_cast<int>(m_expand.GetEffectiveScale() * 100.0f)) + "%, Duration: " + std::to_string(static_cast<int>(m_expand.GetEffectiveDuration())) + "s";
+        case PowerUpType::ShrinkPaddle:
+            return "Scale: " + std::to_string(static_cast<int>(m_shrink.GetEffectiveScale() * 100.0f)) + "%, Duration: " + std::to_string(static_cast<int>(m_shrink.GetEffectiveDuration())) + "s";
+        case PowerUpType::Storm:
+            if (lvl >= 5) return "Tempest Mode: 10s continuous barrage (60 strikes)";
+            return std::to_string(m_storm.GetEffectiveStrikes()) + " strikes, " + std::to_string(m_storm.GetEffectiveDamage()) + " dmg/hit";
+        case PowerUpType::TempoBall:
+            return "Fast: " + std::to_string(static_cast<int>(m_tempo.GetEffectiveFastSpeed())) + " px/s, Duration: " + std::to_string(static_cast<int>(m_tempo.GetEffectiveDuration())) + "s";
+        case PowerUpType::ExtraLife:
+            return "+1 Heart (Capacity: " + std::to_string(m_life.MaxLivesCap) + ")";
+        case PowerUpType::BigBall:
+            return "Scale: " + std::to_string(static_cast<int>(m_big.GetEffectiveScale() * 100.0f)) + "%, Duration: " + std::to_string(static_cast<int>(m_big.GetEffectiveDuration())) + "s";
+        case PowerUpType::FireBall:
+            return "AoE Radius: " + std::to_string(static_cast<int>(m_fireBall.GetEffectiveAoERadius())) + " px, Scale: " + std::to_string(static_cast<int>(m_fireBall.GetEffectiveScale() * 100.0f)) + "%";
+        case PowerUpType::StickyPaddle:
+            return "Duration: " + std::to_string(static_cast<int>(m_sticky.GetEffectiveDuration())) + "s (Auto-launch: " + std::to_string(static_cast<int>(m_sticky.AutoLaunchDelay)) + "s)";
+        case PowerUpType::BottomBarrier:
+            return "Charges: " + std::to_string(m_barrier.GetEffectiveCharges()) + " saves, Duration: " + std::to_string(static_cast<int>(m_barrier.GetEffectiveDuration())) + "s";
+        case PowerUpType::MagnetPaddle:
+            return "Pull Speed: " + std::to_string(static_cast<int>(m_magnet.GetEffectivePullSpeed())) + " px/s, Duration: " + std::to_string(static_cast<int>(m_magnet.GetEffectiveDuration())) + "s";
+        case PowerUpType::GhostBall:
+            return "Duration: " + std::to_string(static_cast<int>(m_ghost.GetEffectiveDuration())) + "s (Piercing)";
+        case PowerUpType::ItemRegen:
+            return "Cooldown: " + std::to_string(static_cast<int>(m_itemRegen.GetEffectiveCooldown())) + "s";
+        default:
+            return "";
+    }
+}
+
+std::string PowerUpManager::GetNextTierInfo(PowerUpType type) const
+{
+    int lvl = GetLevel(type);
+    int maxLvl = GetMaxLevel(type);
+    if (lvl >= maxLvl)
+    {
+        return "MAX LEVEL REACHED";
+    }
+
+    switch (type)
+    {
+        case PowerUpType::MultiBall:
+            return "Next: +" + std::to_string(m_multiBall.GetBallsToSpawn() + 1) + " balls per split";
+        case PowerUpType::ExpandPaddle:
+            return "Next: +" + std::to_string(static_cast<int>(m_expand.DurationPerLevel)) + "s duration, +" + std::to_string(static_cast<int>(m_expand.ScaleStepPerLevel * 100.0f)) + "% width";
+        case PowerUpType::ShrinkPaddle:
+            return "Next: +" + std::to_string(static_cast<int>(m_shrink.DurationPerLevel)) + "s duration";
+        case PowerUpType::Storm:
+            if (lvl == 1) return "Next: +1 strike (2 total)";
+            if (lvl == 2) return "Next: +1 strike (3 total)";
+            if (lvl == 3) return "Next: upgraded damage (3 hits/strike)";
+            return "Next: Tempest Mode (10s continuous lightning barrage)";
+        case PowerUpType::TempoBall:
+            return "Next: +" + std::to_string(static_cast<int>(m_tempo.SpeedBonusPerLevel)) + " px/s fast speed, +" + std::to_string(static_cast<int>(m_tempo.DurationPerLevel)) + "s duration";
+        case PowerUpType::ExtraLife:
+            return "Next: Increases recovery reliability";
+        case PowerUpType::BigBall:
+            return "Next: +" + std::to_string(static_cast<int>(m_big.DurationPerLevel)) + "s duration, +" + std::to_string(static_cast<int>(m_big.ScaleBonusPerLevel * 100.0f)) + "% size";
+        case PowerUpType::FireBall:
+            return "Next: +" + std::to_string(static_cast<int>(m_fireBall.AoERadiusPerLevel)) + " px radius, +" + std::to_string(static_cast<int>(m_fireBall.ScaleBonusPerLevel * 100.0f)) + "% size";
+        case PowerUpType::StickyPaddle:
+            return "Next: +" + std::to_string(static_cast<int>(m_sticky.DurationPerLevel)) + "s duration";
+        case PowerUpType::BottomBarrier:
+            return "Next: +1 charge save, +" + std::to_string(static_cast<int>(m_barrier.DurationPerLevel)) + "s duration";
+        case PowerUpType::MagnetPaddle:
+            return "Next: +" + std::to_string(static_cast<int>(m_magnet.PullSpeedPerLevel)) + " px/s pull speed, +" + std::to_string(static_cast<int>(m_magnet.DurationPerLevel)) + "s duration";
+        case PowerUpType::GhostBall:
+            return "Next: +" + std::to_string(static_cast<int>(m_ghost.DurationPerLevel)) + "s duration";
+        case PowerUpType::ItemRegen:
+            return "Next: -" + std::to_string(static_cast<int>(m_itemRegen.CooldownReductionPerLevel)) + "s cooldown reduction";
+        default:
+            return "";
+    }
 }

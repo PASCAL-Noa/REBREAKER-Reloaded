@@ -76,6 +76,7 @@ void MenuScene::OnInit(GameContext& context)
     CreateCheatsTab(context);
     CreateLeaderboardModal(context);
     CreateDebugModal(context);
+    CreateWorkshopModal(context);
 
     PreloadGameAssets(context);
 }
@@ -219,6 +220,12 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
             context.Scenes.LoadScene<LevelSelectScene>();
             return;
         }
+        if (context.Input.IsKeyPress(KeyCode::W))
+        {
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+            OpenModal(m_workshopCanvas);
+            return;
+        }
         if (context.Input.IsKeyPress(KeyCode::C) || context.Input.IsKeyPress(KeyCode::H))
         {
             OpenModal(m_leaderboardCanvas);
@@ -331,11 +338,15 @@ void MenuScene::OpenModal(Entity modalCanvas)
     {
         OpenSettingsTab(m_audioCanvas);
     }
+    if (modalCanvas == m_workshopCanvas)
+    {
+        OpenWorkshopTab(m_workshopUpgradesCanvas);
+    }
 }
 
 void MenuScene::CloseModals()
 {
-    for (Entity canvas : {m_settingsCanvas, m_leaderboardCanvas, m_debugCanvas})
+    for (Entity canvas : {m_settingsCanvas, m_leaderboardCanvas, m_debugCanvas, m_workshopCanvas})
     {
         if (canvas != NULL_ENTITY && m_registry.IsAlive(canvas) && m_registry.HasComponent<CanvasComponent>(canvas))
         {
@@ -347,6 +358,14 @@ void MenuScene::CloseModals()
         m_registry.GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
         m_activeTabCanvas = NULL_ENTITY;
     }
+    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopProfileCanvas})
+    {
+        if (subCanvas != NULL_ENTITY && m_registry.IsAlive(subCanvas) && m_registry.HasComponent<CanvasComponent>(subCanvas))
+        {
+            m_registry.GetComponent<CanvasComponent>(subCanvas).IsEnabled = false;
+        }
+    }
+    m_workshopActiveTabCanvas = NULL_ENTITY;
     m_activeModal = NULL_ENTITY;
     if (m_registry.IsAlive(m_mainCanvas) && m_registry.HasComponent<CanvasComponent>(m_mainCanvas))
     {
@@ -496,9 +515,9 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
 
     // Primary Menu Buttons
     constexpr float btnWidth = 360.0f;
-    constexpr float btnHeight = 54.0f;
-    constexpr float startY = -85.0f;
-    constexpr float stepY = 64.0f;
+    constexpr float btnHeight = 46.0f;
+    constexpr float startY = -115.0f;
+    constexpr float stepY = 54.0f;
 
     // 1. Play
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
@@ -512,7 +531,7 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .HoverColor = Color{45, 120, 65, 255},
         .PressedColor = Color{20, 55, 30, 255},
         .FontId = m_fontId,
-        .FontSize = 34.0f
+        .FontSize = 32.0f
     });
 
     // 2. Level Select
@@ -527,30 +546,29 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .HoverColor = Color{50, 80, 130, 255},
         .PressedColor = Color{25, 40, 65, 255},
         .FontId = m_fontId,
-        .FontSize = 34.0f
+        .FontSize = 32.0f
     });
 
-    // 3. Leaderboard
+    // 3. Workshop & Upgrades
+    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
+        .Text = "WORKSHOP [W]",
+        .OnClick = [this]() {
+            OpenModal(m_workshopCanvas);
+        },
+        .Position = {0.0f, startY + stepY * 2.0f},
+        .Size = {btnWidth, btnHeight},
+        .DefaultColor = Color{75, 60, 20, 255},
+        .HoverColor = Color{110, 90, 30, 255},
+        .PressedColor = Color{50, 40, 15, 255},
+        .FontId = m_fontId,
+        .FontSize = 32.0f
+    });
+
+    // 4. Leaderboard
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "LEADERBOARD",
         .OnClick = [this]() {
             OpenModal(m_leaderboardCanvas);
-        },
-        .Position = {0.0f, startY + stepY * 2.0f},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{40, 45, 65, 255},
-        .HoverColor = Color{60, 65, 95, 255},
-        .PressedColor = Color{28, 32, 48, 255},
-        .FontId = m_fontId,
-        .FontSize = 34.0f
-    });
-
-    // 4. Settings
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "SETTINGS",
-        .OnClick = [this]() {
-            OpenModal(m_settingsCanvas);
-            OpenSettingsTab(m_audioCanvas);
         },
         .Position = {0.0f, startY + stepY * 3.0f},
         .Size = {btnWidth, btnHeight},
@@ -558,38 +576,53 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .HoverColor = Color{60, 65, 95, 255},
         .PressedColor = Color{28, 32, 48, 255},
         .FontId = m_fontId,
-        .FontSize = 34.0f
+        .FontSize = 32.0f
     });
 
-    // 5. Debug / Samples
+    // 5. Settings
+    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
+        .Text = "SETTINGS",
+        .OnClick = [this]() {
+            OpenModal(m_settingsCanvas);
+            OpenSettingsTab(m_audioCanvas);
+        },
+        .Position = {0.0f, startY + stepY * 4.0f},
+        .Size = {btnWidth, btnHeight},
+        .DefaultColor = Color{40, 45, 65, 255},
+        .HoverColor = Color{60, 65, 95, 255},
+        .PressedColor = Color{28, 32, 48, 255},
+        .FontId = m_fontId,
+        .FontSize = 32.0f
+    });
+
+    // 6. Debug / Samples
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "SAMPLES & TESTS [TAB]",
         .OnClick = [this]() {
             OpenModal(m_debugCanvas);
         },
-        .Position = {0.0f, startY + stepY * 4.0f},
+        .Position = {0.0f, startY + stepY * 5.0f},
         .Size = {btnWidth, btnHeight},
         .DefaultColor = Color{50, 45, 75, 255},
         .HoverColor = Color{75, 65, 110, 255},
         .PressedColor = Color{35, 30, 52, 255},
         .FontId = m_fontId,
-        .FontSize = 32.0f
+        .FontSize = 30.0f
     });
 
-
-    // 6. Quit
+    // 7. Quit
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "QUIT",
         .OnClick = [&context]() {
             context.Render.GetWindow().Close();
         },
-        .Position = {0.0f, startY + stepY * 5.0f},
+        .Position = {0.0f, startY + stepY * 6.0f},
         .Size = {btnWidth, btnHeight},
         .DefaultColor = Color{90, 30, 35, 255},
         .HoverColor = Color{130, 45, 50, 255},
         .PressedColor = Color{60, 20, 25, 255},
         .FontId = m_fontId,
-        .FontSize = 34.0f
+        .FontSize = 32.0f
     });
 }
 
@@ -1486,4 +1519,456 @@ void MenuScene::CreateDebugModal(const GameContext& context)
         .FontId = m_fontId,
         .FontSize = 32.0f
     });
+}
+
+void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
+{
+    m_workshopCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_workshopCanvas, CanvasComponent{.IsEnabled = false});
+
+    // Header Title
+    UIFactory::CreateText(m_registry, m_workshopCanvas, TextDescriptor{
+        .Text = "WORKSHOP & ARMORED LAB",
+        .Position = {0.0f, -270.0f},
+        .FontId = m_fontId,
+        .FontSize = 44.0f,
+        .Tint = Colors::Gold
+    });
+
+    // Accent line
+    UIFactory::CreatePanel(m_registry, m_workshopCanvas, PanelDescriptor{
+        .Position = {0.0f, -235.0f},
+        .Size = {840.0f, 2.0f},
+        .Tint = Color{255, 200, 50, 180}
+    });
+
+    // Bank & Pilot status line
+    m_workshopBankText = UIFactory::CreateText(m_registry, m_workshopCanvas, TextDescriptor{
+        .Text = "BANK: 0 CREDITS  |  PILOT: PLAYER",
+        .Position = {0.0f, -205.0f},
+        .FontId = m_fontId,
+        .FontSize = 26.0f,
+        .Tint = Color{100, 240, 255, 255}
+    });
+
+    // Sub-tab Navigation Buttons
+    UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
+        .Text = "UPGRADES",
+        .OnClick = [this]() {
+            OpenWorkshopTab(m_workshopUpgradesCanvas);
+        },
+        .Position = {-260.0f, -160.0f},
+        .Size = {230.0f, 42.0f},
+        .DefaultColor = Color{45, 55, 80, 255},
+        .HoverColor = Color{65, 80, 115, 255},
+        .FontId = m_fontId,
+        .FontSize = 26.0f
+    });
+
+    UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
+        .Text = "ULTIMATES",
+        .OnClick = [this]() {
+            OpenWorkshopTab(m_workshopUltimatesCanvas);
+        },
+        .Position = {0.0f, -160.0f},
+        .Size = {230.0f, 42.0f},
+        .DefaultColor = Color{45, 55, 80, 255},
+        .HoverColor = Color{65, 80, 115, 255},
+        .FontId = m_fontId,
+        .FontSize = 26.0f
+    });
+
+    UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
+        .Text = "PROFILE & STATS",
+        .OnClick = [this]() {
+            OpenWorkshopTab(m_workshopProfileCanvas);
+        },
+        .Position = {260.0f, -160.0f},
+        .Size = {230.0f, 42.0f},
+        .DefaultColor = Color{45, 55, 80, 255},
+        .HoverColor = Color{65, 80, 115, 255},
+        .FontId = m_fontId,
+        .FontSize = 26.0f
+    });
+
+    // Sub-canvases
+    m_workshopUpgradesCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_workshopUpgradesCanvas, CanvasComponent{.IsEnabled = false});
+
+    m_workshopUltimatesCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_workshopUltimatesCanvas, CanvasComponent{.IsEnabled = false});
+
+    m_workshopProfileCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_workshopProfileCanvas, CanvasComponent{.IsEnabled = false});
+
+    // --- Tab 1: Upgrades & Power-Up Lab ---
+    // Paging Controls
+    UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
+        .Text = "< PREV",
+        .OnClick = [this]() {
+            m_workshopCurrentPage = (m_workshopCurrentPage + 2) % 3;
+            RefreshWorkshopUI();
+        },
+        .Position = {-260.0f, -112.0f},
+        .Size = {130.0f, 34.0f},
+        .DefaultColor = Color{35, 40, 55, 255},
+        .HoverColor = Color{55, 65, 90, 255},
+        .FontId = m_fontId,
+        .FontSize = 20.0f
+    });
+
+    m_workshopPageText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+        .Text = "PAGE 1 / 3: TACTICAL POWER-UPS",
+        .Position = {0.0f, -112.0f},
+        .FontId = m_fontId,
+        .FontSize = 22.0f,
+        .Tint = Colors::Gold
+    });
+
+    UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
+        .Text = "NEXT >",
+        .OnClick = [this]() {
+            m_workshopCurrentPage = (m_workshopCurrentPage + 1) % 3;
+            RefreshWorkshopUI();
+        },
+        .Position = {260.0f, -112.0f},
+        .Size = {130.0f, 34.0f},
+        .DefaultColor = Color{35, 40, 55, 255},
+        .HoverColor = Color{55, 65, 90, 255},
+        .FontId = m_fontId,
+        .FontSize = 20.0f
+    });
+
+    // 4 Upgrade Cards
+    m_upgradeCards.clear();
+    for (int i = 0; i < 4; ++i)
+    {
+        UpgradeCardWidgets card;
+        float x = (i % 2 == 0) ? -230.0f : 230.0f;
+        float y = (i < 2) ? -20.0f : 125.0f;
+
+        card.RootPanel = UIFactory::CreatePanel(m_registry, m_workshopUpgradesCanvas, PanelDescriptor{
+            .Position = {x, y},
+            .Size = {440.0f, 125.0f},
+            .Tint = Color{25, 28, 42, 240}
+        });
+
+        card.TitleText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+            .Text = "CARD TITLE",
+            .Position = {x, y - 40.0f},
+            .FontId = m_fontId,
+            .FontSize = 24.0f,
+            .Tint = Colors::Gold
+        });
+
+        card.DescText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+            .Text = "Card Description",
+            .Position = {x, y - 18.0f},
+            .FontId = m_fontId,
+            .FontSize = 17.0f,
+            .Tint = Color{200, 215, 235, 255}
+        });
+
+        card.CurrentTierText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+            .Text = "Current Tier",
+            .Position = {x, y + 4.0f},
+            .FontId = m_fontId,
+            .FontSize = 17.0f,
+            .Tint = Color{120, 220, 255, 255}
+        });
+
+        card.NextTierText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+            .Text = "Next Tier",
+            .Position = {x, y + 24.0f},
+            .FontId = m_fontId,
+            .FontSize = 16.0f,
+            .Tint = Color{255, 200, 100, 255}
+        });
+
+        int cardIndex = i;
+        card.UpgradeBtn = UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
+            .Text = "UPGRADE",
+            .OnClick = [this, cardIndex]() {
+                if (cardIndex < static_cast<int>(m_upgradeCards.size()))
+                {
+                    PowerUpType t = m_upgradeCards[cardIndex].Type;
+                    if (PowerUpManager::Get().CanUpgrade(t))
+                    {
+                        PowerUpManager::Get().Upgrade(t);
+                        if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+                        RefreshWorkshopUI();
+                    }
+                }
+            },
+            .Position = {x, y + 48.0f},
+            .Size = {240.0f, 30.0f},
+            .DefaultColor = Color{35, 75, 45, 255},
+            .HoverColor = Color{50, 110, 65, 255},
+            .PressedColor = Color{20, 45, 28, 255},
+            .FontId = m_fontId,
+            .FontSize = 19.0f
+        });
+
+        m_upgradeCards.push_back(card);
+    }
+
+    // --- Tab 2: Ultimates ---
+    UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
+        .Text = "SELECT ACTIVE ULTIMATE ABILITY (CHARGE IN-STAGE AND DISCHARGE)",
+        .Position = {0.0f, -112.0f},
+        .FontId = m_fontId,
+        .FontSize = 22.0f,
+        .Tint = Colors::Gold
+    });
+
+    const UltimateAbilityType ultTypes[3] = {
+        UltimateAbilityType::NovaShockwave,
+        UltimateAbilityType::ThunderTempest,
+        UltimateAbilityType::TimeStasis
+    };
+
+    m_ultimateCards.clear();
+    for (int i = 0; i < 3; ++i)
+    {
+        UltimateCardWidgets card;
+        card.Type = ultTypes[i];
+        float x = -280.0f + static_cast<float>(i) * 280.0f;
+        float y = 40.0f;
+
+        card.RootPanel = UIFactory::CreatePanel(m_registry, m_workshopUltimatesCanvas, PanelDescriptor{
+            .Position = {x, y},
+            .Size = {260.0f, 260.0f},
+            .Tint = Color{25, 28, 42, 240}
+        });
+
+        card.TitleText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
+            .Text = ProfileManager::GetUltimateName(card.Type),
+            .Position = {x, y - 90.0f},
+            .FontId = m_fontId,
+            .FontSize = 24.0f,
+            .Tint = Colors::Gold
+        });
+
+        card.DescText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
+            .Text = ProfileManager::GetUltimateDescription(card.Type),
+            .Position = {x, y - 15.0f},
+            .FontId = m_fontId,
+            .FontSize = 17.0f,
+            .Tint = Color{200, 220, 245, 255}
+        });
+
+        UltimateAbilityType ultType = card.Type;
+        card.EquipBtn = UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
+            .Text = "EQUIP",
+            .OnClick = [this, ultType]() {
+                ProfileManager::Get().SetEquippedUltimate(ultType);
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 85.0f);
+                RefreshWorkshopUI();
+            },
+            .Position = {x, y + 95.0f},
+            .Size = {180.0f, 40.0f},
+            .DefaultColor = Color{40, 60, 95, 255},
+            .HoverColor = Color{60, 90, 140, 255},
+            .PressedColor = Color{25, 40, 65, 255},
+            .FontId = m_fontId,
+            .FontSize = 24.0f
+        });
+
+        m_ultimateCards.push_back(card);
+    }
+
+    // --- Tab 3: Profile & Stats ---
+    UIFactory::CreatePanel(m_registry, m_workshopProfileCanvas, PanelDescriptor{
+        .Position = {0.0f, 40.0f},
+        .Size = {780.0f, 270.0f},
+        .Tint = Color{22, 25, 38, 240}
+    });
+
+    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
+        .Text = "PILOT IDENTIFICATION & CALLSIGN",
+        .Position = {0.0f, -65.0f},
+        .FontId = m_fontId,
+        .FontSize = 26.0f,
+        .Tint = Colors::Gold
+    });
+
+    UIFactory::CreateTextInput(m_registry, m_workshopProfileCanvas, TextInputDescriptor{
+        .Placeholder = "ENTER PILOT PSEUDO...",
+        .OnSubmit = [this](const std::string& text) {
+            ProfileManager::Get().SetUsername(text);
+            if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+            RefreshWorkshopUI();
+        },
+        .Position = {0.0f, -20.0f},
+        .Size = {360.0f, 44.0f},
+        .DefaultColor = Color{35, 40, 55, 255},
+        .FocusedColor = Color{55, 65, 90, 255},
+        .FontId = m_fontId,
+        .FontSize = 24.0f,
+        .MaxLength = 16
+    });
+
+    m_workshopProfileStatsText = UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
+        .Text = "CAREER STATS",
+        .Position = {0.0f, 45.0f},
+        .FontId = m_fontId,
+        .FontSize = 22.0f,
+        .Tint = Color{180, 220, 255, 255}
+    });
+
+    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
+        .Text = "EQUIPPED: NEON CYBER PADDLE | PLASMA RIBBON TRAIL",
+        .Position = {0.0f, 105.0f},
+        .FontId = m_fontId,
+        .FontSize = 20.0f,
+        .Tint = Color{255, 200, 80, 255}
+    });
+
+    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
+        .Text = "(Advanced hulls, energy shields & audio packs unlockable in upcoming ops)",
+        .Position = {0.0f, 135.0f},
+        .FontId = m_fontId,
+        .FontSize = 17.0f,
+        .Tint = Color{140, 150, 175, 255}
+    });
+
+    // Back Button (Bottom)
+    UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
+        .Text = "BACK",
+        .OnClick = [this]() {
+            CloseModals();
+        },
+        .Position = {0.0f, 305.0f},
+        .Size = {240.0f, 46.0f},
+        .DefaultColor = Color{100, 35, 40, 255},
+        .HoverColor = Color{140, 50, 60, 255},
+        .PressedColor = Color{70, 25, 30, 255},
+        .FontId = m_fontId,
+        .FontSize = 28.0f
+    });
+}
+
+void MenuScene::OpenWorkshopTab(Entity targetCanvas)
+{
+    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopProfileCanvas})
+    {
+        if (subCanvas != NULL_ENTITY && m_registry.IsAlive(subCanvas) && m_registry.HasComponent<CanvasComponent>(subCanvas))
+        {
+            m_registry.GetComponent<CanvasComponent>(subCanvas).IsEnabled = false;
+        }
+    }
+
+    if (targetCanvas != NULL_ENTITY && m_registry.IsAlive(targetCanvas) && m_registry.HasComponent<CanvasComponent>(targetCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(targetCanvas).IsEnabled = true;
+        m_workshopActiveTabCanvas = targetCanvas;
+    }
+
+    RefreshWorkshopUI();
+}
+
+void MenuScene::RefreshWorkshopUI()
+{
+    // Update Bank & Pilot Header
+    if (m_workshopBankText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopBankText))
+    {
+        auto& textComp = m_registry.GetComponent<TextComponent>(m_workshopBankText);
+        textComp.Text = "BANK: " + std::to_string(PowerUpManager::Get().GetCoins()) +
+                        " CREDITS  |  PILOT: " + ProfileManager::Get().GetUsername();
+    }
+
+    // Upgrades Tab Refresh
+    const PowerUpType pagePowerUps[3][4] = {
+        {PowerUpType::StickyPaddle, PowerUpType::BottomBarrier, PowerUpType::MagnetPaddle, PowerUpType::GhostBall},
+        {PowerUpType::Storm, PowerUpType::FireBall, PowerUpType::BigBall, PowerUpType::MultiBall},
+        {PowerUpType::TempoBall, PowerUpType::ExpandPaddle, PowerUpType::ExtraLife, PowerUpType::ItemRegen}
+    };
+
+    const std::string pageTitles[3] = {
+        "PAGE 1 / 3: TACTICAL POWER-UPS",
+        "PAGE 2 / 3: OFFENSIVE POWER-UPS",
+        "PAGE 3 / 3: UTILITY & PERKS"
+    };
+
+    if (m_workshopPageText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopPageText))
+    {
+        m_registry.GetComponent<TextComponent>(m_workshopPageText).Text = pageTitles[m_workshopCurrentPage];
+    }
+
+    for (size_t i = 0; i < m_upgradeCards.size() && i < 4; ++i)
+    {
+        PowerUpType type = pagePowerUps[m_workshopCurrentPage][i];
+        m_upgradeCards[i].Type = type;
+
+        int curLvl = PowerUpManager::Get().GetLevel(type);
+        int maxLvl = PowerUpManager::Get().GetMaxLevel(type);
+
+        if (m_registry.HasComponent<TextComponent>(m_upgradeCards[i].TitleText))
+        {
+            m_registry.GetComponent<TextComponent>(m_upgradeCards[i].TitleText).Text =
+                PowerUpManager::Get().GetName(type) + "  [LV. " + std::to_string(curLvl) + "/" + std::to_string(maxLvl) + "]";
+        }
+
+        if (m_registry.HasComponent<TextComponent>(m_upgradeCards[i].DescText))
+        {
+            m_registry.GetComponent<TextComponent>(m_upgradeCards[i].DescText).Text =
+                PowerUpManager::Get().GetDescription(type);
+        }
+
+        if (m_registry.HasComponent<TextComponent>(m_upgradeCards[i].CurrentTierText))
+        {
+            m_registry.GetComponent<TextComponent>(m_upgradeCards[i].CurrentTierText).Text =
+                PowerUpManager::Get().GetCurrentTierInfo(type);
+        }
+
+        if (m_registry.HasComponent<TextComponent>(m_upgradeCards[i].NextTierText))
+        {
+            m_registry.GetComponent<TextComponent>(m_upgradeCards[i].NextTierText).Text =
+                PowerUpManager::Get().GetNextTierInfo(type);
+        }
+
+        if (m_registry.HasComponent<TextComponent>(m_upgradeCards[i].UpgradeBtn))
+        {
+            auto& btnText = m_registry.GetComponent<TextComponent>(m_upgradeCards[i].UpgradeBtn);
+            if (curLvl >= maxLvl)
+            {
+                btnText.Text = "MAX LEVEL";
+            }
+            else
+            {
+                int cost = PowerUpManager::Get().GetUpgradeCost(type);
+                btnText.Text = "UPGRADE (" + std::to_string(cost) + " CR)";
+            }
+        }
+    }
+
+    // Ultimates Tab Refresh
+    UltimateAbilityType equipped = ProfileManager::Get().GetEquippedUltimate();
+    for (auto& card : m_ultimateCards)
+    {
+        if (m_registry.HasComponent<TextComponent>(card.EquipBtn))
+        {
+            auto& textComp = m_registry.GetComponent<TextComponent>(card.EquipBtn);
+            if (card.Type == equipped)
+            {
+                textComp.Text = "[EQUIPPED]";
+                textComp.Tint = Colors::Gold;
+            }
+            else
+            {
+                textComp.Text = "EQUIP";
+                textComp.Tint = Colors::White;
+            }
+        }
+    }
+
+    // Profile & Stats Refresh
+    if (m_workshopProfileStatsText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopProfileStatsText))
+    {
+        auto& textComp = m_registry.GetComponent<TextComponent>(m_workshopProfileStatsText);
+        textComp.Text = "LIFETIME SCORE: " + std::to_string(ProfileManager::Get().GetLifetimeScore()) + " PTS  |  " +
+                        "LIFETIME CREDITS: " + std::to_string(ProfileManager::Get().GetLifetimeCredits()) + " CR\n" +
+                        "CURRENT BANK: " + std::to_string(PowerUpManager::Get().GetCoins()) + " CR  |  " +
+                        "HIGHEST STAGE: STAGE " + std::to_string(m_levelManager.GetHighestClearedLevel());
+    }
 }
