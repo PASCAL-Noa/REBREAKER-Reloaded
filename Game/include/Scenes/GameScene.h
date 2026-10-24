@@ -115,7 +115,7 @@ protected:
     void    HandleInput(float dt, const GameContext& context);
 
     void    HandleDeath();
-    void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY, bool isLaser = false, bool isExplosion = false);
+    void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY, bool isLaser = false, bool isExplosion = false, int damage = 1);
     void    DetonateBombBrick(Entity bombEntity);
     void    HandlePaddleCollision(Entity ballEntity);
     void    HandleBallBottomCollision(Entity ballEntity);
@@ -126,6 +126,7 @@ protected:
 
     Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
     void    SpawnPowerUp(const Vector2f& position);
+    void    TriggerStormStrike();
     void    FireLasers();
     static Color GetPowerUpColor(PowerUpType type);
 
@@ -149,6 +150,8 @@ protected:
     uint32_t    m_explosionSfxId = 0;
     uint32_t    m_fireballBurnSfxId = 0;
     uint32_t    m_fireballExplosionSfxId = 0;
+    uint32_t    m_lightningSfxId = 0;
+    uint32_t    m_conductionSfxId = 0;
     uint32_t    m_fireTexId = 0;
     uint32_t    m_heartTexId = 0;
     uint32_t    m_gameOverSfxId = 0;
@@ -191,10 +194,49 @@ protected:
     BallSystem*   mp_ballSystem = nullptr;
 
     float   m_paddleSizeDuration = 0.0f;
+    float   m_stormDuration = 0.0f;
+    int     m_stormCharges = 0;
     float   m_laserDuration = 0.0f;
     float   m_tempoBallDuration = 0.0f;
     int     m_tempoBallStacks = 0;
     float   m_bigBallDuration = 0.0f;
+    float   m_stickyPaddleDuration = 0.0f;
+    float   m_bottomBarrierDuration = 0.0f;
+    int     m_bottomBarrierCharges = 0;
+    bool    m_bottomBarrierActive = false;
+    float   m_magnetDuration = 0.0f;
+    float   m_ghostBallDuration = 0.0f;
+
+    struct LightningSegment
+    {
+        Vector2f Start;
+        Vector2f End;
+    };
+
+    struct ActiveLightningBolt
+    {
+        std::vector<LightningSegment> Segments;
+        std::vector<Vector2f> Nodes;
+        float Lifetime = 0.22f;
+        float MaxLifetime = 0.22f;
+    };
+    std::vector<ActiveLightningBolt> m_activeLightningBolts;
+
+    struct ElectrifiedBrickEffect
+    {
+        Vector2f Position;
+        float Lifetime = 0.35f;
+        float MaxLifetime = 0.35f;
+    };
+    std::vector<ElectrifiedBrickEffect> m_electrifiedBricks;
+
+    struct StuckBall
+    {
+        Entity Ball = NULL_ENTITY;
+        float  RelativeOffsetX = 0.0f;
+        float  HoldTimer = 0.0f;
+    };
+    std::vector<StuckBall> m_stuckBalls;
 
     ParticleSystem* m_particleSystem = nullptr;
 

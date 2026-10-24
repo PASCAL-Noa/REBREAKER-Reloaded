@@ -4,6 +4,7 @@
 #include "ECS/Components/PaddleComponent.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/BoxCollider.h"
+#include "ECS/Components/CircleCollider.h"
 #include "ECS/Components/RigidBody.h"
 #include "PowerUps/PowerUpConfig.h"
 #include <algorithm>
@@ -49,27 +50,38 @@ void PaddleSystem::OnUpdate(float dt)
         const float limitX = m_playfieldLimitX - halfPaddleWidth;
         paddleTrans.Position.X = std::clamp(paddleTrans.Position.X, -limitX, limitX);
 
-        // 3. Laser cooldown and firing
-        if (paddleComp.HasLaser)
+        // 3. Storm cooldown and automatic firing
+        if (paddleComp.HasStorm || paddleComp.HasLaser)
         {
-            paddleComp.LaserCooldown -= dt;
-            if (m_inputEnabled && (m_context.Input.IsActionTriggered(InputAction::FireLaser) || paddleComp.LaserCooldown <= 0.0f))
+            float& cd = paddleComp.HasStorm ? paddleComp.StormCooldown : paddleComp.LaserCooldown;
+            cd -= dt;
+            if (m_inputEnabled && !m_isBallAttached && cd <= 0.0f)
             {
-                if (m_onFireLaser)
+                if (m_onTriggerStorm)
+                {
+                    m_onTriggerStorm(paddleEntity);
+                }
+                else if (m_onFireLaser)
                 {
                     m_onFireLaser(paddleEntity);
                 }
-                paddleComp.LaserCooldown = PowerUpManager::Get().Laser().GetEffectiveCooldown();
+                cd = PowerUpManager::Get().Storm().GetEffectiveCooldown();
             }
         }
 
-        // 4. Sticky ball mechanics
+        // 4. Attached ball mechanics
         if (m_isBallAttached && m_attachedBall != NULL_ENTITY)
         {
             if (m_registry.IsAlive(m_attachedBall) && m_registry.HasComponent<Transform2D>(m_attachedBall))
             {
                 auto& ballTransform = m_registry.GetComponent<Transform2D>(m_attachedBall);
-                ballTransform.Position = Vector2f{paddleTrans.Position.X, paddleTrans.Position.Y - 40.0f};
+                float ballRadius = 20.0f;
+                if (m_registry.HasComponent<CircleCollider>(m_attachedBall))
+                {
+                    ballRadius = m_registry.GetComponent<CircleCollider>(m_attachedBall).GetEffectiveRadius(ballTransform.Scale);
+                }
+                const float paddleHalfH = paddleCollider.GetEffectiveSize(paddleTrans.Scale).Y * 0.5f;
+                ballTransform.Position = Vector2f{paddleTrans.Position.X, paddleTrans.Position.Y - paddleHalfH - ballRadius - 2.0f};
 
                 if (m_inputEnabled && m_context.Input.IsActionTriggered(InputAction::LaunchBall))
                 {

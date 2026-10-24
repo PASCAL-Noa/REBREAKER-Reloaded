@@ -94,7 +94,7 @@ namespace KeyCodeUtils
             case InputAction::MoveLeft: return "Move Left";
             case InputAction::MoveRight: return "Move Right";
             case InputAction::LaunchBall: return "Launch Ball";
-            case InputAction::FireLaser: return "Fire Laser";
+            case InputAction::TriggerStorm: return "Trigger Storm";
             case InputAction::Pause: return "Pause";
             default: return "Unknown";
         }

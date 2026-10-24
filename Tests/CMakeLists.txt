@@ -13,3 +13,4 @@ target_link_libraries(RebreakerTests PRIVATE
 
 
 add_test(NAME UnitTests COMMAND RebreakerTests)
+set_tests_properties(UnitTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")

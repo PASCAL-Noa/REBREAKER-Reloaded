@@ -132,6 +132,16 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
             // Triggers (bonus capsules, lasers) do not physically collide with balls
             if (b2.IsTrigger) return;
 
+            // If the ball is stuck to the paddle, ignore collision between them
+            if (m_registry.HasComponent<BallComponent>(e1))
+            {
+                const auto& ballComp = m_registry.GetComponent<BallComponent>(e1);
+                if (ballComp.IsStuck && m_registry.HasComponent<PaddleComponent>(e2))
+                {
+                    return;
+                }
+            }
+
             CollisionManifold manifold = Physics::IntersectCircleAABB(c1, t1, b2, t2);
             if (manifold.IsColliding)
             {
@@ -156,7 +166,7 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
                         }
                         else
                         {
-                            if ((ballComp.IsBig && PowerUpManager::Get().Big().PiercesBricks) || ballComp.IsFireBall)
+                            if ((ballComp.IsBig && PowerUpManager::Get().Big().PiercesBricks) || ballComp.IsFireBall || ballComp.IsGhost)
                             {
                                 isPiercing = true;
                             }

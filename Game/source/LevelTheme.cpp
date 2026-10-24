@@ -1,7 +1,7 @@
 #include "LevelTheme.h"
 #include <array>
 
-static const std::array<LevelTheme, 6> s_themes = {{
+static const std::array<LevelTheme, 7> s_themes = {{
     // Level 1: Cyber Odyssey (Neon Blue & Electric Cyan)
     LevelTheme{
         .Name = "CYBER ODYSSEY",
@@ -121,6 +121,27 @@ static const std::array<LevelTheme, 6> s_themes = {{
         .VignetteBaseColor = Color{0, 0, 0, 255},
         .VignetteBaseIntensity = 0.35f,
         .AmbientLight = Color{12, 12, 18, 255} // Deep ambient darkness mask
+    },
+
+    // Level 7: Storm Vault (Electric Tempest & Conductive Metal Circuits)
+    LevelTheme{
+        .Name = "STORM VAULT",
+        .BgBase1 = Color{4, 6, 16, 255},
+        .BgBase2 = Color{8, 12, 28, 255},
+        .GridColor = Color{40, 100, 220, 28},
+        .DustColor = Color{120, 210, 255, 55},
+        .GridSpeed = 24.0f,
+        .DustSpeedY = -28.0f,
+        .ComboColors = {
+            Color{4, 6, 16, 255},
+            Color{10, 16, 40, 255},  // Electric Navy
+            Color{16, 28, 65, 255},  // High-Voltage Cobalt
+            Color{24, 48, 95, 255},  // Lightning Azure
+            Color{36, 75, 130, 255}  // Thunder Zenith
+        },
+        .VignetteBaseColor = Color{2, 4, 12, 255},
+        .VignetteBaseIntensity = 0.36f,
+        .AmbientLight = Color{12, 14, 24, 255} // Atmospheric darkness for spectacular storm illumination
     }
 }};
 

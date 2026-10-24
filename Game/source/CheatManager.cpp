@@ -180,10 +180,10 @@ bool CheatManager::TryCheat(const std::string& code, const GameContext& context)
         m_cheatWasActivated = true;
         success = true;
     }
-    else if (upperCode == "LASER")
+    else if (upperCode == "STORM")
     {
-        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::LaserPaddle));
-        m_activeCheatName = "LASER PADDLE";
+        context.Events.Publish(PowerUpEvent(NULL_ENTITY, PowerUpType::Storm));
+        m_activeCheatName = "THUNDERSTORM";
         m_cheatWasActivated = true;
         success = true;
     }

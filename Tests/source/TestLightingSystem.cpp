@@ -149,10 +149,19 @@ TEST_SUITE("2D Dynamic Lighting System Tests")
     TEST_CASE("Level 06 'Void Core' layout file verification")
     {
         // Check level06.txt contains 12 columns, Lanterns, Bombs, and Metal bricks
-        std::ifstream file("Resources/levels/level06.txt");
-        if (!file.is_open())
+        const std::string candidates[] = {
+            "Resources/levels/level06.txt",
+            "../Resources/levels/level06.txt",
+            "../../Resources/levels/level06.txt",
+            "bin/Resources/levels/level06.txt",
+            "../bin/Resources/levels/level06.txt",
+            "../../bin/Resources/levels/level06.txt"
+        };
+        std::ifstream file;
+        for (const auto& path : candidates)
         {
-            file.open("../Resources/levels/level06.txt");
+            file.open(path);
+            if (file.is_open()) break;
         }
 
         if (file.is_open())
@@ -248,5 +257,57 @@ TEST_SUITE("2D Dynamic Lighting System Tests")
         CHECK(fuseRadius > fireRadius);
         CHECK(fuseIntensity > fireIntensity);
         CHECK(fuseColor.r == 255);
+    }
+
+    TEST_CASE("Level 07 'Storm Vault' layout and conductive lighting verification")
+    {
+        const std::string candidates[] = {
+            "Resources/levels/level07.txt",
+            "../Resources/levels/level07.txt",
+            "../../Resources/levels/level07.txt",
+            "bin/Resources/levels/level07.txt",
+            "../bin/Resources/levels/level07.txt",
+            "../../bin/Resources/levels/level07.txt"
+        };
+        std::ifstream file;
+        for (const auto& path : candidates)
+        {
+            file.open(path);
+            if (file.is_open()) break;
+        }
+
+        if (file.is_open())
+        {
+            std::string line;
+            int rowCount = 0;
+            int metalCount = 0;
+            int specialCount = 0;
+            int bombCount = 0;
+            int lanternCount = 0;
+
+            while (std::getline(file, line))
+            {
+                while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
+                    line.pop_back();
+
+                if (line.empty()) continue;
+                CHECK(line.length() == 12);
+                rowCount++;
+
+                for (char c : line)
+                {
+                    if (c == 'M' || c == 'm') metalCount++;
+                    if (c == 'S' || c == 's') specialCount++;
+                    if (c == 'B' || c == 'b') bombCount++;
+                    if (c == 'L' || c == 'l') lanternCount++;
+                }
+            }
+
+            CHECK(rowCount == 7);
+            CHECK(metalCount >= 20); // Extensive conductive circuit
+            CHECK(specialCount >= 2); // Storm power-up capsules
+            CHECK(bombCount >= 2);
+            CHECK(lanternCount >= 2);
+        }
     }
 }
