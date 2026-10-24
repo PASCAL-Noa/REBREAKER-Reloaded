@@ -192,6 +192,12 @@ void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& /*world
         case PowerUpType::GhostBall:
             text = "+GHOST BALL";
             break;
+        case PowerUpType::ItemRegen:
+            text = "+ITEM REGEN";
+            break;
+        default:
+            text = "+POWER-UP";
+            break;
     }
 
     // Pick a random position across the safe play area of the screen

@@ -3097,6 +3097,9 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             }
             break;
         }
+        case PowerUpType::ItemRegen:
+        default:
+            break;
     }
 }
 
