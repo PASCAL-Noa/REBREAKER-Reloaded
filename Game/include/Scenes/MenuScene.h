@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <vector>
 #include <string>
+#include <memory>
 #include "Scenes/DefaultScene.h"
 #include "ECS/Entity.h"
 #include "LeaderboardManager.h"
@@ -23,11 +24,11 @@ struct StarParticle
 struct UpgradeCardWidgets
 {
     Entity RootPanel = NULL_ENTITY;
+    Entity CardBtn = NULL_ENTITY;
     Entity TitleText = NULL_ENTITY;
-    Entity DescText = NULL_ENTITY;
-    Entity CurrentTierText = NULL_ENTITY;
-    Entity NextTierText = NULL_ENTITY;
-    Entity UpgradeBtn = NULL_ENTITY;
+    Entity CategoryText = NULL_ENTITY;
+    Entity LevelText = NULL_ENTITY;
+    Entity CostText = NULL_ENTITY;
     PowerUpType Type = PowerUpType::MultiBall;
 };
 
@@ -43,11 +44,15 @@ struct UltimateCardWidgets
 class MenuScene : public DefaultScene
 {
 public:
+    MenuScene();
+    ~MenuScene() override;
+
     void    OnInit(GameContext& context) override;
     void    OnUpdate(float dt, GameContext& context) override;
     void    OnRender(GameContext& context) override;
     void    OnDestroy(GameContext& context) override;
     [[nodiscard]] uint32_t GetPostProcessShader() const override;
+    [[nodiscard]] PostProcessParams GetPostProcessParams() const override;
 
 protected:
     [[nodiscard]] bool PreservesMusicOnDestroy() const override { return true; }
@@ -73,6 +78,10 @@ private:
     void    CreateWorkshopModal(const GameContext& context);
     void    OpenWorkshopTab(Entity targetCanvas);
     void    RefreshWorkshopUI();
+    void    RenderWorkshopCustomVisuals(GameContext& context);
+    void    RenderPowerUpSimulation(GameContext& context, PowerUpType type, const Vector2f& center, const Vector2f& size);
+    void    RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, const Vector2f& center, const Vector2f& size);
+    void    TriggerSimSfx(GameContext& context, uint32_t sfxId, int eventId, float volume = 65.0f);
 
     void    PreloadGameAssets(GameContext& context);
 
@@ -98,14 +107,28 @@ private:
     Entity  m_workshopProfileCanvas = NULL_ENTITY;
     Entity  m_workshopActiveTabCanvas = NULL_ENTITY;
     Entity  m_workshopBankText = NULL_ENTITY;
+    Entity  m_workshopPlayerText = NULL_ENTITY;
     Entity  m_workshopPageText = NULL_ENTITY;
     Entity  m_workshopProfileNameText = NULL_ENTITY;
     Entity  m_workshopProfileStatsText = NULL_ENTITY;
     Entity  m_activeModal = NULL_ENTITY;
 
+    // Workshop Inspector Entities (Right Column)
+    Entity  m_inspectorTitleText = NULL_ENTITY;
+    Entity  m_inspectorCategoryText = NULL_ENTITY;
+    Entity  m_inspectorDescText = NULL_ENTITY;
+    Entity  m_inspectorCurTierText = NULL_ENTITY;
+    Entity  m_inspectorArrowText = NULL_ENTITY;
+    Entity  m_inspectorNextTierText = NULL_ENTITY;
+    Entity  m_inspectorUpgradeBtn = NULL_ENTITY;
+
     std::vector<UpgradeCardWidgets> m_upgradeCards;
     std::vector<UltimateCardWidgets> m_ultimateCards;
+    PowerUpType m_selectedPowerUp = PowerUpType::Storm;
     int     m_workshopCurrentPage = 0;
+    int     m_workshopPreviewLevel = 1;
+    float   m_previewAnimTime = 0.0f;
+    std::vector<Entity> m_levelPipButtons;
 
     // Settings widgets
     Entity  m_fsBtn = NULL_ENTITY;
@@ -134,7 +157,25 @@ private:
 
     uint32_t            m_clickSfxId = 0;
     uint32_t            m_bounceSfxId = 0;
+    uint32_t            m_brickHitSfxId = 0;
+    uint32_t            m_brickDestroySfxId = 0;
+    uint32_t            m_lightningSfxId = 0;
+    uint32_t            m_conductionSfxId = 0;
+    uint32_t            m_fireballBurnSfxId = 0;
+    uint32_t            m_fireballExplosionSfxId = 0;
+    uint32_t            m_laserSfxId = 0;
+    uint32_t            m_powerupSfxId = 0;
+    uint32_t            m_powerupBuffSfxId = 0;
     uint32_t            m_shaderId = 0;
+    uint32_t            m_paddleTexId = 0;
+    uint32_t            m_ballTexId = 0;
+    uint32_t            m_brickTexId = 0;
+    uint32_t            m_brickCrackTexId = 0;
+    uint32_t            m_fireTexId = 0;
+    uint32_t            m_heartTexId = 0;
+
+    int                 m_simLastLoop = -1;
+    uint32_t            m_simAudioTriggerMask = 0;
 
     std::vector<StarParticle> m_stars;
     float               m_gridAnimOffset = 0.0f;

@@ -1,4 +1,5 @@
 #include "Scenes/GameScene.h"
+#include "Scenes/PreviewScene.h"
 #include "Core/GameContext.h"
 #include "Core/GameData.h"
 #include "Core/InputManager.h"
@@ -33,6 +34,7 @@
 #include "ECS/Components/BallComponent.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Core/ProfileManager.h"
+#include "Math/Physics.h"
 #include <string>
 #include <algorithm>
 #include <random>
@@ -807,29 +809,60 @@ void GameScene::OnRender(GameContext& context)
         });
     }
 
-    // Active lightning bolts rendering (Storm power-up)
-    for (const auto& bolt : m_activeLightningBolts)
+    // Active lightning bolts rendering (Storm power-up) - Batched into high-performance vertex arrays
+    if (!m_activeLightningBolts.empty())
     {
-        float alphaRatio = std::clamp(bolt.Lifetime / bolt.MaxLifetime, 0.0f, 1.0f);
-        uint8_t glowAlpha = static_cast<uint8_t>(190.0f * alphaRatio);
-        uint8_t coreAlpha = static_cast<uint8_t>(255.0f * alphaRatio);
+        std::vector<Vertex> glowVertices;
+        std::vector<Vertex> coreVertices;
+        glowVertices.reserve(m_activeLightningBolts.size() * 120);
+        coreVertices.reserve(m_activeLightningBolts.size() * 120);
 
-        Color glowColor{255, 235, 90, glowAlpha};
-        Color coreColor{255, 255, 240, coreAlpha};
-
-        for (const auto& seg : bolt.Segments)
+        for (const auto& bolt : m_activeLightningBolts)
         {
-            float jitterX = static_cast<float>((rand() % 7) - 3);
-            float jitterY = static_cast<float>((rand() % 7) - 3);
-            Vector2f j{jitterX, jitterY};
+            float alphaRatio = std::clamp(bolt.Lifetime / bolt.MaxLifetime, 0.0f, 1.0f);
+            uint8_t glowAlpha = static_cast<uint8_t>(190.0f * alphaRatio);
+            uint8_t coreAlpha = static_cast<uint8_t>(255.0f * alphaRatio);
 
-            context.Render.DrawLine(seg.Start + j, seg.End + j, glowColor, 5.5f * alphaRatio);
-            context.Render.DrawLine(seg.Start, seg.End, coreColor, 2.0f * alphaRatio);
+            Color glowColor{255, 235, 90, glowAlpha};
+            Color coreColor{255, 255, 240, coreAlpha};
+
+            const float glowThick = 5.5f * alphaRatio;
+            const float coreThick = 2.0f * alphaRatio;
+
+            auto pushLineQuad = [](std::vector<Vertex>& out, const Vector2f& p1, const Vector2f& p2, float thick, Color c)
+            {
+                Vector2f d = p2 - p1;
+                float len = d.Length();
+                if (len < 0.001f) return;
+                Vector2f n{-d.Y / len * (thick * 0.5f), d.X / len * (thick * 0.5f)};
+
+                out.push_back(Vertex{p1.X - n.X, p1.Y - n.Y, c, 0.0f, 0.0f});
+                out.push_back(Vertex{p2.X - n.X, p2.Y - n.Y, c, 0.0f, 0.0f});
+                out.push_back(Vertex{p2.X + n.X, p2.Y + n.Y, c, 0.0f, 0.0f});
+
+                out.push_back(Vertex{p2.X + n.X, p2.Y + n.Y, c, 0.0f, 0.0f});
+                out.push_back(Vertex{p1.X + n.X, p1.Y + n.Y, c, 0.0f, 0.0f});
+                out.push_back(Vertex{p1.X - n.X, p1.Y - n.Y, c, 0.0f, 0.0f});
+            };
+
+            for (const auto& seg : bolt.Segments)
+            {
+                float jitterX = static_cast<float>((rand() % 7) - 3);
+                float jitterY = static_cast<float>((rand() % 7) - 3);
+                Vector2f j{jitterX, jitterY};
+
+                pushLineQuad(glowVertices, seg.Start + j, seg.End + j, glowThick, glowColor);
+                pushLineQuad(coreVertices, seg.Start, seg.End, coreThick, coreColor);
+            }
         }
 
-        for (const auto& node : bolt.Nodes)
+        if (!glowVertices.empty())
         {
-            context.Render.DrawCircle(3.5f * alphaRatio, Transform2D{node}, coreColor);
+            context.Render.DrawVertices(glowVertices, PrimitiveType::Triangles, 0, BlendMode::Alpha);
+        }
+        if (!coreVertices.empty())
+        {
+            context.Render.DrawVertices(coreVertices, PrimitiveType::Triangles, 0, BlendMode::Alpha);
         }
     }
 
@@ -1647,6 +1680,12 @@ void GameScene::HandleInput(const float /*dt*/, const GameContext& context)
         context.Rules.SetRule(Rule::Gameplay::InfiniteLives, !infLives);
     }
 
+    if (context.Input.IsKeyPress(KeyCode::F1) || context.Input.IsKeyPress(KeyCode::F10))
+    {
+        context.Scenes.LoadScene<PreviewScene>();
+        return;
+    }
+
     bool testerActive = m_uiController && m_uiController->IsPowerUpTesterActive();
 
     const bool toggleTester = context.Input.IsKeyPress(KeyCode::Tab) ||
@@ -1772,6 +1811,7 @@ void GameScene::ResetBallAndPaddle(bool smooth)
     m_bottomBarrierActive = false;
     m_magnetDuration = 0.0f;
     m_ghostBallDuration = 0.0f;
+    m_ghostBallPendingExpiry = false;
     m_stuckBalls.clear();
     if (mp_context && m_fireballBurnSfxId != 0)
     {
@@ -1784,6 +1824,10 @@ void GameScene::ResetBallAndPaddle(bool smooth)
     if (mp_paddleSystem)
     {
         mp_paddleSystem->SetLaunchSpeed(640.0f);
+    }
+    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleComponent>(m_paddle))
+    {
+        m_registry.GetComponent<PaddleComponent>(m_paddle).Speed = 700.0f;
     }
     if (m_registry.IsAlive(m_ball))
     {
@@ -1886,6 +1930,7 @@ void GameScene::ResetBallAndPaddle(bool smooth)
 
 void GameScene::HandleDeath()
 {
+    if (m_ghostBallDuration > 0.0f) return;
     if (m_ballState == BallState::Dying) return;
     m_ballState = BallState::Dying;
 
@@ -2092,6 +2137,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
     }
 
     bool isFireBall = false;
+    bool isGhostBall = false;
     if (ballEntity != NULL_ENTITY && m_registry.IsAlive(ballEntity) && m_registry.HasComponent<BallComponent>(ballEntity))
     {
         auto& ballComp = m_registry.GetComponent<BallComponent>(ballEntity);
@@ -2104,6 +2150,10 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
                 ballComp.IsFuseActive = true;
                 ballComp.FuseTimer = PowerUpManager::Get().FireBall().FuseDuration;
             }
+        }
+        if (ballComp.IsGhost)
+        {
+            isGhostBall = true;
         }
     }
 
@@ -2151,6 +2201,19 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
         }
         else
         {
+            if (isGhostBall)
+            {
+                // Ghost Ball cannot destroy metal bricks without FireBall:
+                // Phases cleanly through without damage, without bounce, without shake
+                Vector2f contactPos{0.0f, 0.0f};
+                if (m_registry.HasComponent<Transform2D>(entity))
+                {
+                    contactPos = m_registry.GetComponent<Transform2D>(entity).Position;
+                    SpawnExplosionParticles(contactPos, Color{160, 240, 255, 120}, 4);
+                }
+                return;
+            }
+
             // Standard ball bounces off with spark feedback and high-pitch metallic clank
             Vector2f contactPos{0.0f, 0.0f};
             if (m_registry.HasComponent<Transform2D>(entity))
@@ -2171,21 +2234,42 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
     }
 
     // 3. Normal & Multi-Hit Bricks
+    bool canDestroy = false;
     if (m_bigBallDuration > 0.0f || isFireBall || isExplosion)
     {
-        brick.HitPoints = 0; // Destroyed in one hit or fatal damage
+        canDestroy = true; // Destroyed in one hit or fatal damage
     }
     else
     {
         int effectiveDmg = std::max(1, damage);
-        if (brick.HitPoints <= static_cast<uint32_t>(effectiveDmg))
+        if (isGhostBall)
         {
-            brick.HitPoints = 0;
+            effectiveDmg = std::max(effectiveDmg, PowerUpManager::Get().Ghost().GetEffectiveDamage());
         }
-        else
+        canDestroy = (brick.HitPoints <= static_cast<uint32_t>(effectiveDmg));
+    }
+
+    if (isGhostBall && !canDestroy)
+    {
+        // Ghost Ball cannot destroy this brick (multi-hit brick needing more damage):
+        // Phases cleanly through WITHOUT damaging or breaking it!
+        Vector2f contactPos{0.0f, 0.0f};
+        if (m_registry.HasComponent<Transform2D>(entity))
         {
-            brick.HitPoints -= static_cast<uint32_t>(effectiveDmg);
+            contactPos = m_registry.GetComponent<Transform2D>(entity).Position;
+            SpawnExplosionParticles(contactPos, Color{160, 240, 255, 120}, 4);
         }
+        return;
+    }
+
+    if (canDestroy)
+    {
+        brick.HitPoints = 0;
+    }
+    else
+    {
+        int effectiveDmg = std::max(1, damage);
+        brick.HitPoints -= static_cast<uint32_t>(effectiveDmg);
     }
 
     bool isDestroyed = (brick.HitPoints == 0);
@@ -2354,6 +2438,39 @@ void GameScene::HandlePaddleCollision(Entity ballEntity)
 void GameScene::HandleBallBottomCollision(Entity ballEntity)
 {
     if (m_ballState != BallState::Active) return;
+
+    // Ghost Ball: immortal ball, cannot lose life under any circumstance!
+    bool isGhost = (m_ghostBallDuration > 0.0f);
+    if (!isGhost && ballEntity != NULL_ENTITY && m_registry.IsAlive(ballEntity) && m_registry.HasComponent<BallComponent>(ballEntity))
+    {
+        isGhost = m_registry.GetComponent<BallComponent>(ballEntity).IsGhost;
+    }
+    if (isGhost)
+    {
+        if (m_registry.IsAlive(ballEntity) && m_registry.HasComponent<RigidBody>(ballEntity) && m_registry.HasComponent<Transform2D>(ballEntity))
+        {
+            auto& rb = m_registry.GetComponent<RigidBody>(ballEntity);
+            auto& trans = m_registry.GetComponent<Transform2D>(ballEntity);
+
+            trans.Position.Y = 410.0f;
+            float currentSpeed = std::sqrt(rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y);
+            if (currentSpeed < 450.0f) currentSpeed = 600.0f;
+
+            float angleX = trans.Position.X / 800.0f;
+            angleX = std::clamp(angleX, -0.6f, 0.6f);
+            Vector2f dir{angleX, -std::sqrt(std::max(0.1f, 1.0f - angleX * angleX))};
+            rb.Velocity = dir.Normalized() * currentSpeed;
+
+            SpawnExplosionParticles(trans.Position, Color{160, 240, 255, 255}, 20);
+            TriggerPostProcessFlash(0.015f, 0.35f, Color{160, 240, 255, 255});
+
+            if (m_bounceSfxId != 0 && mp_context)
+            {
+                mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f, 1.35f);
+            }
+            return;
+        }
+    }
 
     // Bottom Barrier: safe deflection and save charge
     if (m_bottomBarrierActive && m_bottomBarrierCharges > 0)
@@ -2747,6 +2864,10 @@ void GameScene::TriggerStormStrike()
     TriggerPostProcessFlash(0.025f, 0.40f, Color{240, 250, 255, 255}, 0.15f, Color{255, 240, 100, 255});
     TweenEffects::Shake(m_registry, m_camera, 0.25f, 10.0f);
 
+    if (m_activeLightningBolts.size() >= 4)
+    {
+        m_activeLightningBolts.erase(m_activeLightningBolts.begin());
+    }
     m_activeLightningBolts.push_back(std::move(bolt));
 
     // Strike consumption (only for levels 1-4; level 5 is timed tempest)
@@ -2950,9 +3071,13 @@ void GameScene::ApplyPowerUp(PowerUpType type)
         {
             const auto& cfg = PowerUpManager::Get().Tempo();
             m_tempoBallDuration = cfg.GetEffectiveDuration();
-            if (mp_ballSystem) mp_ballSystem->SetTempoBallActive(true);
-            if (mp_paddleSystem) mp_paddleSystem->SetLaunchSpeed(850.0f);
             const float fastSpeed = cfg.GetEffectiveFastSpeed();
+            if (mp_ballSystem) mp_ballSystem->SetTempoBallActive(true);
+            if (mp_paddleSystem) mp_paddleSystem->SetLaunchSpeed(fastSpeed);
+            if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleComponent>(m_paddle))
+            {
+                m_registry.GetComponent<PaddleComponent>(m_paddle).Speed = cfg.GetEffectivePaddleSpeed();
+            }
             const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
             for (Entity b : balls)
             {
@@ -3082,6 +3207,7 @@ void GameScene::ApplyPowerUp(PowerUpType type)
         {
             const auto& cfg = PowerUpManager::Get().Ghost();
             m_ghostBallDuration = cfg.GetEffectiveDuration();
+            m_ghostBallPendingExpiry = false;
             const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
             for (Entity b : balls)
             {
@@ -3204,6 +3330,10 @@ void GameScene::UpdatePowerUpTimers(float dt)
             m_tempoBallStacks = 0;
             if (mp_ballSystem) mp_ballSystem->SetTempoBallActive(false);
             if (mp_paddleSystem) mp_paddleSystem->SetLaunchSpeed(640.0f);
+            if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleComponent>(m_paddle))
+            {
+                m_registry.GetComponent<PaddleComponent>(m_paddle).Speed = 700.0f;
+            }
             const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
             for (Entity b : balls)
             {
@@ -3219,11 +3349,19 @@ void GameScene::UpdatePowerUpTimers(float dt)
                 {
                     m_registry.GetComponent<SpriteComponent>(b).Tint = Colors::White;
                 }
+                if (m_registry.HasComponent<LightSourceComponent>(b))
+                {
+                    m_registry.GetComponent<LightSourceComponent>(b).LightColor = Color{225, 240, 255, 255};
+                }
             }
         }
         else
         {
             const auto& tempoCfg = PowerUpManager::Get().Tempo();
+            if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleComponent>(m_paddle))
+            {
+                m_registry.GetComponent<PaddleComponent>(m_paddle).Speed = tempoCfg.GetEffectivePaddleSpeed();
+            }
             const float fastSpeed = tempoCfg.GetEffectiveFastSpeed();
             const float slowSpeed = tempoCfg.SlowSpeed;
             const float topY = tempoCfg.SlowZoneTopY;
@@ -3350,26 +3488,68 @@ void GameScene::UpdatePowerUpTimers(float dt)
     }
 
     // 8. Ghost Ball Duration
-    if (m_ghostBallDuration > 0.0f)
+    if (m_ghostBallDuration > 0.0f || m_ghostBallPendingExpiry)
     {
-        m_ghostBallDuration -= dt;
-        if (m_ghostBallDuration <= 0.0f)
+        if (m_ghostBallDuration > 0.0f)
         {
-            m_ghostBallDuration = 0.0f;
-            const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
-            for (Entity b : balls)
+            m_ghostBallDuration -= dt;
+            if (m_ghostBallDuration <= 0.0f)
             {
-                if (!m_registry.IsAlive(b)) continue;
-                if (m_registry.HasComponent<BallComponent>(b))
+                m_ghostBallDuration = 0.0f;
+                m_ghostBallPendingExpiry = true;
+            }
+        }
+
+        if (m_ghostBallPendingExpiry)
+        {
+            m_ghostBallExpiryGraceTimer += dt;
+            const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
+            bool isAnyBallInBrick = false;
+            if (m_ghostBallExpiryGraceTimer < 2.0f)
+            {
+                for (Entity b : balls)
                 {
-                    m_registry.GetComponent<BallComponent>(b).IsGhost = false;
+                    if (!m_registry.IsAlive(b)) continue;
+                    if (!m_registry.HasComponent<BallComponent>(b) || !m_registry.GetComponent<BallComponent>(b).IsGhost) continue;
+                    if (!m_registry.HasComponent<Transform2D>(b) || !m_registry.HasComponent<CircleCollider>(b)) continue;
+
+                    const auto& ballTrans = m_registry.GetComponent<Transform2D>(b);
+                    const auto& ballCircle = m_registry.GetComponent<CircleCollider>(b);
+
+                    m_registry.View<Transform2D, BoxCollider, BrickComponent>([&](Entity brickEntity, const Transform2D& brickTrans, const BoxCollider& brickBox, const BrickComponent&)
+                    {
+                        if (isAnyBallInBrick) return;
+                        if (m_registry.IsPendingDestroy(brickEntity)) return;
+
+                        CollisionManifold m = Physics::IntersectCircleAABB(ballCircle, ballTrans, brickBox, brickTrans);
+                        if (m.IsColliding)
+                        {
+                            isAnyBallInBrick = true;
+                        }
+                    });
+
+                    if (isAnyBallInBrick) break;
                 }
-                if (m_registry.HasComponent<SpriteComponent>(b))
+            }
+
+            if (!isAnyBallInBrick)
+            {
+                m_ghostBallPendingExpiry = false;
+                m_ghostBallExpiryGraceTimer = 0.0f;
+                for (Entity b : balls)
                 {
-                    Color restoreColor = Colors::White;
-                    if (m_tempoBallDuration > 0.0f) restoreColor = Color{210, 160, 255, 255};
-                    if (m_registry.GetComponent<BallComponent>(b).IsFireBall) restoreColor = Color{255, 120, 20, 255};
-                    m_registry.GetComponent<SpriteComponent>(b).Tint = restoreColor;
+                    if (!m_registry.IsAlive(b)) continue;
+                    if (m_registry.HasComponent<BallComponent>(b))
+                    {
+                        m_registry.GetComponent<BallComponent>(b).IsGhost = false;
+                    }
+                    if (m_registry.HasComponent<SpriteComponent>(b))
+                    {
+                        Color restoreColor = Colors::White;
+                        if (m_tempoBallDuration > 0.0f) restoreColor = Color{210, 160, 255, 255};
+                        if (m_registry.GetComponent<BallComponent>(b).IsFireBall) restoreColor = Color{255, 120, 20, 255};
+                        m_registry.GetComponent<SpriteComponent>(b).Tint = restoreColor;
+                    }
                 }
             }
         }
@@ -3498,6 +3678,8 @@ void GameScene::RespawnBricks()
 
 void GameScene::SpawnLightFlash(const Vector2f& position, float radius, const Color& color, float intensity, float duration)
 {
+    if (m_lightFlashes.size() >= 8) return;
+
     LightFlash flash;
     flash.Position = position;
     flash.Radius = radius;

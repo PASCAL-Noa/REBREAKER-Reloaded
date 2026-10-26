@@ -158,8 +158,8 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
                         const auto& brickComp = m_registry.GetComponent<BrickComponent>(e2);
                         if (brickComp.IsUnbreakable)
                         {
-                            // Metal / Unbreakable bricks are impenetrable to standard & big balls; only FireBall pierces!
-                            if (ballComp.IsFireBall)
+                            // Metal / Unbreakable bricks: FireBall breaks & pierces; GhostBall passes cleanly through without bouncing
+                            if (ballComp.IsFireBall || ballComp.IsGhost)
                             {
                                 isPiercing = true;
                             }

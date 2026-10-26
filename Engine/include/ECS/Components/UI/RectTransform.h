@@ -16,4 +16,5 @@ struct RectTransform
     Anchor    AnchorPoint = Anchor::Center;
     Entity    Parent = NULL_ENTITY;
     bool    IsActive = true;
+    int     ZOrder = 0;
 };

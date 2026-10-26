@@ -103,18 +103,32 @@ struct TempoBallConfig
     int   Level = 1;
     int   MaxLevel = 5;
     float BaseDuration = 10.0f;
-    float DurationPerLevel = 1.5f;
-    float FastSpeed = 850.0f;        // Speed heading towards bricks
-    float SpeedBonusPerLevel = 30.0f;// Fast speed increases with level
-    float SlowSpeed = 280.0f;        // Speed approaching paddle
-    float SlowZoneTopY = 60.0f;      // Y where slowdown zone begins
-    float SlowZoneBottomY = 280.0f;  // Y where slow speed is reached
+    float DurationPerLevel = 1.0f;
+    float BaseSpeedMultiplier = 0.60f;     // +60% at level 1
+    float SpeedMultiplierPerLevel = 0.20f; // +20% per level
+    float FastSpeed = 960.0f;              // Base fast speed (600 * 1.60)
+    float SpeedBonusPerLevel = 120.0f;     // Fast speed bonus per level (600 * 0.20)
+    float PaddleSpeedBonusPerLevel = 0.10f;// +10% paddle speed per level
+    float SlowSpeed = 280.0f;              // Speed approaching paddle
+    float SlowZoneTopY = 60.0f;            // Y where slowdown zone begins
+    float SlowZoneBottomY = 280.0f;        // Y where slow speed is reached
 
     float GetEffectiveDuration() const {
         return BaseDuration + (Level - 1) * DurationPerLevel;
     }
+    float GetEffectiveBonusPercent() const {
+        return (BaseSpeedMultiplier + (Level - 1) * SpeedMultiplierPerLevel) * 100.0f;
+    }
     float GetEffectiveFastSpeed() const {
-        return FastSpeed + (Level - 1) * SpeedBonusPerLevel;
+        constexpr float kBaseSpeed = 600.0f;
+        return kBaseSpeed * (1.0f + BaseSpeedMultiplier + (Level - 1) * SpeedMultiplierPerLevel);
+    }
+    float GetEffectivePaddleSpeedBonusPercent() const {
+        return (Level * PaddleSpeedBonusPerLevel) * 100.0f;
+    }
+    float GetEffectivePaddleSpeed() const {
+        constexpr float kBasePaddleSpeed = 700.0f;
+        return kBasePaddleSpeed * (1.0f + Level * PaddleSpeedBonusPerLevel);
     }
     int GetUpgradeCost() const {
         return 120 * Level;
@@ -244,12 +258,18 @@ struct GhostBallConfig
 {
     int   Level = 1;
     int   MaxLevel = 5;
-    float BaseDuration = 8.0f;
-    float DurationPerLevel = 1.5f;
+    float BaseDuration = 5.0f;
+    float DurationPerLevel = 1.0f;
     float Alpha = 120.0f;
 
     float GetEffectiveDuration() const {
         return BaseDuration + (Level - 1) * DurationPerLevel;
+    }
+    int GetEffectiveDamage() const {
+        int dmg = 1;
+        if (Level >= 3) dmg++;
+        if (Level >= 5) dmg++;
+        return dmg;
     }
     int GetUpgradeCost() const {
         return 160 * Level;

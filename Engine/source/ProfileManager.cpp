@@ -139,11 +139,11 @@ std::string ProfileManager::GetUltimateDescription(UltimateAbilityType type)
     switch (type)
     {
         case UltimateAbilityType::NovaShockwave:
-            return "Radial thermal energy pulse clearing hazards and fracturing bricks in 360 degrees.";
+            return "Radial thermal energy pulse clearing hazards\nand fracturing bricks in 360 degrees.";
         case UltimateAbilityType::ThunderTempest:
-            return "Overcharges the sky, unleashing an immediate multi-target lightning barrage through conductive circuits.";
+            return "Overcharges the sky, unleashing an immediate\nmulti-target lightning barrage\nthrough conductive circuits.";
         case UltimateAbilityType::TimeStasis:
-            return "Manipulates local gravity, slowing velocity by 75% for 6s for precision trajectory control.";
+            return "Manipulates local gravity, slowing velocity\nby 75% for 6s for precision trajectory control.";
         default:
             return "";
     }

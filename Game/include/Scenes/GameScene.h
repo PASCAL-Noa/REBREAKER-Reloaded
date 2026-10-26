@@ -104,7 +104,7 @@ public:
     void    OnReplayRequested();
 
     // Power-Up Tester callbacks
-    void    ApplyPowerUp(PowerUpType type);
+    virtual void ApplyPowerUp(PowerUpType type);
     void    SpawnPowerUpAtPaddle();
     void    SpawnAllPowerUps();
     void    RespawnBricks();
@@ -125,7 +125,7 @@ protected:
     void    SpawnFireExplosionParticles(const Vector2f& position, float radius, int count = 45);
 
     Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
-    void    SpawnPowerUp(const Vector2f& position);
+    virtual void SpawnPowerUp(const Vector2f& position);
     void    TriggerStormStrike();
     void    FireLasers();
     static Color GetPowerUpColor(PowerUpType type);
@@ -206,6 +206,8 @@ protected:
     bool    m_bottomBarrierActive = false;
     float   m_magnetDuration = 0.0f;
     float   m_ghostBallDuration = 0.0f;
+    bool    m_ghostBallPendingExpiry = false;
+    float   m_ghostBallExpiryGraceTimer = 0.0f;
 
     struct LightningSegment
     {

@@ -14,6 +14,7 @@ struct PanelDescriptor
     Color       Tint = Colors::White;
     Anchor  AnchorPoint = Anchor::Center;
     uint32_t    TextureId = 0;
+    int         ZOrder = 0;
 };
 
 struct TextDescriptor
@@ -26,7 +27,8 @@ struct TextDescriptor
     Color   Tint = Colors::White;
     Anchor  AnchorPoint = Anchor::Center;
     bool    TextCenter  = true;
-    uint8_t     _padding[7] = {0};
+    int     ZOrder = 0;
+    uint8_t     _padding[3] = {0};
 };
 
 struct ButtonDescriptor
@@ -45,6 +47,7 @@ struct ButtonDescriptor
     Anchor  AnchorPoint  = Anchor::Center;
     uint32_t    TextureId = 0;
     bool    IgnoreMenuNavigation = false;
+    int     ZOrder = 0;
     uint8_t     _padding[3] = {0};
 };
 
@@ -74,7 +77,8 @@ struct DropdownDescriptor
     float   FontSize = 30.0f;
     Anchor  AnchorPoint  = Anchor::Center;
     uint32_t    TextureId = 0;
-    uint8_t     _padding[8] = {0};
+    int     ZOrder = 0;
+    uint8_t     _padding[4] = {0};
 };
 
 struct TextInputDescriptor
@@ -91,6 +95,7 @@ struct TextInputDescriptor
     Anchor  AnchorPoint  = Anchor::Center;
     size_t  MaxLength = 20;
     uint32_t    TextureId = 0;
+    int     ZOrder = 0;
 };
 
 class UIFactory

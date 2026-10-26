@@ -9,6 +9,7 @@
 #include "Data/PostProcessParams.h"
 #include "Math/Vector2.h"
 #include <string>
+#include <array>
 
 struct Camera2D;
 struct Transform2D;
@@ -32,6 +33,7 @@ public:
     [[nodiscard]] Vector2f  GetLogicalViewSize() const;
     [[nodiscard]] sf::FloatRect GetLetterboxViewport() const;
     [[nodiscard]] float     GetEffectiveAspectRatio() const;
+    [[nodiscard]] std::array<float, 4> WorldRectToNormalizedUV(const Vector2f& center, const Vector2f& size) const;
     void                    OnWindowResized(unsigned int width, unsigned int height);
     [[nodiscard]] Vector2f  MapPixelToCoords(const Vector2f& pixelPos) const;
     [[nodiscard]] Vector2f  MapCoordsToPixel(const Vector2f& coords) const;

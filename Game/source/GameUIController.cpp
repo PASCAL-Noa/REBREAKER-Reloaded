@@ -528,7 +528,7 @@ void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
         auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
-        statusComp.Text = "PILOT: " + defaultName + " (CLICK PSEUDO TO EDIT)";
+        statusComp.Text = "PLAYER: " + defaultName + " (CLICK PSEUDO TO EDIT)";
         statusComp.Tint = Color{120, 230, 255, 255};
     }
 

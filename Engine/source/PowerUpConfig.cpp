@@ -173,10 +173,12 @@ void PowerUpManager::LoadFromPrefs()
 
     // Tempo Ball
     m_tempo.Level              = PlayerPrefs::GetInt("PowerUp_Tempo_Level", m_tempo.Level);
-    m_tempo.BaseDuration       = PlayerPrefs::GetFloat("PowerUp_Tempo_BaseDuration", m_tempo.BaseDuration);
-    m_tempo.DurationPerLevel   = PlayerPrefs::GetFloat("PowerUp_Tempo_DurationPerLvl", m_tempo.DurationPerLevel);
-    m_tempo.FastSpeed          = PlayerPrefs::GetFloat("PowerUp_Tempo_FastSpeed", m_tempo.FastSpeed);
-    m_tempo.SpeedBonusPerLevel = PlayerPrefs::GetFloat("PowerUp_Tempo_SpeedBonus", m_tempo.SpeedBonusPerLevel);
+    m_tempo.BaseDuration       = 10.0f;
+    m_tempo.DurationPerLevel   = 1.0f;
+    m_tempo.BaseSpeedMultiplier = 0.60f;
+    m_tempo.SpeedMultiplierPerLevel = 0.20f;
+    m_tempo.FastSpeed          = m_tempo.GetEffectiveFastSpeed();
+    m_tempo.SpeedBonusPerLevel = 120.0f;
     m_tempo.SlowSpeed          = PlayerPrefs::GetFloat("PowerUp_Tempo_SlowSpeed", m_tempo.SlowSpeed);
     m_tempo.SlowZoneTopY       = PlayerPrefs::GetFloat("PowerUp_Tempo_SlowZoneTopY", m_tempo.SlowZoneTopY);
     m_tempo.SlowZoneBottomY    = PlayerPrefs::GetFloat("PowerUp_Tempo_SlowZoneBottomY", m_tempo.SlowZoneBottomY);
@@ -226,8 +228,8 @@ void PowerUpManager::LoadFromPrefs()
 
     // Ghost Ball
     m_ghost.Level              = PlayerPrefs::GetInt("PowerUp_Ghost_Level", m_ghost.Level);
-    m_ghost.BaseDuration       = PlayerPrefs::GetFloat("PowerUp_Ghost_BaseDuration", m_ghost.BaseDuration);
-    m_ghost.DurationPerLevel   = PlayerPrefs::GetFloat("PowerUp_Ghost_DurationPerLvl", m_ghost.DurationPerLevel);
+    m_ghost.BaseDuration       = 5.0f;
+    m_ghost.DurationPerLevel   = 1.0f;
     m_ghost.Alpha              = PlayerPrefs::GetFloat("PowerUp_Ghost_Alpha", m_ghost.Alpha);
 
     // Item Brick Regen
@@ -394,7 +396,7 @@ std::string PowerUpManager::GetDescription(PowerUpType type) const
         case PowerUpType::Storm:
             return "Strikes thunderbolts damaging bricks & conducting through metal circuits.";
         case PowerUpType::TempoBall:
-            return "Dynamic ball pacing: fast towards bricks, slow approaching paddle.";
+            return "Dynamic pacing: ball speed +60% to +140%, paddle speed +10% to +50%, smoothly slows down approaching paddle.";
         case PowerUpType::ExtraLife:
             return "Instantly grants one reserve heart to the paddle (cap 6).";
         case PowerUpType::BigBall:
@@ -408,7 +410,7 @@ std::string PowerUpManager::GetDescription(PowerUpType type) const
         case PowerUpType::MagnetPaddle:
             return "Generates a gravitational pull drawing power-up capsules toward the paddle.";
         case PowerUpType::GhostBall:
-            return "Phases cleanly through standard bricks without rebounding.";
+            return "Phases cleanly through tough and metal bricks without damage; shatters only bricks within damage power (1 dmg at lvl 1-2, 2 dmg at lvl 3-4, 3 dmg at lvl 5). Solidifies safely once clear of bricks. Absolute immortality.";
         case PowerUpType::ItemRegen:
             return "Reduces the respawn cooldown of item capsule bricks on the field.";
         default:
@@ -431,7 +433,7 @@ std::string PowerUpManager::GetCurrentTierInfo(PowerUpType type) const
             if (lvl >= 5) return "Tempest Mode: 10s continuous barrage (60 strikes)";
             return std::to_string(m_storm.GetEffectiveStrikes()) + " strikes, " + std::to_string(m_storm.GetEffectiveDamage()) + " dmg/hit";
         case PowerUpType::TempoBall:
-            return "Fast: " + std::to_string(static_cast<int>(m_tempo.GetEffectiveFastSpeed())) + " px/s, Duration: " + std::to_string(static_cast<int>(m_tempo.GetEffectiveDuration())) + "s";
+            return "Ball: +" + std::to_string(static_cast<int>(m_tempo.GetEffectiveBonusPercent())) + "% (" + std::to_string(static_cast<int>(m_tempo.GetEffectiveFastSpeed())) + " px/s), Paddle: +" + std::to_string(static_cast<int>(m_tempo.GetEffectivePaddleSpeedBonusPercent())) + "%, Duration: " + std::to_string(static_cast<int>(m_tempo.GetEffectiveDuration())) + "s";
         case PowerUpType::ExtraLife:
             return "+1 Heart (Capacity: " + std::to_string(m_life.MaxLivesCap) + ")";
         case PowerUpType::BigBall:
@@ -445,7 +447,7 @@ std::string PowerUpManager::GetCurrentTierInfo(PowerUpType type) const
         case PowerUpType::MagnetPaddle:
             return "Pull Speed: " + std::to_string(static_cast<int>(m_magnet.GetEffectivePullSpeed())) + " px/s, Duration: " + std::to_string(static_cast<int>(m_magnet.GetEffectiveDuration())) + "s";
         case PowerUpType::GhostBall:
-            return "Duration: " + std::to_string(static_cast<int>(m_ghost.GetEffectiveDuration())) + "s (Piercing)";
+            return "Duration: " + std::to_string(static_cast<int>(m_ghost.GetEffectiveDuration())) + "s, Damage: " + std::to_string(m_ghost.GetEffectiveDamage()) + " dmg (Immortal & Selective Phase)";
         case PowerUpType::ItemRegen:
             return "Cooldown: " + std::to_string(static_cast<int>(m_itemRegen.GetEffectiveCooldown())) + "s";
         default:
@@ -476,7 +478,7 @@ std::string PowerUpManager::GetNextTierInfo(PowerUpType type) const
             if (lvl == 3) return "Next: upgraded damage (3 hits/strike)";
             return "Next: Tempest Mode (10s continuous lightning barrage)";
         case PowerUpType::TempoBall:
-            return "Next: +" + std::to_string(static_cast<int>(m_tempo.SpeedBonusPerLevel)) + " px/s fast speed, +" + std::to_string(static_cast<int>(m_tempo.DurationPerLevel)) + "s duration";
+            return "Next: +" + std::to_string(static_cast<int>(m_tempo.SpeedMultiplierPerLevel * 100.0f)) + "% ball speed, +" + std::to_string(static_cast<int>(m_tempo.PaddleSpeedBonusPerLevel * 100.0f)) + "% paddle speed, +" + std::to_string(static_cast<int>(m_tempo.DurationPerLevel)) + "s duration";
         case PowerUpType::ExtraLife:
             return "Next: Increases recovery reliability";
         case PowerUpType::BigBall:
@@ -490,6 +492,8 @@ std::string PowerUpManager::GetNextTierInfo(PowerUpType type) const
         case PowerUpType::MagnetPaddle:
             return "Next: +" + std::to_string(static_cast<int>(m_magnet.PullSpeedPerLevel)) + " px/s pull speed, +" + std::to_string(static_cast<int>(m_magnet.DurationPerLevel)) + "s duration";
         case PowerUpType::GhostBall:
+            if (lvl == 2) return "Next: +1 damage (2 dmg total), +1s duration";
+            if (lvl == 4) return "Next: +1 damage (3 dmg total), +1s duration";
             return "Next: +" + std::to_string(static_cast<int>(m_ghost.DurationPerLevel)) + "s duration";
         case PowerUpType::ItemRegen:
             return "Next: -" + std::to_string(static_cast<int>(m_itemRegen.CooldownReductionPerLevel)) + "s cooldown reduction";

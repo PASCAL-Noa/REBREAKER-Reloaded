@@ -124,6 +124,10 @@ void BallSystem::ClearBalls(Entity preserveBall)
             m_registry.GetComponent<TrailComponent>(preserveBall).Clear();
         }
     }
+    else
+    {
+        m_isTempoActive = false;
+    }
 }
 
 bool BallSystem::HasActiveBalls() const
@@ -176,7 +180,7 @@ void BallSystem::UpdateBallPhysics(float /*dt*/)
     {
         minSpeed = m_customMinSpeed;
     }
-    constexpr float MAX_BALL_SPEED = 900.0f;
+    const float maxBallSpeed = m_isTempoActive ? 2200.0f : 900.0f;
     constexpr float MIN_VERTICAL_SPEED = 120.0f;
 
     for (Entity ballEntity : m_balls)
@@ -217,9 +221,9 @@ void BallSystem::UpdateBallPhysics(float /*dt*/)
         {
             rb.Velocity = (rb.Velocity / speed) * minSpeed;
         }
-        else if (speed > MAX_BALL_SPEED)
+        else if (speed > maxBallSpeed)
         {
-            rb.Velocity = (rb.Velocity / speed) * MAX_BALL_SPEED;
+            rb.Velocity = (rb.Velocity / speed) * maxBallSpeed;
         }
 
         // Prevent balls from getting trapped in near-horizontal trajectories

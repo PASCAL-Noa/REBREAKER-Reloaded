@@ -30,6 +30,7 @@ private:
     Renderer&               m_renderer;
     std::vector<Particle>   m_pool;
     size_t                  m_poolCapacity = 0;
+    size_t                  m_activeCount = 0;
     size_t                  m_nextPoolIndex = 0;
     std::vector<Vertex>     m_vertices;
 };
