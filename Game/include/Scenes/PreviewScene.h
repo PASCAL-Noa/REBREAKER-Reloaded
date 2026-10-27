@@ -29,10 +29,14 @@ private:
     void SpawnPreviewCapsule();
     void SpawnMagnetDemoCapsule();
     void OnBallLaunched();
+    [[nodiscard]] bool IsPowerUpEffectActive();
 
     size_t m_currentItemIndex = 0;
     Entity m_previewCapsule = NULL_ENTITY;
     bool   m_capsuleSpawnedForLaunch = false;
     bool   m_wasBallAttached = true;
     float  m_magnetCapsuleTimer = 0.0f;
+    bool   m_powerUpActivated = false;
+    float  m_autoResetTimer = 0.0f;
+    float  m_extraLifeTimer = 0.0f;
 };

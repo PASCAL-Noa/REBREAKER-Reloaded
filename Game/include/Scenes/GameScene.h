@@ -133,6 +133,7 @@ protected:
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
     void    UpdatePowerUpTimers(float dt);
+    void    UpdatePaddleSpeed();
 
     std::unique_ptr<StateMachine<GameScene>> mp_state_machine;
     Entity  m_ball{};
@@ -141,6 +142,7 @@ protected:
 
     uint32_t    m_shaderId = 0;
     uint32_t    m_crackShaderId = 0;
+    uint32_t    m_fontId = 0;
     uint32_t    m_ballTexId = 0;
     uint32_t    m_paddleTexId = 0;
     uint32_t    m_brickTexId = 0;
@@ -194,6 +196,7 @@ protected:
     BallSystem*   mp_ballSystem = nullptr;
 
     float   m_paddleSizeDuration = 0.0f;
+    bool    m_isShrinkPaddle = false;
     float   m_stormDuration = 0.0f;
     int     m_stormCharges = 0;
     float   m_laserDuration = 0.0f;

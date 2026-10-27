@@ -180,7 +180,7 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
     }
 
     // For Magnet Paddle preview: spawn falling capsules periodically off-center to showcase magnetic attraction
-    if (kPreviewItems[m_currentItemIndex].Type == PowerUpType::MagnetPaddle && m_ballState == BallState::Active && m_capsuleSpawnedForLaunch)
+    if (kPreviewItems[m_currentItemIndex].Type == PowerUpType::MagnetPaddle && m_ballState == BallState::Active && m_capsuleSpawnedForLaunch && m_magnetDuration > 0.0f)
     {
         m_magnetCapsuleTimer += dt;
         if (m_magnetCapsuleTimer >= 1.4f)
@@ -217,6 +217,107 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
     m_lives = 99;
 
     GameScene::OnUpdate(dt, context);
+
+    if (m_extraLifeTimer > 0.0f)
+    {
+        m_extraLifeTimer -= dt;
+    }
+
+    // Auto-reset once the previewed power-up effect has finished
+    if (m_powerUpActivated)
+    {
+        if (!IsPowerUpEffectActive())
+        {
+            m_autoResetTimer += dt;
+            if (m_autoResetTimer >= 0.7f)
+            {
+                ResetPreview();
+                return;
+            }
+        }
+        else
+        {
+            m_autoResetTimer = 0.0f;
+        }
+    }
+    else
+    {
+        m_autoResetTimer = 0.0f;
+    }
+}
+
+bool PreviewScene::IsPowerUpEffectActive()
+{
+    PowerUpType type = kPreviewItems[m_currentItemIndex].Type;
+    switch (type)
+    {
+        case PowerUpType::Storm:
+            return (m_stormDuration > 0.0f) || (m_stormCharges > 0) || !m_activeLightningBolts.empty();
+
+        case PowerUpType::FireBall:
+        {
+            if (mp_ballSystem)
+            {
+                const auto& balls = mp_ballSystem->GetBalls();
+                for (Entity b : balls)
+                {
+                    if (m_registry.IsAlive(b) && m_registry.HasComponent<BallComponent>(b))
+                    {
+                        if (m_registry.GetComponent<BallComponent>(b).IsFireBall)
+                            return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        case PowerUpType::BigBall:
+            return m_bigBallDuration > 0.0f;
+
+        case PowerUpType::MultiBall:
+            return mp_ballSystem && mp_ballSystem->GetBallCount() > 1;
+
+        case PowerUpType::StickyPaddle:
+            return (m_stickyPaddleDuration > 0.0f) || !m_stuckBalls.empty();
+
+        case PowerUpType::BottomBarrier:
+            return (m_bottomBarrierDuration > 0.0f) && (m_bottomBarrierActive || m_bottomBarrierCharges > 0);
+
+        case PowerUpType::MagnetPaddle:
+            return m_magnetDuration > 0.0f;
+
+        case PowerUpType::GhostBall:
+        {
+            if (m_ghostBallDuration > 0.0f || m_ghostBallPendingExpiry)
+                return true;
+            if (mp_ballSystem)
+            {
+                const auto& balls = mp_ballSystem->GetBalls();
+                for (Entity b : balls)
+                {
+                    if (m_registry.IsAlive(b) && m_registry.HasComponent<BallComponent>(b))
+                    {
+                        if (m_registry.GetComponent<BallComponent>(b).IsGhost)
+                            return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        case PowerUpType::TempoBall:
+            return m_tempoBallDuration > 0.0f;
+
+        case PowerUpType::ExpandPaddle:
+        case PowerUpType::ShrinkPaddle:
+            return m_paddleSizeDuration > 0.0f;
+
+        case PowerUpType::ExtraLife:
+            return m_extraLifeTimer > 0.0f;
+
+        default:
+            return false;
+    }
 }
 
 void PreviewScene::OnRender(GameContext& context)
@@ -256,6 +357,65 @@ void PreviewScene::OnRender(GameContext& context)
         snprintf(buf, sizeof(buf), "   |   TEMPO: %.1fs", m_tempoBallDuration);
         title += buf;
     }
+    else if (m_stormDuration > 0.0f)
+    {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "   |   TEMPETE: %.1fs", m_stormDuration);
+        title += buf;
+    }
+    else if (m_stormCharges > 0)
+    {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "   |   ECLAIRS: %d", m_stormCharges);
+        title += buf;
+    }
+    else if (m_bigBallDuration > 0.0f)
+    {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "   |   BIG: %.1fs", m_bigBallDuration);
+        title += buf;
+    }
+    else if (m_stickyPaddleDuration > 0.0f)
+    {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "   |   STICKY: %.1fs", m_stickyPaddleDuration);
+        title += buf;
+    }
+    else if (m_bottomBarrierDuration > 0.0f)
+    {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "   |   BARRIER: %.1fs", m_bottomBarrierDuration);
+        title += buf;
+    }
+    else if (m_magnetDuration > 0.0f)
+    {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "   |   MAGNET: %.1fs", m_magnetDuration);
+        title += buf;
+    }
+    else if (m_paddleSizeDuration > 0.0f)
+    {
+        char buf[64];
+        if (m_isShrinkPaddle)
+        {
+            snprintf(buf, sizeof(buf), "   |   SHRINK (+%d%% VIT): %.1fs",
+                     static_cast<int>(PowerUpManager::Get().Shrink().GetEffectivePaddleSpeedBonusPercent()),
+                     m_paddleSizeDuration);
+        }
+        else
+        {
+            snprintf(buf, sizeof(buf), "   |   EXPAND (+%d%%): %.1fs",
+                     static_cast<int>((PowerUpManager::Get().Expand().GetEffectiveScale() - 1.0f) * 100.0f + 0.5f),
+                     m_paddleSizeDuration);
+        }
+        title += buf;
+    }
+
+    if (m_autoResetTimer > 0.0f)
+    {
+        title += "   |   FIN EFFET (RESET...)";
+    }
+
     title += "   |   " + std::to_string(context.Data.FPS) + " FPS";
     context.Render.DrawTextCentered(title, m_fontId, 28.0f, Transform2D{Vector2f{0.0f, -508.0f}}, Colors::Gold);
 
@@ -357,6 +517,12 @@ void PreviewScene::ResetPreview()
     m_magnetDuration = 0.0f;
     m_ghostBallDuration = 0.0f;
     m_ghostBallPendingExpiry = false;
+    m_paddleSizeDuration = 0.0f;
+    m_isShrinkPaddle = false;
+    UpdatePaddleSpeed();
+    m_powerUpActivated = false;
+    m_autoResetTimer = 0.0f;
+    m_extraLifeTimer = 0.0f;
 
     // Reset paddle position, scale, and size
     if (m_registry.IsAlive(m_paddle))
@@ -523,34 +689,19 @@ void PreviewScene::ResetPreview()
 
 void PreviewScene::SpawnPowerUp(const Vector2f& position)
 {
-    // For Magnet Paddle preview: let destroyed bricks drop extra capsules to showcase magnetic pull!
-    if (kPreviewItems[m_currentItemIndex].Type == PowerUpType::MagnetPaddle)
-    {
-        int typeIndex = rand() % kPreviewItemCount;
-        PowerUpType type = kPreviewItems[typeIndex].Type;
-        Color color = kPreviewItems[typeIndex].CapsuleColor;
-
-        Entity capsule = m_registry.CreateEntity();
-        m_registry.AddComponent<Transform2D>(capsule, Transform2D{position, 0.0f, Vector2f{0.5f, 0.7f}});
-        m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
-        m_registry.AddComponent<PowerUpComponent>(capsule, PowerUpComponent{type, 210.0f, false});
-        m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
-    }
+    GameScene::SpawnPowerUp(position);
 }
 
 void PreviewScene::ApplyPowerUp(PowerUpType type)
 {
     GameScene::ApplyPowerUp(type);
 
-    // If currently previewing Magnet, keep magnet continuously refreshed whenever any capsule is caught
-    if (kPreviewItems[m_currentItemIndex].Type == PowerUpType::MagnetPaddle)
+    if (type == kPreviewItems[m_currentItemIndex].Type)
     {
-        const auto& magnetCfg = PowerUpManager::Get().Magnet();
-        m_magnetDuration = magnetCfg.GetEffectiveDuration();
-        if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleComponent>(m_paddle))
+        m_powerUpActivated = true;
+        if (type == PowerUpType::ExtraLife)
         {
-            auto& pc = m_registry.GetComponent<PaddleComponent>(m_paddle);
-            pc.HasMagnet = true;
+            m_extraLifeTimer = 2.0f;
         }
     }
 }

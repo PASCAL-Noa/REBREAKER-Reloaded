@@ -23,10 +23,12 @@ TEST_SUITE("Tactical Power-Ups Tests")
         CHECK(mgr.Sticky().Level == 1);
         CHECK(mgr.Sticky().MaxLevel == 5);
         CHECK(mgr.Sticky().GetEffectiveDuration() == doctest::Approx(12.0f));
-        CHECK(mgr.Sticky().AutoLaunchDelay == doctest::Approx(3.5f));
+        CHECK(mgr.Sticky().AutoLaunchDelay == doctest::Approx(3.0f));
+        CHECK(mgr.Sticky().GetEffectiveBoostPercent() == doctest::Approx(25.0f));
         mgr.SetLevel(PowerUpType::StickyPaddle, 3);
         CHECK(mgr.Sticky().Level == 3);
         CHECK(mgr.Sticky().GetEffectiveDuration() == doctest::Approx(16.0f)); // 12 + (3-1)*2
+        CHECK(mgr.Sticky().GetEffectiveBoostPercent() == doctest::Approx(55.0f));
         CHECK(mgr.Sticky().GetUpgradeCost() == 140 * 3);
 
         // 2. Bottom Barrier
@@ -40,11 +42,14 @@ TEST_SUITE("Tactical Power-Ups Tests")
 
         // 3. Magnet Paddle
         CHECK(mgr.Magnet().Level == 1);
-        CHECK(mgr.Magnet().GetEffectiveDuration() == doctest::Approx(12.0f));
+        CHECK(mgr.Magnet().GetEffectiveDuration() == doctest::Approx(10.0f));
         CHECK(mgr.Magnet().GetEffectivePullSpeed() == doctest::Approx(380.0f));
-        CHECK(mgr.Magnet().MagnetRadius == doctest::Approx(650.0f));
+        CHECK(mgr.Magnet().GetEffectiveBallPullForce() == doctest::Approx(240.0f));
+        CHECK(mgr.Magnet().MagnetRadius == doctest::Approx(850.0f));
         mgr.SetLevel(PowerUpType::MagnetPaddle, 4);
-        CHECK(mgr.Magnet().GetEffectivePullSpeed() == doctest::Approx(380.0f + 3 * 60.0f));
+        CHECK(mgr.Magnet().GetEffectiveDuration() == doctest::Approx(17.5f)); // 10.0 + 3 * 2.5
+        CHECK(mgr.Magnet().GetEffectivePullSpeed() == doctest::Approx(380.0f + 3 * 70.0f));
+        CHECK(mgr.Magnet().GetEffectiveBallPullForce() == doctest::Approx(240.0f + 3 * 80.0f));
         CHECK(mgr.Magnet().GetUpgradeCost() == 130 * 4);
 
         // 4. Ghost Ball

@@ -21,16 +21,17 @@ struct MultiBallConfig
     }
 };
 
-// Configuration for Paddle Size modifications (Expand / Shrink)
-struct PaddleSizeConfig
+// Configuration for Expand Paddle
+struct ExpandPaddleConfig
 {
     int   Level = 1;
     int   MaxLevel = 5;
-    float BaseDuration = 10.0f;      // Duration in seconds
-    float DurationPerLevel = 1.5f;   // +1.5s per level
-    float BaseScale = 1.5f;          // Scale factor (1.5x for Expand, 0.65x for Shrink)
-    float ScaleStepPerLevel = 0.08f; // Stronger effect with level
-    float BaseWidth = 120.0f;
+    float BaseDuration = 10.0f;
+    float DurationPerLevel = 2.0f;
+    float BaseScale = 1.20f;          // +20% size at level 1
+    float ScaleStepPerLevel = 0.20f;  // +20% size per level (up to +100% / 2.0x at level 5)
+    float BaseDropChance = 0.10f;     // 10% drop chance at level 1
+    float DropChanceStepPerLevel = 0.10f; // +10% per level (up to 50% at level 5)
 
     float GetEffectiveDuration() const {
         return BaseDuration + (Level - 1) * DurationPerLevel;
@@ -38,10 +39,61 @@ struct PaddleSizeConfig
     float GetEffectiveScale() const {
         return BaseScale + (Level - 1) * ScaleStepPerLevel;
     }
+    float GetEffectiveDropChance() const {
+        return BaseDropChance + (Level - 1) * DropChanceStepPerLevel;
+    }
+    int GetEffectiveDropCount() const {
+        int count = 1;
+        if (Level >= 3) count++;
+        if (Level >= 5) count++;
+        return count;
+    }
     int GetUpgradeCost() const {
         return 100 * Level;
     }
 };
+
+// Configuration for Shrink Paddle
+struct ShrinkPaddleConfig
+{
+    int   Level = 1;
+    int   MaxLevel = 5;
+    float BaseDuration = 10.0f;
+    float DurationPerLevel = 2.0f;
+    float BaseScale = 0.65f;          // Scale remains constant for shrink
+    float BaseSpeedBonusPercent = 0.20f;     // +20% paddle speed at level 1
+    float SpeedBonusStepPerLevel = 0.20f;    // +20% paddle speed per level
+    float BaseDropChance = 0.10f;     // 10% drop chance at level 1
+    float DropChanceStepPerLevel = 0.10f; // +10% per level (up to 50% at level 5)
+
+    float GetEffectiveDuration() const {
+        return BaseDuration + (Level - 1) * DurationPerLevel;
+    }
+    float GetEffectiveScale() const {
+        return BaseScale;
+    }
+    float GetEffectivePaddleSpeedBonusPercent() const {
+        return (BaseSpeedBonusPercent + (Level - 1) * SpeedBonusStepPerLevel) * 100.0f;
+    }
+    float GetEffectivePaddleSpeed() const {
+        constexpr float kBasePaddleSpeed = 700.0f;
+        return kBasePaddleSpeed * (1.0f + BaseSpeedBonusPercent + (Level - 1) * SpeedBonusStepPerLevel);
+    }
+    float GetEffectiveDropChance() const {
+        return BaseDropChance + (Level - 1) * DropChanceStepPerLevel;
+    }
+    int GetEffectiveDropCount() const {
+        int count = 1;
+        if (Level >= 3) count++;
+        if (Level >= 5) count++;
+        return count;
+    }
+    int GetUpgradeCost() const {
+        return 100 * Level;
+    }
+};
+
+using PaddleSizeConfig = ExpandPaddleConfig;
 
 // Configuration for Storm / Thunderstorm (Strike charges & tempest based)
 struct StormConfig
@@ -200,10 +252,18 @@ struct StickyPaddleConfig
     int   MaxLevel = 5;
     float BaseDuration = 12.0f;
     float DurationPerLevel = 2.0f;
-    float AutoLaunchDelay = 3.5f;
+    float AutoLaunchDelay = 3.0f;        // 3 seconds window to launch
+    float BaseBoostPercent = 25.0f;      // +25% launch speed boost at Level 1
+    float BoostPercentPerLevel = 15.0f;  // +15% per level (up to +85% at Level 5)
 
     float GetEffectiveDuration() const {
         return BaseDuration + (Level - 1) * DurationPerLevel;
+    }
+    float GetEffectiveBoostPercent() const {
+        return BaseBoostPercent + (Level - 1) * BoostPercentPerLevel;
+    }
+    float GetEffectiveBoostMultiplier() const {
+        return 1.0f + (GetEffectiveBoostPercent() / 100.0f);
     }
     int GetUpgradeCost() const {
         return 140 * Level;
@@ -236,17 +296,22 @@ struct MagnetConfig
 {
     int   Level = 1;
     int   MaxLevel = 5;
-    float BaseDuration = 12.0f;
-    float DurationPerLevel = 2.0f;
-    float MagnetRadius = 650.0f;
+    float BaseDuration = 10.0f;
+    float DurationPerLevel = 2.5f;       // 10s, 12.5s, 15s, 17.5s, 20s
+    float MagnetRadius = 850.0f;
     float BasePullSpeed = 380.0f;
-    float PullSpeedPerLevel = 60.0f;
+    float PullSpeedPerLevel = 70.0f;
+    float BaseBallPullForce = 240.0f;    // Attracts the ball towards paddle
+    float BallPullForcePerLevel = 80.0f; // Stronger magnet with level (240 to 560 px/s²)
 
     float GetEffectiveDuration() const {
         return BaseDuration + (Level - 1) * DurationPerLevel;
     }
     float GetEffectivePullSpeed() const {
         return BasePullSpeed + (Level - 1) * PullSpeedPerLevel;
+    }
+    float GetEffectiveBallPullForce() const {
+        return BaseBallPullForce + (Level - 1) * BallPullForcePerLevel;
     }
     int GetUpgradeCost() const {
         return 130 * Level;
@@ -299,8 +364,8 @@ public:
 
     // Config accessors
     MultiBallConfig&    MultiBall()   { return m_multiBall; }
-    PaddleSizeConfig&   Expand()      { return m_expand; }
-    PaddleSizeConfig&   Shrink()      { return m_shrink; }
+    ExpandPaddleConfig& Expand()      { return m_expand; }
+    ShrinkPaddleConfig& Shrink()      { return m_shrink; }
     StormConfig&        Storm()       { return m_storm; }
     StormConfig&        Laser()       { return m_storm; }
     TempoBallConfig&    Tempo()       { return m_tempo; }
@@ -314,8 +379,8 @@ public:
     ItemBrickRegenConfig& ItemRegen() { return m_itemRegen; }
 
     const MultiBallConfig&    MultiBall() const { return m_multiBall; }
-    const PaddleSizeConfig&   Expand()    const { return m_expand; }
-    const PaddleSizeConfig&   Shrink()    const { return m_shrink; }
+    const ExpandPaddleConfig& Expand()    const { return m_expand; }
+    const ShrinkPaddleConfig& Shrink()    const { return m_shrink; }
     const StormConfig&        Storm()     const { return m_storm; }
     const StormConfig&        Laser()     const { return m_storm; }
     const TempoBallConfig&    Tempo()     const { return m_tempo; }
@@ -356,8 +421,8 @@ private:
     PowerUpManager();
 
     MultiBallConfig     m_multiBall;
-    PaddleSizeConfig    m_expand;
-    PaddleSizeConfig    m_shrink;
+    ExpandPaddleConfig  m_expand;
+    ShrinkPaddleConfig  m_shrink;
     StormConfig         m_storm;
     TempoBallConfig     m_tempo;
     ExtraLifeConfig     m_life;

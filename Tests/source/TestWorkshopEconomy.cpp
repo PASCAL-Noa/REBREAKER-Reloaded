@@ -224,4 +224,126 @@ TEST_SUITE("Workshop, Economy & Player Profile Tests")
         pm.EquipCosmetic(CosmeticSlot::PaddleSkin, "paddle_gold_plating");
         CHECK(pm.GetEquippedCosmetic(CosmeticSlot::PaddleSkin) == "paddle_gold_plating");
     }
+
+    TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Expand Paddle scaling, duration and lucky drop progression")
+    {
+        auto& pum = PowerUpManager::Get();
+        pum.ResetToDefaults();
+
+        // Level 1: Base duration 10s, scale 1.20x (+20%), drop chance 10%, drop count 1
+        pum.SetLevel(PowerUpType::ExpandPaddle, 1);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveScale()).epsilon(0.001f) == 1.20f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDuration()).epsilon(0.001f) == 10.0f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDropChance()).epsilon(0.001f) == 0.10f);
+        CHECK(pum.Expand().GetEffectiveDropCount() == 1);
+
+        // Level 2: scale 1.40x (+40%), duration 12s, drop chance 20%, drop count 1
+        pum.SetLevel(PowerUpType::ExpandPaddle, 2);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveScale()).epsilon(0.001f) == 1.40f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDuration()).epsilon(0.001f) == 12.0f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDropChance()).epsilon(0.001f) == 0.20f);
+        CHECK(pum.Expand().GetEffectiveDropCount() == 1);
+
+        // Level 3: scale 1.60x (+60%), duration 14s, drop chance 30%, drop count 2 (+1 at lvl 3)
+        pum.SetLevel(PowerUpType::ExpandPaddle, 3);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveScale()).epsilon(0.001f) == 1.60f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDuration()).epsilon(0.001f) == 14.0f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDropChance()).epsilon(0.001f) == 0.30f);
+        CHECK(pum.Expand().GetEffectiveDropCount() == 2);
+
+        // Level 4: scale 1.80x (+80%), duration 16s, drop chance 40%, drop count 2
+        pum.SetLevel(PowerUpType::ExpandPaddle, 4);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveScale()).epsilon(0.001f) == 1.80f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDuration()).epsilon(0.001f) == 16.0f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDropChance()).epsilon(0.001f) == 0.40f);
+        CHECK(pum.Expand().GetEffectiveDropCount() == 2);
+
+        // Level 5: scale 2.00x (+100%), duration 18s, drop chance 50%, drop count 3 (+1 at lvl 5)
+        pum.SetLevel(PowerUpType::ExpandPaddle, 5);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveScale()).epsilon(0.001f) == 2.00f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDuration()).epsilon(0.001f) == 18.0f);
+        CHECK(doctest::Approx(pum.Expand().GetEffectiveDropChance()).epsilon(0.001f) == 0.50f);
+        CHECK(pum.Expand().GetEffectiveDropCount() == 3);
+    }
+
+    TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Shrink Paddle speed bonus, scale retention and lucky drop progression")
+    {
+        auto& pum = PowerUpManager::Get();
+        pum.ResetToDefaults();
+
+        // Level 1: Scale 0.65x, duration 10s, speed +20% (840 px/s), drop chance 10%, drop count 1
+        pum.SetLevel(PowerUpType::ShrinkPaddle, 1);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectiveScale()).epsilon(0.001f) == 0.65f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectiveDuration()).epsilon(0.001f) == 10.0f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectivePaddleSpeedBonusPercent()).epsilon(0.001f) == 20.0f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectivePaddleSpeed()).epsilon(0.001f) == 840.0f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectiveDropChance()).epsilon(0.001f) == 0.10f);
+        CHECK(pum.Shrink().GetEffectiveDropCount() == 1);
+
+        // Level 3: Scale 0.65x, duration 14s, speed +60% (1120 px/s), drop chance 30%, drop count 2
+        pum.SetLevel(PowerUpType::ShrinkPaddle, 3);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectiveScale()).epsilon(0.001f) == 0.65f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectiveDuration()).epsilon(0.001f) == 14.0f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectivePaddleSpeedBonusPercent()).epsilon(0.001f) == 60.0f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectivePaddleSpeed()).epsilon(0.001f) == 1120.0f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectiveDropChance()).epsilon(0.001f) == 0.30f);
+        CHECK(pum.Shrink().GetEffectiveDropCount() == 2);
+
+        // Level 5: Scale 0.65x, duration 18s, speed +100% (1400 px/s), drop chance 50%, drop count 3
+        pum.SetLevel(PowerUpType::ShrinkPaddle, 5);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectiveScale()).epsilon(0.001f) == 0.65f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectiveDuration()).epsilon(0.001f) == 18.0f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectivePaddleSpeedBonusPercent()).epsilon(0.001f) == 100.0f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectivePaddleSpeed()).epsilon(0.001f) == 1400.0f);
+        CHECK(doctest::Approx(pum.Shrink().GetEffectiveDropChance()).epsilon(0.001f) == 0.50f);
+        CHECK(pum.Shrink().GetEffectiveDropCount() == 3);
+    }
+
+    TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Sticky Paddle rhythm launch boost and hold timer bounds")
+    {
+        auto& pum = PowerUpManager::Get();
+        pum.ResetToDefaults();
+
+        // 3.0s auto launch delay
+        CHECK(doctest::Approx(pum.Sticky().AutoLaunchDelay).epsilon(0.001f) == 3.0f);
+
+        // Level 1: boost +25% (multiplier 1.25x)
+        pum.SetLevel(PowerUpType::StickyPaddle, 1);
+        CHECK(doctest::Approx(pum.Sticky().GetEffectiveBoostPercent()).epsilon(0.001f) == 25.0f);
+        CHECK(doctest::Approx(pum.Sticky().GetEffectiveBoostMultiplier()).epsilon(0.001f) == 1.25f);
+
+        // Level 3: boost +55% (multiplier 1.55x)
+        pum.SetLevel(PowerUpType::StickyPaddle, 3);
+        CHECK(doctest::Approx(pum.Sticky().GetEffectiveBoostPercent()).epsilon(0.001f) == 55.0f);
+        CHECK(doctest::Approx(pum.Sticky().GetEffectiveBoostMultiplier()).epsilon(0.001f) == 1.55f);
+
+        // Level 5: boost +85% (multiplier 1.85x)
+        pum.SetLevel(PowerUpType::StickyPaddle, 5);
+        CHECK(doctest::Approx(pum.Sticky().GetEffectiveBoostPercent()).epsilon(0.001f) == 85.0f);
+        CHECK(doctest::Approx(pum.Sticky().GetEffectiveBoostMultiplier()).epsilon(0.001f) == 1.85f);
+    }
+
+    TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Magnet Paddle duration scaling, capsule pull speed and ball attraction force")
+    {
+        auto& pum = PowerUpManager::Get();
+        pum.ResetToDefaults();
+
+        // Level 1: duration 10.0s, capsule pull speed 380 px/s, ball pull force 240 px/s²
+        pum.SetLevel(PowerUpType::MagnetPaddle, 1);
+        CHECK(doctest::Approx(pum.Magnet().GetEffectiveDuration()).epsilon(0.001f) == 10.0f);
+        CHECK(doctest::Approx(pum.Magnet().GetEffectivePullSpeed()).epsilon(0.001f) == 380.0f);
+        CHECK(doctest::Approx(pum.Magnet().GetEffectiveBallPullForce()).epsilon(0.001f) == 240.0f);
+
+        // Level 3: duration 15.0s, capsule pull speed 520 px/s, ball pull force 400 px/s²
+        pum.SetLevel(PowerUpType::MagnetPaddle, 3);
+        CHECK(doctest::Approx(pum.Magnet().GetEffectiveDuration()).epsilon(0.001f) == 15.0f);
+        CHECK(doctest::Approx(pum.Magnet().GetEffectivePullSpeed()).epsilon(0.001f) == 520.0f);
+        CHECK(doctest::Approx(pum.Magnet().GetEffectiveBallPullForce()).epsilon(0.001f) == 400.0f);
+
+        // Level 5: duration 20.0s, capsule pull speed 660 px/s, ball pull force 560 px/s²
+        pum.SetLevel(PowerUpType::MagnetPaddle, 5);
+        CHECK(doctest::Approx(pum.Magnet().GetEffectiveDuration()).epsilon(0.001f) == 20.0f);
+        CHECK(doctest::Approx(pum.Magnet().GetEffectivePullSpeed()).epsilon(0.001f) == 660.0f);
+        CHECK(doctest::Approx(pum.Magnet().GetEffectiveBallPullForce()).epsilon(0.001f) == 560.0f);
+    }
 }
