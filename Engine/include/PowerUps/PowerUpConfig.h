@@ -406,6 +406,7 @@ public:
     std::string GetDescription(PowerUpType type) const;
     std::string GetCurrentTierInfo(PowerUpType type) const;
     std::string GetNextTierInfo(PowerUpType type) const;
+    std::string GetTierInfoForLevel(PowerUpType type, int level) const;
 
     // Currency API (for future economy / shop system)
     int  GetCoins() const { return m_coins; }

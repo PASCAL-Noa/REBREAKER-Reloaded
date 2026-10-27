@@ -27,6 +27,7 @@ struct TextDescriptor
     Color   Tint = Colors::White;
     Anchor  AnchorPoint = Anchor::Center;
     bool    TextCenter  = true;
+    float   MaxWidth = 0.0f;
     int     ZOrder = 0;
     uint8_t     _padding[3] = {0};
 };

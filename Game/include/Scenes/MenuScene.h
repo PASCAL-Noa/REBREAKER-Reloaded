@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <vector>
+#include <array>
 #include <string>
 #include <memory>
 #include "Scenes/DefaultScene.h"
@@ -87,6 +88,8 @@ private:
 
     void    OpenModal(Entity modalCanvas);
     void    CloseModals();
+    void    OpenDescriptionModal();
+    void    CloseDescriptionModal();
 
     void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
 
@@ -121,14 +124,33 @@ private:
     Entity  m_inspectorArrowText = NULL_ENTITY;
     Entity  m_inspectorNextTierText = NULL_ENTITY;
     Entity  m_inspectorUpgradeBtn = NULL_ENTITY;
+    Entity  m_inspectorDescBtn = NULL_ENTITY;
+    Entity  m_inspectorTierCostText = NULL_ENTITY;
+
+    // Workshop Description & Stats Popup Modal Entities
+    Entity  m_workshopDescCanvas = NULL_ENTITY;
+    Entity  m_workshopDescBackdrop = NULL_ENTITY;
+    Entity  m_descModalCloseBtn = NULL_ENTITY;
+    Entity  m_descModalXBtn = NULL_ENTITY;
+    Entity  m_descModalTitleText = NULL_ENTITY;
+    Entity  m_descModalCategoryText = NULL_ENTITY;
+    Entity  m_descModalDescText = NULL_ENTITY;
+    std::array<Entity, 5> m_descModalTierPanels{};
+    std::array<Entity, 5> m_descModalTierTags{};
+    std::array<Entity, 5> m_descModalTierTexts{};
 
     std::vector<UpgradeCardWidgets> m_upgradeCards;
     std::vector<UltimateCardWidgets> m_ultimateCards;
     PowerUpType m_selectedPowerUp = PowerUpType::Storm;
     int     m_workshopCurrentPage = 0;
+    int     m_workshopScrollRow = 0;
+    int     m_inspectedLevel = 1;
     int     m_workshopPreviewLevel = 1;
+    bool    m_showDescriptionModal = false;
     float   m_previewAnimTime = 0.0f;
     std::vector<Entity> m_levelPipButtons;
+    Entity  m_workshopScrollUpBtn = NULL_ENTITY;
+    Entity  m_workshopScrollDownBtn = NULL_ENTITY;
 
     // Settings widgets
     Entity  m_fsBtn = NULL_ENTITY;

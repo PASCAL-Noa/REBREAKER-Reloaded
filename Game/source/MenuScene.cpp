@@ -217,7 +217,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     }
 
     // Preview scene shortcut (accessible anywhere from menu / workshop)
-    if (!m_isRebinding && (context.Input.IsKeyPress(KeyCode::P) || context.Input.IsKeyPress(KeyCode::F1) || context.Input.IsKeyPress(KeyCode::F10)))
+    if (!m_isRebinding && !m_showDescriptionModal && (context.Input.IsKeyPress(KeyCode::P) || context.Input.IsKeyPress(KeyCode::F1) || context.Input.IsKeyPress(KeyCode::F10)))
     {
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
         PreviewScene::SetInitialPowerUp(m_selectedPowerUp);
@@ -225,7 +225,56 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
         return;
     }
 
-    // Escape or Gamepad B closes any open modal, or returns to main
+    // Description Modal Exclusive Interaction Mode
+    if (m_showDescriptionModal)
+    {
+        const Vector2f viewSize = context.Render.GetLogicalViewSize();
+        const float screenCenterX = viewSize.X * 0.5f;
+        const float screenCenterY = viewSize.Y * 0.5f;
+
+        // Escape or Gamepad B closes description modal
+        if (context.Input.IsMenuCancelTriggered())
+        {
+            CloseDescriptionModal();
+            return;
+        }
+
+        // Left mouse click handling
+        if (context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            auto [mx, my] = context.Input.GetMousePosition();
+            Vector2f mousePos{mx, my};
+
+            // 1. RETOUR button: center {screenCenterX, screenCenterY + 330.0f}, size {360.0f, 60.0f}
+            if (std::abs(mousePos.X - screenCenterX) <= 180.0f && std::abs(mousePos.Y - (screenCenterY + 330.0f)) <= 30.0f)
+            {
+                CloseDescriptionModal();
+                return;
+            }
+
+            // 2. [X] button: center {screenCenterX + 610.0f, screenCenterY - 370.0f}, size {52.0f, 52.0f}
+            if (std::abs(mousePos.X - (screenCenterX + 610.0f)) <= 26.0f && std::abs(mousePos.Y - (screenCenterY - 370.0f)) <= 26.0f)
+            {
+                CloseDescriptionModal();
+                return;
+            }
+
+            // 3. Click outside dialog window (dialog size 1360 x 860 centered at screenCenter)
+            if (std::abs(mousePos.X - screenCenterX) > 680.0f || std::abs(mousePos.Y - screenCenterY) > 430.0f)
+            {
+                CloseDescriptionModal();
+                return;
+            }
+
+            // Clicks inside dialog content are consumed without closing
+            return;
+        }
+
+        m_previewAnimTime += dt;
+        return; // Exclusivity: skip all other scene logic and UISystem::OnUpdate
+    }
+
+    // Escape or Gamepad B closes any open sub-panel or modal, or returns to main
     if (context.Input.IsMenuCancelTriggered())
     {
         if (m_activeModal != NULL_ENTITY)
@@ -319,6 +368,45 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
         return;
     }
 
+    // Workshop Upgrades Scrolling (Mouse Wheel & Keyboard)
+    if (m_activeModal == m_workshopCanvas && m_workshopActiveTabCanvas == m_workshopUpgradesCanvas && !m_showDescriptionModal)
+    {
+        float wheel = context.Input.GetMouseWheelDelta();
+        if (wheel > 0.05f)
+        {
+            if (m_workshopScrollRow > 0)
+            {
+                m_workshopScrollRow--;
+                RefreshWorkshopUI();
+            }
+        }
+        else if (wheel < -0.05f)
+        {
+            if (m_workshopScrollRow < 2)
+            {
+                m_workshopScrollRow++;
+                RefreshWorkshopUI();
+            }
+        }
+
+        if (context.Input.IsKeyPress(KeyCode::Up) || context.Input.IsKeyPress(KeyCode::PageUp))
+        {
+            if (m_workshopScrollRow > 0)
+            {
+                m_workshopScrollRow--;
+                RefreshWorkshopUI();
+            }
+        }
+        else if (context.Input.IsKeyPress(KeyCode::Down) || context.Input.IsKeyPress(KeyCode::PageDown))
+        {
+            if (m_workshopScrollRow < 2)
+            {
+                m_workshopScrollRow++;
+                RefreshWorkshopUI();
+            }
+        }
+    }
+
     UpdateRetroBackground(dt, context);
     m_previewAnimTime += dt;
 
@@ -402,19 +490,42 @@ void MenuScene::CloseModals()
         m_registry.GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
         m_activeTabCanvas = NULL_ENTITY;
     }
-    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopProfileCanvas})
+    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopProfileCanvas, m_workshopDescCanvas})
     {
         if (subCanvas != NULL_ENTITY && m_registry.IsAlive(subCanvas) && m_registry.HasComponent<CanvasComponent>(subCanvas))
         {
             m_registry.GetComponent<CanvasComponent>(subCanvas).IsEnabled = false;
         }
     }
+    m_showDescriptionModal = false;
     m_workshopActiveTabCanvas = NULL_ENTITY;
     m_activeModal = NULL_ENTITY;
     if (m_registry.IsAlive(m_mainCanvas) && m_registry.HasComponent<CanvasComponent>(m_mainCanvas))
     {
         m_registry.GetComponent<CanvasComponent>(m_mainCanvas).IsEnabled = true;
     }
+}
+
+void MenuScene::OpenDescriptionModal()
+{
+    m_showDescriptionModal = true;
+    if (m_workshopDescCanvas != NULL_ENTITY && m_registry.IsAlive(m_workshopDescCanvas) && m_registry.HasComponent<CanvasComponent>(m_workshopDescCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_workshopDescCanvas).IsEnabled = true;
+    }
+    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+    RefreshWorkshopUI();
+}
+
+void MenuScene::CloseDescriptionModal()
+{
+    m_showDescriptionModal = false;
+    if (m_workshopDescCanvas != NULL_ENTITY && m_registry.IsAlive(m_workshopDescCanvas) && m_registry.HasComponent<CanvasComponent>(m_workshopDescCanvas))
+    {
+        m_registry.GetComponent<CanvasComponent>(m_workshopDescCanvas).IsEnabled = false;
+    }
+    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+    RefreshWorkshopUI();
 }
 
 void MenuScene::UpdateVolumeBars(const std::vector<Entity>& bars, float volume)
@@ -1565,6 +1676,22 @@ void MenuScene::CreateDebugModal(const GameContext& context)
     });
 }
 
+static constexpr PowerUpType kAllWorkshopPowerUps[13] = {
+    PowerUpType::Storm,
+    PowerUpType::FireBall,
+    PowerUpType::BigBall,
+    PowerUpType::MultiBall,
+    PowerUpType::StickyPaddle,
+    PowerUpType::BottomBarrier,
+    PowerUpType::MagnetPaddle,
+    PowerUpType::GhostBall,
+    PowerUpType::TempoBall,
+    PowerUpType::ExpandPaddle,
+    PowerUpType::ShrinkPaddle,
+    PowerUpType::ExtraLife,
+    PowerUpType::ItemRegen
+};
+
 void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
 {
     m_workshopCanvas = m_registry.CreateEntity();
@@ -1586,9 +1713,9 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .ZOrder = 1
     });
 
-    // Left Player Name in Header
+    // Left Player Name in Header (without "PLAYER: " prefix)
     m_workshopPlayerText = UIFactory::CreateText(m_registry, m_workshopCanvas, TextDescriptor{
-        .Text = "PLAYER: " + ProfileManager::Get().GetUsername(),
+        .Text = ProfileManager::Get().GetUsername(),
         .Position = {-900.0f, -635.0f},
         .FontId = m_fontId,
         .FontSize = 32.0f,
@@ -1600,6 +1727,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
         .Text = "POWER-UPS",
         .OnClick = [this]() {
+            if (m_showDescriptionModal) return;
             OpenWorkshopTab(m_workshopUpgradesCanvas);
         },
         .Position = {-240.0f, -635.0f},
@@ -1615,6 +1743,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
         .Text = "ULTIMATES",
         .OnClick = [this]() {
+            if (m_showDescriptionModal) return;
             OpenWorkshopTab(m_workshopUltimatesCanvas);
         },
         .Position = {30.0f, -635.0f},
@@ -1630,6 +1759,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
         .Text = "PROFIL",
         .OnClick = [this]() {
+            if (m_showDescriptionModal) return;
             OpenWorkshopTab(m_workshopProfileCanvas);
         },
         .Position = {310.0f, -635.0f},
@@ -1652,22 +1782,6 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .ZOrder = 2
     });
 
-    // Close Button [X]
-    UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
-        .Text = "X",
-        .OnClick = [this]() {
-            CloseModals();
-        },
-        .Position = {1090.0f, -635.0f},
-        .Size = {64.0f, 54.0f},
-        .DefaultColor = Color{160, 40, 50, 255},
-        .HoverColor = Color{210, 55, 70, 255},
-        .PressedColor = Color{110, 25, 35, 255},
-        .FontId = m_fontId,
-        .FontSize = 34.0f,
-        .ZOrder = 2
-    });
-
     // Sub-canvases
     m_workshopUpgradesCanvas = m_registry.CreateEntity();
     m_registry.AddComponent<CanvasComponent>(m_workshopUpgradesCanvas, CanvasComponent{.IsEnabled = false});
@@ -1679,74 +1793,31 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     m_registry.AddComponent<CanvasComponent>(m_workshopProfileCanvas, CanvasComponent{.IsEnabled = false});
 
     // =========================================================================
-    // --- TAB 1: UPGRADES LAB (CLASH ROYALE CARD DECK + INSPECTOR PREVIEW) ---
+    // --- TAB 1: UPGRADES LAB (CLASH ROYALE CARD GRID + INSPECTOR PREVIEW) ---
     // =========================================================================
 
-    // Left Column Deck Navigation
-    UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
-        .Text = "< PREV",
-        .OnClick = [this]() {
-            m_workshopCurrentPage = (m_workshopCurrentPage + 1) % 2;
-            const PowerUpType pageFirst[2] = { PowerUpType::Storm, PowerUpType::MagnetPaddle };
-            m_selectedPowerUp = pageFirst[m_workshopCurrentPage];
-            m_workshopPreviewLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
-            RefreshWorkshopUI();
-        },
-        .Position = {-920.0f, -540.0f},
-        .Size = {160.0f, 44.0f},
-        .DefaultColor = Color{35, 45, 65, 255},
-        .HoverColor = Color{55, 70, 100, 255},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .ZOrder = 2
-    });
-
-    m_workshopPageText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-        .Text = "PAGE 1 / 2: COMBAT POWER-UPS",
-        .Position = {-580.0f, -540.0f},
-        .FontId = m_fontId,
-        .FontSize = 28.0f,
-        .Tint = Colors::Gold,
-        .ZOrder = 2
-    });
-
-    UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
-        .Text = "NEXT >",
-        .OnClick = [this]() {
-            m_workshopCurrentPage = (m_workshopCurrentPage + 1) % 2;
-            const PowerUpType pageFirst[2] = { PowerUpType::Storm, PowerUpType::MagnetPaddle };
-            m_selectedPowerUp = pageFirst[m_workshopCurrentPage];
-            m_workshopPreviewLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
-            RefreshWorkshopUI();
-        },
-        .Position = {-240.0f, -540.0f},
-        .Size = {160.0f, 44.0f},
-        .DefaultColor = Color{35, 45, 65, 255},
-        .HoverColor = Color{55, 70, 100, 255},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .ZOrder = 2
-    });
-
-    // 6 Large Power-Up Cards (2 cols x 3 rows) on the Left
+    // 9 Visible Cards in a 3x3 CSS-style Grid on the Left
     m_upgradeCards.clear();
-    const float cardColX[2] = {-835.0f, -345.0f};
-    const float cardRowY[3] = {-400.0f, -190.0f, 20.0f};
+    const float cardColX[3] = {-930.0f, -670.0f, -410.0f};
+    const float cardRowY[3] = {-350.0f, -50.0f, 250.0f};
 
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 9; ++i)
     {
         UpgradeCardWidgets card;
-        float x = cardColX[i % 2];
-        float y = cardRowY[i / 2];
+        float x = cardColX[i % 3];
+        float y = cardRowY[i / 3];
+        int slotIndex = i;
 
-        int cardIndex = i;
         card.CardBtn = UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
             .Text = "",
-            .OnClick = [this, cardIndex]() {
-                if (cardIndex < static_cast<int>(m_upgradeCards.size()))
+            .OnClick = [this, slotIndex]() {
+                if (m_showDescriptionModal) return;
+                int pwrIdx = m_workshopScrollRow * 3 + slotIndex;
+                if (pwrIdx >= 0 && pwrIdx < 13)
                 {
-                    m_selectedPowerUp = m_upgradeCards[cardIndex].Type;
-                    m_workshopPreviewLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+                    m_selectedPowerUp = kAllWorkshopPowerUps[pwrIdx];
+                    m_inspectedLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+                    m_workshopPreviewLevel = m_inspectedLevel;
                     m_previewAnimTime = 0.0f;
                     m_simAudioTriggerMask = 0;
                     m_simLastLoop = -1;
@@ -1755,72 +1826,83 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 }
             },
             .Position = {x, y},
-            .Size = {450.0f, 180.0f},
+            .Size = {240.0f, 280.0f},
             .DefaultColor = Color{24, 30, 48, 250},
             .HoverColor = Color{35, 48, 78, 255},
             .PressedColor = Color{18, 22, 36, 255},
             .FontId = m_fontId,
-            .FontSize = 24.0f,
+            .FontSize = 20.0f,
             .ZOrder = 2
         });
 
-        card.TitleText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-            .Text = "POWER-UP",
-            .Position = {x + 35.0f, y - 50.0f},
+        card.LevelText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+            .Text = "NIV. 1",
+            .Position = {x, y + 84.0f},
             .FontId = m_fontId,
-            .FontSize = 28.0f,
+            .FontSize = 18.0f,
             .Tint = Colors::Gold,
             .ZOrder = 3
         });
 
-        card.CategoryText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-            .Text = "[CATEGORY]",
-            .Position = {x + 35.0f, y - 18.0f},
-            .FontId = m_fontId,
-            .FontSize = 20.0f,
-            .Tint = Color{80, 220, 255, 255},
-            .ZOrder = 3
-        });
-
-        card.LevelText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-            .Text = "LVL 1 / 5",
-            .Position = {x - 50.0f, y + 20.0f},
-            .FontId = m_fontId,
-            .FontSize = 22.0f,
-            .Tint = Colors::White,
-            .ZOrder = 3
-        });
-
-        card.CostText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-            .Text = "[100 CR]",
-            .Position = {x + 120.0f, y + 20.0f},
-            .FontId = m_fontId,
-            .FontSize = 22.0f,
-            .Tint = Color{255, 215, 80, 255},
-            .ZOrder = 3
-        });
+        card.TitleText = NULL_ENTITY;
+        card.CategoryText = NULL_ENTITY;
+        card.CostText = NULL_ENTITY;
 
         m_upgradeCards.push_back(card);
     }
 
-    // Hint below deck
-    UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-        .Text = "CHOISISSEZ UN POWER-UP POUR L'AMELIORER",
-        .Position = {-580.0f, 145.0f},
+    // Scrollbar Buttons (Up / Down)
+    m_workshopScrollUpBtn = UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
+        .Text = "^",
+        .OnClick = [this]() {
+            if (m_showDescriptionModal) return;
+            if (m_workshopScrollRow > 0)
+            {
+                m_workshopScrollRow--;
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 70.0f);
+                RefreshWorkshopUI();
+            }
+        },
+        .Position = {-250.0f, -440.0f},
+        .Size = {44.0f, 44.0f},
+        .DefaultColor = Color{35, 45, 65, 255},
+        .HoverColor = Color{55, 75, 110, 255},
+        .PressedColor = Color{25, 35, 50, 255},
         .FontId = m_fontId,
-        .FontSize = 22.0f,
-        .Tint = Color{120, 185, 245, 255},
-        .ZOrder = 2
+        .FontSize = 26.0f,
+        .ZOrder = 3
+    });
+
+    m_workshopScrollDownBtn = UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
+        .Text = "v",
+        .OnClick = [this]() {
+            if (m_showDescriptionModal) return;
+            if (m_workshopScrollRow < 2)
+            {
+                m_workshopScrollRow++;
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 70.0f);
+                RefreshWorkshopUI();
+            }
+        },
+        .Position = {-250.0f, 340.0f},
+        .Size = {44.0f, 44.0f},
+        .DefaultColor = Color{35, 45, 65, 255},
+        .HoverColor = Color{55, 75, 110, 255},
+        .PressedColor = Color{25, 35, 50, 255},
+        .FontId = m_fontId,
+        .FontSize = 26.0f,
+        .ZOrder = 3
     });
 
     // Back to Menu Button
     UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
         .Text = "RETOUR AU MENU",
         .OnClick = [this]() {
+            if (m_showDescriptionModal) return;
             CloseModals();
         },
-        .Position = {-580.0f, 220.0f},
-        .Size = {340.0f, 54.0f},
+        .Position = {-670.0f, 490.0f},
+        .Size = {360.0f, 54.0f},
         .DefaultColor = Color{120, 35, 45, 255},
         .HoverColor = Color{165, 50, 65, 255},
         .PressedColor = Color{85, 25, 35, 255},
@@ -1829,107 +1911,49 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .ZOrder = 2
     });
 
-    // Right Column Inspector Panel (Frame containing square monitor and controls)
+    // Right Column Inspector Panel (Frame neatly enclosing preview and stats controls)
     UIFactory::CreatePanel(m_registry, m_workshopUpgradesCanvas, PanelDescriptor{
-        .Position = {580.0f, 15.0f},
-        .Size = {1060.0f, 1160.0f},
+        .Position = {600.0f, -35.0f},
+        .Size = {1040.0f, 900.0f},
         .Tint = Color{18, 22, 36, 245},
         .ZOrder = 1
     });
 
-    // Inspector Title & Subtitle
+    // Inspector Title at the Top (Clean, aligned with cards)
     m_inspectorTitleText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
         .Text = "POWER-UP NAME",
-        .Position = {580.0f, 195.0f},
+        .Position = {600.0f, -440.0f},
         .FontId = m_fontId,
         .FontSize = 38.0f,
         .Tint = Colors::Gold,
         .ZOrder = 3
     });
 
-    m_inspectorCategoryText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-        .Text = "[POWER-UP]",
-        .Position = {580.0f, 235.0f},
-        .FontId = m_fontId,
-        .FontSize = 22.0f,
-        .Tint = Color{80, 220, 255, 255},
-        .ZOrder = 3
-    });
+    m_inspectorCategoryText = NULL_ENTITY;
 
-    m_inspectorDescText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-        .Text = "Description.",
-        .Position = {580.0f, 275.0f},
-        .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Color{225, 235, 250, 255},
-        .ZOrder = 3
-    });
-
-    // Stat Comparison Box (Clash Royale Style Diff)
-    UIFactory::CreatePanel(m_registry, m_workshopUpgradesCanvas, PanelDescriptor{
-        .Position = {580.0f, 345.0f},
-        .Size = {900.0f, 85.0f},
-        .Tint = Color{24, 30, 48, 240},
-        .ZOrder = 2
-    });
-
-    m_inspectorCurTierText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-        .Text = "ACTUEL: ...",
-        .Position = {580.0f, 328.0f},
-        .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Color{100, 220, 255, 255},
-        .ZOrder = 3
-    });
-
-    m_inspectorArrowText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-        .Text = "",
-        .Position = {580.0f, 345.0f},
-        .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Colors::Gold,
-        .ZOrder = 3
-    });
-
-    m_inspectorNextTierText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-        .Text = "SUIVANT: ...",
-        .Position = {580.0f, 360.0f},
-        .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Color{255, 215, 80, 255},
-        .ZOrder = 3
-    });
-
-    // Interactive Level Simulation Pip Buttons (NIV. 1 to NIV. 5)
-    UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-        .Text = "TESTER LES NIVEAUX (CLIQUEZ POUR SIMULER LE POUVOIR)",
-        .Position = {580.0f, 410.0f},
-        .FontId = m_fontId,
-        .FontSize = 19.0f,
-        .Tint = Color{120, 195, 255, 255},
-        .ZOrder = 3
-    });
-
+    // Level Selector / Inspection Buttons (NIV. 1 to NIV. 5)
     m_levelPipButtons.clear();
-    constexpr float bigPipW = 115.0f;
-    constexpr float bigPipH = 34.0f;
-    constexpr float bigPipGap = 8.0f;
-    float barStartX = 580.0f - (5.0f * (bigPipW + bigPipGap) - bigPipGap) * 0.5f + (bigPipW * 0.5f);
-    float barY = 448.0f;
+    constexpr float pipBtnW = 96.0f;
+    constexpr float pipBtnH = 34.0f;
+    constexpr float pipBtnGap = 12.0f;
+    float startPipX = 600.0f - (5.0f * (pipBtnW + pipBtnGap) - pipBtnGap) * 0.5f + (pipBtnW * 0.5f);
+    float pipBtnY = -65.0f;
 
     for (int p = 0; p < 5; ++p)
     {
-        float bx = barStartX + static_cast<float>(p) * (bigPipW + bigPipGap);
+        float bx = startPipX + static_cast<float>(p) * (pipBtnW + pipBtnGap);
         int lvl = p + 1;
         Entity pipBtn = UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
             .Text = "NIV. " + std::to_string(lvl),
             .OnClick = [this, lvl]() {
+                if (m_showDescriptionModal) return;
+                m_inspectedLevel = lvl;
                 m_workshopPreviewLevel = lvl;
                 if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
                 RefreshWorkshopUI();
             },
-            .Position = {bx, barY},
-            .Size = {bigPipW, bigPipH},
+            .Position = {bx, pipBtnY},
+            .Size = {pipBtnW, pipBtnH},
             .DefaultColor = Color{35, 45, 65, 220},
             .HoverColor = Color{55, 75, 110, 240},
             .PressedColor = Color{25, 35, 50, 255},
@@ -1940,21 +1964,94 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         m_levelPipButtons.push_back(pipBtn);
     }
 
-    // Big Action Button (Ball Blast / Clash Royale Style)
+    // Description & Stats Toggle Button
+    m_inspectorDescBtn = UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
+        .Text = "DESCRIPTION & STATS",
+        .OnClick = [this]() {
+            if (m_showDescriptionModal)
+            {
+                CloseDescriptionModal();
+            }
+            else
+            {
+                OpenDescriptionModal();
+            }
+        },
+        .Position = {600.0f, -10.0f},
+        .Size = {420.0f, 40.0f},
+        .DefaultColor = Color{30, 60, 95, 240},
+        .HoverColor = Color{45, 90, 145, 255},
+        .PressedColor = Color{20, 45, 75, 255},
+        .FontId = m_fontId,
+        .FontSize = 22.0f,
+        .ZOrder = 3
+    });
+
+    // Stat & Description Info Box (Compacted to align with cards)
+    UIFactory::CreatePanel(m_registry, m_workshopUpgradesCanvas, PanelDescriptor{
+        .Position = {600.0f, 150.0f},
+        .Size = {840.0f, 240.0f},
+        .Tint = Color{24, 30, 48, 240},
+        .ZOrder = 2
+    });
+
+    m_inspectorDescText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+        .Text = "Description.",
+        .Position = {600.0f, 65.0f},
+        .FontId = m_fontId,
+        .FontSize = 21.0f,
+        .Tint = Color{225, 235, 250, 255},
+        .MaxWidth = 780.0f,
+        .ZOrder = 3
+    });
+
+    m_inspectorCurTierText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+        .Text = "ACTUEL: ...",
+        .Position = {600.0f, 125.0f},
+        .FontId = m_fontId,
+        .FontSize = 20.0f,
+        .Tint = Color{100, 220, 255, 255},
+        .MaxWidth = 800.0f,
+        .ZOrder = 3
+    });
+
+    m_inspectorNextTierText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+        .Text = "CONSULTE: ...",
+        .Position = {600.0f, 180.0f},
+        .FontId = m_fontId,
+        .FontSize = 20.0f,
+        .Tint = Color{255, 215, 80, 255},
+        .MaxWidth = 800.0f,
+        .ZOrder = 3
+    });
+
+    m_inspectorTierCostText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+        .Text = "COUT: ...",
+        .Position = {600.0f, 235.0f},
+        .FontId = m_fontId,
+        .FontSize = 20.0f,
+        .Tint = Color{160, 210, 255, 255},
+        .MaxWidth = 800.0f,
+        .ZOrder = 3
+    });
+
+    // Big Upgrade Action Button (Bottom aligned with 3x3 cards grid)
     m_inspectorUpgradeBtn = UIFactory::CreateButton(m_registry, m_workshopUpgradesCanvas, ButtonDescriptor{
         .Text = "AMELIORER",
         .OnClick = [this]() {
+            if (m_showDescriptionModal) return;
             PowerUpType t = m_selectedPowerUp;
             if (PowerUpManager::Get().CanUpgrade(t))
             {
                 PowerUpManager::Get().Upgrade(t);
-                m_workshopPreviewLevel = PowerUpManager::Get().GetLevel(t);
+                m_inspectedLevel = PowerUpManager::Get().GetLevel(t);
+                m_workshopPreviewLevel = m_inspectedLevel;
                 if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
                 RefreshWorkshopUI();
             }
         },
-        .Position = {580.0f, 535.0f},
-        .Size = {640.0f, 78.0f},
+        .Position = {600.0f, 345.0f},
+        .Size = {640.0f, 70.0f},
         .DefaultColor = Color{35, 145, 60, 255},
         .HoverColor = Color{50, 190, 80, 255},
         .PressedColor = Color{22, 95, 40, 255},
@@ -1962,6 +2059,22 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .FontSize = 34.0f,
         .ZOrder = 3
     });
+
+    // Description Modal Canvas Placeholder
+    m_workshopDescCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_workshopDescCanvas, CanvasComponent{.IsEnabled = false});
+    m_workshopDescBackdrop = NULL_ENTITY;
+    m_descModalCloseBtn = NULL_ENTITY;
+    m_descModalXBtn = NULL_ENTITY;
+    m_descModalTitleText = NULL_ENTITY;
+    m_descModalCategoryText = NULL_ENTITY;
+    m_descModalDescText = NULL_ENTITY;
+    for (int lvl = 0; lvl < 5; ++lvl)
+    {
+        m_descModalTierPanels[lvl] = NULL_ENTITY;
+        m_descModalTierTags[lvl] = NULL_ENTITY;
+        m_descModalTierTexts[lvl] = NULL_ENTITY;
+    }
 
     // =========================================================================
     // --- TAB 2: FLAGSHIP ULTIMATES HANGAR ---
@@ -2029,6 +2142,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         card.EquipBtn = UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
             .Text = "EQUIP ULTIMATE",
             .OnClick = [this, ultType]() {
+                if (m_showDescriptionModal) return;
                 ProfileManager::Get().SetEquippedUltimate(ultType);
                 if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 85.0f);
                 RefreshWorkshopUI();
@@ -2045,6 +2159,23 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
 
         m_ultimateCards.push_back(card);
     }
+
+    // Back to Menu Button (Ultimates Tab)
+    UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
+        .Text = "RETOUR AU MENU",
+        .OnClick = [this]() {
+            if (m_showDescriptionModal) return;
+            CloseModals();
+        },
+        .Position = {0.0f, 520.0f},
+        .Size = {360.0f, 54.0f},
+        .DefaultColor = Color{120, 35, 45, 255},
+        .HoverColor = Color{165, 50, 65, 255},
+        .PressedColor = Color{85, 25, 35, 255},
+        .FontId = m_fontId,
+        .FontSize = 28.0f,
+        .ZOrder = 2
+    });
 
     // =========================================================================
     // --- TAB 3: PLAYER PROFILE & CAREER RECORD ---
@@ -2162,6 +2293,23 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .Tint = Colors::White,
         .ZOrder = 3
     });
+
+    // Back to Menu Button (Profile Tab)
+    UIFactory::CreateButton(m_registry, m_workshopProfileCanvas, ButtonDescriptor{
+        .Text = "RETOUR AU MENU",
+        .OnClick = [this]() {
+            if (m_showDescriptionModal) return;
+            CloseModals();
+        },
+        .Position = {0.0f, 520.0f},
+        .Size = {360.0f, 54.0f},
+        .DefaultColor = Color{120, 35, 45, 255},
+        .HoverColor = Color{165, 50, 65, 255},
+        .PressedColor = Color{85, 25, 35, 255},
+        .FontId = m_fontId,
+        .FontSize = 28.0f,
+        .ZOrder = 2
+    });
 }
 
 void MenuScene::OpenWorkshopTab(Entity targetCanvas)
@@ -2183,7 +2331,8 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
     m_previewAnimTime = 0.0f;
     m_simAudioTriggerMask = 0;
     m_simLastLoop = -1;
-    m_workshopPreviewLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+    m_inspectedLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+    m_workshopPreviewLevel = m_inspectedLevel;
 
     RefreshWorkshopUI();
 }
@@ -2200,89 +2349,69 @@ void MenuScene::RefreshWorkshopUI()
     if (m_workshopPlayerText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopPlayerText))
     {
         m_registry.GetComponent<TextComponent>(m_workshopPlayerText).Text =
-            "PLAYER: " + ProfileManager::Get().GetUsername();
+            ProfileManager::Get().GetUsername();
     }
 
-    // 2. Upgrades Tab Refresh
-    const PowerUpType pagePowerUps[2][6] = {
-        {PowerUpType::Storm, PowerUpType::FireBall, PowerUpType::BigBall, PowerUpType::MultiBall, PowerUpType::StickyPaddle, PowerUpType::BottomBarrier},
-        {PowerUpType::MagnetPaddle, PowerUpType::GhostBall, PowerUpType::TempoBall, PowerUpType::ExpandPaddle, PowerUpType::ExtraLife, PowerUpType::ItemRegen}
-    };
-
-    const std::string pageTitles[2] = {
-        "PAGE 1 / 2 : ATTAQUE & DEFENSE",
-        "PAGE 2 / 2 : BONUS & SPECIAL"
-    };
-
-    if (m_workshopPageText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopPageText))
+    // 2. Upgrades Tab Refresh (3x3 Clash Royale Grid)
+    for (size_t slot = 0; slot < m_upgradeCards.size() && slot < 9; ++slot)
     {
-        m_registry.GetComponent<TextComponent>(m_workshopPageText).Text = pageTitles[m_workshopCurrentPage];
+        int pwrIdx = m_workshopScrollRow * 3 + static_cast<int>(slot);
+        if (pwrIdx < 13)
+        {
+            PowerUpType type = kAllWorkshopPowerUps[pwrIdx];
+            m_upgradeCards[slot].Type = type;
+
+            if (m_registry.HasComponent<RectTransform>(m_upgradeCards[slot].CardBtn))
+            {
+                m_registry.GetComponent<RectTransform>(m_upgradeCards[slot].CardBtn).IsActive = true;
+            }
+
+            if (m_registry.HasComponent<TextComponent>(m_upgradeCards[slot].LevelText))
+            {
+                // Blank out text so the 5 gold squares fill the rectangle with no overlapping text
+                m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].LevelText).Text = "";
+            }
+        }
+        else
+        {
+            if (m_registry.HasComponent<RectTransform>(m_upgradeCards[slot].CardBtn))
+            {
+                m_registry.GetComponent<RectTransform>(m_upgradeCards[slot].CardBtn).IsActive = false;
+            }
+            if (m_registry.HasComponent<TextComponent>(m_upgradeCards[slot].LevelText))
+            {
+                m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].LevelText).Text = "";
+            }
+        }
     }
 
-    // Refresh the 6 Cards in the Left Deck
-    for (size_t i = 0; i < m_upgradeCards.size() && i < 6; ++i)
+    // Scrollbar Buttons state
+    if (m_workshopScrollUpBtn != NULL_ENTITY && m_registry.HasComponent<ButtonComponent>(m_workshopScrollUpBtn))
     {
-        PowerUpType type = pagePowerUps[m_workshopCurrentPage][i];
-        m_upgradeCards[i].Type = type;
-
-        int curLvl = PowerUpManager::Get().GetLevel(type);
-        int maxLvl = PowerUpManager::Get().GetMaxLevel(type);
-
-        if (m_registry.HasComponent<TextComponent>(m_upgradeCards[i].TitleText))
-        {
-            m_registry.GetComponent<TextComponent>(m_upgradeCards[i].TitleText).Text =
-                PowerUpManager::Get().GetName(type);
-        }
-
-        if (m_registry.HasComponent<TextComponent>(m_upgradeCards[i].CategoryText))
-        {
-            std::string cat = "[ATTAQUE]";
-            if (type == PowerUpType::StickyPaddle || type == PowerUpType::BottomBarrier || type == PowerUpType::MagnetPaddle || type == PowerUpType::ExpandPaddle) cat = "[DEFENSE]";
-            else if (type == PowerUpType::GhostBall || type == PowerUpType::TempoBall || type == PowerUpType::ExtraLife || type == PowerUpType::ItemRegen) cat = "[SPECIAL]";
-            m_registry.GetComponent<TextComponent>(m_upgradeCards[i].CategoryText).Text = cat;
-        }
-
-        if (m_registry.HasComponent<TextComponent>(m_upgradeCards[i].LevelText))
-        {
-            m_registry.GetComponent<TextComponent>(m_upgradeCards[i].LevelText).Text =
-                "NIV. " + std::to_string(curLvl) + " / " + std::to_string(maxLvl);
-        }
-
-        if (m_registry.HasComponent<TextComponent>(m_upgradeCards[i].CostText))
-        {
-            auto& costText = m_registry.GetComponent<TextComponent>(m_upgradeCards[i].CostText);
-            if (curLvl >= maxLvl)
-            {
-                costText.Text = "[MAX]";
-                costText.Tint = Colors::Gold;
-            }
-            else
-            {
-                int cost = PowerUpManager::Get().GetUpgradeCost(type);
-                costText.Text = "[" + std::to_string(cost) + " CR]";
-                costText.Tint = (PowerUpManager::Get().GetCoins() >= cost) ? Color{50, 240, 100, 255} : Color{255, 140, 80, 255};
-            }
-        }
+        auto& btn = m_registry.GetComponent<ButtonComponent>(m_workshopScrollUpBtn);
+        btn.DefaultColor = (m_workshopScrollRow > 0) ? Color{45, 65, 105, 255} : Color{25, 32, 48, 160};
+    }
+    if (m_workshopScrollDownBtn != NULL_ENTITY && m_registry.HasComponent<ButtonComponent>(m_workshopScrollDownBtn))
+    {
+        auto& btn = m_registry.GetComponent<ButtonComponent>(m_workshopScrollDownBtn);
+        btn.DefaultColor = (m_workshopScrollRow < 2) ? Color{45, 65, 105, 255} : Color{25, 32, 48, 160};
     }
 
     // Refresh Inspector for Currently Selected Power-Up (Right Column)
     int selCurLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
     int selMaxLvl = PowerUpManager::Get().GetMaxLevel(m_selectedPowerUp);
+    if (m_inspectedLevel < 1) m_inspectedLevel = 1;
+    if (m_inspectedLevel > selMaxLvl) m_inspectedLevel = selMaxLvl;
 
     if (m_inspectorTitleText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_inspectorTitleText))
     {
         m_registry.GetComponent<TextComponent>(m_inspectorTitleText).Text =
-            PowerUpManager::Get().GetName(m_selectedPowerUp) + "  [NIV. " + std::to_string(selCurLvl) + " / " + std::to_string(selMaxLvl) + "]";
+            PowerUpManager::Get().GetName(m_selectedPowerUp);
     }
 
     if (m_inspectorCategoryText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_inspectorCategoryText))
     {
-        std::string cat = "[POWER-UP ATTAQUE]";
-        if (m_selectedPowerUp == PowerUpType::StickyPaddle || m_selectedPowerUp == PowerUpType::BottomBarrier || m_selectedPowerUp == PowerUpType::MagnetPaddle || m_selectedPowerUp == PowerUpType::ExpandPaddle)
-            cat = "[POWER-UP DEFENSE]";
-        else if (m_selectedPowerUp == PowerUpType::GhostBall || m_selectedPowerUp == PowerUpType::TempoBall || m_selectedPowerUp == PowerUpType::ExtraLife || m_selectedPowerUp == PowerUpType::ItemRegen)
-            cat = "[POWER-UP SPECIAL]";
-        m_registry.GetComponent<TextComponent>(m_inspectorCategoryText).Text = cat;
+        m_registry.GetComponent<TextComponent>(m_inspectorCategoryText).Text = "";
     }
 
     if (m_inspectorDescText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_inspectorDescText))
@@ -2291,29 +2420,33 @@ void MenuScene::RefreshWorkshopUI()
             PowerUpManager::Get().GetDescription(m_selectedPowerUp);
     }
 
-    if (m_inspectorArrowText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_inspectorArrowText))
-    {
-        m_registry.GetComponent<TextComponent>(m_inspectorArrowText).Text = "";
-    }
-
     if (m_inspectorCurTierText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_inspectorCurTierText))
     {
         m_registry.GetComponent<TextComponent>(m_inspectorCurTierText).Text =
-            "ACTUEL [NIV. " + std::to_string(selCurLvl) + "]: " + PowerUpManager::Get().GetCurrentTierInfo(m_selectedPowerUp);
+            "NIV. ACTUEL (" + std::to_string(selCurLvl) + "): " + PowerUpManager::Get().GetTierInfoForLevel(m_selectedPowerUp, selCurLvl);
     }
 
     if (m_inspectorNextTierText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_inspectorNextTierText))
     {
+        std::string status = (m_inspectedLevel == selCurLvl) ? " [ACTUEL]" : ((m_inspectedLevel < selCurLvl) ? " [DEBLOQUE]" : " [VERROUILLE]");
+        m_registry.GetComponent<TextComponent>(m_inspectorNextTierText).Text =
+            "NIV. CONSULTE (" + std::to_string(m_inspectedLevel) + status + "): " + PowerUpManager::Get().GetTierInfoForLevel(m_selectedPowerUp, m_inspectedLevel);
+        m_registry.GetComponent<TextComponent>(m_inspectorNextTierText).Tint = (m_inspectedLevel <= selCurLvl) ? Colors::Gold : Color{255, 175, 100, 255};
+    }
+
+    if (m_inspectorTierCostText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_inspectorTierCostText))
+    {
         if (selCurLvl >= selMaxLvl)
         {
-            m_registry.GetComponent<TextComponent>(m_inspectorNextTierText).Text = "[ NIVEAU MAXIMUM ATTEINT ]";
-            m_registry.GetComponent<TextComponent>(m_inspectorNextTierText).Tint = Colors::Gold;
+            m_registry.GetComponent<TextComponent>(m_inspectorTierCostText).Text = "TOUS LES PALIERS SONT DEBLOQUES (NIV. MAX)";
+            m_registry.GetComponent<TextComponent>(m_inspectorTierCostText).Tint = Colors::Gold;
         }
         else
         {
-            m_registry.GetComponent<TextComponent>(m_inspectorNextTierText).Text =
-                "SUIVANT [NIV. " + std::to_string(selCurLvl + 1) + "]: " + PowerUpManager::Get().GetNextTierInfo(m_selectedPowerUp);
-            m_registry.GetComponent<TextComponent>(m_inspectorNextTierText).Tint = Colors::Gold;
+            int cost = PowerUpManager::Get().GetUpgradeCost(m_selectedPowerUp);
+            m_registry.GetComponent<TextComponent>(m_inspectorTierCostText).Text =
+                "COUT PROCHAIN PALIER (NIV. " + std::to_string(selCurLvl + 1) + "): " + std::to_string(cost) + " CREDITS";
+            m_registry.GetComponent<TextComponent>(m_inspectorTierCostText).Tint = (PowerUpManager::Get().GetCoins() >= cost) ? Color{80, 240, 140, 255} : Color{255, 140, 100, 255};
         }
     }
 
@@ -2358,12 +2491,12 @@ void MenuScene::RefreshWorkshopUI()
         Entity btn = m_levelPipButtons[p];
         int lvl = p + 1;
         bool isOwned = (lvl <= selCurLvl);
-        bool isPreviewed = (lvl == m_workshopPreviewLevel);
+        bool isInspected = (lvl == m_inspectedLevel);
 
         if (m_registry.HasComponent<ButtonComponent>(btn))
         {
             auto& bComp = m_registry.GetComponent<ButtonComponent>(btn);
-            if (isPreviewed)
+            if (isInspected)
             {
                 bComp.DefaultColor = Color{0, 160, 220, 255};
                 bComp.HoverColor = Color{20, 190, 255, 255};
@@ -2382,8 +2515,8 @@ void MenuScene::RefreshWorkshopUI()
         if (m_registry.HasComponent<TextComponent>(btn))
         {
             auto& tComp = m_registry.GetComponent<TextComponent>(btn);
-            tComp.Text = (isPreviewed ? "[ NIV. " : "NIV. ") + std::to_string(lvl) + (isPreviewed ? " ]" : "");
-            tComp.Tint = isPreviewed ? Colors::Gold : (isOwned ? Color{100, 220, 255, 255} : Color{140, 155, 175, 200});
+            tComp.Text = (isInspected ? "[ NIV. " : "NIV. ") + std::to_string(lvl) + (isInspected ? " ]" : "");
+            tComp.Tint = isInspected ? Colors::Gold : (isOwned ? Color{100, 220, 255, 255} : Color{140, 155, 175, 200});
         }
     }
 
@@ -2439,6 +2572,79 @@ void MenuScene::RefreshWorkshopUI()
 
         textComp.Text = ss.str();
     }
+
+    // 5. Description Modal Refresh
+    if (m_descModalTitleText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_descModalTitleText))
+    {
+        m_registry.GetComponent<TextComponent>(m_descModalTitleText).Text =
+            PowerUpManager::Get().GetName(m_selectedPowerUp) + "  -  PALIERS & STATISTIQUES";
+    }
+
+    if (m_descModalCategoryText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_descModalCategoryText))
+    {
+        std::string cat = "[POWER-UP ATTAQUE]";
+        if (m_selectedPowerUp == PowerUpType::StickyPaddle || m_selectedPowerUp == PowerUpType::BottomBarrier || m_selectedPowerUp == PowerUpType::MagnetPaddle || m_selectedPowerUp == PowerUpType::ExpandPaddle)
+            cat = "[POWER-UP DEFENSE]";
+        else if (m_selectedPowerUp == PowerUpType::GhostBall || m_selectedPowerUp == PowerUpType::TempoBall || m_selectedPowerUp == PowerUpType::ExtraLife || m_selectedPowerUp == PowerUpType::ItemRegen || m_selectedPowerUp == PowerUpType::ShrinkPaddle)
+            cat = "[POWER-UP TACTIQUE & SPECIAL]";
+        m_registry.GetComponent<TextComponent>(m_descModalCategoryText).Text = cat;
+    }
+
+    if (m_descModalDescText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_descModalDescText))
+    {
+        m_registry.GetComponent<TextComponent>(m_descModalDescText).Text =
+            PowerUpManager::Get().GetDescription(m_selectedPowerUp);
+    }
+
+    for (int lvl = 1; lvl <= 5; ++lvl)
+    {
+        int idx = lvl - 1;
+        bool isCur = (lvl == selCurLvl);
+        bool isIns = (lvl == m_inspectedLevel);
+        bool isUnlocked = (lvl <= selCurLvl);
+
+        if (m_descModalTierPanels[idx] != NULL_ENTITY && m_registry.HasComponent<PanelComponent>(m_descModalTierPanels[idx]))
+        {
+            auto& panel = m_registry.GetComponent<PanelComponent>(m_descModalTierPanels[idx]);
+            if (isCur)
+                panel.Tint = Color{25, 65, 110, 250};
+            else if (isIns)
+                panel.Tint = Color{55, 45, 20, 240};
+            else if (isUnlocked)
+                panel.Tint = Color{20, 32, 50, 230};
+            else
+                panel.Tint = Color{16, 20, 32, 230};
+        }
+
+        if (m_descModalTierTags[idx] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_descModalTierTags[idx]))
+        {
+            auto& textComp = m_registry.GetComponent<TextComponent>(m_descModalTierTags[idx]);
+            std::string tag = "NIV. " + std::to_string(lvl);
+            if (isCur)
+            {
+                tag += " [ACTUEL]";
+                textComp.Tint = Color{80, 220, 255, 255};
+            }
+            else if (isUnlocked)
+            {
+                tag += " [DEBLOQUE]";
+                textComp.Tint = Colors::Gold;
+            }
+            else
+            {
+                tag += " [VERROUILLE]";
+                textComp.Tint = Color{140, 150, 170, 220};
+            }
+            textComp.Text = tag;
+        }
+
+        if (m_descModalTierTexts[idx] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_descModalTierTexts[idx]))
+        {
+            auto& textComp = m_registry.GetComponent<TextComponent>(m_descModalTierTexts[idx]);
+            textComp.Text = PowerUpManager::Get().GetTierInfoForLevel(m_selectedPowerUp, lvl);
+            textComp.Tint = isUnlocked ? Colors::White : Color{180, 190, 205, 200};
+        }
+    }
 }
 
 void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
@@ -2470,56 +2676,73 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
     context.Render.DrawLine(Vector2f{screenCenterX + halfW, screenCenterY + halfH}, Vector2f{screenCenterX + halfW - cw, screenCenterY + halfH}, bracketCol, 3.0f);
     context.Render.DrawLine(Vector2f{screenCenterX + halfW, screenCenterY + halfH}, Vector2f{screenCenterX + halfW, screenCenterY + halfH - cw}, bracketCol, 3.0f);
 
-    // 2. Tab 1 Custom Visuals: Selected Card Glow, Segmented Bars & Live Simulation Monitor
+    // 2. Tab 1 Custom Visuals: Clash Royale Grid Cards, Scrollbar & Compact Simulation Monitor
     if (m_workshopActiveTabCanvas == m_workshopUpgradesCanvas)
     {
-        const float cardColX[2] = {-835.0f, -345.0f};
-        const float cardRowY[3] = {-400.0f, -190.0f, 20.0f};
+        const float cardColX[3] = {-930.0f, -670.0f, -410.0f};
+        const float cardRowY[3] = {-350.0f, -50.0f, 250.0f};
 
-        for (size_t i = 0; i < m_upgradeCards.size() && i < 6; ++i)
+        for (size_t slot = 0; slot < 9; ++slot)
         {
-            float x = screenCenterX + cardColX[i % 2];
-            float y = screenCenterY + cardRowY[i / 2];
+            int pwrIdx = m_workshopScrollRow * 3 + static_cast<int>(slot);
+            if (pwrIdx >= 13) continue;
 
-            PowerUpType type = m_upgradeCards[i].Type;
+            PowerUpType type = kAllWorkshopPowerUps[pwrIdx];
+            float x = screenCenterX + cardColX[slot % 3];
+            float y = screenCenterY + cardRowY[slot / 3];
             bool isSelected = (type == m_selectedPowerUp);
 
+            // 1. Clash Royale Card Base Frame (240 x 280 px)
             if (isSelected)
             {
-                // Pulsing radiant Gold outline around selected card
                 float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 4.0f);
                 uint8_t alpha = static_cast<uint8_t>(180.0f + pulse * 75.0f);
-                context.Render.DrawRectangleOutline(450.0f, 180.0f,
+                context.Render.DrawRectangleOutline(240.0f, 280.0f,
                     Transform2D{Vector2f{x, y}},
                     Color{255, 215, 60, alpha}, 3.5f);
 
-                // Small arrow indicator on the right of the selected card pointing to inspector
-                context.Render.DrawRectangle(14.0f, 14.0f,
-                    Transform2D{Vector2f{x + 225.0f, y}, 45.0f},
-                    Color{255, 215, 60, 255});
+                // Corner glowing pips
+                constexpr float cLen = 14.0f;
+                Color goldColor{255, 215, 60, 255};
+                context.Render.DrawLine(Vector2f{x - 120.0f, y - 140.0f}, Vector2f{x - 120.0f + cLen, y - 140.0f}, goldColor, 2.5f);
+                context.Render.DrawLine(Vector2f{x - 120.0f, y - 140.0f}, Vector2f{x - 120.0f, y - 140.0f + cLen}, goldColor, 2.5f);
+                context.Render.DrawLine(Vector2f{x + 120.0f, y - 140.0f}, Vector2f{x + 120.0f - cLen, y - 140.0f}, goldColor, 2.5f);
+                context.Render.DrawLine(Vector2f{x + 120.0f, y - 140.0f}, Vector2f{x + 120.0f, y - 140.0f + cLen}, goldColor, 2.5f);
+                context.Render.DrawLine(Vector2f{x - 120.0f, y + 140.0f}, Vector2f{x - 120.0f + cLen, y + 140.0f}, goldColor, 2.5f);
+                context.Render.DrawLine(Vector2f{x - 120.0f, y + 140.0f}, Vector2f{x - 120.0f, y + 140.0f - cLen}, goldColor, 2.5f);
+                context.Render.DrawLine(Vector2f{x + 120.0f, y + 140.0f}, Vector2f{x + 120.0f - cLen, y + 140.0f}, goldColor, 2.5f);
+                context.Render.DrawLine(Vector2f{x + 120.0f, y + 140.0f}, Vector2f{x + 120.0f, y + 140.0f - cLen}, goldColor, 2.5f);
             }
             else
             {
-                context.Render.DrawRectangleOutline(450.0f, 180.0f,
+                context.Render.DrawRectangleOutline(240.0f, 280.0f,
                     Transform2D{Vector2f{x, y}},
                     Color{50, 75, 120, 200}, 1.5f);
             }
 
-            // Power-Up Category Icon Box on the Left
-            Color iconBg = Color{35, 60, 110, 255};
+            // 2. Artwork Placeholder Frame (216 x 190 px) in the upper card area
+            Vector2f artCenter{x, y - 25.0f};
+            Vector2f artSize{216.0f, 190.0f};
+
+            Color artBg = Color{20, 26, 42, 255};
             if (type == PowerUpType::Storm || type == PowerUpType::FireBall || type == PowerUpType::BigBall || type == PowerUpType::MultiBall)
-                iconBg = Color{120, 45, 30, 255}; // Offensive red
+                artBg = Color{48, 20, 25, 255};
             else if (type == PowerUpType::StickyPaddle || type == PowerUpType::BottomBarrier || type == PowerUpType::MagnetPaddle)
-                iconBg = Color{25, 80, 110, 255}; // Tactical cyan
+                artBg = Color{18, 38, 55, 255};
             else if (type == PowerUpType::GhostBall || type == PowerUpType::TempoBall)
-                iconBg = Color{75, 40, 110, 255}; // Phase purple
+                artBg = Color{38, 22, 50, 255};
             else
-                iconBg = Color{30, 95, 55, 255}; // Utility emerald
+                artBg = Color{20, 44, 30, 255};
 
-            context.Render.DrawRectangle(52.0f, 52.0f, Transform2D{Vector2f{x - 170.0f, y - 20.0f}}, iconBg);
-            context.Render.DrawRectangleOutline(52.0f, 52.0f, Transform2D{Vector2f{x - 170.0f, y - 20.0f}}, Colors::White, 1.5f);
+            context.Render.DrawRectangle(artSize.X, artSize.Y, Transform2D{artCenter}, artBg);
+            context.Render.DrawRectangleOutline(artSize.X, artSize.Y, Transform2D{artCenter}, isSelected ? Color{255, 215, 60, 180} : Color{60, 90, 140, 200}, 1.5f);
 
-            // 3-letter tactical badge inside icon box
+            // Inner subtle cross guidelines
+            Color guideCol{255, 255, 255, 18};
+            context.Render.DrawLine(Vector2f{artCenter.X - artSize.X * 0.5f, artCenter.Y - artSize.Y * 0.5f}, Vector2f{artCenter.X + artSize.X * 0.5f, artCenter.Y + artSize.Y * 0.5f}, guideCol, 1.0f);
+            context.Render.DrawLine(Vector2f{artCenter.X - artSize.X * 0.5f, artCenter.Y + artSize.Y * 0.5f}, Vector2f{artCenter.X + artSize.X * 0.5f, artCenter.Y - artSize.Y * 0.5f}, guideCol, 1.0f);
+
+            // Center Badge Pill
             std::string badge = "PWR";
             if (type == PowerUpType::Storm) badge = "STM";
             else if (type == PowerUpType::MultiBall) badge = "MLB";
@@ -2531,55 +2754,179 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
             else if (type == PowerUpType::GhostBall) badge = "GHO";
             else if (type == PowerUpType::TempoBall) badge = "TMP";
             else if (type == PowerUpType::ExpandPaddle) badge = "EXP";
+            else if (type == PowerUpType::ShrinkPaddle) badge = "SHR";
             else if (type == PowerUpType::ExtraLife) badge = "LIF";
             else if (type == PowerUpType::ItemRegen) badge = "REG";
 
-            context.Render.DrawTextCentered(badge, m_fontId, 20.0f,
-                Transform2D{Vector2f{x - 170.0f, y - 20.0f}}, Colors::White);
+            context.Render.DrawRectangle(64.0f, 64.0f, Transform2D{Vector2f{artCenter.X, artCenter.Y - 10.0f}}, Color{10, 14, 24, 230});
+            context.Render.DrawRectangleOutline(64.0f, 64.0f, Transform2D{Vector2f{artCenter.X, artCenter.Y - 10.0f}}, isSelected ? Colors::Gold : Colors::White, 2.0f);
+            context.Render.DrawTextCentered(badge, m_fontId, 22.0f, Transform2D{Vector2f{artCenter.X, artCenter.Y - 10.0f}}, Colors::White);
+            context.Render.DrawTextCentered("[ ARTWORK ]", m_fontId, 15.0f, Transform2D{Vector2f{artCenter.X, artCenter.Y + 45.0f}}, Color{150, 175, 215, 180});
 
-            // Mini Segmented Clash Royale Tier Bar on the card (5 segments)
+            // 3. Level Banner Plate at the bottom
+            Vector2f bannerCenter{x, y + 104.0f};
+            Vector2f bannerSize{216.0f, 48.0f};
+            context.Render.DrawRectangle(bannerSize.X, bannerSize.Y, Transform2D{bannerCenter}, Color{14, 18, 30, 255});
+            context.Render.DrawRectangleOutline(bannerSize.X, bannerSize.Y, Transform2D{bannerCenter}, isSelected ? Colors::Gold : Color{50, 75, 120, 220}, 1.5f);
+
+            // 5 Level Indicator Squares (Gold: unlit base, lit per purchased tier)
+            // Centered and filling the entire banner rectangle
             int curLvl = PowerUpManager::Get().GetLevel(type);
-            int maxLvl = PowerUpManager::Get().GetMaxLevel(type);
-            constexpr float pipW = 46.0f;
-            constexpr float pipH = 8.0f;
-            constexpr float pipGap = 4.0f;
-            float totalPipsW = static_cast<float>(maxLvl) * (pipW + pipGap) - pipGap;
-            float pipsStartX = x - totalPipsW * 0.5f + (pipW * 0.5f);
-            float pipsY = y + 58.0f;
+            constexpr float sqSize = 36.0f;
+            constexpr float sqGap = 6.0f;
+            float sqStartX = x - (5.0f * sqSize + 4.0f * sqGap) * 0.5f + (sqSize * 0.5f);
+            float sqY = y + 104.0f;
 
-            for (int p = 0; p < maxLvl; ++p)
+            for (int p = 0; p < 5; ++p)
             {
-                float px = pipsStartX + static_cast<float>(p) * (pipW + pipGap);
-                // Dark recessed socket background
-                context.Render.DrawRectangle(pipW, pipH, Transform2D{Vector2f{px, pipsY}}, Color{12, 16, 26, 255});
-                if (p < curLvl)
+                Vector2f sqCenter{sqStartX + static_cast<float>(p) * (sqSize + sqGap), sqY};
+                bool isLit = (p < curLvl);
+
+                if (isLit)
                 {
-                    context.Render.DrawRectangle(pipW, pipH, Transform2D{Vector2f{px, pipsY}}, Color{0, 225, 255, 255});
+                    // Radiant lit gold square
+                    context.Render.DrawRectangle(sqSize, sqSize, Transform2D{sqCenter}, Color{255, 215, 60, 255});
+                    context.Render.DrawRectangleOutline(sqSize, sqSize, Transform2D{sqCenter}, Color{255, 250, 205, 255}, 2.0f);
+                    context.Render.DrawLine(Vector2f{sqCenter.X - 14.0f, sqCenter.Y - 14.0f}, Vector2f{sqCenter.X + 14.0f, sqCenter.Y - 14.0f}, Color{255, 255, 230, 255}, 1.5f);
                 }
-                Color borderCol = (p < curLvl) ? Color{0, 180, 220, 220} : Color{65, 95, 145, 220};
-                context.Render.DrawRectangleOutline(pipW, pipH, Transform2D{Vector2f{px, pipsY}}, borderCol, 1.0f);
+                else
+                {
+                    // Base unlit square: dark interior filling the socket with dim gold/amber border
+                    context.Render.DrawRectangle(sqSize, sqSize, Transform2D{sqCenter}, Color{20, 24, 38, 240});
+                    context.Render.DrawRectangleOutline(sqSize, sqSize, Transform2D{sqCenter}, Color{75, 65, 40, 180}, 1.5f);
+                }
             }
         }
 
-        // Preview Window in Right Column (Square CRT Monitor Frame)
-        const Vector2f monitorCenter{screenCenterX + 580.0f, screenCenterY - 200.0f};
-        const Vector2f monitorSize{700.0f, 700.0f};
+        // Vertical Scrollbar track and thumb on the left grid
+        const float scrollTrackX = screenCenterX - 250.0f;
+        const float trackStartY = screenCenterY - 400.0f;
+        const float trackEndY = screenCenterY + 300.0f;
+        const float trackLength = trackEndY - trackStartY;
 
-        // Render the placeholder frame and text
+        // Track bar
+        context.Render.DrawRectangle(6.0f, trackLength, Transform2D{Vector2f{scrollTrackX, (trackStartY + trackEndY) * 0.5f}}, Color{30, 42, 65, 220});
+        context.Render.DrawRectangleOutline(6.0f, trackLength, Transform2D{Vector2f{scrollTrackX, (trackStartY + trackEndY) * 0.5f}}, Color{55, 80, 125, 200}, 1.0f);
+
+        // Thumb indicator (3 of 5 rows visible -> 240px thumb)
+        constexpr float thumbHeight = 240.0f;
+        float travel = trackLength - thumbHeight;
+        float thumbY = trackStartY + (thumbHeight * 0.5f) + (static_cast<float>(m_workshopScrollRow) / 2.0f) * travel;
+        context.Render.DrawRectangle(10.0f, thumbHeight, Transform2D{Vector2f{scrollTrackX, thumbY}}, Color{0, 190, 255, 220});
+        context.Render.DrawRectangleOutline(10.0f, thumbHeight, Transform2D{Vector2f{scrollTrackX, thumbY}}, Colors::White, 1.5f);
+
+        // Preview Window in Right Column (Enhanced 640x300 Widescreen CRT Monitor)
+        const Vector2f monitorCenter{screenCenterX + 600.0f, screenCenterY - 260.0f};
+        const Vector2f monitorSize{640.0f, 300.0f};
         RenderPowerUpSimulation(context, m_selectedPowerUp, monitorCenter, monitorSize);
 
-        // Highlight Currently Previewed Level Button with Radiant Animated Reticle
-        constexpr float bigPipW = 115.0f;
-        constexpr float bigPipH = 34.0f;
-        constexpr float bigPipGap = 8.0f;
-        float barStartX = screenCenterX + 580.0f - (5.0f * (bigPipW + bigPipGap) - bigPipGap) * 0.5f + (bigPipW * 0.5f);
-        float barY = screenCenterY + 448.0f;
+        // Reticle on Inspected Level Button
+        constexpr float pipW = 96.0f;
+        constexpr float pipH = 34.0f;
+        constexpr float pipGap = 12.0f;
+        float startX = screenCenterX + 600.0f - (5.0f * (pipW + pipGap) - pipGap) * 0.5f + (pipW * 0.5f);
+        float barY = screenCenterY - 65.0f;
+        float activeBx = startX + static_cast<float>(m_inspectedLevel - 1) * (pipW + pipGap);
 
-        float activeBx = barStartX + static_cast<float>(m_workshopPreviewLevel - 1) * (bigPipW + bigPipGap);
         float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 5.0f);
         uint8_t glowAlpha = static_cast<uint8_t>(180.0f + pulse * 75.0f);
-        context.Render.DrawRectangleOutline(bigPipW + 6.0f, bigPipH + 6.0f,
+        context.Render.DrawRectangleOutline(pipW + 6.0f, pipH + 6.0f,
             Transform2D{Vector2f{activeBx, barY}}, Color{255, 215, 60, glowAlpha}, 2.5f);
+
+        // Description Modal Overlay (100% Solid & Opaque, Blocks everything underneath)
+        if (m_showDescriptionModal)
+        {
+            Vector2f modalCenter{screenCenterX, screenCenterY};
+            Vector2f modalSize{1360.0f, 860.0f};
+
+            // 1. Fullscreen Dark Dimming Backdrop (solid opaque dimming)
+            context.Render.DrawRectangle(viewSize.X * 2.0f, viewSize.Y * 2.0f, Transform2D{modalCenter}, Color{6, 10, 20, 245});
+
+            // 2. Main Dialog Solid Window Panel
+            context.Render.DrawRectangle(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{14, 18, 30, 255});
+            context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{45, 75, 130, 255}, 1.5f);
+
+            // Header Banner Panel
+            context.Render.DrawRectangle(1320.0f, 76.0f, Transform2D{Vector2f{modalCenter.X, modalCenter.Y - 370.0f}}, Color{22, 30, 52, 255});
+            context.Render.DrawRectangleOutline(1320.0f, 76.0f, Transform2D{Vector2f{modalCenter.X, modalCenter.Y - 370.0f}}, Color{40, 65, 110, 220}, 1.0f);
+
+            // Glowing cyber gold outline for the dialog window
+            float modalPulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 4.0f);
+            uint8_t modalGlowAlpha = static_cast<uint8_t>(180.0f + modalPulse * 75.0f);
+            context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{255, 215, 60, modalGlowAlpha}, 2.5f);
+
+            // Corner decorative cyber brackets
+            constexpr float mcw = 32.0f;
+            float mhw = modalSize.X * 0.5f;
+            float mhh = modalSize.Y * 0.5f;
+            Color cGold{255, 225, 90, 255};
+
+            // Top-Left
+            context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X - mhw + mcw, modalCenter.Y - mhh}, cGold, 3.0f);
+            context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X - mhw, modalCenter.Y - mhh + mcw}, cGold, 3.0f);
+            // Top-Right
+            context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X + mhw - mcw, modalCenter.Y - mhh}, cGold, 3.0f);
+            context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X + mhw, modalCenter.Y - mhh + mcw}, cGold, 3.0f);
+            // Bottom-Left
+            context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X - mhw + mcw, modalCenter.Y + mhh}, cGold, 3.0f);
+            context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X - mhw, modalCenter.Y + mhh - mcw}, cGold, 3.0f);
+            // Bottom-Right
+            context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X + mhw - mcw, modalCenter.Y + mhh}, cGold, 3.0f);
+            context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X + mhw, modalCenter.Y + mhh - mcw}, cGold, 3.0f);
+
+            // Dialog Title
+            std::string title = PowerUpManager::Get().GetName(m_selectedPowerUp);
+            context.Render.DrawTextCentered(title, m_fontId, 34.0f, Transform2D{Vector2f{modalCenter.X - 40.0f, modalCenter.Y - 370.0f}}, Colors::Gold);
+
+            // [X] Close button in top-right of dialog
+            auto [mx, my] = context.Input.GetMousePosition();
+            Vector2f mousePos{mx, my};
+            Vector2f xBtnPos{modalCenter.X + 610.0f, modalCenter.Y - 370.0f};
+            bool xHover = (std::abs(mousePos.X - xBtnPos.X) <= 26.0f && std::abs(mousePos.Y - xBtnPos.Y) <= 26.0f);
+            context.Render.DrawRectangle(52.0f, 52.0f, Transform2D{xBtnPos}, xHover ? Color{210, 50, 65, 255} : Color{140, 35, 45, 255});
+            context.Render.DrawRectangleOutline(52.0f, 52.0f, Transform2D{xBtnPos}, Colors::White, 1.5f);
+            context.Render.DrawTextCentered("X", m_fontId, 32.0f, Transform2D{xBtnPos}, Colors::White);
+
+            // Full Description text
+            std::string desc = PowerUpManager::Get().GetDescription(m_selectedPowerUp);
+            std::string wrappedDesc = context.Render.WrapText(desc, 1200.0f, m_fontId, 23.0f);
+            context.Render.DrawTextCentered(wrappedDesc, m_fontId, 23.0f, Transform2D{Vector2f{modalCenter.X, modalCenter.Y - 265.0f}}, Color{225, 235, 250, 255});
+
+            // 5 Tier Rows for NIV. 1 to NIV. 5
+            int selCurLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+            constexpr float rowCenterY[5] = {-160.0f, -75.0f, 10.0f, 95.0f, 180.0f};
+            for (int lvl = 1; lvl <= 5; ++lvl)
+            {
+                float ry = modalCenter.Y + rowCenterY[lvl - 1];
+                bool isCur = (lvl == selCurLvl);
+                bool isIns = (lvl == m_inspectedLevel);
+                bool isUnlocked = (lvl <= selCurLvl);
+
+                Color rowBg = isCur ? Color{25, 65, 110, 250} : (isIns ? Color{55, 45, 20, 240} : (isUnlocked ? Color{20, 32, 50, 230} : Color{16, 20, 32, 230}));
+                Color rowBorder = isCur ? Color{80, 220, 255, 255} : (isIns ? Colors::Gold : Color{45, 60, 95, 180});
+
+                context.Render.DrawRectangle(1260.0f, 68.0f, Transform2D{Vector2f{modalCenter.X, ry}}, rowBg);
+                context.Render.DrawRectangleOutline(1260.0f, 68.0f, Transform2D{Vector2f{modalCenter.X, ry}}, rowBorder, (isCur || isIns) ? 2.0f : 1.0f);
+
+                std::string tag = "NIV. " + std::to_string(lvl);
+                Color tagCol = Colors::Gold;
+                if (isCur) { tag += " [ACTUEL]"; tagCol = Color{80, 220, 255, 255}; }
+                else if (isUnlocked) { tag += " [DEBLOQUE]"; tagCol = Colors::Gold; }
+                else { tag += " [VERROUILLE]"; tagCol = Color{140, 150, 170, 220}; }
+
+                context.Render.DrawTextCentered(tag, m_fontId, 22.0f, Transform2D{Vector2f{modalCenter.X - 480.0f, ry}}, tagCol);
+
+                std::string tierInfo = PowerUpManager::Get().GetTierInfoForLevel(m_selectedPowerUp, lvl);
+                context.Render.DrawText(tierInfo, m_fontId, 20.0f, Transform2D{Vector2f{modalCenter.X - 320.0f, ry - 10.0f}}, isUnlocked ? Colors::White : Color{180, 190, 205, 200});
+            }
+
+            // Prominent "RETOUR" Button at the bottom
+            Vector2f retBtnPos{modalCenter.X, modalCenter.Y + 330.0f};
+            bool retHover = (std::abs(mousePos.X - retBtnPos.X) <= 180.0f && std::abs(mousePos.Y - retBtnPos.Y) <= 30.0f);
+            context.Render.DrawRectangle(360.0f, 60.0f, Transform2D{retBtnPos}, retHover ? Color{165, 50, 65, 255} : Color{120, 35, 45, 255});
+            context.Render.DrawRectangleOutline(360.0f, 60.0f, Transform2D{retBtnPos}, Colors::White, 1.5f);
+            context.Render.DrawTextCentered("RETOUR", m_fontId, 30.0f, Transform2D{retBtnPos}, Colors::White);
+        }
     }
 
     // 3. Tab 2 Custom Visuals: Ultimates Ability Simulation Viewports

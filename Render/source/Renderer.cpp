@@ -2,6 +2,8 @@
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/Camera2D.h"
 #include "ECS/Components/SpriteComponent.h"
+#include <sstream>
+#include <vector>
 
 static sf::Color ToSfColor(const Color& c)
 {
@@ -403,6 +405,37 @@ void Renderer::DrawTextCentered(const std::string& text, uint32_t fontId, float 
 {
     if (sf::Font* font = m_resources.Get<sf::Font>(fontId))
     {
+        if (text.find('\n') != std::string::npos)
+        {
+            std::vector<std::string> lines;
+            std::stringstream ss(text);
+            std::string line;
+            while (std::getline(ss, line))
+            {
+                lines.push_back(line);
+            }
+            if (!lines.empty())
+            {
+                float lineSpacing = fontSize * 1.25f;
+                float totalH = static_cast<float>(lines.size() - 1) * lineSpacing;
+                float startY = transform.Position.Y - totalH * 0.5f;
+
+                for (size_t i = 0; i < lines.size(); ++i)
+                {
+                    if (lines[i].empty()) continue;
+                    sf::Text sfLine(*font, lines[i], static_cast<unsigned int>(fontSize));
+                    const sf::FloatRect bounds = sfLine.getLocalBounds();
+                    sfLine.setOrigin({bounds.position.x + bounds.size.x * 0.5f, bounds.position.y + bounds.size.y * 0.5f});
+                    Transform2D lineTransform = transform;
+                    lineTransform.Position.Y = startY + static_cast<float>(i) * lineSpacing;
+                    ApplyTransform(sfLine, lineTransform);
+                    sfLine.setFillColor(ToSfColor(color));
+                    RenderItem(m_renderTexture, sfLine, blendMode);
+                }
+                return;
+            }
+        }
+
         sf::Text sfText(*font, text, static_cast<unsigned int>(fontSize));
         const sf::FloatRect bounds = sfText.getLocalBounds();
         sfText.setOrigin({bounds.position.x + bounds.size.x * 0.5f, bounds.position.y + bounds.size.y * 0.5f});
@@ -421,6 +454,77 @@ Vector2f Renderer::GetTextSize(const std::string& text, uint32_t fontId, float f
         return {bounds.size.x, bounds.size.y};
     }
     return {0.0f, 0.0f};
+}
+
+std::string Renderer::WrapText(const std::string& text, float maxWidth, uint32_t fontId, float fontSize) const
+{
+    if (maxWidth <= 0.0f || text.empty()) return text;
+
+    sf::Font* font = m_resources.Get<sf::Font>(fontId);
+    auto measureWidth = [&](const std::string& str) -> float {
+        if (font)
+        {
+            sf::Text sfText(*font, str, static_cast<unsigned int>(fontSize));
+            return sfText.getLocalBounds().size.x;
+        }
+        return static_cast<float>(str.size()) * (fontSize * 0.55f);
+    };
+
+    std::istringstream stream(text);
+    std::string result;
+    std::string paragraph;
+    bool firstParagraph = true;
+
+    while (std::getline(stream, paragraph))
+    {
+        if (!firstParagraph)
+        {
+            result += '\n';
+        }
+        firstParagraph = false;
+
+        if (paragraph.empty()) continue;
+
+        std::istringstream wordStream(paragraph);
+        std::string currentLine;
+        std::string word;
+
+        while (wordStream >> word)
+        {
+            if (currentLine.empty())
+            {
+                currentLine = word;
+            }
+            else
+            {
+                std::string testLine = currentLine + " " + word;
+                if (measureWidth(testLine) <= maxWidth)
+                {
+                    currentLine = testLine;
+                }
+                else
+                {
+                    if (!result.empty() && result.back() != '\n')
+                    {
+                        result += '\n';
+                    }
+                    result += currentLine;
+                    currentLine = word;
+                }
+            }
+        }
+
+        if (!currentLine.empty())
+        {
+            if (!result.empty() && result.back() != '\n')
+            {
+                result += '\n';
+            }
+            result += currentLine;
+        }
+    }
+
+    return result;
 }
 
 void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType type, uint32_t textureId, BlendMode blendMode)

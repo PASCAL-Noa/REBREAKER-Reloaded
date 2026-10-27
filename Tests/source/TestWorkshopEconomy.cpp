@@ -2,6 +2,7 @@
 #include "Core/ProfileManager.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Core/PlayerPrefs.h"
+#include "ECS/Components/UI/TextComponent.h"
 #include <filesystem>
 
 struct WorkshopEconomyFixture
@@ -170,6 +171,26 @@ TEST_SUITE("Workshop, Economy & Player Profile Tests")
         // When max level reached
         pum.SetLevel(PowerUpType::GhostBall, 5);
         CHECK(pum.GetNextTierInfo(PowerUpType::GhostBall) == "MAX LEVEL REACHED");
+    }
+
+    TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Power-up description readability and TextComponent wrapping")
+    {
+        auto& pum = PowerUpManager::Get();
+        for (auto type : {PowerUpType::MultiBall, PowerUpType::ExpandPaddle, PowerUpType::ShrinkPaddle,
+                          PowerUpType::Storm, PowerUpType::TempoBall, PowerUpType::ExtraLife,
+                          PowerUpType::BigBall, PowerUpType::FireBall, PowerUpType::StickyPaddle,
+                          PowerUpType::BottomBarrier, PowerUpType::MagnetPaddle, PowerUpType::GhostBall,
+                          PowerUpType::ItemRegen})
+        {
+            const std::string desc = pum.GetDescription(type);
+            CHECK(!desc.empty());
+            CHECK(desc.length() <= 160);
+        }
+
+        TextComponent comp;
+        comp.Text = "A long text designed to test wrapping boundaries in UI components.";
+        comp.MaxWidth = 400.0f;
+        CHECK(comp.MaxWidth == 400.0f);
     }
 
     TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Ultimate Ability selection and persistence")

@@ -674,14 +674,18 @@ void UISystem::RenderText(Registry& registry, const GameContext& context, Entity
     const auto& textComp = registry.GetComponent<TextComponent>(entity);
     if (!textComp.Text.empty())
     {
+        std::string displayText = (textComp.MaxWidth > 0.0f)
+            ? context.Render.WrapText(textComp.Text, textComp.MaxWidth, textComp.FontId, textComp.FontSize)
+            : textComp.Text;
+
         Vector2f textPos = absolutePos + textComp.Offset;
         if (textComp.TextCenter)
         {
-            context.Render.DrawTextCentered(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
+            context.Render.DrawTextCentered(displayText, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
         }
         else
         {
-            context.Render.DrawText(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
+            context.Render.DrawText(displayText, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
         }
     }
 }

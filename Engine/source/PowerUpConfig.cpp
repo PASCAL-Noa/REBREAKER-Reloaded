@@ -369,15 +369,15 @@ std::string PowerUpManager::GetName(PowerUpType type) const
         case PowerUpType::MultiBall:    return "MULTI-BALL";
         case PowerUpType::ExpandPaddle: return "EXPAND PADDLE";
         case PowerUpType::ShrinkPaddle: return "SHRINK PADDLE";
-        case PowerUpType::Storm:        return "STORM THUNDER";
+        case PowerUpType::Storm:        return "STORM";
         case PowerUpType::TempoBall:    return "TEMPO BALL";
         case PowerUpType::ExtraLife:    return "EXTRA LIFE";
-        case PowerUpType::BigBall:      return "BIG CRUSH BALL";
-        case PowerUpType::FireBall:     return "FIRE BALL AOE";
-        case PowerUpType::StickyPaddle: return "STICKY CATCH";
+        case PowerUpType::BigBall:      return "BIG BALL";
+        case PowerUpType::FireBall:     return "FIRE BALL";
+        case PowerUpType::StickyPaddle: return "STICKY";
         case PowerUpType::BottomBarrier:return "BOTTOM FORCEFIELD";
         case PowerUpType::MagnetPaddle: return "MAGNET PADDLE";
-        case PowerUpType::GhostBall:    return "GHOST PHASE BALL";
+        case PowerUpType::GhostBall:    return "GHOST BALL";
         case PowerUpType::ItemRegen:    return "ITEM BRICK REGEN";
         default:                        return "UNKNOWN";
     }
@@ -390,13 +390,13 @@ std::string PowerUpManager::GetDescription(PowerUpType type) const
         case PowerUpType::MultiBall:
             return "Splits active balls into multiple secondary balls.";
         case PowerUpType::ExpandPaddle:
-            return "Expands paddle width (+20%/lvl up to +100%). Lucky activation: 10% to 50% chance to drop 1 to 3 bonus power-ups (+1 at lvl 3 & 5). Lasts 10s to 18s.";
+            return "Expands paddle width and catch zone. Lucky trigger: chance to spawn bonus capsules.";
         case PowerUpType::ShrinkPaddle:
-            return "Paddle shrinks to 0.65x but paddle speed increases +20%/lvl (up to +100%). Lucky activation: 10% to 50% chance to drop 1 to 3 bonus power-ups (+1 at lvl 3 & 5). Lasts 10s to 18s.";
+            return "Shrinks paddle width while granting bonus speed. Lucky trigger: chance to spawn bonus capsules.";
         case PowerUpType::Storm:
             return "Strikes thunderbolts damaging bricks & conducting through metal circuits.";
         case PowerUpType::TempoBall:
-            return "Dynamic pacing: ball speed +60% to +140%, paddle speed +10% to +50%, smoothly slows down approaching paddle.";
+            return "Dynamic pacing: accelerates ball and paddle, with smooth slowdown near the paddle.";
         case PowerUpType::ExtraLife:
             return "Instantly grants one reserve heart to the paddle (cap 6).";
         case PowerUpType::BigBall:
@@ -404,13 +404,13 @@ std::string PowerUpManager::GetDescription(PowerUpType type) const
         case PowerUpType::FireBall:
             return "Incendiary blast dealing explosive area-of-effect damage to adjacent bricks.";
         case PowerUpType::StickyPaddle:
-            return "Catches ball on contact (3s hold). Rhythm launch: timing release grants speed boost (+25% to +85%). Lasts 12s to 20s.";
+            return "Catches ball on paddle contact. Rhythm launch: timed release grants a speed boost.";
         case PowerUpType::BottomBarrier:
             return "Deploys a reflective laser bottom forcefield saving balls from draining.";
         case PowerUpType::MagnetPaddle:
-            return "Gravitational forcefield drawing bonus capsules AND curving ball trajectories towards paddle. Lasts 10s to 20s.";
+            return "Gravitational field pulling bonus capsules and curving ball trajectories towards paddle.";
         case PowerUpType::GhostBall:
-            return "Phases cleanly through tough and metal bricks without damage; shatters only bricks within damage power (1 dmg at lvl 1-2, 2 dmg at lvl 3-4, 3 dmg at lvl 5). Solidifies safely once clear of bricks. Absolute immortality.";
+            return "Phases through tough and metal bricks safely while damaging regular bricks.";
         case PowerUpType::ItemRegen:
             return "Reduces the respawn cooldown of item capsule bricks on the field.";
         default:
@@ -418,61 +418,116 @@ std::string PowerUpManager::GetDescription(PowerUpType type) const
     }
 }
 
-std::string PowerUpManager::GetCurrentTierInfo(PowerUpType type) const
+std::string PowerUpManager::GetTierInfoForLevel(PowerUpType type, int level) const
 {
-    int lvl = GetLevel(type);
+    level = std::clamp(level, 1, GetMaxLevel(type));
     switch (type)
     {
         case PowerUpType::MultiBall:
-            return "+" + std::to_string(m_multiBall.GetBallsToSpawn()) + " extra balls per split (cap 12)";
+        {
+            int extraBalls = m_multiBall.BaseExtraBalls + (level - 1);
+            return "+" + std::to_string(extraBalls) + " extra balls per split (cap 12)";
+        }
         case PowerUpType::ExpandPaddle:
         {
+            float scale = m_expand.BaseScale + (level - 1) * m_expand.ScaleStepPerLevel;
+            float duration = m_expand.BaseDuration + (level - 1) * m_expand.DurationPerLevel;
+            float dropChance = (m_expand.BaseDropChance + (level - 1) * m_expand.DropChanceStepPerLevel) * 100.0f;
+            int dropCount = 1 + (level >= 3 ? 1 : 0) + (level >= 5 ? 1 : 0);
             char buf[128];
-            snprintf(buf, sizeof(buf), "Width: +%d%% (x%.2f), Duration: %.0fs, Lucky Drop: %.1f%% (%d capsule%s)",
-                     static_cast<int>((m_expand.GetEffectiveScale() - 1.0f) * 100.0f + 0.5f),
-                     m_expand.GetEffectiveScale(),
-                     m_expand.GetEffectiveDuration(),
-                     m_expand.GetEffectiveDropChance() * 100.0f,
-                     m_expand.GetEffectiveDropCount(),
-                     m_expand.GetEffectiveDropCount() > 1 ? "s" : "");
+            snprintf(buf, sizeof(buf), "Width: +%d%% (x%.2f), Duration: %.0fs, Lucky Drop: %.0f%% (%d capsule%s)",
+                     static_cast<int>((scale - 1.0f) * 100.0f + 0.5f),
+                     scale,
+                     duration,
+                     dropChance,
+                     dropCount,
+                     dropCount > 1 ? "s" : "");
             return std::string(buf);
         }
         case PowerUpType::ShrinkPaddle:
         {
+            float speedBonus = (m_shrink.BaseSpeedBonusPercent + (level - 1) * m_shrink.SpeedBonusStepPerLevel) * 100.0f;
+            float speed = 700.0f * (1.0f + speedBonus / 100.0f);
+            float duration = m_shrink.BaseDuration + (level - 1) * m_shrink.DurationPerLevel;
+            float dropChance = (m_shrink.BaseDropChance + (level - 1) * m_shrink.DropChanceStepPerLevel) * 100.0f;
+            int dropCount = 1 + (level >= 3 ? 1 : 0) + (level >= 5 ? 1 : 0);
             char buf[128];
-            snprintf(buf, sizeof(buf), "Scale: 65%%, Speed: +%d%% (%.0f px/s), Duration: %.0fs, Lucky Drop: %.1f%% (%d capsule%s)",
-                     static_cast<int>(m_shrink.GetEffectivePaddleSpeedBonusPercent()),
-                     m_shrink.GetEffectivePaddleSpeed(),
-                     m_shrink.GetEffectiveDuration(),
-                     m_shrink.GetEffectiveDropChance() * 100.0f,
-                     m_shrink.GetEffectiveDropCount(),
-                     m_shrink.GetEffectiveDropCount() > 1 ? "s" : "");
+            snprintf(buf, sizeof(buf), "Scale: 65%%, Speed: +%d%% (%.0f px/s), Duration: %.0fs, Lucky Drop: %.0f%% (%d capsule%s)",
+                     static_cast<int>(speedBonus),
+                     speed,
+                     duration,
+                     dropChance,
+                     dropCount,
+                     dropCount > 1 ? "s" : "");
             return std::string(buf);
         }
         case PowerUpType::Storm:
-            if (lvl >= 5) return "Tempest Mode: 10s continuous barrage (60 strikes)";
-            return std::to_string(m_storm.GetEffectiveStrikes()) + " strikes, " + std::to_string(m_storm.GetEffectiveDamage()) + " dmg/hit";
+        {
+            if (level >= 5) return "Tempest Mode: 10s continuous barrage (60 strikes)";
+            int strikes = (level <= 1 ? 1 : (level == 2 ? 2 : 3));
+            int dmg = (level >= 4 ? 3 : 2);
+            return std::to_string(strikes) + " strikes, " + std::to_string(dmg) + " dmg/hit";
+        }
         case PowerUpType::TempoBall:
-            return "Ball: +" + std::to_string(static_cast<int>(m_tempo.GetEffectiveBonusPercent())) + "% (" + std::to_string(static_cast<int>(m_tempo.GetEffectiveFastSpeed())) + " px/s), Paddle: +" + std::to_string(static_cast<int>(m_tempo.GetEffectivePaddleSpeedBonusPercent())) + "%, Duration: " + std::to_string(static_cast<int>(m_tempo.GetEffectiveDuration())) + "s";
+        {
+            float ballBonus = (m_tempo.BaseSpeedMultiplier + (level - 1) * m_tempo.SpeedMultiplierPerLevel) * 100.0f;
+            float fastSpeed = 600.0f * (1.0f + m_tempo.BaseSpeedMultiplier + (level - 1) * m_tempo.SpeedMultiplierPerLevel);
+            float paddleBonus = (static_cast<float>(level) * m_tempo.PaddleSpeedBonusPerLevel) * 100.0f;
+            float duration = m_tempo.BaseDuration + (level - 1) * m_tempo.DurationPerLevel;
+            return "Ball: +" + std::to_string(static_cast<int>(ballBonus)) + "% (" + std::to_string(static_cast<int>(fastSpeed)) + " px/s), Paddle: +" + std::to_string(static_cast<int>(paddleBonus)) + "%, Duration: " + std::to_string(static_cast<int>(duration)) + "s";
+        }
         case PowerUpType::ExtraLife:
-            return "+1 Heart (Capacity: " + std::to_string(m_life.MaxLivesCap) + ")";
+            return "+1 Heart per pickup (Capacity: " + std::to_string(m_life.MaxLivesCap) + ")";
         case PowerUpType::BigBall:
-            return "Scale: " + std::to_string(static_cast<int>(m_big.GetEffectiveScale() * 100.0f)) + "%, Duration: " + std::to_string(static_cast<int>(m_big.GetEffectiveDuration())) + "s";
+        {
+            float scale = (m_big.BaseScale + (level - 1) * m_big.ScaleBonusPerLevel) * 100.0f;
+            float duration = m_big.BaseDuration + (level - 1) * m_big.DurationPerLevel;
+            return "Scale: " + std::to_string(static_cast<int>(scale)) + "%, Duration: " + std::to_string(static_cast<int>(duration)) + "s (Crushes metal & 1-hit kills)";
+        }
         case PowerUpType::FireBall:
-            return "AoE Radius: " + std::to_string(static_cast<int>(m_fireBall.GetEffectiveAoERadius())) + " px, Scale: " + std::to_string(static_cast<int>(m_fireBall.GetEffectiveScale() * 100.0f)) + "%";
+        {
+            float radius = m_fireBall.BaseAoERadius + (level - 1) * m_fireBall.AoERadiusPerLevel;
+            float scale = (m_fireBall.BaseScale + (level - 1) * m_fireBall.ScaleBonusPerLevel) * 100.0f;
+            return "AoE Radius: " + std::to_string(static_cast<int>(radius)) + " px, Scale: " + std::to_string(static_cast<int>(scale)) + "%";
+        }
         case PowerUpType::StickyPaddle:
-            return "Duration: " + std::to_string(static_cast<int>(m_sticky.GetEffectiveDuration())) + "s, Rhythm Boost: +" + std::to_string(static_cast<int>(m_sticky.GetEffectiveBoostPercent())) + "% speed (3s hold)";
+        {
+            float duration = m_sticky.BaseDuration + (level - 1) * m_sticky.DurationPerLevel;
+            float boost = m_sticky.BaseBoostPercent + (level - 1) * m_sticky.BoostPercentPerLevel;
+            return "Duration: " + std::to_string(static_cast<int>(duration)) + "s, Rhythm Boost: +" + std::to_string(static_cast<int>(boost)) + "% speed (3s hold)";
+        }
         case PowerUpType::BottomBarrier:
-            return "Charges: " + std::to_string(m_barrier.GetEffectiveCharges()) + " saves, Duration: " + std::to_string(static_cast<int>(m_barrier.GetEffectiveDuration())) + "s";
+        {
+            int charges = m_barrier.BaseCharges + (level - 1) * m_barrier.ChargesPerLevel;
+            float duration = m_barrier.BaseDuration + (level - 1) * m_barrier.DurationPerLevel;
+            return "Charges: " + std::to_string(charges) + " saves, Duration: " + std::to_string(static_cast<int>(duration)) + "s";
+        }
         case PowerUpType::MagnetPaddle:
-            return "Duration: " + std::to_string(static_cast<int>(m_magnet.GetEffectiveDuration())) + "s, Ball Pull: " + std::to_string(static_cast<int>(m_magnet.GetEffectiveBallPullForce())) + " px/s², Capsule: " + std::to_string(static_cast<int>(m_magnet.GetEffectivePullSpeed())) + " px/s";
+        {
+            float duration = m_magnet.BaseDuration + (level - 1) * m_magnet.DurationPerLevel;
+            float ballPull = m_magnet.BaseBallPullForce + (level - 1) * m_magnet.BallPullForcePerLevel;
+            float capsulePull = m_magnet.BasePullSpeed + (level - 1) * m_magnet.PullSpeedPerLevel;
+            return "Duration: " + std::to_string(static_cast<int>(duration)) + "s, Ball Pull: " + std::to_string(static_cast<int>(ballPull)) + " px/s², Capsule: " + std::to_string(static_cast<int>(capsulePull)) + " px/s";
+        }
         case PowerUpType::GhostBall:
-            return "Duration: " + std::to_string(static_cast<int>(m_ghost.GetEffectiveDuration())) + "s, Damage: " + std::to_string(m_ghost.GetEffectiveDamage()) + " dmg (Immortal & Selective Phase)";
+        {
+            float duration = m_ghost.BaseDuration + (level - 1) * m_ghost.DurationPerLevel;
+            int dmg = (level >= 5 ? 3 : (level >= 3 ? 2 : 1));
+            return "Duration: " + std::to_string(static_cast<int>(duration)) + "s, Damage: " + std::to_string(dmg) + " dmg (Immortal & Selective Phase)";
+        }
         case PowerUpType::ItemRegen:
-            return "Cooldown: " + std::to_string(static_cast<int>(m_itemRegen.GetEffectiveCooldown())) + "s";
+        {
+            float cd = m_itemRegen.BaseCooldown - (level - 1) * m_itemRegen.CooldownReductionPerLevel;
+            return "Cooldown: " + std::to_string(static_cast<int>(cd)) + "s";
+        }
         default:
             return "";
     }
+}
+
+std::string PowerUpManager::GetCurrentTierInfo(PowerUpType type) const
+{
+    return GetTierInfoForLevel(type, GetLevel(type));
 }
 
 std::string PowerUpManager::GetNextTierInfo(PowerUpType type) const

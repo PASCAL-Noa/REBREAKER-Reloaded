@@ -59,6 +59,7 @@ public:
 
     Vector2f            GetTextureSize(uint32_t textureId) const;
     Vector2f            GetTextSize(const std::string& text, uint32_t fontId, float fontSize) const;
+    [[nodiscard]] std::string WrapText(const std::string& text, float maxWidth, uint32_t fontId, float fontSize) const;
 
 private:
     void                DrawLetterboxBars(sf::RenderTarget& target, const sf::Vector2u& size) const;

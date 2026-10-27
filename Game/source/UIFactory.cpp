@@ -39,7 +39,8 @@ Entity UIFactory::CreateText(Registry& registry, Entity parent, const TextDescri
         .FontSize = desc.FontSize,
         .Tint = desc.Tint,
         .TextCenter = desc.TextCenter,
-        .Offset = desc.Offset
+        .Offset = desc.Offset,
+        .MaxWidth = desc.MaxWidth
     });
     return entity;
 }
