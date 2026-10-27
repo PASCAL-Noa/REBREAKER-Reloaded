@@ -77,7 +77,7 @@ public:
     void    SetTransitionTimer(float timer) { m_levelTransitionTimer = timer; }
 
     // Countdown & Ready Sequence
-    void    StartCountdown();
+    virtual void StartCountdown();
     [[nodiscard]] bool  IsCountdownActive() const noexcept { return m_countdownActive; }
     [[nodiscard]] bool  IsCountdownComplete() const noexcept { return !m_countdownActive; }
     [[nodiscard]] float GetCountdownTimer() const noexcept { return m_countdownTimer; }

@@ -364,6 +364,14 @@ void AudioMixer::FadeToMusic(const std::string& filepath, const TweenConfig<floa
         mp_impl->activeTrack.isLooping = loop;
         mp_impl->activeTrack.music->setLooping(loop);
 
+        // If already at the target volume, do not restart or tween to avoid micro-cuts
+        if (std::abs(mp_impl->activeTrack.currentVolume - inConfig.End) < 0.5f)
+        {
+            mp_impl->activeTrack.currentVolume = inConfig.End;
+            mp_impl->activeTrack.volumeTween.reset();
+            return;
+        }
+
         TweenConfig<float> config = inConfig;
         config.Start = mp_impl->activeTrack.currentVolume;
         config.Setter = [this](float vol) {
@@ -666,5 +674,10 @@ std::string AudioMixer::GetCurrentAudioDevice() const
 
 bool AudioMixer::SetAudioDevice(const std::string& name) const
 {
+    auto dev = sf::PlaybackDevice::getDevice();
+    if (dev.has_value() && dev.value() == name)
+    {
+        return true;
+    }
     return sf::PlaybackDevice::setDevice(name);
 }

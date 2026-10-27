@@ -72,7 +72,7 @@ void MenuScene::OnInit(GameContext& context)
     context.Audio.SetMusicVolume(musicVol);
 
     std::string savedDevice = PlayerPrefs::GetString("Audio_Device", "");
-    if (!savedDevice.empty())
+    if (!savedDevice.empty() && context.Audio.GetCurrentAudioDevice() != savedDevice)
     {
         context.Audio.SetAudioDevice(savedDevice);
     }
@@ -515,6 +515,18 @@ void MenuScene::OpenModal(Entity modalCanvas)
 
 void MenuScene::CloseModals()
 {
+    if (m_activeModal == m_workshopCanvas)
+    {
+        if (m_previewScene)
+        {
+            m_previewScene->ResetPreview();
+        }
+        if (mp_context)
+        {
+            mp_context->Audio.StopSfx();
+        }
+    }
+
     for (Entity canvas : {m_settingsCanvas, m_leaderboardCanvas, m_debugCanvas, m_workshopCanvas})
     {
         if (canvas != NULL_ENTITY && m_registry.IsAlive(canvas) && m_registry.HasComponent<CanvasComponent>(canvas))
@@ -2351,6 +2363,18 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
 
 void MenuScene::OpenWorkshopTab(Entity targetCanvas)
 {
+    if (targetCanvas != m_workshopUpgradesCanvas)
+    {
+        if (m_previewScene)
+        {
+            m_previewScene->ResetPreview();
+        }
+        if (mp_context)
+        {
+            mp_context->Audio.StopSfx();
+        }
+    }
+
     for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopProfileCanvas})
     {
         if (subCanvas != NULL_ENTITY && m_registry.IsAlive(subCanvas) && m_registry.HasComponent<CanvasComponent>(subCanvas))

@@ -63,9 +63,9 @@ void DefaultScene::OnDestroy(GameContext& context)
 {
     if (mp_context)
     {
-        mp_context->Audio.StopSfx();
         if (!PreservesMusicOnDestroy())
         {
+            mp_context->Audio.StopSfx();
             mp_context->Audio.StopMusic();
         }
     }

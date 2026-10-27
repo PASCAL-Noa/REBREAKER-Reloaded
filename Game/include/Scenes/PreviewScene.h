@@ -13,6 +13,9 @@ public:
     void OnInit(GameContext& context) override;
     void OnUpdate(float dt, GameContext& context) override;
     void OnRender(GameContext& context) override;
+    void OnDestroy(GameContext& context) override;
+    void StartCountdown() override;
+    [[nodiscard]] bool PreservesMusicOnDestroy() const override { return true; }
 
     void NextPowerUp();
     void PrevPowerUp();

@@ -1569,7 +1569,7 @@ void GameScene::StartCountdown()
     {
         mp_paddleSystem->SetInputEnabled(false);
     }
-    if (mp_context)
+    if (m_renderGameUI && mp_context)
     {
         mp_context->Events.Publish(GameStateChangedEvent(GameUIState::Countdown));
         if (m_countdownReadySfxId != 0)
