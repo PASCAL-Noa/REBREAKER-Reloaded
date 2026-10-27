@@ -396,6 +396,7 @@ public:
     // Leveling & Upgrades API
     int  GetLevel(PowerUpType type) const;
     void SetLevel(PowerUpType type, int level);
+    void SetLevelTransient(PowerUpType type, int level);
     bool CanUpgrade(PowerUpType type) const;
     bool Upgrade(PowerUpType type);
     int  GetUpgradeCost(PowerUpType type) const;

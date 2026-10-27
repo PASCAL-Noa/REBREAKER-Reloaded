@@ -7,6 +7,7 @@
 class PreviewScene : public GameScene
 {
 public:
+    PreviewScene();
     virtual ~PreviewScene() = default;
 
     void OnInit(GameContext& context) override;
@@ -20,6 +21,9 @@ public:
     void ResetPreview();
 
     static void SetInitialPowerUp(PowerUpType type);
+    void SetEmbeddedMode(bool embedded);
+    [[nodiscard]] bool IsEmbeddedMode() const { return m_isEmbeddedMode; }
+    void SetPreviewPowerUp(PowerUpType type, int level);
 
 protected:
     void SpawnPowerUp(const Vector2f& position) override;
@@ -29,8 +33,12 @@ private:
     void SpawnPreviewCapsule();
     void SpawnMagnetDemoCapsule();
     void OnBallLaunched();
+    void UpdateAutopilot(float dt);
     [[nodiscard]] bool IsPowerUpEffectActive();
 
+    bool   m_isEmbeddedMode = false;
+    float  m_autoLaunchTimer = 0.0f;
+    int    m_previewLevel = 1;
     size_t m_currentItemIndex = 0;
     Entity m_previewCapsule = NULL_ENTITY;
     bool   m_capsuleSpawnedForLaunch = false;

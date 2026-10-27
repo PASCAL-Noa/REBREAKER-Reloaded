@@ -56,6 +56,12 @@ int PowerUpManager::GetMaxLevel(PowerUpType type) const
 
 void PowerUpManager::SetLevel(PowerUpType type, int level)
 {
+    SetLevelTransient(type, level);
+    SaveToPrefs();
+}
+
+void PowerUpManager::SetLevelTransient(PowerUpType type, int level)
+{
     int maxLvl = GetMaxLevel(type);
     int clamped = std::clamp(level, 1, maxLvl);
 
@@ -76,7 +82,6 @@ void PowerUpManager::SetLevel(PowerUpType type, int level)
         case PowerUpType::ItemRegen:    m_itemRegen.Level = clamped; break;
         default: break;
     }
-    SaveToPrefs();
 }
 
 int PowerUpManager::GetUpgradeCost(PowerUpType type) const

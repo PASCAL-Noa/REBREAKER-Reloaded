@@ -12,6 +12,9 @@
 #include "PowerUps/PowerUpConfig.h"
 #include "Core/ProfileManager.h"
 
+namespace sf { class RenderTexture; }
+class PreviewScene;
+
 struct StarParticle
 {
     float X = 0.0f;
@@ -198,6 +201,11 @@ private:
 
     int                 m_simLastLoop = -1;
     uint32_t            m_simAudioTriggerMask = 0;
+
+    std::unique_ptr<PreviewScene> m_previewScene;
+    std::unique_ptr<sf::RenderTexture> m_previewTexture;
+    PowerUpType         m_lastPreviewPowerUp = PowerUpType::MultiBall;
+    int                 m_lastPreviewLevel = 0;
 
     std::vector<StarParticle> m_stars;
     float               m_gridAnimOffset = 0.0f;

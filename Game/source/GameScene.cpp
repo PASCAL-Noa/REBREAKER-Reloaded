@@ -139,7 +139,7 @@ void GameScene::OnInit(GameContext& context)
     m_powerUpSub = context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
     {
         ApplyPowerUp(e.Type);
-        if (m_uiController && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+        if (m_renderGameUI && m_uiController && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
         {
             const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
             m_uiController->SpawnPowerUpText(e.Type, paddleTrans.Position, m_registry.GetComponent<Camera2D>(m_camera));
@@ -301,11 +301,14 @@ void GameScene::OnInit(GameContext& context)
     m_levelManager.Initialize("Resources/levels");
     m_levelManager.LoadFromPrefs();
 
-    m_playlist.AddTrack(context, "Resources/audio/music/Game-1.ogg");
-    m_playlist.AddTrack(context, "Resources/audio/music/Game-2.ogg");
-    m_playlist.AddTrack(context, "Resources/audio/music/Game-3.ogg");
-    m_playlist.AddTrack(context, "Resources/audio/music/Game-4.ogg");
-    m_playlist.PlayNext(context, 1.5f);
+    if (m_musicEnabled)
+    {
+        m_playlist.AddTrack(context, "Resources/audio/music/Game-1.ogg");
+        m_playlist.AddTrack(context, "Resources/audio/music/Game-2.ogg");
+        m_playlist.AddTrack(context, "Resources/audio/music/Game-3.ogg");
+        m_playlist.AddTrack(context, "Resources/audio/music/Game-4.ogg");
+        m_playlist.PlayNext(context, 1.5f);
+    }
     m_lives = PlayerPrefs::GetInt("Lives", 3);
 
     int startLevel = PlayerPrefs::GetInt("SelectedLevel", 0);
@@ -518,7 +521,10 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     if (currentState == static_cast<int>(SceneState::Playing))
     {
         m_gameplayTime += dt;
-        m_playlist.Update(context);
+        if (m_musicEnabled)
+        {
+            m_playlist.Update(context);
+        }
         HandleInput(dt, context);
         UpdatePowerUpTimers(dt);
 
@@ -1104,15 +1110,18 @@ void GameScene::OnRender(GameContext& context)
         DrawDefaultUI(context, "REBREAKER", stats);
     }
 
-    if (m_uiController)
+    if (m_renderGameUI)
     {
-        m_uiController->RenderCountdown(context);
-    }
+        if (m_uiController)
+        {
+            m_uiController->RenderCountdown(context);
+        }
 
-    UISystem::OnRender(m_registry, context);
-    if (m_uiController)
-    {
-        m_uiController->OnRender(context);
+        UISystem::OnRender(m_registry, context);
+        if (m_uiController)
+        {
+            m_uiController->OnRender(context);
+        }
     }
 }
 
@@ -2400,7 +2409,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
     mp_context->Events.Publish(BrickHitEvent(entity, isDestroyed, brick.IsSpecial, m_scoreManager.GetComboMultiplier(), contactPos));
 
-    if (m_scoreManager.GetComboMultiplier() > 1 && m_registry.HasComponent<Transform2D>(entity))
+    if (m_renderGameUI && m_scoreManager.GetComboMultiplier() > 1 && m_registry.HasComponent<Transform2D>(entity))
     {
         const auto& transform = m_registry.GetComponent<Transform2D>(entity);
         if (m_uiController && m_registry.HasComponent<Camera2D>(m_camera))

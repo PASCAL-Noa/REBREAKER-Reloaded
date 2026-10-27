@@ -14,6 +14,7 @@
 #include "ECS/Components/PaddleComponent.h"
 #include "ECS/Components/BrickComponent.h"
 #include "ECS/Components/UI/CanvasComponent.h"
+#include "ECS/Components/TweenComponent.h"
 #include "ECS/Systems/ParticleSystem.h"
 #include "Generators/FileLevelGenerator.h"
 #include "Graphics/Renderer.h"
@@ -47,10 +48,130 @@ static constexpr size_t kPreviewItemCount = sizeof(kPreviewItems) / sizeof(kPrev
 static PowerUpType s_initialPowerUpType = PowerUpType::Storm;
 static bool s_hasExplicitInitialPowerUp = false;
 
+PreviewScene::PreviewScene()
+{
+    m_musicEnabled = false;
+    m_renderGameUI = false;
+}
+
 void PreviewScene::SetInitialPowerUp(PowerUpType type)
 {
     s_initialPowerUpType = type;
     s_hasExplicitInitialPowerUp = true;
+}
+
+void PreviewScene::SetEmbeddedMode(bool embedded)
+{
+    m_isEmbeddedMode = embedded;
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetInputEnabled(!embedded);
+    }
+    if (m_isEmbeddedMode && m_registry.IsAlive(m_camera))
+    {
+        if (m_registry.HasComponent<TweenComponent>(m_camera))
+        {
+            m_registry.RemoveComponent<TweenComponent>(m_camera);
+        }
+        if (m_registry.HasComponent<Camera2D>(m_camera))
+        {
+            auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
+            cam.Position = Vector2f{0.0f, -20.0f};
+            cam.Zoom = 1.35f;
+            cam.Rotation = 0.0f;
+        }
+    }
+}
+
+void PreviewScene::SetPreviewPowerUp(PowerUpType type, int level)
+{
+    m_previewLevel = std::clamp(level, 1, PowerUpManager::Get().GetMaxLevel(type));
+    for (size_t i = 0; i < kPreviewItemCount; ++i)
+    {
+        if (kPreviewItems[i].Type == type)
+        {
+            m_currentItemIndex = i;
+            break;
+        }
+    }
+    PowerUpManager::Get().SetLevelTransient(type, m_previewLevel);
+    ResetPreview();
+}
+
+void PreviewScene::UpdateAutopilot(float dt)
+{
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetInputEnabled(false);
+    }
+
+    // 1. Auto-launch ball when attached
+    if (m_ballState == BallState::Attached)
+    {
+        m_autoLaunchTimer += dt;
+        if (m_autoLaunchTimer >= 0.45f)
+        {
+            m_autoLaunchTimer = 0.0f;
+            m_ballState = BallState::Active;
+            if (mp_paddleSystem)
+            {
+                mp_paddleSystem->LaunchBall();
+            }
+        }
+    }
+    else
+    {
+        m_autoLaunchTimer = 0.0f;
+    }
+
+    // 2. Autopilot paddle positioning: follow balls & falling capsules
+    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+    {
+        auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+        float targetX = paddleTrans.Position.X;
+
+        // Target falling power-up capsule first
+        if (m_previewCapsule != NULL_ENTITY && m_registry.IsAlive(m_previewCapsule) &&
+            m_registry.HasComponent<Transform2D>(m_previewCapsule))
+        {
+            targetX = m_registry.GetComponent<Transform2D>(m_previewCapsule).Position.X;
+        }
+        else
+        {
+            // Follow lowest active ball
+            float lowestY = -9999.0f;
+            bool foundBall = false;
+
+            if (mp_ballSystem)
+            {
+                for (Entity b : mp_ballSystem->GetBalls())
+                {
+                    if (m_registry.IsAlive(b) && m_registry.HasComponent<Transform2D>(b))
+                    {
+                        const auto& bt = m_registry.GetComponent<Transform2D>(b);
+                        if (bt.Position.Y > lowestY)
+                        {
+                            lowestY = bt.Position.Y;
+                            targetX = bt.Position.X;
+                            foundBall = true;
+                        }
+                    }
+                }
+            }
+
+            if (!foundBall && m_registry.IsAlive(m_ball) && m_registry.HasComponent<Transform2D>(m_ball))
+            {
+                targetX = m_registry.GetComponent<Transform2D>(m_ball).Position.X;
+            }
+        }
+
+        // Smoothly interpolate paddle position to targetX with high tracking speed
+        float diff = targetX - paddleTrans.Position.X;
+        float maxSpeed = 820.0f;
+        float step = std::clamp(diff, -maxSpeed * dt, maxSpeed * dt);
+        paddleTrans.Position.X += step;
+        paddleTrans.Position.X = std::clamp(paddleTrans.Position.X, -680.0f, 680.0f);
+    }
 }
 
 void PreviewScene::OnInit(GameContext& context)
@@ -90,52 +211,65 @@ void PreviewScene::OnInit(GameContext& context)
 
     if (mp_paddleSystem)
     {
+        if (m_isEmbeddedMode)
+        {
+            mp_paddleSystem->SetInputEnabled(false);
+        }
         mp_paddleSystem->SetOnBallLaunchedCallback([this](Entity)
         {
             m_ballState = BallState::Active;
             OnBallLaunched();
         });
     }
+    if (m_isEmbeddedMode && m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
+    {
+        auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
+        cam.Position = Vector2f{0.0f, -20.0f};
+        cam.Zoom = 1.35f;
+    }
 }
 
 void PreviewScene::OnUpdate(float dt, GameContext& context)
 {
-    // Arrow keys: Left / Right to change power-up (resets level to 1 and refreshes scene)
-    if (context.Input.IsKeyPress(KeyCode::Left))
+    if (!m_isEmbeddedMode)
     {
-        PrevPowerUp();
-        return;
-    }
-    if (context.Input.IsKeyPress(KeyCode::Right))
-    {
-        NextPowerUp();
-        return;
-    }
+        // Arrow keys: Left / Right to change power-up (resets level to 1 and refreshes scene)
+        if (context.Input.IsKeyPress(KeyCode::Left))
+        {
+            PrevPowerUp();
+            return;
+        }
+        if (context.Input.IsKeyPress(KeyCode::Right))
+        {
+            NextPowerUp();
+            return;
+        }
 
-    // Arrow keys: Up / Down to level up / level down (refreshes scene)
-    if (context.Input.IsKeyPress(KeyCode::Up))
-    {
-        LevelUp();
-        return;
-    }
-    if (context.Input.IsKeyPress(KeyCode::Down))
-    {
-        LevelDown();
-        return;
-    }
+        // Arrow keys: Up / Down to level up / level down (refreshes scene)
+        if (context.Input.IsKeyPress(KeyCode::Up))
+        {
+            LevelUp();
+            return;
+        }
+        if (context.Input.IsKeyPress(KeyCode::Down))
+        {
+            LevelDown();
+            return;
+        }
 
-    // R key: manual refresh
-    if (context.Input.IsKeyPress(KeyCode::R))
-    {
-        ResetPreview();
-        return;
-    }
+        // R key: manual refresh
+        if (context.Input.IsKeyPress(KeyCode::R))
+        {
+            ResetPreview();
+            return;
+        }
 
-    // Escape: Return to main menu
-    if (context.Input.IsKeyPress(KeyCode::Escape) || context.Input.IsJoystickButtonPress(0, 6))
-    {
-        context.Scenes.LoadScene<MenuScene>();
-        return;
+        // Escape: Return to main menu
+        if (context.Input.IsKeyPress(KeyCode::Escape) || context.Input.IsJoystickButtonPress(0, 6))
+        {
+            context.Scenes.LoadScene<MenuScene>();
+            return;
+        }
     }
 
     // Check if the preview finished (all bricks cleared or ball dying/lost) -> instantly refresh!
@@ -216,7 +350,31 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
     // Keep lives at 99
     m_lives = 99;
 
+    // Sticky Paddle autopilot sweet-spot release
+    if (m_isEmbeddedMode && !m_stuckBalls.empty())
+    {
+        for (auto& sb : m_stuckBalls)
+        {
+            if (sb.HoldTimer >= 1.05f)
+            {
+                sb.HoldTimer = PowerUpManager::Get().Sticky().AutoLaunchDelay;
+            }
+        }
+    }
+
     GameScene::OnUpdate(dt, context);
+
+    if (m_isEmbeddedMode)
+    {
+        UpdateAutopilot(dt);
+        if (m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
+        {
+            auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
+            cam.Position = Vector2f{0.0f, -20.0f};
+            cam.Zoom = 1.35f;
+            cam.Rotation = 0.0f;
+        }
+    }
 
     if (m_extraLifeTimer > 0.0f)
     {
@@ -328,6 +486,11 @@ void PreviewScene::OnRender(GameContext& context)
     m_countdownGoTimer = 0.0f;
 
     GameScene::OnRender(context);
+
+    if (m_isEmbeddedMode)
+    {
+        return;
+    }
 
     // Overlay Header Banner showing preview info and controls (without clutter counters)
     const auto& item = kPreviewItems[m_currentItemIndex];
@@ -523,6 +686,7 @@ void PreviewScene::ResetPreview()
     m_powerUpActivated = false;
     m_autoResetTimer = 0.0f;
     m_extraLifeTimer = 0.0f;
+    m_scoreManager.Reset();
 
     // Reset paddle position, scale, and size
     if (m_registry.IsAlive(m_paddle))

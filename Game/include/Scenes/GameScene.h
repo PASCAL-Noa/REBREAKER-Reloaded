@@ -247,6 +247,8 @@ protected:
 
     // Dedicated UI Controller
     std::unique_ptr<GameUIController> m_uiController;
+    bool                m_musicEnabled = true;
+    bool                m_renderGameUI = true;
 
     // Ambient background & dynamic shader effects
     AmbientBackground   m_ambientBackground;

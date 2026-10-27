@@ -1,6 +1,7 @@
 #include "Scenes/MenuScene.h"
 #include "Scenes/GameScene.h"
 #include "Scenes/PreviewScene.h"
+#include <SFML/Graphics/RenderTexture.hpp>
 #include "Scenes/LevelSelectScene.h"
 #include "Scenes/Sandbox.h"
 #include "Scenes/SamplePhysics.h"
@@ -97,6 +98,22 @@ void MenuScene::OnInit(GameContext& context)
     CreateLeaderboardModal(context);
     CreateDebugModal(context);
     CreateWorkshopModal(context);
+
+    // Initialize Workshop Embedded Preview Simulation
+    m_previewTexture = std::make_unique<sf::RenderTexture>();
+    sf::ContextSettings rtSettings;
+    rtSettings.antiAliasingLevel = 4;
+    (void)m_previewTexture->resize(sf::Vector2u(1280, 600), rtSettings);
+    m_previewTexture->setSmooth(true);
+
+    m_previewScene = std::make_unique<PreviewScene>();
+    m_previewScene->OnInit(context);
+    m_previewScene->SetEmbeddedMode(true);
+    m_lastPreviewPowerUp = m_selectedPowerUp;
+    m_lastPreviewLevel = m_inspectedLevel;
+    int realLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+    m_previewScene->SetPreviewPowerUp(m_selectedPowerUp, m_inspectedLevel);
+    PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLvl);
 
     PreloadGameAssets(context);
 }
@@ -407,6 +424,20 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
         }
     }
 
+    // Workshop Upgrades Live Simulation Autopilot & Physics Update
+    if (m_activeModal == m_workshopCanvas && m_workshopActiveTabCanvas == m_workshopUpgradesCanvas)
+    {
+        if (m_previewScene)
+        {
+            int realLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+            PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, m_inspectedLevel);
+
+            m_previewScene->OnUpdate(dt, context);
+
+            PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLevel);
+        }
+    }
+
     UpdateRetroBackground(dt, context);
     m_previewAnimTime += dt;
 
@@ -433,6 +464,12 @@ void MenuScene::OnRender(GameContext& context)
 
 void MenuScene::OnDestroy(GameContext& context)
 {
+    if (m_previewScene)
+    {
+        m_previewScene->OnDestroy(context);
+        m_previewScene.reset();
+    }
+    m_previewTexture.reset();
     DefaultScene::OnDestroy(context);
 }
 
@@ -2645,6 +2682,19 @@ void MenuScene::RefreshWorkshopUI()
             textComp.Tint = isUnlocked ? Colors::White : Color{180, 190, 205, 200};
         }
     }
+
+    // 6. Update Embedded Preview Scene if inspected item or tier changed
+    if (m_previewScene)
+    {
+        if (m_selectedPowerUp != m_lastPreviewPowerUp || m_inspectedLevel != m_lastPreviewLevel)
+        {
+            m_lastPreviewPowerUp = m_selectedPowerUp;
+            m_lastPreviewLevel = m_inspectedLevel;
+            int realLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+            m_previewScene->SetPreviewPowerUp(m_selectedPowerUp, m_inspectedLevel);
+            PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLevel);
+        }
+    }
 }
 
 void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
@@ -2978,8 +3028,29 @@ void MenuScene::TriggerSimSfx(GameContext& context, uint32_t sfxId, int eventId,
 void MenuScene::RenderPowerUpSimulation(GameContext& context, PowerUpType type, const Vector2f& center, const Vector2f& size)
 {
     (void)type;
-    // Sleek dark placeholder background
-    context.Render.DrawRectangle(size.X, size.Y, Transform2D{center}, Color{10, 14, 24, 255});
+    // 1. Draw live preview scene into preview offscreen texture
+    if (m_previewScene && m_previewTexture)
+    {
+        m_previewTexture->clear(sf::Color(8, 10, 16, 255));
+
+        int realLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+        PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, m_inspectedLevel);
+
+        context.Render.PushRenderTarget(*m_previewTexture);
+        m_previewScene->OnRender(context);
+        context.Render.PopRenderTarget();
+
+        PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLevel);
+
+        m_previewTexture->display();
+
+        context.Render.DrawRawTexture(m_previewTexture->getTexture(), size.X - 4.0f, size.Y - 4.0f, Transform2D{center});
+    }
+    else
+    {
+        // Sleek dark placeholder background
+        context.Render.DrawRectangle(size.X, size.Y, Transform2D{center}, Color{10, 14, 24, 255});
+    }
 
     // Cyber border outline
     context.Render.DrawRectangleOutline(size.X, size.Y, Transform2D{center}, Color{50, 100, 185, 240}, 2.5f);
@@ -2997,12 +3068,6 @@ void MenuScene::RenderPowerUpSimulation(GameContext& context, PowerUpType type, 
     context.Render.DrawLine(Vector2f{center.X - halfW, center.Y + halfH}, Vector2f{center.X - halfW, center.Y + halfH - cw}, bracketCol, 2.5f);
     context.Render.DrawLine(Vector2f{center.X + halfW, center.Y + halfH}, Vector2f{center.X + halfW - cw, center.Y + halfH}, bracketCol, 2.5f);
     context.Render.DrawLine(Vector2f{center.X + halfW, center.Y + halfH}, Vector2f{center.X + halfW, center.Y + halfH - cw}, bracketCol, 2.5f);
-
-    // Placeholder text centered in the frame
-    context.Render.DrawTextCentered("[ APERCU VIDEO DU POWER-UP ]", m_fontId, 28.0f,
-        Transform2D{Vector2f{center.X, center.Y - 14.0f}}, Color{120, 190, 255, 240});
-    context.Render.DrawTextCentered("EN ATTENTE DE NOUVELLE PRESENTATION", m_fontId, 20.0f,
-        Transform2D{Vector2f{center.X, center.Y + 22.0f}}, Color{150, 165, 195, 180});
 }
 
 void MenuScene::RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, const Vector2f& center, const Vector2f& size)

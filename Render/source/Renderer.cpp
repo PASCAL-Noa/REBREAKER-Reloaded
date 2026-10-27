@@ -236,21 +236,92 @@ sf::FloatRect Renderer::GetLetterboxViewport() const
 
 void Renderer::SetCamera(const Camera2D& camera)
 {
-    const Vector2f viewSize = GetLogicalViewSize();
-    sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(viewSize.X, viewSize.Y));
-    view.setCenter({camera.Position.X, camera.Position.Y});
-    view.setRotation(sf::degrees(camera.Rotation));
-    view.zoom(camera.Zoom);
-    view.setViewport(GetLetterboxViewport());
-    m_renderTexture.setView(view);
+    auto& rt = GetActiveRenderTarget();
+    if (&rt == &m_renderTexture)
+    {
+        const Vector2f viewSize = GetLogicalViewSize();
+        sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(viewSize.X, viewSize.Y));
+        view.setCenter({camera.Position.X, camera.Position.Y});
+        view.setRotation(sf::degrees(camera.Rotation));
+        view.zoom(camera.Zoom);
+        view.setViewport(GetLetterboxViewport());
+        rt.setView(view);
+    }
+    else
+    {
+        const sf::Vector2u texSize = rt.getSize();
+        sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(static_cast<float>(texSize.x), static_cast<float>(texSize.y)));
+        view.setCenter({camera.Position.X, camera.Position.Y});
+        view.setRotation(sf::degrees(camera.Rotation));
+        view.zoom(camera.Zoom);
+        rt.setView(view);
+    }
 }
 
 void Renderer::ResetCamera()
 {
-    const Vector2f viewSize = GetLogicalViewSize();
-    sf::View view(sf::Vector2f(viewSize.X / 2.0f, viewSize.Y / 2.0f), sf::Vector2f(viewSize.X, viewSize.Y));
-    view.setViewport(GetLetterboxViewport());
-    m_renderTexture.setView(view);
+    auto& rt = GetActiveRenderTarget();
+    if (&rt == &m_renderTexture)
+    {
+        const Vector2f viewSize = GetLogicalViewSize();
+        sf::View view(sf::Vector2f(viewSize.X / 2.0f, viewSize.Y / 2.0f), sf::Vector2f(viewSize.X, viewSize.Y));
+        view.setViewport(GetLetterboxViewport());
+        rt.setView(view);
+    }
+    else
+    {
+        const sf::Vector2u texSize = rt.getSize();
+        sf::View view(sf::Vector2f(static_cast<float>(texSize.x) * 0.5f, static_cast<float>(texSize.y) * 0.5f),
+                      sf::Vector2f(static_cast<float>(texSize.x), static_cast<float>(texSize.y)));
+        rt.setView(view);
+    }
+}
+
+void Renderer::PushRenderTarget(sf::RenderTexture& target)
+{
+    m_targetStack.push_back(&target);
+}
+
+void Renderer::PopRenderTarget()
+{
+    if (!m_targetStack.empty())
+    {
+        m_targetStack.pop_back();
+    }
+}
+
+sf::RenderTexture& Renderer::GetActiveRenderTarget()
+{
+    if (!m_targetStack.empty() && m_targetStack.back() != nullptr)
+    {
+        return *m_targetStack.back();
+    }
+    return m_renderTexture;
+}
+
+const sf::RenderTexture& Renderer::GetActiveRenderTarget() const
+{
+    if (!m_targetStack.empty() && m_targetStack.back() != nullptr)
+    {
+        return *m_targetStack.back();
+    }
+    return m_renderTexture;
+}
+
+void Renderer::DrawRawTexture(const sf::Texture& texture, float width, float height, const Transform2D& transform, Color tint)
+{
+    sf::Sprite sprite(texture);
+    const sf::Vector2u texSize = texture.getSize();
+    if (texSize.x == 0 || texSize.y == 0) return;
+
+    sprite.setOrigin({static_cast<float>(texSize.x) * 0.5f, static_cast<float>(texSize.y) * 0.5f});
+    sprite.setScale({(width / static_cast<float>(texSize.x)) * transform.Scale.X,
+                     (height / static_cast<float>(texSize.y)) * transform.Scale.Y});
+    sprite.setPosition({transform.Position.X, transform.Position.Y});
+    sprite.setRotation(sf::degrees(transform.Rotation));
+    sprite.setColor(ToSfColor(tint));
+
+    RenderItem(GetActiveRenderTarget(), sprite, BlendMode::Alpha);
 }
 
 Vector2f Renderer::GetLogicalViewSize() const
@@ -345,7 +416,7 @@ void Renderer::DrawSprite(const SpriteComponent& spriteData, const Transform2D& 
         }
     }
     
-    m_renderTexture.draw(sprite, states);
+    GetActiveRenderTarget().draw(sprite, states);
 }
 
 void Renderer::DrawCircle(float radius, const Transform2D& transform, Color color, BlendMode blendMode)
@@ -354,7 +425,7 @@ void Renderer::DrawCircle(float radius, const Transform2D& transform, Color colo
     circle.setOrigin({radius, radius});
     ApplyTransform(circle, transform);
     circle.setFillColor(ToSfColor(color));
-    RenderItem(m_renderTexture, circle, blendMode);
+    RenderItem(GetActiveRenderTarget(), circle, blendMode);
 }
 
 void Renderer::DrawRectangle(float width, float height, const Transform2D& transform, Color color, BlendMode blendMode)
@@ -363,7 +434,7 @@ void Renderer::DrawRectangle(float width, float height, const Transform2D& trans
     rect.setOrigin({width / 2.0f, height / 2.0f});
     ApplyTransform(rect, transform);
     rect.setFillColor(ToSfColor(color));
-    RenderItem(m_renderTexture, rect, blendMode);
+    RenderItem(GetActiveRenderTarget(), rect, blendMode);
 }
 
 void Renderer::DrawScannerEffect(float width, float height, const Transform2D& transform, Color color, float time, uint32_t shaderId)
@@ -387,7 +458,7 @@ void Renderer::DrawScannerEffect(float width, float height, const Transform2D& t
         }
     }
 
-    m_renderTexture.draw(rect, states);
+    GetActiveRenderTarget().draw(rect, states);
 }
 
 void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color, BlendMode blendMode)
@@ -397,7 +468,7 @@ void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize
         sf::Text sfText(*font, text, static_cast<unsigned int>(fontSize));
         ApplyTransform(sfText, transform);
         sfText.setFillColor(ToSfColor(color));
-        RenderItem(m_renderTexture, sfText, blendMode);
+        RenderItem(GetActiveRenderTarget(), sfText, blendMode);
     }
 }
 
@@ -430,7 +501,7 @@ void Renderer::DrawTextCentered(const std::string& text, uint32_t fontId, float 
                     lineTransform.Position.Y = startY + static_cast<float>(i) * lineSpacing;
                     ApplyTransform(sfLine, lineTransform);
                     sfLine.setFillColor(ToSfColor(color));
-                    RenderItem(m_renderTexture, sfLine, blendMode);
+                    RenderItem(GetActiveRenderTarget(), sfLine, blendMode);
                 }
                 return;
             }
@@ -441,7 +512,7 @@ void Renderer::DrawTextCentered(const std::string& text, uint32_t fontId, float 
         sfText.setOrigin({bounds.position.x + bounds.size.x * 0.5f, bounds.position.y + bounds.size.y * 0.5f});
         ApplyTransform(sfText, transform);
         sfText.setFillColor(ToSfColor(color));
-        RenderItem(m_renderTexture, sfText, blendMode);
+        RenderItem(GetActiveRenderTarget(), sfText, blendMode);
     }
 }
 
@@ -547,7 +618,7 @@ void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType t
         states.texture = m_resources.Get<sf::Texture>(textureId);
     }
 
-    m_renderTexture.draw(m_vertexScratch.data(), m_vertexScratch.size(), ToSfPrimitiveType(type), states);
+    GetActiveRenderTarget().draw(m_vertexScratch.data(), m_vertexScratch.size(), ToSfPrimitiveType(type), states);
 }
 
 void Renderer::DrawRectangleOutline(float width, float height, const Transform2D& transform, Color color, float thickness)
@@ -560,7 +631,7 @@ void Renderer::DrawRectangleOutline(float width, float height, const Transform2D
     rect.setFillColor(sf::Color::Transparent);
     rect.setOutlineColor(ToSfColor(color));
     rect.setOutlineThickness(thickness);
-    RenderItem(m_renderTexture, rect, BlendMode::Alpha);
+    RenderItem(GetActiveRenderTarget(), rect, BlendMode::Alpha);
 }
 
 void Renderer::DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness)
@@ -573,7 +644,7 @@ void Renderer::DrawCircleOutline(float radius, const Transform2D& transform, Col
     circle.setFillColor(sf::Color::Transparent);
     circle.setOutlineColor(ToSfColor(color));
     circle.setOutlineThickness(thickness);
-    RenderItem(m_renderTexture, circle, BlendMode::Alpha);
+    RenderItem(GetActiveRenderTarget(), circle, BlendMode::Alpha);
 }
 
 void Renderer::DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, float thickness)
@@ -589,7 +660,7 @@ void Renderer::DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, flo
     line.setRotation(sf::degrees(angle));
     line.setFillColor(ToSfColor(color));
 
-    m_renderTexture.draw(line);
+    GetActiveRenderTarget().draw(line);
 }
 
 Vector2f Renderer::GetTextureSize(uint32_t textureId) const
@@ -713,8 +784,18 @@ void Renderer::DrawSceneTransition(SceneTransitionType type, float progress, Col
 
 void Renderer::BeginLightingPass(Color ambientDarkness)
 {
+    auto& rt = GetActiveRenderTarget();
+    const sf::Vector2u targetSize = rt.getSize();
+    if (m_lightMapTexture.getSize() != targetSize && targetSize.x > 0 && targetSize.y > 0)
+    {
+        sf::ContextSettings settings;
+        settings.antiAliasingLevel = 4;
+        (void)m_lightMapTexture.resize(targetSize, settings);
+        m_lightMapTexture.setSmooth(true);
+    }
+
     // Match current camera view and clear to ambient darkness level
-    m_lightMapTexture.setView(m_renderTexture.getView());
+    m_lightMapTexture.setView(rt.getView());
     m_lightMapTexture.clear(sf::Color(ambientDarkness.r, ambientDarkness.g, ambientDarkness.b, ambientDarkness.a));
 }
 
@@ -875,18 +956,19 @@ void Renderer::EndLightingPass(BlendMode compositeBlendMode)
 {
     m_lightMapTexture.display();
 
-    // Composite light map over m_renderTexture in normalized screen overlay space
-    const sf::View prevView = m_renderTexture.getView();
-    const sf::Vector2u texSize = m_renderTexture.getSize();
+    // Composite light map over active render target in normalized screen overlay space
+    auto& rt = GetActiveRenderTarget();
+    const sf::View prevView = rt.getView();
+    const sf::Vector2u texSize = rt.getSize();
     const sf::View screenView(sf::FloatRect({0.0f, 0.0f}, {static_cast<float>(texSize.x), static_cast<float>(texSize.y)}));
-    m_renderTexture.setView(screenView);
+    rt.setView(screenView);
 
     sf::Sprite lightSprite(m_lightMapTexture.getTexture());
     sf::RenderStates states;
     states.blendMode = ToSfBlendMode(compositeBlendMode);
-    m_renderTexture.draw(lightSprite, states);
+    rt.draw(lightSprite, states);
 
-    m_renderTexture.setView(prevView);
+    rt.setView(prevView);
 }
 
 
