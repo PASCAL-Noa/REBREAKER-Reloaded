@@ -56,8 +56,8 @@ void main()
     vec3 baseColor = vec3(r, g, b);
 
     // 4. Chunky Pixel Noise (TV "snow" / static)
-    // Quantize into chunky 2.5x2.5 screen pixels for authentic retro digital/analog CRT texture
-    vec2 pixelCoord = floor(gl_FragCoord.xy / 2.5);
+    // Quantize into chunky 2.5x2.5 screen pixels using texture resolution
+    vec2 pixelCoord = floor((crtUV * u_resolution) / 2.5);
     float noiseSeed = hash21(pixelCoord + vec2(fract(u_time * 173.15), fract(u_time * 841.67)));
     vec3 noiseColor = vec3(noiseSeed);
 
@@ -80,6 +80,9 @@ void main()
     vec2 vig = crtUV * (1.0 - crtUV);
     float vignette = clamp(vig.x * vig.y * 22.0, 0.0, 1.0);
     finalColor *= vignette;
+
+    // Retain u_resolution uniform across driver shader optimization passes
+    finalColor += u_resolution.xyx * 0.00000001;
 
     gl_FragColor = vec4(finalColor, 1.0) * gl_Color;
 }
