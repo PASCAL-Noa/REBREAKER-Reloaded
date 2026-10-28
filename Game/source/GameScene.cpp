@@ -58,6 +58,77 @@
 #include "ECS/Components/UI/PanelComponent.h"
 #include "ECS/Components/UI/TextComponent.h"
 #include "ECS/Systems/UISystem.h"
+
+namespace
+{
+    Color DiscoRainbowColor(float hue, uint8_t alpha = 255)
+    {
+        float h = std::fmod(hue, 1.0f);
+        if (h < 0.0f) h += 1.0f;
+        float r = std::clamp((std::abs(h * 6.0f - 3.0f) - 1.0f), 0.0f, 1.0f);
+        float g = std::clamp((2.0f - std::abs(h * 6.0f - 2.0f)), 0.0f, 1.0f);
+        float b = std::clamp((2.0f - std::abs(h * 6.0f - 4.0f)), 0.0f, 1.0f);
+        return Color{
+            static_cast<uint8_t>(r * 255.0f),
+            static_cast<uint8_t>(g * 255.0f),
+            static_cast<uint8_t>(b * 255.0f),
+            alpha
+        };
+    }
+
+    void DrawMusicNote(GameContext& context, const Vector2f& pos, float scale, float rotAngle, const Color& color, bool doubleNote)
+    {
+        float r = 5.0f * scale;
+        float stemH = 20.0f * scale;
+        float lineThick = std::max(1.5f, 2.0f * scale);
+
+        auto rotateVec = [rotAngle](const Vector2f& v) -> Vector2f {
+            float cosA = std::cos(rotAngle);
+            float sinA = std::sin(rotAngle);
+            return Vector2f{v.X * cosA - v.Y * sinA, v.X * sinA + v.Y * cosA};
+        };
+
+        if (!doubleNote)
+        {
+            // Single note (eighth note ♪)
+            Vector2f headCenter = pos;
+            Transform2D headTrans{headCenter, rotAngle - 0.35f, Vector2f{1.35f * scale, 0.95f * scale}};
+            context.Render.DrawCircle(r, headTrans, color);
+
+            Vector2f stemBottom = headCenter + rotateVec(Vector2f{r * 0.85f * scale, 0.0f});
+            Vector2f stemTop = headCenter + rotateVec(Vector2f{r * 0.85f * scale, -stemH});
+            context.Render.DrawLine(stemBottom, stemTop, color, lineThick);
+
+            Vector2f flagMid = stemTop + rotateVec(Vector2f{6.0f * scale, 5.0f * scale});
+            Vector2f flagTip = stemTop + rotateVec(Vector2f{4.0f * scale, 12.0f * scale});
+            context.Render.DrawLine(stemTop, flagMid, color, lineThick);
+            context.Render.DrawLine(flagMid, flagTip, color, lineThick * 0.85f);
+        }
+        else
+        {
+            // Double note (beamed pair ♫)
+            float noteDist = 16.0f * scale;
+            Vector2f head1 = pos + rotateVec(Vector2f{-noteDist * 0.5f, 2.0f * scale});
+            Vector2f head2 = pos + rotateVec(Vector2f{noteDist * 0.5f, -2.0f * scale});
+
+            Transform2D t1{head1, rotAngle - 0.35f, Vector2f{1.3f * scale, 0.9f * scale}};
+            Transform2D t2{head2, rotAngle - 0.35f, Vector2f{1.3f * scale, 0.9f * scale}};
+            context.Render.DrawCircle(r, t1, color);
+            context.Render.DrawCircle(r, t2, color);
+
+            Vector2f stem1Bottom = head1 + rotateVec(Vector2f{r * 0.85f * scale, 0.0f});
+            Vector2f stem1Top = head1 + rotateVec(Vector2f{r * 0.85f * scale, -stemH});
+            Vector2f stem2Bottom = head2 + rotateVec(Vector2f{r * 0.85f * scale, 0.0f});
+            Vector2f stem2Top = head2 + rotateVec(Vector2f{r * 0.85f * scale, -stemH});
+
+            context.Render.DrawLine(stem1Bottom, stem1Top, color, lineThick);
+            context.Render.DrawLine(stem2Bottom, stem2Top, color, lineThick);
+
+            // Cross beam
+            context.Render.DrawLine(stem1Top, stem2Top, color, lineThick * 1.8f);
+        }
+    }
+}
 #include "Generators/FileLevelGenerator.h"
 #include "Scenes/MenuScene.h"
 #include "TweenEffects/TweenEffects.h"
@@ -104,6 +175,13 @@ void GameScene::OnInit(GameContext& context)
     m_plasmaLaunchSfxId = context.Resources.LoadResource("Resources/audio/sfx/plasma_launch.wav");
     m_plasmaExplodeSfxId = context.Resources.LoadResource("Resources/audio/sfx/plasma_explode.wav");
     m_discoShockwaveSfxId = context.Resources.LoadResource("Resources/audio/sfx/disco_shockwave.wav");
+    m_discoVoiceoverSfxId = context.Resources.LoadResource("Resources/audio/sfx/disco_voiceover.wav");
+    m_discoHitSfxIds[0] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_bass.wav");
+    m_discoHitSfxIds[1] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_brass.wav");
+    m_discoHitSfxIds[2] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_guitar.wav");
+    m_discoHitSfxIds[3] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_synth.wav");
+    m_discoHitSfxIds[4] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_cowbell.wav");
+    m_discoHitSfxIds[5] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_strings.wav");
     m_itemRegenRestoreSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup_buff.wav");
     m_plasmaShaderId = context.Resources.LoadResource("Resources/shaders/plasma_orb.frag");
     m_discoShaderId = context.Resources.LoadResource("Resources/shaders/disco_ball.frag");
@@ -787,6 +865,9 @@ void GameScene::OnRender(GameContext& context)
     // Render ambient background layer (behind gameplay entities)
     m_ambientBackground.OnRender(context.Render, m_bgColor, cameraComp.Position, paddlePos);
 
+    // Wandering yellow musical note particles in the background
+    RenderDiscoBackgroundMusicNotes(context);
+
     m_systemManager.OnRender();
 
     context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{800.0f, -450.0f}, Colors::White, 2.0f);
@@ -1091,20 +1172,31 @@ void GameScene::OnRender(GameContext& context)
         // 7. Disco Fever dynamic illumination in dark levels
         if (m_discoTimer > 0.0f)
         {
-            // A. Orbiting Rainbow Big Balls
+            // A. Dancing Rainbow Big Balls & Trails
             for (const auto& db : m_discoBigBalls)
             {
-                Vector2f ballPos{
-                    db.Center.X + std::cos(db.Angle) * db.OrbitRadius,
-                    db.Center.Y + std::sin(db.Angle) * db.OrbitRadius * 0.65f
-                };
-                context.Render.DrawPointLight(ballPos, 190.0f, db.BaseColor, 1.5f, BlendMode::Add);
+                context.Render.DrawPointLight(db.Position, 220.0f, db.BaseColor, 1.8f, BlendMode::Add);
+                for (size_t ti = 0; ti < db.Trail.size(); ti += 2)
+                {
+                    float tRatio = db.Trail[ti].Lifetime / db.Trail[ti].MaxLifetime;
+                    context.Render.DrawPointLight(db.Trail[ti].Position, 90.0f * tRatio, db.BaseColor, 0.75f * tRatio, BlendMode::Add);
+                }
             }
 
             // B. Boule a Facettes (Level 5 Mirror Ball)
             if (m_discoMirrorBall.IsActive)
             {
-                context.Render.DrawPointLight(m_discoMirrorBall.Position, 450.0f, Color{240, 245, 255, 255}, 2.4f, BlendMode::Add);
+                float mLightR = m_discoMirrorBall.IsFrenzy ? 780.0f : 460.0f;
+                float mLightInt = m_discoMirrorBall.IsFrenzy ? 3.6f : 2.6f;
+                Color mLightCol = m_discoMirrorBall.IsFrenzy ? Color{255, 245, 210, 255} : Color{245, 250, 255, 255};
+                context.Render.DrawPointLight(m_discoMirrorBall.Position, mLightR, mLightCol, mLightInt, BlendMode::Add);
+            }
+
+            // C. Wandering yellow musical notes illumination
+            for (const auto& note : m_discoMusicNotes)
+            {
+                float nRatio = std::clamp(note.Lifetime / note.MaxLifetime, 0.0f, 1.0f);
+                context.Render.DrawPointLight(note.Position, 75.0f * note.Scale, Color{255, 235, 60, 255}, 0.55f * nRatio, BlendMode::Add);
             }
         }
 
@@ -4047,14 +4139,28 @@ void GameScene::ClearActiveUltimates()
         m_discoTimer = 0.0f;
         m_discoBigBalls.clear();
         m_discoMirrorBall.IsActive = false;
+        m_discoMirrorBall.IsFrenzy = false;
+        m_discoMirrorBall.Scale = 1.35f;
+        m_discoMirrorBall.TargetScale = 1.35f;
 
-        if (mp_context && !m_preDiscoMusicPath.empty())
+        if (mp_context)
         {
-            mp_context->Audio.PlayMusic(m_preDiscoMusicPath, 80.0f, true);
+            if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
+            {
+                mp_context->Audio.PlayMusic(m_preDiscoMusicPath, 80.0f, true);
+            }
+            else
+            {
+                m_playlist.PlayNext(*mp_context, 1.2f);
+            }
             m_preDiscoMusicPath.clear();
         }
     }
     m_discoRainbowHue = 0.0f;
+    m_discoGrandFinaleBannerTimer = 0.0f;
+    m_discoExplosionAnims.clear();
+    m_discoMusicNotes.clear();
+    m_discoNoteSpawnTimer = 0.0f;
 }
 
 void GameScene::ExecutePlasmaOrb(int level)
@@ -4186,19 +4292,28 @@ void GameScene::TriggerSoundWave(float targetHeightRatio, int damage)
 void GameScene::ExecuteDiscoBall(int level)
 {
     m_discoLevel = std::clamp(level, 1, 5);
-    m_discoDuration = 7.0f;
+    m_discoDuration = 9.0f;
     m_discoTimer = m_discoDuration;
     m_discoRainbowHue = 0.0f;
+    m_discoGrandFinaleBannerTimer = 0.0f;
 
-    // Switch music to the groovy disco track
+    // Switch music to the groovy layered disco stem for this level
     if (mp_context)
     {
-        m_preDiscoMusicPath = mp_context->Audio.GetCurrentMusicPath();
-        mp_context->Audio.PlayMusic("Resources/audio/music/disco_ultimate.wav", 100.0f, true);
+        std::string cur = mp_context->Audio.GetCurrentMusicPath();
+        if (m_preDiscoMusicPath.empty() || m_preDiscoMusicPath.find("disco_ultimate") != std::string::npos)
+        {
+            if (cur.find("disco_ultimate") == std::string::npos && !cur.empty())
+            {
+                m_preDiscoMusicPath = cur;
+            }
+        }
+        std::string musicPath = "Resources/audio/music/disco_ultimate_lvl" + std::to_string(m_discoLevel) + ".wav";
+        mp_context->Audio.PlayMusic(musicPath, 100.0f, true);
     }
 
-    // Soundwaves from paddle
-    float heightRatio = 0.50f + static_cast<float>(m_discoLevel - 1) * 0.10f; // 50%, 60%, 70%, 80%, 90%
+    // Soundwaves from paddle (focused reach so as not to instantly clear stages)
+    float heightRatio = 0.16f + static_cast<float>(m_discoLevel - 1) * 0.04f; // 16%, 20%, 24%, 28%, 32%
     int waveDmg = (m_discoLevel >= 3) ? 2 : 1;
 
     TriggerSoundWave(heightRatio, waveDmg);
@@ -4209,37 +4324,84 @@ void GameScene::ExecuteDiscoBall(int level)
         TriggerSoundWave(heightRatio * 0.70f, waveDmg);
     }
 
-    // Rainbow Big Balls in orbit
-    m_discoBigBalls.clear();
+    // Rainbow Big Balls dancing in the playfield
     int ballCount = 2 + (m_discoLevel - 1); // 2 to 6
-    for (int i = 0; i < ballCount; ++i)
-    {
-        float angleStep = (2.0f * 3.14159265f) / static_cast<float>(ballCount);
-        DiscoBigBall db;
-        db.Center = Vector2f{-200.0f + static_cast<float>(i % 3) * 200.0f, -80.0f + static_cast<float>(i / 3) * 120.0f};
-        db.OrbitRadius = 90.0f + static_cast<float>((i % 3) * 35);
-        db.Angle = angleStep * static_cast<float>(i);
-        db.Speed = 2.0f + static_cast<float>(i) * 0.4f;
-        db.Scale = 1.5f;
+    const Color rainbowColors[6] = {
+        Color{255, 45, 120, 255},  // Hot Pink / Red
+        Color{255, 140, 30, 255},  // Electric Orange
+        Color{255, 230, 40, 255},  // Bright Gold
+        Color{50, 255, 100, 255},  // Neon Lime
+        Color{40, 220, 255, 255},  // Cyan Spark
+        Color{190, 70, 255, 255}   // Ultraviolet
+    };
 
-        float hue = static_cast<float>(i) / static_cast<float>(ballCount);
-        float r = (std::sin(hue * 6.28f + 0.0f) * 0.5f + 0.5f) * 255.0f;
-        float g = (std::sin(hue * 6.28f + 2.09f) * 0.5f + 0.5f) * 255.0f;
-        float b = (std::sin(hue * 6.28f + 4.18f) * 0.5f + 0.5f) * 255.0f;
-        db.BaseColor = Color{static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b), 255};
+    // If already active, keep existing dancing/independent balls and only append any missing ones
+    size_t startIdx = 0;
+    if (m_discoBigBalls.size() >= static_cast<size_t>(ballCount))
+    {
+        startIdx = static_cast<size_t>(ballCount);
+    }
+    else
+    {
+        startIdx = m_discoBigBalls.size();
+    }
+
+    for (int i = static_cast<int>(startIdx); i < ballCount; ++i)
+    {
+        DiscoBigBall db;
+        db.InstrumentIndex = i % 6;
+        db.DanceCenter = Vector2f{
+            -420.0f + static_cast<float>(i) * (840.0f / static_cast<float>(std::max(1, ballCount - 1))),
+            -100.0f + static_cast<float>((i % 2) * 120 - 60)
+        };
+        db.DanceVelocity = Vector2f{
+            65.0f + static_cast<float>((i * 29) % 35) * ((i % 2 == 0) ? 1.0f : -1.0f),
+            45.0f + static_cast<float>((i * 19) % 30) * ((i % 3 == 0) ? 1.0f : -1.0f)
+        };
+        db.DancePhaseX = static_cast<float>(i) * 1.047f;
+        db.DancePhaseY = static_cast<float>(i) * 1.57f;
+        db.DanceFreqX = 1.8f + static_cast<float>(i % 3) * 0.35f;
+        db.DanceFreqY = 2.4f + static_cast<float>((i + 1) % 3) * 0.45f;
+        db.DanceAmpX = 135.0f + static_cast<float>((i % 2) * 35);
+        db.DanceAmpY = 80.0f + static_cast<float>((i % 3) * 25);
+        db.Position = db.DanceCenter + Vector2f{std::cos(db.DancePhaseX) * db.DanceAmpX, std::sin(db.DancePhaseY) * db.DanceAmpY};
+        db.Velocity = Vector2f{0.0f, 0.0f};
+        db.Radius = 20.0f;
+        db.Scale = 1.35f;
+        db.IsIndependent = false;
+        db.SparkleTimer = 0.0f;
+        db.BaseColor = rainbowColors[i % 6];
+        db.Trail.clear();
+        db.DamagedBricks.clear();
 
         m_discoBigBalls.push_back(db);
     }
 
-    // Level 5: Boule à Facettes (Giant Mirror Disco Ball)
+    // Level 5: Boule à Facettes (Sleek mirror disco ball)
     if (m_discoLevel >= 5)
     {
         m_discoMirrorBall.IsActive = true;
         m_discoMirrorBall.Lifetime = 5.0f;
-        m_discoMirrorBall.Position = Vector2f{0.0f, -120.0f};
-        m_discoMirrorBall.Velocity = Vector2f{340.0f, -250.0f};
-        m_discoMirrorBall.Radius = 45.0f;
-        m_discoMirrorBall.Scale = 2.6f;
+        m_discoMirrorBall.Position = Vector2f{0.0f, -140.0f};
+        m_discoMirrorBall.Velocity = Vector2f{350.0f, -260.0f};
+        m_discoMirrorBall.Radius = 26.0f;
+        m_discoMirrorBall.Scale = 1.35f;
+        m_discoMirrorBall.TargetScale = 1.35f;
+        m_discoMirrorBall.IsFrenzy = false;
+        m_discoMirrorBall.FrenzyPulseTime = 0.0f;
+    }
+    else
+    {
+        m_discoMirrorBall.IsActive = false;
+        m_discoMirrorBall.IsFrenzy = false;
+        m_discoMirrorBall.Scale = 1.35f;
+        m_discoMirrorBall.TargetScale = 1.35f;
+    }
+
+    // Pre-populate wandering yellow music note particles across background
+    while (m_discoMusicNotes.size() < 36)
+    {
+        SpawnDiscoMusicNote(true);
     }
 
     TriggerPostProcessFlash(0.04f, 0.70f, Color{255, 60, 200, 255}, 0.35f, Color{255, 230, 80, 255});
@@ -4583,18 +4745,298 @@ void GameScene::UpdateUltimateAbilities(float dt)
     }
 
     // 3. Disco Fever active state update
+    // 3. Disco Fever active state update
+    if (m_discoGrandFinaleBannerTimer > 0.0f)
+    {
+        m_discoGrandFinaleBannerTimer -= dt;
+        if (m_discoGrandFinaleBannerTimer < 0.0f) m_discoGrandFinaleBannerTimer = 0.0f;
+    }
+
+    // Update animated expanding explosions
+    for (auto it = m_discoExplosionAnims.begin(); it != m_discoExplosionAnims.end(); )
+    {
+        it->Lifetime -= dt;
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_discoExplosionAnims.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    // Update wandering yellow musical note particles in background
+    if (m_discoTimer > 0.0f)
+    {
+        m_discoNoteSpawnTimer += dt;
+        if (m_discoNoteSpawnTimer >= 0.16f && m_discoMusicNotes.size() < 42)
+        {
+            m_discoNoteSpawnTimer = 0.0f;
+            SpawnDiscoMusicNote(false);
+        }
+    }
+
+    for (auto it = m_discoMusicNotes.begin(); it != m_discoMusicNotes.end(); )
+    {
+        it->Lifetime -= (m_discoTimer > 0.0f) ? dt : (dt * 2.2f);
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_discoMusicNotes.erase(it);
+            continue;
+        }
+
+        it->WobblePhase += dt * it->WobbleFreq;
+        it->Rotation += it->RotSpeed * dt;
+
+        Vector2f wanderDrift{
+            std::sin(it->WobblePhase) * 32.0f,
+            std::cos(it->WobblePhase * 0.8f) * 18.0f
+        };
+        it->Position += (it->Velocity + wanderDrift) * dt;
+
+        // Soft wrap around stage boundaries so notes wander continuously
+        if (it->Position.X < -780.0f) it->Position.X = 780.0f;
+        else if (it->Position.X > 780.0f) it->Position.X = -780.0f;
+        if (it->Position.Y < -440.0f) it->Position.Y = 440.0f;
+        else if (it->Position.Y > 440.0f) it->Position.Y = -440.0f;
+
+        ++it;
+    }
+
     if (m_discoTimer > 0.0f)
     {
         m_discoTimer -= dt;
         m_discoRainbowHue += dt * 2.8f;
 
+        // A. Update Dancing & Independent Big Balls
         for (auto& db : m_discoBigBalls)
         {
-            db.Angle += db.Speed * dt;
+            // 1. Ball intersection check to grant independence
+            if (!db.IsIndependent)
+            {
+                m_registry.View<BallComponent, Transform2D>([&](Entity, const BallComponent&, const Transform2D& bt)
+                {
+                    float dist = (bt.Position - db.Position).Length();
+                    if (dist <= (db.Radius * db.Scale + 20.0f))
+                    {
+                        db.IsIndependent = true;
+                        Vector2f launchDir = db.Position - bt.Position;
+                        if (launchDir.Length() < 1.0f)
+                        {
+                            float a = (static_cast<float>(rand() % 360) / 180.0f) * 3.14159265f;
+                            launchDir = Vector2f{std::cos(a), std::sin(a)};
+                        }
+                        else
+                        {
+                            launchDir = launchDir.Normalized();
+                        }
+                        float speed = 500.0f + static_cast<float>(rand() % 120);
+                        db.Velocity = launchDir * speed;
+
+                        SpawnExplosionParticles(db.Position, db.BaseColor, 20);
+                        SpawnLightFlash(db.Position, 320.0f, db.BaseColor, 2.0f, 0.35f);
+
+                        // Unique disco instrument SFX for this specific ball
+                        uint32_t hitSfx = (db.InstrumentIndex >= 0 && db.InstrumentIndex < 6) ? m_discoHitSfxIds[db.InstrumentIndex] : 0;
+                        if (hitSfx != 0 && mp_context)
+                        {
+                            mp_context->Audio.PlaySfx(hitSfx, 100.0f);
+                        }
+                        else if (m_conductionSfxId != 0 && mp_context)
+                        {
+                            mp_context->Audio.PlaySfx(m_conductionSfxId, 85.0f);
+                        }
+                    }
+                });
+            }
+
+            // 2. Motion
+            if (!db.IsIndependent)
+            {
+                db.DancePhaseX += dt * db.DanceFreqX;
+                db.DancePhaseY += dt * db.DanceFreqY;
+                db.DanceCenter += db.DanceVelocity * dt;
+
+                // Soft bounce dance center within stage boundaries
+                if (db.DanceCenter.X < -500.0f) { db.DanceCenter.X = -500.0f; db.DanceVelocity.X = std::abs(db.DanceVelocity.X); }
+                else if (db.DanceCenter.X > 500.0f) { db.DanceCenter.X = 500.0f; db.DanceVelocity.X = -std::abs(db.DanceVelocity.X); }
+                if (db.DanceCenter.Y < -300.0f) { db.DanceCenter.Y = -300.0f; db.DanceVelocity.Y = std::abs(db.DanceVelocity.Y); }
+                else if (db.DanceCenter.Y > 200.0f) { db.DanceCenter.Y = 200.0f; db.DanceVelocity.Y = -std::abs(db.DanceVelocity.Y); }
+
+                db.Position = db.DanceCenter + Vector2f{std::cos(db.DancePhaseX) * db.DanceAmpX, std::sin(db.DancePhaseY) * db.DanceAmpY};
+            }
+            else
+            {
+                db.Position += db.Velocity * dt;
+
+                // Autonomous bounce physics on stage walls and paddle zone
+                if (db.Position.X < -740.0f) { db.Position.X = -740.0f; db.Velocity.X = std::abs(db.Velocity.X); }
+                else if (db.Position.X > 740.0f) { db.Position.X = 740.0f; db.Velocity.X = -std::abs(db.Velocity.X); }
+                if (db.Position.Y < -420.0f) { db.Position.Y = -420.0f; db.Velocity.Y = std::abs(db.Velocity.Y); }
+                else if (db.Position.Y > 380.0f) { db.Position.Y = 380.0f; db.Velocity.Y = -std::abs(db.Velocity.Y); }
+            }
+
+            // 3. Piercing through bricks (damages each brick once while traversing without bouncing)
+            float colRadius = db.Radius * db.Scale + 8.0f;
+            float colRadiusSq = colRadius * colRadius;
+            std::vector<Entity> currentlyOverlapping;
+            m_registry.View<Transform2D, BrickComponent>([&](Entity e, const Transform2D& t, const BrickComponent& b)
+            {
+                if (b.IsRegenerating) return;
+                float halfW = 50.0f;
+                float halfH = 15.0f;
+                if (m_registry.HasComponent<BoxCollider>(e))
+                {
+                    const auto& col = m_registry.GetComponent<BoxCollider>(e);
+                    halfW = col.Size.X * 0.5f;
+                    halfH = col.Size.Y * 0.5f;
+                }
+                float dx = std::max(0.0f, std::abs(db.Position.X - t.Position.X) - halfW);
+                float dy = std::max(0.0f, std::abs(db.Position.Y - t.Position.Y) - halfH);
+                if (dx * dx + dy * dy <= colRadiusSq)
+                {
+                    currentlyOverlapping.push_back(e);
+                }
+            });
+
+            for (Entity be : currentlyOverlapping)
+            {
+                auto itDamaged = std::find(db.DamagedBricks.begin(), db.DamagedBricks.end(), be);
+                if (itDamaged == db.DamagedBricks.end())
+                {
+                    db.DamagedBricks.push_back(be);
+                    if (m_registry.IsAlive(be) && !m_registry.IsPendingDestroy(be))
+                    {
+                        HandleBrickCollision(be, NULL_ENTITY, false, true, 1);
+                        SpawnExplosionParticles(db.Position, db.BaseColor, 12);
+                        SpawnLightFlash(db.Position, 240.0f, db.BaseColor, 1.4f, 0.22f);
+                    }
+                }
+            }
+
+            for (auto itD = db.DamagedBricks.begin(); itD != db.DamagedBricks.end(); )
+            {
+                auto itStill = std::find(currentlyOverlapping.begin(), currentlyOverlapping.end(), *itD);
+                if (itStill == currentlyOverlapping.end())
+                {
+                    itD = db.DamagedBricks.erase(itD);
+                }
+                else
+                {
+                    ++itD;
+                }
+            }
+
+            // 4. Ribbon Trail update
+            db.Trail.push_back(DiscoTrailPoint{db.Position, 0.28f, 0.28f});
+            for (auto itT = db.Trail.begin(); itT != db.Trail.end(); )
+            {
+                itT->Lifetime -= dt;
+                if (itT->Lifetime <= 0.0f)
+                {
+                    itT = db.Trail.erase(itT);
+                }
+                else
+                {
+                    ++itT;
+                }
+            }
+
+            // 5. Sparkle particles behind ball
+            db.SparkleTimer += dt;
+            if (db.SparkleTimer >= 0.045f)
+            {
+                db.SparkleTimer = 0.0f;
+                if (m_particleSystem)
+                {
+                    Vector2f pVel{
+                        static_cast<float>((rand() % 80) - 40),
+                        static_cast<float>((rand() % 80) - 40)
+                    };
+                    m_particleSystem->Spawn(db.Position, pVel, 0.40f, 4.0f, db.BaseColor);
+                }
+            }
         }
 
+        // Check if all big balls are unlocked -> Mirror Ball goes crazy and grows!
+        bool allBigBallsUnlocked = !m_discoBigBalls.empty();
+        for (const auto& db : m_discoBigBalls)
+        {
+            if (!db.IsIndependent)
+            {
+                allBigBallsUnlocked = false;
+                break;
+            }
+        }
+
+        if (allBigBallsUnlocked && !m_discoMirrorBall.IsFrenzy)
+        {
+            m_discoMirrorBall.IsFrenzy = true;
+            m_discoMirrorBall.TargetScale = 2.40f; // Grossis !
+            m_discoMirrorBall.Lifetime = std::max(m_discoMirrorBall.Lifetime, 5.0f);
+            m_discoTimer = std::max(m_discoTimer, 5.5f);
+
+            if (!m_discoMirrorBall.IsActive)
+            {
+                m_discoMirrorBall.IsActive = true;
+                m_discoMirrorBall.Position = Vector2f{0.0f, -100.0f};
+                m_discoMirrorBall.Velocity = Vector2f{480.0f, -320.0f};
+                m_discoMirrorBall.Radius = 26.0f;
+                m_discoMirrorBall.Scale = 1.35f;
+            }
+
+            // Speed boost to frenzy velocity
+            float curSpeed = m_discoMirrorBall.Velocity.Length();
+            if (curSpeed < 1.0f)
+            {
+                m_discoMirrorBall.Velocity = Vector2f{520.0f, -380.0f};
+            }
+            else
+            {
+                m_discoMirrorBall.Velocity = m_discoMirrorBall.Velocity.Normalized() * 750.0f;
+            }
+
+            TweenEffects::Shake(m_registry, m_camera, 0.40f, 14.0f);
+            SpawnLightFlash(m_discoMirrorBall.Position, 850.0f, Color{255, 240, 100, 255}, 3.5f, 0.75f);
+            SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 235, 80, 255}, 45);
+            SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 60, 200, 255}, 35);
+            TriggerPostProcessFlash(0.08f, 0.95f, Color{255, 255, 255, 255}, 0.6f, Color{255, 230, 40, 255});
+
+            if (mp_context && m_discoShockwaveSfxId != 0)
+            {
+                mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f, 1.3f);
+            }
+        }
+
+        // B. Boule à Facettes (Level 5 Mirror Ball)
         if (m_discoMirrorBall.IsActive)
         {
+            if (m_discoMirrorBall.Scale < m_discoMirrorBall.TargetScale)
+            {
+                m_discoMirrorBall.Scale += (m_discoMirrorBall.TargetScale - m_discoMirrorBall.Scale) * std::min(1.0f, dt * 5.0f);
+            }
+
+            if (m_discoMirrorBall.IsFrenzy)
+            {
+                m_discoMirrorBall.FrenzyPulseTime += dt * 22.0f;
+                Vector2f perp{-m_discoMirrorBall.Velocity.Y, m_discoMirrorBall.Velocity.X};
+                if (perp.Length() > 0.1f)
+                {
+                    m_discoMirrorBall.Position += perp.Normalized() * (std::sin(m_discoMirrorBall.FrenzyPulseTime) * 75.0f * dt);
+                }
+
+                if (m_particleSystem && (rand() % 3 == 0))
+                {
+                    Vector2f pVel{
+                        static_cast<float>((rand() % 160) - 80),
+                        static_cast<float>((rand() % 160) - 80)
+                    };
+                    Color pCol = DiscoRainbowColor(m_gameplayTime * 3.0f, 255);
+                    m_particleSystem->Spawn(m_discoMirrorBall.Position, pVel, 0.35f, 5.0f * m_discoMirrorBall.Scale, pCol);
+                }
+            }
+
             m_discoMirrorBall.Position += m_discoMirrorBall.Velocity * dt;
             m_discoMirrorBall.Lifetime -= dt;
 
@@ -4605,11 +5047,23 @@ void GameScene::UpdateUltimateAbilities(float dt)
             else if (m_discoMirrorBall.Position.Y > 380.0f) { m_discoMirrorBall.Position.Y = 380.0f; m_discoMirrorBall.Velocity.Y = -std::abs(m_discoMirrorBall.Velocity.Y); }
 
             // Destroys all bricks in its path
+            float mirrorRadius = m_discoMirrorBall.Radius * m_discoMirrorBall.Scale + 8.0f;
+            float mRadiusSq = mirrorRadius * mirrorRadius;
             std::vector<Entity> crushed;
             m_registry.View<Transform2D, BrickComponent>([&](Entity e, const Transform2D& t, const BrickComponent& b)
             {
                 if (b.IsRegenerating) return;
-                if ((t.Position - m_discoMirrorBall.Position).Length() <= (m_discoMirrorBall.Radius * m_discoMirrorBall.Scale))
+                float halfW = 50.0f;
+                float halfH = 15.0f;
+                if (m_registry.HasComponent<BoxCollider>(e))
+                {
+                    const auto& col = m_registry.GetComponent<BoxCollider>(e);
+                    halfW = col.Size.X * 0.5f;
+                    halfH = col.Size.Y * 0.5f;
+                }
+                float dx = std::max(0.0f, std::abs(m_discoMirrorBall.Position.X - t.Position.X) - halfW);
+                float dy = std::max(0.0f, std::abs(m_discoMirrorBall.Position.Y - t.Position.Y) - halfH);
+                if (dx * dx + dy * dy <= mRadiusSq)
                 {
                     crushed.push_back(e);
                 }
@@ -4619,25 +5073,103 @@ void GameScene::UpdateUltimateAbilities(float dt)
                 if (m_registry.IsAlive(be) && !m_registry.IsPendingDestroy(be))
                 {
                     HandleBrickCollision(be, NULL_ENTITY, false, true, 99);
+                    SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 230, 255, 255}, 16);
                 }
             }
 
+            // Grand Climax Explosion of Mirror Ball
             if (m_discoMirrorBall.Lifetime <= 0.0f)
             {
                 m_discoMirrorBall.IsActive = false;
+                if (mp_context)
+                {
+                    mp_context->Audio.TriggerDucking(0.20f, 1.6f);
+                    if (m_discoVoiceoverSfxId != 0)
+                    {
+                        mp_context->Audio.PlaySfx(m_discoVoiceoverSfxId, 100.0f);
+                    }
+                }
+                m_discoGrandFinaleBannerTimer = 2.4f;
+
+                DiscoExplosionAnim mAnim;
+                mAnim.Position = m_discoMirrorBall.Position;
+                mAnim.BallColor = Color{255, 245, 255, 255};
+                mAnim.Lifetime = 0.85f;
+                mAnim.MaxLifetime = 0.85f;
+                mAnim.Radius = m_discoMirrorBall.Radius * m_discoMirrorBall.Scale;
+                mAnim.MaxRadius = 280.0f;
+                m_discoExplosionAnims.push_back(mAnim);
+
+                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 255, 255, 255}, 60);
+                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 80, 220, 255}, 40);
+                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{80, 240, 255, 255}, 40);
+                SpawnLightFlash(m_discoMirrorBall.Position, 750.0f, Color{255, 250, 255, 255}, 3.2f, 0.85f);
+                TriggerPostProcessFlash(0.06f, 0.85f, Color{255, 255, 255, 255}, 0.5f, Color{255, 40, 200, 255});
             }
         }
 
+        // C. End of Disco Fever: Synchronous Big Balls Explosion Animation!
         if (m_discoTimer <= 0.0f)
         {
             m_discoTimer = 0.0f;
+
+            for (const auto& db : m_discoBigBalls)
+            {
+                DiscoExplosionAnim anim;
+                anim.Position = db.Position;
+                anim.BallColor = db.BaseColor;
+                anim.Lifetime = 0.65f;
+                anim.MaxLifetime = 0.65f;
+                anim.Radius = db.Radius * db.Scale;
+                anim.MaxRadius = 160.0f;
+                m_discoExplosionAnims.push_back(anim);
+
+                SpawnExplosionParticles(db.Position, db.BaseColor, 32);
+                SpawnLightFlash(db.Position, 420.0f, db.BaseColor, 2.2f, 0.45f);
+            }
+            if (m_plasmaExplodeSfxId != 0 && mp_context)
+            {
+                mp_context->Audio.PlaySfx(m_plasmaExplodeSfxId, 90.0f);
+            }
             m_discoBigBalls.clear();
-            m_discoMirrorBall.IsActive = false;
+
+            if (m_discoMirrorBall.IsActive)
+            {
+                m_discoMirrorBall.IsActive = false;
+                DiscoExplosionAnim mAnim;
+                mAnim.Position = m_discoMirrorBall.Position;
+                mAnim.BallColor = Color{255, 245, 255, 255};
+                mAnim.Lifetime = 0.85f;
+                mAnim.MaxLifetime = 0.85f;
+                mAnim.Radius = m_discoMirrorBall.Radius * m_discoMirrorBall.Scale;
+                mAnim.MaxRadius = 280.0f;
+                m_discoExplosionAnims.push_back(mAnim);
+
+                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 255, 255, 255}, 60);
+                SpawnLightFlash(m_discoMirrorBall.Position, 750.0f, Color{255, 250, 255, 255}, 3.2f, 0.85f);
+                if (mp_context)
+                {
+                    mp_context->Audio.TriggerDucking(0.20f, 1.6f);
+                    if (m_discoVoiceoverSfxId != 0)
+                    {
+                        mp_context->Audio.PlaySfx(m_discoVoiceoverSfxId, 100.0f);
+                    }
+                }
+                m_discoGrandFinaleBannerTimer = 2.4f;
+            }
 
             // Restore stage music
-            if (mp_context && !m_preDiscoMusicPath.empty())
+            if (mp_context)
             {
-                mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f);
+                if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f);
+                }
+                else
+                {
+                    m_playlist.PlayNext(*mp_context, 1.2f);
+                }
+                m_preDiscoMusicPath.clear();
             }
         }
     }
@@ -4779,7 +5311,7 @@ void GameScene::RenderUltimateMeterHUD(GameContext& context)
     std::string ultName = ProfileManager::Get().GetUltimateName(ultType);
     if (m_ultimateReady)
     {
-        ultLabel = "[ ULTIME PRET : APPUYER SUR ESPACE ]";
+        ultLabel = "[ ULTIMATE READY : PRESS SPACE ]";
         float pulse = (std::sin(m_ultimateReadyPulseTime * 10.0f) + 1.0f) * 0.5f;
         Color textColor{255, static_cast<uint8_t>(220 + 35 * pulse), static_cast<uint8_t>(80 * pulse), 255};
         context.Render.DrawTextCentered(ultLabel, m_fontId, 28.0f, Transform2D{Vector2f{centerX, centerY + 28.0f}}, textColor);
@@ -4852,45 +5384,257 @@ void GameScene::RenderActiveUltimateVisuals(GameContext& context)
 
     if (m_discoTimer > 0.0f)
     {
-        // Orbiting Rainbow Big Balls
+        // A. Sweeping Disco Spotlights from ceiling
+        const Vector2f spotOrigins[4] = {
+            {-650.0f, -440.0f},
+            {-220.0f, -440.0f},
+            {220.0f, -440.0f},
+            {650.0f, -440.0f}
+        };
+        const Color spotColors[4] = {
+            Color{255, 40, 140, 65},  // Neon Magenta
+            Color{40, 220, 255, 65},  // Electric Cyan
+            Color{255, 220, 40, 65},  // Golden Sun
+            Color{170, 50, 255, 65}   // Ultraviolet
+        };
+
+        for (int sp = 0; sp < 4; ++sp)
+        {
+            float sweep = std::sin(m_gameplayTime * 2.2f + static_cast<float>(sp) * 1.57f);
+            Vector2f targetFloor{
+                spotOrigins[sp].X * 0.4f + sweep * 440.0f,
+                380.0f
+            };
+
+            // Translucent spotlight cone beams
+            Vector2f leftCone{targetFloor.X - 100.0f, targetFloor.Y};
+            Vector2f rightCone{targetFloor.X + 100.0f, targetFloor.Y};
+
+            context.Render.DrawLine(spotOrigins[sp], leftCone, spotColors[sp], 2.0f);
+            context.Render.DrawLine(spotOrigins[sp], rightCone, spotColors[sp], 2.0f);
+            context.Render.DrawLine(spotOrigins[sp], targetFloor, Color{255, 255, 255, 50}, 3.0f);
+
+            // Glowing floor pool
+            Transform2D fSpot{targetFloor, 0.0f, Vector2f{1.6f, 0.5f}};
+            context.Render.DrawCircle(65.0f, fSpot, Color{spotColors[sp].r, spotColors[sp].g, spotColors[sp].b, 45});
+            context.Render.DrawCircle(32.0f, fSpot, Color{255, 255, 255, 75});
+        }
+
+        // B. Pulsating Neon Strobe Bars at stage borders
+        float strobeAlpha = (0.5f + 0.5f * std::sin(m_gameplayTime * 14.0f)) * 140.0f;
+        Color strobeCol{255, 230, 80, static_cast<uint8_t>(strobeAlpha)};
+        context.Render.DrawLine(Vector2f{-760.0f, -435.0f}, Vector2f{760.0f, -435.0f}, strobeCol, 2.0f);
+        context.Render.DrawLine(Vector2f{-760.0f, 395.0f}, Vector2f{760.0f, 395.0f}, strobeCol, 2.0f);
+
+        // C. Big Balls Glowing Ribbon Trails
         for (const auto& db : m_discoBigBalls)
         {
-            Vector2f ballPos{
-                db.Center.X + std::cos(db.Angle) * db.OrbitRadius,
-                db.Center.Y + std::sin(db.Angle) * db.OrbitRadius * 0.65f
-            };
-            Transform2D bt{ballPos, 0.0f, Vector2f{db.Scale, db.Scale}};
-
-            // Cycling Rainbow Halo
-            float rPulse = std::sin(m_gameplayTime * 10.0f + db.Angle) * 4.0f;
-            context.Render.DrawCircleOutline(22.0f * db.Scale + rPulse, bt, db.BaseColor, -2.5f);
-            context.Render.DrawCircle(16.0f * db.Scale, bt, db.BaseColor);
-            context.Render.DrawCircle(8.0f * db.Scale, bt, Colors::White);
-        }
-
-        // Disco Mirror Ball (Level 5)
-        if (m_discoMirrorBall.IsActive)
-        {
-            Transform2D mt{m_discoMirrorBall.Position, m_gameplayTime * 45.0f, Vector2f{m_discoMirrorBall.Scale, m_discoMirrorBall.Scale}};
-
-            // Outer sparkling faceted diamond ring
-            float pulse = (std::sin(m_gameplayTime * 12.0f) + 1.0f) * 0.5f;
-            Color facetBorder{255, static_cast<uint8_t>(200 + 55 * pulse), 255, 255};
-            context.Render.DrawCircleOutline(m_discoMirrorBall.Radius * m_discoMirrorBall.Scale + 8.0f, mt, facetBorder, -4.0f);
-            context.Render.DrawCircle(m_discoMirrorBall.Radius * m_discoMirrorBall.Scale, mt, Color{220, 235, 255, 240});
-
-            // Rotating mirror facets reflection beams
-            for (int b = 0; b < 8; ++b)
+            for (size_t ti = 0; ti < db.Trail.size(); ++ti)
             {
-                float bAng = (m_gameplayTime * 2.0f) + (static_cast<float>(b) * 3.14159265f / 4.0f);
-                Vector2f beamEnd{
-                    m_discoMirrorBall.Position.X + std::cos(bAng) * 220.0f,
-                    m_discoMirrorBall.Position.Y + std::sin(bAng) * 220.0f
-                };
-                Color beamCol{255, 255, 255, static_cast<uint8_t>(100 + 100 * pulse)};
-                context.Render.DrawLine(m_discoMirrorBall.Position, beamEnd, beamCol, 2.5f);
+                float tRatio = db.Trail[ti].Lifetime / db.Trail[ti].MaxLifetime;
+                uint8_t a = static_cast<uint8_t>(170.0f * tRatio);
+                Color tCol{db.BaseColor.r, db.BaseColor.g, db.BaseColor.b, a};
+                float r = db.Radius * db.Scale * (0.35f + 0.65f * tRatio);
+                context.Render.DrawCircle(r, Transform2D{db.Trail[ti].Position}, tCol);
             }
         }
+
+        // D. Dancing Rainbow Big Balls
+        for (const auto& db : m_discoBigBalls)
+        {
+            Transform2D bt{db.Position, 0.0f, Vector2f{db.Scale, db.Scale}};
+
+            // Cycling vibrant halo ring
+            float rPulse = std::sin(m_gameplayTime * 12.0f + db.DancePhaseX) * 3.5f;
+            Color haloCol{db.BaseColor.r, db.BaseColor.g, db.BaseColor.b, 160};
+            context.Render.DrawCircleOutline(db.Radius * db.Scale + 6.0f + rPulse, bt, haloCol, -2.5f);
+            context.Render.DrawCircle(db.Radius * db.Scale, bt, db.BaseColor);
+            context.Render.DrawCircle(db.Radius * db.Scale * 0.45f, bt, Colors::White);
+        }
+
+        // E. Disco Mirror Ball (Level 5 Boule à Facettes)
+        if (m_discoMirrorBall.IsActive)
+        {
+            Vector2f mirrorPos = m_discoMirrorBall.Position;
+            float mirrorR = m_discoMirrorBall.Radius * m_discoMirrorBall.Scale;
+
+            int rayCount = m_discoMirrorBall.IsFrenzy ? 24 : 12;
+            float rayLength = m_discoMirrorBall.IsFrenzy ? 800.0f : 450.0f;
+            float raySpeed = m_discoMirrorBall.IsFrenzy ? 4.0f : 1.5f;
+
+            // Rotating prismatic mirror facet reflection beams
+            for (int ray = 0; ray < rayCount; ++ray)
+            {
+                float rAng = static_cast<float>(ray) * (6.2831853f / static_cast<float>(rayCount)) + m_gameplayTime * raySpeed;
+                Vector2f rayEnd = mirrorPos + Vector2f{std::cos(rAng) * rayLength, std::sin(rAng) * (rayLength * 0.7f)};
+                Color rayCol = DiscoRainbowColor(std::fmod(static_cast<float>(ray) / static_cast<float>(rayCount) + m_gameplayTime * 0.6f, 1.0f), m_discoMirrorBall.IsFrenzy ? 140 : 85);
+                context.Render.DrawLine(mirrorPos, rayEnd, rayCol, m_discoMirrorBall.IsFrenzy ? 3.5f : 2.5f);
+            }
+
+            // Sphere base & white boundary outline
+            context.Render.DrawCircle(mirrorR, Transform2D{mirrorPos}, Color{210, 220, 240, 240});
+            context.Render.DrawCircleOutline(mirrorR, Transform2D{mirrorPos}, Colors::White, m_discoMirrorBall.IsFrenzy ? 3.0f : 2.0f);
+
+            // Pulsing iridescent halo ring
+            float pulse = (std::sin(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 26.0f : 14.0f)) + 1.0f) * 0.5f;
+            Color facetBorder{255, static_cast<uint8_t>(210 + 45 * pulse), 255, static_cast<uint8_t>(180 + 75 * pulse)};
+            context.Render.DrawCircleOutline(mirrorR + (m_discoMirrorBall.IsFrenzy ? 8.0f : 4.0f), Transform2D{mirrorPos}, facetBorder, -3.0f);
+
+            // Mirror tile facet grid matching workshop preview
+            for (int fx = -2; fx <= 2; ++fx)
+            {
+                for (int fy = -2; fy <= 2; ++fy)
+                {
+                    if (fx * fx + fy * fy <= 4)
+                    {
+                        Vector2f tilePos = mirrorPos + Vector2f{static_cast<float>(fx) * 8.0f * m_discoMirrorBall.Scale, static_cast<float>(fy) * 8.0f * m_discoMirrorBall.Scale};
+                        float tileHue = std::fmod(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 4.0f : 2.0f) + static_cast<float>(fx + fy) * 0.15f, 1.0f);
+                        Color tileCol = DiscoRainbowColor(tileHue, 220);
+                        context.Render.DrawRectangle(6.0f * m_discoMirrorBall.Scale, 6.0f * m_discoMirrorBall.Scale, Transform2D{tilePos}, tileCol);
+                        context.Render.DrawRectangleOutline(6.0f * m_discoMirrorBall.Scale, 6.0f * m_discoMirrorBall.Scale, Transform2D{tilePos}, Colors::White, 1.0f);
+                    }
+                }
+            }
+        }
+    }
+
+    if (m_discoMirrorBall.IsActive && m_discoMirrorBall.IsFrenzy)
+    {
+        float frenzyPulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 18.0f);
+        Color fColor = (frenzyPulse > 0.5f) ? Color{255, 230, 40, 240} : Color{255, 50, 200, 240};
+        context.Render.DrawTextCentered("* CRAZY MIRROR BALL UNLEASHED! *", m_fontId, 26.0f, Transform2D{Vector2f{0.0f, -220.0f}}, fColor);
+    }
+
+    // 3. Disco Explosions Visuals (Expanding shockwave rings, flash center, and star burst rays)
+    for (const auto& anim : m_discoExplosionAnims)
+    {
+        float progress = 1.0f - std::clamp(anim.Lifetime / anim.MaxLifetime, 0.0f, 1.0f);
+        float currentRadius = anim.Radius + (anim.MaxRadius - anim.Radius) * progress;
+        uint8_t alpha = static_cast<uint8_t>((1.0f - progress) * 255.0f);
+
+        Transform2D expTrans{anim.Position};
+
+        // Outer expanding colored shockwave ring
+        Color ringColor{anim.BallColor.r, anim.BallColor.g, anim.BallColor.b, static_cast<uint8_t>(alpha * 0.85f)};
+        context.Render.DrawCircleOutline(currentRadius, expTrans, ringColor, -3.5f * (1.0f - progress * 0.5f));
+
+        // Inner white-hot pulse ring
+        Color innerRing{255, 255, 255, static_cast<uint8_t>(alpha * 0.9f)};
+        context.Render.DrawCircleOutline(currentRadius * 0.65f, expTrans, innerRing, -2.0f);
+
+        // Core flash (quick fade)
+        if (progress < 0.45f)
+        {
+            float coreProgress = progress / 0.45f;
+            uint8_t coreAlpha = static_cast<uint8_t>((1.0f - coreProgress) * 240.0f);
+            Color coreCol{255, 255, 255, coreAlpha};
+            context.Render.DrawCircle(anim.Radius * (1.0f - coreProgress * 0.5f), expTrans, coreCol);
+        }
+
+        // Radiating star burst rays
+        constexpr int kRays = 8;
+        for (int r = 0; r < kRays; ++r)
+        {
+            float angle = static_cast<float>(r) * (6.2831853f / static_cast<float>(kRays)) + progress * 0.8f;
+            float rayLen = currentRadius * 1.25f;
+            Vector2f rayEnd = anim.Position + Vector2f{std::cos(angle) * rayLen, std::sin(angle) * rayLen};
+            Color rayCol{anim.BallColor.r, anim.BallColor.g, anim.BallColor.b, static_cast<uint8_t>(alpha * 0.7f)};
+            context.Render.DrawLine(anim.Position, rayEnd, rayCol, 2.0f * (1.0f - progress));
+        }
+    }
+
+    // 4. Grand Finale Banner ("DISCO !")
+    if (m_discoGrandFinaleBannerTimer > 0.0f)
+    {
+        float flashPulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 28.0f);
+        Color bannerGlow = (flashPulse > 0.5f) ? Color{255, 40, 200, 255} : Color{255, 230, 40, 255};
+        Color bannerCore = Colors::White;
+
+        Vector2f bannerPos{0.0f, -80.0f + std::sin(m_gameplayTime * 8.0f) * 10.0f};
+
+        context.Render.DrawTextCentered("*   D  I  S  C  O  !   *", m_fontId, 68.0f, Transform2D{Vector2f{bannerPos.X - 3.0f, bannerPos.Y - 3.0f}}, bannerGlow);
+        context.Render.DrawTextCentered("*   D  I  S  C  O  !   *", m_fontId, 68.0f, Transform2D{Vector2f{bannerPos.X + 3.0f, bannerPos.Y + 3.0f}}, Color{0, 240, 255, 255});
+        context.Render.DrawTextCentered("*   D  I  S  C  O  !   *", m_fontId, 68.0f, Transform2D{bannerPos}, bannerCore);
+
+        context.Render.DrawTextCentered("[ GRAND CLIMAX GROOVE ]", m_fontId, 28.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y + 65.0f}}, Colors::Gold);
+    }
+}
+
+void GameScene::SpawnDiscoMusicNote(bool randomSpread)
+{
+    DiscoMusicNoteParticle note;
+    if (randomSpread)
+    {
+        note.Position = Vector2f{
+            static_cast<float>((rand() % 1480) - 740),
+            static_cast<float>((rand() % 800) - 400)
+        };
+    }
+    else
+    {
+        int edge = rand() % 3;
+        if (edge == 0) // Bottom
+        {
+            note.Position = Vector2f{static_cast<float>((rand() % 1480) - 740), 430.0f};
+        }
+        else if (edge == 1) // Left
+        {
+            note.Position = Vector2f{-760.0f, static_cast<float>((rand() % 800) - 400)};
+        }
+        else // Right
+        {
+            note.Position = Vector2f{760.0f, static_cast<float>((rand() % 800) - 400)};
+        }
+    }
+
+    float vx = static_cast<float>((rand() % 90) - 45);
+    float vy = -30.0f - static_cast<float>(rand() % 45); // Gentle upward musical breeze
+    note.Velocity = Vector2f{vx, vy};
+
+    note.Scale = 0.75f + static_cast<float>(rand() % 50) * 0.01f;
+    note.Rotation = static_cast<float>((rand() % 628) - 314) * 0.01f;
+    note.RotSpeed = static_cast<float>((rand() % 140) - 70) * 0.01f;
+    note.WobblePhase = static_cast<float>(rand() % 628) * 0.01f;
+    note.WobbleFreq = 1.6f + static_cast<float>(rand() % 20) * 0.1f;
+    note.Lifetime = 4.5f + static_cast<float>(rand() % 30) * 0.1f;
+    note.MaxLifetime = note.Lifetime;
+    note.BaseAlpha = static_cast<uint8_t>(170 + (rand() % 70));
+    note.IsDoubleNote = (rand() % 2 == 0);
+
+    m_discoMusicNotes.push_back(note);
+}
+
+void GameScene::RenderDiscoBackgroundMusicNotes(GameContext& context)
+{
+    if (m_discoMusicNotes.empty()) return;
+
+    for (const auto& note : m_discoMusicNotes)
+    {
+        float ratio = std::clamp(note.Lifetime / note.MaxLifetime, 0.0f, 1.0f);
+        float alphaFactor = 1.0f;
+        if (ratio > 0.85f)
+        {
+            alphaFactor = (1.0f - ratio) / 0.15f;
+        }
+        else if (ratio < 0.25f)
+        {
+            alphaFactor = ratio / 0.25f;
+        }
+
+        uint8_t a = static_cast<uint8_t>(static_cast<float>(note.BaseAlpha) * alphaFactor);
+        if (a < 5) continue;
+
+        // Warm golden yellow glow aura
+        Color haloCol{255, 205, 30, static_cast<uint8_t>(a * 0.45f)};
+        DrawMusicNote(context, note.Position, note.Scale * 1.35f, note.Rotation, haloCol, note.IsDoubleNote);
+
+        // Vibrant yellow main body
+        Color mainCol{255, 240, 50, a};
+        DrawMusicNote(context, note.Position, note.Scale, note.Rotation, mainCol, note.IsDoubleNote);
+
+        // Core light yellow highlight
+        Color coreCol{255, 255, 180, static_cast<uint8_t>(a * 0.85f)};
+        DrawMusicNote(context, note.Position, note.Scale * 0.75f, note.Rotation, coreCol, note.IsDoubleNote);
     }
 }
 

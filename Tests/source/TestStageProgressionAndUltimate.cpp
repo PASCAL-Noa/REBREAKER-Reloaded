@@ -120,14 +120,14 @@ TEST_SUITE("Stage Progression and Ultimate Abilities Tests")
 
         // Default equipped ultimate is PlasmaOrb / NovaShockwave
         CHECK(pm.GetEquippedUltimate() == UltimateAbilityType::PlasmaOrb);
-        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::PlasmaOrb) == "BOULE DE PLASMA");
+        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::PlasmaOrb) == "PLASMA ORB");
         CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::DiscoBall) == "DISCO BALL");
-        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::PowerUpRain) == "PLUIE DE POWER-UP");
+        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::PowerUpRain) == "POWER-UP RAIN");
 
         // Backward compatible aliases
-        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::NovaShockwave) == "BOULE DE PLASMA");
+        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::NovaShockwave) == "PLASMA ORB");
         CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::ThunderTempest) == "DISCO BALL");
-        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::TimeStasis) == "PLUIE DE POWER-UP");
+        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::TimeStasis) == "POWER-UP RAIN");
 
         // Change equipped ultimate
         pm.SetEquippedUltimate(UltimateAbilityType::DiscoBall);
@@ -150,22 +150,22 @@ TEST_SUITE("Stage Progression and Ultimate Abilities Tests")
 
         // Verify tier strings contain expected gameplay parameters
         std::string plasmaLvl1 = ProfileManager::GetUltimateTierInfo(UltimateAbilityType::PlasmaOrb, 1);
-        CHECK(plasmaLvl1.find("2 petites boules") != std::string::npos);
+        CHECK(plasmaLvl1.find("2 small explosive orbs") != std::string::npos);
 
         std::string plasmaLvl5 = ProfileManager::GetUltimateTierInfo(UltimateAbilityType::PlasmaOrb, 5);
-        CHECK(plasmaLvl5.find("division en 8 puis 4 puis 2") != std::string::npos);
+        CHECK(plasmaLvl5.find("splits into 8 then 4 then 2") != std::string::npos);
 
         std::string discoLvl1 = ProfileManager::GetUltimateTierInfo(UltimateAbilityType::DiscoBall, 1);
-        CHECK(discoLvl1.find("50% hauteur") != std::string::npos);
+        CHECK(discoLvl1.find("50% height") != std::string::npos);
 
         std::string discoLvl5 = ProfileManager::GetUltimateTierInfo(UltimateAbilityType::DiscoBall, 5);
-        CHECK(discoLvl5.find("Boule a Facettes") != std::string::npos);
+        CHECK(discoLvl5.find("Mirror Ball") != std::string::npos);
 
         std::string rainLvl1 = ProfileManager::GetUltimateTierInfo(UltimateAbilityType::PowerUpRain, 1);
-        CHECK(rainLvl1.find("5 a 12 power-ups") != std::string::npos);
+        CHECK(rainLvl1.find("5 to 12 power-ups") != std::string::npos);
 
         std::string rainLvl5 = ProfileManager::GetUltimateTierInfo(UltimateAbilityType::PowerUpRain, 5);
-        CHECK(rainLvl5.find("25 a 60 power-ups") != std::string::npos);
+        CHECK(rainLvl5.find("25 to 60 power-ups") != std::string::npos);
     }
 
     TEST_CASE("Ultimate Meter charging, combo scaling, and activation simulation")

@@ -170,13 +170,13 @@ std::string ProfileManager::GetUltimateName(UltimateAbilityType type)
     switch (type)
     {
         case UltimateAbilityType::PlasmaOrb:
-            return "BOULE DE PLASMA";
+            return "PLASMA ORB";
         case UltimateAbilityType::DiscoBall:
             return "DISCO BALL";
         case UltimateAbilityType::PowerUpRain:
-            return "PLUIE DE POWER-UP";
+            return "POWER-UP RAIN";
         default:
-            return "BOULE DE PLASMA";
+            return "PLASMA ORB";
     }
 }
 
@@ -185,13 +185,13 @@ std::string ProfileManager::GetUltimateCategory(UltimateAbilityType type)
     switch (type)
     {
         case UltimateAbilityType::PlasmaOrb:
-            return "[DESTRUCTION / DIVISION EN CHAINE]";
+            return "[DESTRUCTION / CHAIN REACTION]";
         case UltimateAbilityType::DiscoBall:
-            return "[ONDE SONORE / SHOW LUMINEUX]";
+            return "[ACOUSTIC SHOCKWAVE / LIGHT SHOW]";
         case UltimateAbilityType::PowerUpRain:
-            return "[SOUTIEN / LARGAGE DE BONUS]";
+            return "[SUPPORT / ORBITAL DROP]";
         default:
-            return "[CAPACITE ULTIME]";
+            return "[ULTIMATE ABILITY]";
     }
 }
 
@@ -200,11 +200,11 @@ std::string ProfileManager::GetUltimateDescription(UltimateAbilityType type)
     switch (type)
     {
         case UltimateAbilityType::PlasmaOrb:
-            return "Projette des boules de plasma bleu-violet ondulantes qui consument les briques et se divisent en cascades d'orbes energetiques.";
+            return "Launches undulating blue-violet plasma orbs that vaporize bricks and split into cascading energy spheres.";
         case UltimateAbilityType::DiscoBall:
-            return "Declenche la fievre disco : ondes sonores devastatrices, feux arc-en-ciel, boules colorees et boule a facettes geante.";
+            return "Ignites disco fever: devastating shockwaves, rainbow spotlights, dancing big balls and a giant mirror ball climax.";
         case UltimateAbilityType::PowerUpRain:
-            return "Invoque un largage orbital massif de capsules de power-ups aux niveaux ameliores.";
+            return "Summons a massive orbital cascade of upgraded enhancement capsules.";
         default:
             return "";
     }
@@ -218,40 +218,40 @@ std::string ProfileManager::GetUltimateTierInfo(UltimateAbilityType type, int le
         case UltimateAbilityType::PlasmaOrb:
             switch (safeLvl)
             {
-                case 1: return "1 boule de plasma, se divise en 2 petites boules explosives";
-                case 2: return "2 boules de plasma, chacune se divise en 2 petites boules";
-                case 3: return "2 boules plasma scale accru, division en 4 puis 2 petites boules";
-                case 4: return "3 boules plasma scale accru, division en 4 puis 2 petites boules";
-                case 5: return "3 super boules plasma scale max, division en 8 puis 4 puis 2";
+                case 1: return "1 plasma orb, splits into 2 small explosive orbs";
+                case 2: return "2 plasma orbs, each splits into 2 small orbs";
+                case 3: return "2 enlarged plasma orbs, splits into 4 then 2 orbs";
+                case 4: return "3 enlarged plasma orbs, splits into 4 then 2 orbs";
+                case 5: return "3 mega plasma orbs, splits into 8 then 4 then 2";
                 default: break;
             }
             break;
         case UltimateAbilityType::DiscoBall:
             switch (safeLvl)
             {
-                case 1: return "Onde sonore 50% hauteur, 1 dmg, 2 big balls disco & musique funk";
-                case 2: return "Onde sonore 60% hauteur, 1 dmg, 3 big balls disco en orbite";
-                case 3: return "Onde sonore 70% hauteur, 2 dmg, 4 big balls disco en orbite";
-                case 4: return "Onde sonore 80% hauteur, 2 dmg, 2 ondes sonores supplementaires, 5 big balls";
-                case 5: return "Onde sonore 90% hauteur, 6 big balls, et apparition de la Boule a Facettes (5s)";
+                case 1: return "Shockwave 50% height, 1 dmg, 2 big balls & funk beat";
+                case 2: return "Shockwave 60% height, 1 dmg, 3 orbiting big balls";
+                case 3: return "Shockwave 70% height, 2 dmg, 4 orbiting big balls";
+                case 4: return "Shockwave 80% height, 2 dmg, 2 extra shockwaves, 5 big balls";
+                case 5: return "Shockwave 90% height, 6 big balls & Mirror Ball unleash (5s)";
                 default: break;
             }
             break;
         case UltimateAbilityType::PowerUpRain:
             switch (safeLvl)
             {
-                case 1: return "Pluie de 5 a 12 power-ups (niveaux 1 a 3)";
-                case 2: return "Pluie de 10 a 24 power-ups (niveaux 1 a 3)";
-                case 3: return "Pluie de 15 a 36 power-ups (niveaux 1 a 4)";
-                case 4: return "Pluie de 20 a 48 power-ups (niveaux 2 a 5)";
-                case 5: return "Pluie de 25 a 60 power-ups (niveaux 2 a 5)";
+                case 1: return "Cascade of 5 to 12 power-ups (levels 1 to 3)";
+                case 2: return "Cascade of 10 to 24 power-ups (levels 1 to 3)";
+                case 3: return "Cascade of 15 to 36 power-ups (levels 1 to 4)";
+                case 4: return "Cascade of 20 to 48 power-ups (levels 2 to 5)";
+                case 5: return "Cascade of 25 to 60 power-ups (levels 2 to 5)";
                 default: break;
             }
             break;
         default:
             break;
     }
-    return "Palier standard";
+    return "Standard Tier";
 }
 
 const std::vector<CosmeticItem>& ProfileManager::GetAvailableCosmetics()

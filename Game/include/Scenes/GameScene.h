@@ -289,6 +289,8 @@ protected:
     uint32_t    m_plasmaLaunchSfxId = 0;
     uint32_t    m_plasmaExplodeSfxId = 0;
     uint32_t    m_discoShockwaveSfxId = 0;
+    uint32_t    m_discoVoiceoverSfxId = 0;
+    std::array<uint32_t, 6> m_discoHitSfxIds{};
     uint32_t    m_itemRegenRestoreSfxId = 0;
     uint32_t    m_plasmaShaderId = 0;
     uint32_t    m_discoShaderId = 0;
@@ -335,26 +337,78 @@ protected:
     };
     std::vector<SoundWaveInstance> m_soundWaves;
 
+    struct DiscoTrailPoint
+    {
+        Vector2f Position;
+        float    Lifetime = 0.28f;
+        float    MaxLifetime = 0.28f;
+    };
+
     struct DiscoBigBall
     {
-        Vector2f Center;
-        float    OrbitRadius = 130.0f;
-        float    Angle = 0.0f;
-        float    Speed = 2.2f;
+        int      InstrumentIndex = 0;
+        Vector2f Position{0.0f, 0.0f};
+        Vector2f Velocity{0.0f, 0.0f};
+        Vector2f DanceCenter{0.0f, 0.0f};
+        Vector2f DanceVelocity{70.0f, 50.0f};
+        float    DancePhaseX = 0.0f;
+        float    DancePhaseY = 0.0f;
+        float    DanceFreqX = 2.0f;
+        float    DanceFreqY = 2.6f;
+        float    DanceAmpX = 140.0f;
+        float    DanceAmpY = 85.0f;
         Color    BaseColor{255, 255, 255, 255};
-        float    Scale = 1.6f;
+        float    Radius = 20.0f;
+        float    Scale = 1.35f;
+        bool     IsIndependent = false;
+        float    SparkleTimer = 0.0f;
+        std::vector<DiscoTrailPoint> Trail;
+        std::vector<Entity> DamagedBricks;
     };
     std::vector<DiscoBigBall> m_discoBigBalls;
 
     struct DiscoMirrorBall
     {
         Vector2f Position{0.0f, -120.0f};
-        Vector2f Velocity{320.0f, -240.0f};
-        float    Radius = 45.0f;
-        float    Scale = 2.5f;
+        Vector2f Velocity{340.0f, -250.0f};
+        float    Radius = 26.0f;
+        float    Scale = 1.35f;
+        float    TargetScale = 1.35f;
         float    Lifetime = 5.0f;
         bool     IsActive = false;
+        bool     IsFrenzy = false;
+        float    FrenzyPulseTime = 0.0f;
     } m_discoMirrorBall;
+
+    struct DiscoExplosionAnim
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Color    BallColor{255, 255, 255, 255};
+        float    Lifetime = 0.60f;
+        float    MaxLifetime = 0.60f;
+        float    Radius = 25.0f;
+        float    MaxRadius = 150.0f;
+    };
+    std::vector<DiscoExplosionAnim> m_discoExplosionAnims;
+
+    struct DiscoMusicNoteParticle
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Vector2f Velocity{0.0f, 0.0f};
+        float    Scale = 1.0f;
+        float    Rotation = 0.0f;
+        float    RotSpeed = 0.5f;
+        float    WobblePhase = 0.0f;
+        float    WobbleFreq = 2.0f;
+        float    Lifetime = 5.0f;
+        float    MaxLifetime = 5.0f;
+        uint8_t  BaseAlpha = 220;
+        bool     IsDoubleNote = false;
+    };
+    std::vector<DiscoMusicNoteParticle> m_discoMusicNotes;
+    float m_discoNoteSpawnTimer = 0.0f;
+
+    float m_discoGrandFinaleBannerTimer = 0.0f;
 
     // Active Ultimate 3: Pluie de Power-Up (Power-Up Rain)
     struct PowerUpRainDrop
@@ -370,10 +424,12 @@ protected:
     void    ExecuteDiscoBall(int level);
     void    ExecutePowerUpRain(int level);
     void    TriggerSoundWave(float targetHeightRatio, int damage);
+    void    SpawnDiscoMusicNote(bool randomSpread = false);
     void    UpdateUltimateAbilities(float dt);
     void    UpdateRegeneratingItemBricks(float dt);
     void    RenderRegeneratingBricks(GameContext& context);
     void    RenderUltimateMeterHUD(GameContext& context);
+    void    RenderDiscoBackgroundMusicNotes(GameContext& context);
     void    RenderActiveUltimateVisuals(GameContext& context);
     void    ClearActiveUltimates();
 };

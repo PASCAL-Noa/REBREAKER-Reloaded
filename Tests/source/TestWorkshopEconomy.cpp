@@ -199,7 +199,7 @@ TEST_SUITE("Workshop, Economy & Player Profile Tests")
         pm.ResetToDefaults();
 
         CHECK(pm.GetEquippedUltimate() == UltimateAbilityType::NovaShockwave);
-        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::NovaShockwave) == "BOULE DE PLASMA");
+        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::NovaShockwave) == "PLASMA ORB");
         CHECK(!ProfileManager::GetUltimateDescription(UltimateAbilityType::NovaShockwave).empty());
 
         pm.SetEquippedUltimate(UltimateAbilityType::ThunderTempest);

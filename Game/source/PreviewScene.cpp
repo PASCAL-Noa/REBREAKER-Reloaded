@@ -525,8 +525,8 @@ void PreviewScene::OnRender(GameContext& context)
     context.Render.DrawRectangle(1920.0f, 66.0f, Transform2D{Vector2f{0.0f, -495.0f}}, Color{12, 16, 26, 230});
     context.Render.DrawRectangleOutline(1920.0f, 66.0f, Transform2D{Vector2f{0.0f, -495.0f}}, Color{0, 200, 255, 180}, 1.5f);
 
-    // Item Name, Level, and live FPS (e.g. "GHOST PHASE BALL [GHO]   |   NIV. 1 / 5   |   GHOST: 4.8s   |   60 FPS")
-    std::string title = std::string(item.Name) + " [" + item.Badge + "]   |   NIV. " +
+    // Item Name, Level, and live FPS (e.g. "GHOST PHASE BALL [GHO]   |   LVL. 1 / 5   |   GHOST: 4.8s   |   60 FPS")
+    std::string title = std::string(item.Name) + " [" + item.Badge + "]   |   LVL. " +
                         std::to_string(curLvl) + " / " + std::to_string(maxLvl);
     if (m_ghostBallDuration > 0.0f)
     {
@@ -536,7 +536,7 @@ void PreviewScene::OnRender(GameContext& context)
     }
     else if (m_ghostBallPendingExpiry)
     {
-        title += "   |   GHOST: SORTIE BRIQUE...";
+        title += "   |   GHOST: CLEARING BRICK...";
     }
     else if (m_tempoBallDuration > 0.0f)
     {
@@ -547,13 +547,13 @@ void PreviewScene::OnRender(GameContext& context)
     else if (m_stormDuration > 0.0f)
     {
         char buf[32];
-        snprintf(buf, sizeof(buf), "   |   TEMPETE: %.1fs", m_stormDuration);
+        snprintf(buf, sizeof(buf), "   |   STORM: %.1fs", m_stormDuration);
         title += buf;
     }
     else if (m_stormCharges > 0)
     {
         char buf[32];
-        snprintf(buf, sizeof(buf), "   |   ECLAIRS: %d", m_stormCharges);
+        snprintf(buf, sizeof(buf), "   |   LIGHTNING: %d", m_stormCharges);
         title += buf;
     }
     else if (m_bigBallDuration > 0.0f)
@@ -585,7 +585,7 @@ void PreviewScene::OnRender(GameContext& context)
         char buf[64];
         if (m_isShrinkPaddle)
         {
-            snprintf(buf, sizeof(buf), "   |   SHRINK (+%d%% VIT): %.1fs",
+            snprintf(buf, sizeof(buf), "   |   SHRINK (+%d%% SPD): %.1fs",
                      static_cast<int>(PowerUpManager::Get().Shrink().GetEffectivePaddleSpeedBonusPercent()),
                      m_paddleSizeDuration);
         }
@@ -600,14 +600,14 @@ void PreviewScene::OnRender(GameContext& context)
 
     if (m_autoResetTimer > 0.0f)
     {
-        title += "   |   FIN EFFET (RESET...)";
+        title += "   |   EFFECT END (RESET...)";
     }
 
     title += "   |   " + std::to_string(context.Data.FPS) + " FPS";
     context.Render.DrawTextCentered(title, m_fontId, 28.0f, Transform2D{Vector2f{0.0f, -508.0f}}, Colors::Gold);
 
     // Controls reminder
-    std::string instructions = "[<- / ->] Power-up  |  [^ / v] Niveau  |  [ESPACE] Lancer balle  |  [R] Reset  |  [ECHAP] Menu";
+    std::string instructions = "[<- / ->] Power-Up  |  [^ / v] Level  |  [SPACE] Launch Ball  |  [R] Reset  |  [ESC] Menu";
     context.Render.DrawTextCentered(instructions, m_fontId, 20.0f, Transform2D{Vector2f{0.0f, -480.0f}}, Color{180, 220, 255, 240});
 }
 

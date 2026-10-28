@@ -512,7 +512,7 @@ std::string PowerUpManager::GetTierInfoForLevel(PowerUpType type, int level) con
             float duration = m_magnet.BaseDuration + (level - 1) * m_magnet.DurationPerLevel;
             float ballPull = m_magnet.BaseBallPullForce + (level - 1) * m_magnet.BallPullForcePerLevel;
             float capsulePull = m_magnet.BasePullSpeed + (level - 1) * m_magnet.PullSpeedPerLevel;
-            return "Duration: " + std::to_string(static_cast<int>(duration)) + "s, Ball Pull: " + std::to_string(static_cast<int>(ballPull)) + " px/s², Capsule: " + std::to_string(static_cast<int>(capsulePull)) + " px/s";
+            return "Duration: " + std::to_string(static_cast<int>(duration)) + "s, Ball Pull: " + std::to_string(static_cast<int>(ballPull)) + " px/s^2, Capsule: " + std::to_string(static_cast<int>(capsulePull)) + " px/s";
         }
         case PowerUpType::GhostBall:
         {
@@ -578,7 +578,7 @@ std::string PowerUpManager::GetNextTierInfo(PowerUpType type) const
         case PowerUpType::BottomBarrier:
             return "Next: +1 charge save, +" + std::to_string(static_cast<int>(m_barrier.DurationPerLevel)) + "s duration";
         case PowerUpType::MagnetPaddle:
-            return "Next: +80 px/s² ball pull force, +70 px/s capsule pull, +2.5s duration";
+            return "Next: +80 px/s^2 ball pull force, +70 px/s capsule pull, +2.5s duration";
         case PowerUpType::GhostBall:
             if (lvl == 2) return "Next: +1 damage (2 dmg total), +1s duration";
             if (lvl == 4) return "Next: +1 damage (3 dmg total), +1s duration";
