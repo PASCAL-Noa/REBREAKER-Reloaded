@@ -5003,9 +5003,13 @@ void GameScene::UpdateUltimateAbilities(float dt)
             SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 60, 200, 255}, 35);
             TriggerPostProcessFlash(0.08f, 0.95f, Color{255, 255, 255, 255}, 0.6f, Color{255, 230, 40, 255});
 
-            if (mp_context && m_discoShockwaveSfxId != 0)
+            if (mp_context)
             {
-                mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f, 1.3f);
+                if (m_discoShockwaveSfxId != 0)
+                {
+                    mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f, 1.3f);
+                }
+                mp_context->Audio.PlayMusic("Resources/audio/music/disco_ultimate_crazy.wav", 100.0f, true);
             }
         }
 
