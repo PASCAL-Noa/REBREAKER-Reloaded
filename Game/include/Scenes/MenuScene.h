@@ -90,12 +90,13 @@ private:
     void    CreateWorkshopModal(const GameContext& context);
     void    OpenWorkshopTab(Entity targetCanvas);
     void    RefreshWorkshopUI();
+    void    ResetSaveData();
     void    RenderWorkshopCustomVisuals(GameContext& context);
     void    RenderPowerUpSimulation(GameContext& context, PowerUpType type, const Vector2f& center, const Vector2f& size);
     void    RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, int level, const Vector2f& center, const Vector2f& size, float switchTimer);
-    void    RenderNovaShockwavePreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
-    void    RenderThunderTempestPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
-    void    RenderTimeStasisPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderPlasmaOrbPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderDiscoBallPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderPowerUpRainPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
     void    TriggerSimSfx(GameContext& context, uint32_t sfxId, int eventId, float volume = 65.0f);
     void    TriggerPreviewChannelSwitch();
 
@@ -129,6 +130,7 @@ private:
     Entity  m_workshopPageText = NULL_ENTITY;
     Entity  m_workshopProfileNameText = NULL_ENTITY;
     Entity  m_workshopProfileStatsText = NULL_ENTITY;
+    Entity  m_resetSaveBtn = NULL_ENTITY;
     Entity  m_activeModal = NULL_ENTITY;
 
     // Workshop Inspector Entities (Right Column)

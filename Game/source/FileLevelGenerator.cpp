@@ -90,7 +90,7 @@ int FileLevelGenerator::Generate(Registry& registry, GameContext& context, uint3
             float y = startY + static_cast<float>(row) * (bHeight + pad);
 
             BrickFactory::Create(registry, x, y, type, isSpecial, brickTexId);
-            if (type != BrickType::Metal)
+            if (type != BrickType::Metal && type != BrickType::Special)
             {
                 brickCount++;
             }

@@ -132,6 +132,15 @@ void PhysicsSystem::CheckCircleAABBCollisions() const
             // Triggers (bonus capsules, lasers) do not physically collide with balls
             if (b2.IsTrigger) return;
 
+            // Ignore regenerating bricks during cooldown
+            if (m_registry.HasComponent<BrickComponent>(e2))
+            {
+                if (m_registry.GetComponent<BrickComponent>(e2).IsRegenerating)
+                {
+                    return;
+                }
+            }
+
             // If the ball is stuck to the paddle, ignore collision between them
             if (m_registry.HasComponent<BallComponent>(e1))
             {

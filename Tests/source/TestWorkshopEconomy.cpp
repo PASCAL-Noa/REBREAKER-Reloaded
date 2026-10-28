@@ -199,12 +199,12 @@ TEST_SUITE("Workshop, Economy & Player Profile Tests")
         pm.ResetToDefaults();
 
         CHECK(pm.GetEquippedUltimate() == UltimateAbilityType::NovaShockwave);
-        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::NovaShockwave) == "NOVA SHOCKWAVE");
+        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::NovaShockwave) == "BOULE DE PLASMA");
         CHECK(!ProfileManager::GetUltimateDescription(UltimateAbilityType::NovaShockwave).empty());
 
         pm.SetEquippedUltimate(UltimateAbilityType::ThunderTempest);
         CHECK(pm.GetEquippedUltimate() == UltimateAbilityType::ThunderTempest);
-        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::ThunderTempest) == "THUNDER TEMPEST");
+        CHECK(ProfileManager::GetUltimateName(UltimateAbilityType::ThunderTempest) == "DISCO BALL");
 
         pm.SetEquippedUltimate(UltimateAbilityType::TimeStasis);
         CHECK(pm.GetEquippedUltimate() == UltimateAbilityType::TimeStasis);
@@ -433,5 +433,57 @@ TEST_SUITE("Workshop, Economy & Player Profile Tests")
         CHECK(doctest::Approx(pum.Magnet().GetEffectiveDuration()).epsilon(0.001f) == 20.0f);
         CHECK(doctest::Approx(pum.Magnet().GetEffectivePullSpeed()).epsilon(0.001f) == 660.0f);
         CHECK(doctest::Approx(pum.Magnet().GetEffectiveBallPullForce()).epsilon(0.001f) == 560.0f);
+    }
+
+    TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Full save data reset wipes coins, upgrades, ultimates, cosmetics and level progression")
+    {
+        auto& pum = PowerUpManager::Get();
+        auto& pm = ProfileManager::Get();
+
+        // Dirty the save data
+        pum.AddCoins(2500);
+        pum.SetLevel(PowerUpType::MultiBall, 4);
+        pum.SetLevel(PowerUpType::ItemRegen, 3);
+        pm.SetUsername("CaptainRebreaker");
+        pm.AddLifetimeScore(50000);
+        pm.AddLifetimeCredits(1200);
+        pm.SetEquippedUltimate(UltimateAbilityType::DiscoBall);
+        pm.SetUltimateLevel(UltimateAbilityType::PlasmaOrb, 5);
+        pm.UnlockCosmetic("paddle_gold_plating");
+        PlayerPrefs::SetInt("UnlockedLevel", 5);
+        PlayerPrefs::SetInt("HighestClearedLevel", 4);
+        PlayerPrefs::SetInt("HighScore_Level_1", 15000);
+
+        CHECK(pum.GetCoins() > 0);
+        CHECK(pum.GetLevel(PowerUpType::MultiBall) == 4);
+        CHECK(pm.GetUsername() == "CaptainRebreaker");
+        CHECK(pm.GetEquippedUltimate() == UltimateAbilityType::DiscoBall);
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::PlasmaOrb) == 5);
+        CHECK(pm.IsCosmeticUnlocked("paddle_gold_plating"));
+        CHECK(PlayerPrefs::GetInt("UnlockedLevel") == 5);
+        CHECK(PlayerPrefs::GetInt("HighestClearedLevel") == 4);
+        CHECK(PlayerPrefs::GetInt("HighScore_Level_1") == 15000);
+
+        // Perform Reset To Defaults on all progression systems
+        pum.ResetToDefaults();
+        pm.ResetToDefaults();
+        PlayerPrefs::SetInt("UnlockedLevel", 1);
+        PlayerPrefs::SetInt("HighestClearedLevel", 0);
+        PlayerPrefs::SetInt("HighScore_Level_1", 0);
+        PlayerPrefs::Save();
+
+        // Check in-memory and persisted values
+        CHECK(pum.GetCoins() == 0);
+        CHECK(pum.GetLevel(PowerUpType::MultiBall) == 1);
+        CHECK(pum.GetLevel(PowerUpType::ItemRegen) == 1);
+        CHECK(pm.GetUsername() == "PLAYER");
+        CHECK(pm.GetLifetimeScore() == 0);
+        CHECK(pm.GetLifetimeCredits() == 0);
+        CHECK(pm.GetEquippedUltimate() == UltimateAbilityType::PlasmaOrb);
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::PlasmaOrb) == 1);
+        CHECK(!pm.IsCosmeticUnlocked("paddle_gold_plating"));
+        CHECK(PlayerPrefs::GetInt("UnlockedLevel") == 1);
+        CHECK(PlayerPrefs::GetInt("HighestClearedLevel") == 0);
+        CHECK(PlayerPrefs::GetInt("HighScore_Level_1") == 0);
     }
 }

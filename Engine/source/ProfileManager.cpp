@@ -169,14 +169,14 @@ std::string ProfileManager::GetUltimateName(UltimateAbilityType type)
 {
     switch (type)
     {
-        case UltimateAbilityType::NovaShockwave:
-            return "NOVA SHOCKWAVE";
-        case UltimateAbilityType::ThunderTempest:
-            return "THUNDER TEMPEST";
-        case UltimateAbilityType::TimeStasis:
-            return "TIME STASIS";
+        case UltimateAbilityType::PlasmaOrb:
+            return "BOULE DE PLASMA";
+        case UltimateAbilityType::DiscoBall:
+            return "DISCO BALL";
+        case UltimateAbilityType::PowerUpRain:
+            return "PLUIE DE POWER-UP";
         default:
-            return "NOVA SHOCKWAVE";
+            return "BOULE DE PLASMA";
     }
 }
 
@@ -184,12 +184,12 @@ std::string ProfileManager::GetUltimateCategory(UltimateAbilityType type)
 {
     switch (type)
     {
-        case UltimateAbilityType::NovaShockwave:
-            return "[ASSAUT THERMIQUE RADIAL]";
-        case UltimateAbilityType::ThunderTempest:
-            return "[SURCHARGE ELECTRIQUE]";
-        case UltimateAbilityType::TimeStasis:
-            return "[DISTORSION TACTIQUE]";
+        case UltimateAbilityType::PlasmaOrb:
+            return "[DESTRUCTION / DIVISION EN CHAINE]";
+        case UltimateAbilityType::DiscoBall:
+            return "[ONDE SONORE / SHOW LUMINEUX]";
+        case UltimateAbilityType::PowerUpRain:
+            return "[SOUTIEN / LARGAGE DE BONUS]";
         default:
             return "[CAPACITE ULTIME]";
     }
@@ -199,12 +199,12 @@ std::string ProfileManager::GetUltimateDescription(UltimateAbilityType type)
 {
     switch (type)
     {
-        case UltimateAbilityType::NovaShockwave:
-            return "Impulsion d'energie thermique radiale balayant les projectiles ennemis et fracturant les briques a 360 degres.";
-        case UltimateAbilityType::ThunderTempest:
-            return "Surcharge l'atmosphere et declenche un deluge d'eclairs cibles se propageant a travers les circuits conducteurs.";
-        case UltimateAbilityType::TimeStasis:
-            return "Manipule la gravite locale et ralentit le flux temporel pour un controle chirurgical des trajectoires.";
+        case UltimateAbilityType::PlasmaOrb:
+            return "Projette des boules de plasma bleu-violet ondulantes qui consument les briques et se divisent en cascades d'orbes energetiques.";
+        case UltimateAbilityType::DiscoBall:
+            return "Declenche la fievre disco : ondes sonores devastatrices, feux arc-en-ciel, boules colorees et boule a facettes geante.";
+        case UltimateAbilityType::PowerUpRain:
+            return "Invoque un largage orbital massif de capsules de power-ups aux niveaux ameliores.";
         default:
             return "";
     }
@@ -215,36 +215,36 @@ std::string ProfileManager::GetUltimateTierInfo(UltimateAbilityType type, int le
     int safeLvl = std::clamp(level, 1, 5);
     switch (type)
     {
-        case UltimateAbilityType::NovaShockwave:
+        case UltimateAbilityType::PlasmaOrb:
             switch (safeLvl)
             {
-                case 1: return "Rayon: 400px, 1 dmg, repousse les projectiles ennemis";
-                case 2: return "Rayon: 480px, 1 dmg, propagation de l'onde +25% vitesse";
-                case 3: return "Rayon: 560px, 2 dmg au coeur de l'impact thermique";
-                case 4: return "Rayon: 640px, 2 dmg, incinere instantanement tous les tirs";
-                case 5: return "Supernova: Rayon 720px, 3 dmg, jauge de recharge +20%";
+                case 1: return "1 boule de plasma, se divise en 2 petites boules explosives";
+                case 2: return "2 boules de plasma, chacune se divise en 2 petites boules";
+                case 3: return "2 boules plasma scale accru, division en 4 puis 2 petites boules";
+                case 4: return "3 boules plasma scale accru, division en 4 puis 2 petites boules";
+                case 5: return "3 super boules plasma scale max, division en 8 puis 4 puis 2";
                 default: break;
             }
             break;
-        case UltimateAbilityType::ThunderTempest:
+        case UltimateAbilityType::DiscoBall:
             switch (safeLvl)
             {
-                case 1: return "4 eclairs cibles, 2 dmg/eclair, conduction metallique";
-                case 2: return "6 eclairs cibles, 2 dmg, arc electrique de rebond";
-                case 3: return "8 eclairs cibles, 3 dmg, foudroie les briques d'acier";
-                case 4: return "10 eclairs cibles, 3 dmg, surtension ionique de zone";
-                case 5: return "Tempete Cataclysmique: 12 eclairs cibles, 4 dmg/eclair";
+                case 1: return "Onde sonore 50% hauteur, 1 dmg, 2 big balls disco & musique funk";
+                case 2: return "Onde sonore 60% hauteur, 1 dmg, 3 big balls disco en orbite";
+                case 3: return "Onde sonore 70% hauteur, 2 dmg, 4 big balls disco en orbite";
+                case 4: return "Onde sonore 80% hauteur, 2 dmg, 2 ondes sonores supplementaires, 5 big balls";
+                case 5: return "Onde sonore 90% hauteur, 6 big balls, et apparition de la Boule a Facettes (5s)";
                 default: break;
             }
             break;
-        case UltimateAbilityType::TimeStasis:
+        case UltimateAbilityType::PowerUpRain:
             switch (safeLvl)
             {
-                case 1: return "Ralentissement 65% pendant 5.0s, stabilite de raquette";
-                case 2: return "Ralentissement 70% pendant 6.0s, guide de visee etendu";
-                case 3: return "Ralentissement 75% pendant 7.0s, impulsion balle boostee";
-                case 4: return "Ralentissement 80% pendant 8.0s, cadence de tir acceleree";
-                case 5: return "Arret Temporel: 85% distorsion pendant 9.0s chirurgicales";
+                case 1: return "Pluie de 5 a 12 power-ups (niveaux 1 a 3)";
+                case 2: return "Pluie de 10 a 24 power-ups (niveaux 1 a 3)";
+                case 3: return "Pluie de 15 a 36 power-ups (niveaux 1 a 4)";
+                case 4: return "Pluie de 20 a 48 power-ups (niveaux 2 a 5)";
+                case 5: return "Pluie de 25 a 60 power-ups (niveaux 2 a 5)";
                 default: break;
             }
             break;

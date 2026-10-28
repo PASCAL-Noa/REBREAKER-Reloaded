@@ -110,6 +110,13 @@ public:
     void    RespawnBricks();
     void    ResetBallAndPaddle(bool smooth = false);
 
+    // Stage Progression / Ultimate Ability
+    [[nodiscard]] float GetUltimateCharge() const { return m_ultimateCharge; }
+    [[nodiscard]] bool  IsUltimateReady() const { return m_ultimateReady; }
+    void  AddUltimateCharge(float amount);
+    void  SetUltimateCharge(float charge);
+    void  TryTriggerUltimate();
+
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
@@ -123,6 +130,7 @@ protected:
     void    ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCenter);
     void    SpawnFireTrailParticle(const Vector2f& position, const Vector2f& ballVelocity, bool isFuseActive);
     void    SpawnFireExplosionParticles(const Vector2f& position, float radius, int count = 45);
+    void    SpawnPlasmaExplosionParticles(const Vector2f& position, float radius, int count = 35);
 
     Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
     virtual void SpawnPowerUp(const Vector2f& position);
@@ -271,4 +279,101 @@ protected:
     };
     std::vector<LightFlash> m_lightFlashes;
     void SpawnLightFlash(const Vector2f& position, float radius = 550.0f, const Color& color = Color{255, 210, 120, 255}, float intensity = 2.0f, float duration = 0.45f);
+
+    // Stage Progression / Ultimate Ability System
+    float       m_ultimateCharge = 0.0f;
+    float       m_ultimateMaxCharge = 100.0f;
+    bool        m_ultimateReady = false;
+    float       m_ultimateReadyPulseTime = 0.0f;
+    uint32_t    m_ultimateReadySfxId = 0;
+    uint32_t    m_plasmaLaunchSfxId = 0;
+    uint32_t    m_plasmaExplodeSfxId = 0;
+    uint32_t    m_discoShockwaveSfxId = 0;
+    uint32_t    m_itemRegenRestoreSfxId = 0;
+    uint32_t    m_plasmaShaderId = 0;
+    uint32_t    m_discoShaderId = 0;
+
+    struct PlasmaTrailPoint
+    {
+        Vector2f Position;
+        float    Lifetime = 0.22f;
+        float    MaxLifetime = 0.22f;
+    };
+
+    // Active Ultimate 1: Boule de Plasma (Plasma Orb)
+    struct PlasmaOrbInstance
+    {
+        Vector2f Position;
+        Vector2f Velocity;
+        float    Radius = 18.0f;
+        float    Scale = 1.0f;
+        float    Lifetime = 1.4f;
+        int      Generation = 0; // 0 = smallest, explodes on impact/expiration; > 0 splits
+        int      ChildCount = 2;
+        int      Damage = 2;
+        float    AnimTime = 0.0f;
+        std::vector<PlasmaTrailPoint> Trail;
+    };
+    std::vector<PlasmaOrbInstance> m_plasmaOrbs;
+
+    // Active Ultimate 2: Ball Disco (Disco Fever)
+    float       m_discoTimer = 0.0f;
+    float       m_discoDuration = 7.0f;
+    float       m_discoRainbowHue = 0.0f;
+    int         m_discoLevel = 1;
+    std::string m_preDiscoMusicPath;
+
+    struct SoundWaveInstance
+    {
+        float CurrentY = 0.0f;
+        float TargetY = 0.0f;
+        float StartY = 0.0f;
+        float Lifetime = 0.75f;
+        float MaxLifetime = 0.75f;
+        int   Damage = 1;
+        float ArcWidth = 1400.0f;
+    };
+    std::vector<SoundWaveInstance> m_soundWaves;
+
+    struct DiscoBigBall
+    {
+        Vector2f Center;
+        float    OrbitRadius = 130.0f;
+        float    Angle = 0.0f;
+        float    Speed = 2.2f;
+        Color    BaseColor{255, 255, 255, 255};
+        float    Scale = 1.6f;
+    };
+    std::vector<DiscoBigBall> m_discoBigBalls;
+
+    struct DiscoMirrorBall
+    {
+        Vector2f Position{0.0f, -120.0f};
+        Vector2f Velocity{320.0f, -240.0f};
+        float    Radius = 45.0f;
+        float    Scale = 2.5f;
+        float    Lifetime = 5.0f;
+        bool     IsActive = false;
+    } m_discoMirrorBall;
+
+    // Active Ultimate 3: Pluie de Power-Up (Power-Up Rain)
+    struct PowerUpRainDrop
+    {
+        float       DelayTimer = 0.0f;
+        float       SpawnX = 0.0f;
+        PowerUpType Type = PowerUpType::MultiBall;
+        int         Tier = 1;
+    };
+    std::vector<PowerUpRainDrop> m_powerUpRainQueue;
+
+    void    ExecutePlasmaOrb(int level);
+    void    ExecuteDiscoBall(int level);
+    void    ExecutePowerUpRain(int level);
+    void    TriggerSoundWave(float targetHeightRatio, int damage);
+    void    UpdateUltimateAbilities(float dt);
+    void    UpdateRegeneratingItemBricks(float dt);
+    void    RenderRegeneratingBricks(GameContext& context);
+    void    RenderUltimateMeterHUD(GameContext& context);
+    void    RenderActiveUltimateVisuals(GameContext& context);
+    void    ClearActiveUltimates();
 };
