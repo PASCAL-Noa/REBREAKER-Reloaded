@@ -3414,6 +3414,8 @@ void MenuScene::RenderUltimateSimulation(GameContext& context, UltimateAbilityTy
         case UltimateAbilityType::TimeStasis:
             RenderTimeStasisPreview(context, level, simCenter, simSize, m_previewAnimTime);
             break;
+        default:
+            break;
         }
 
         context.Render.PopRenderTarget();
