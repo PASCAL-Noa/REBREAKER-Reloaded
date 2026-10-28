@@ -58,6 +58,8 @@ void MenuScene::OnInit(GameContext& context)
     m_powerupSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup.wav");
     m_powerupBuffSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup_buff.wav");
     m_shaderId = context.Resources.LoadResource("Resources/shaders/menu_fx.frag");
+    m_previewShaderId = context.Resources.LoadResource("Resources/shaders/crt_preview.frag");
+    m_channelSwitchSfxId = context.Resources.LoadResource("Resources/audio/sfx/ui_click.wav");
     m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
     m_brickTexId = context.Resources.LoadResource("Resources/sprite/brick.png");
@@ -440,6 +442,14 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
 
     UpdateRetroBackground(dt, context);
     m_previewAnimTime += dt;
+    if (m_previewSwitchTimer > 0.0f)
+    {
+        m_previewSwitchTimer -= dt;
+        if (m_previewSwitchTimer < 0.0f)
+        {
+            m_previewSwitchTimer = 0.0f;
+        }
+    }
 
     if (m_cheatsTabBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_cheatsTabBtn))
     {
@@ -1864,13 +1874,20 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 int pwrIdx = m_workshopScrollRow * 3 + slotIndex;
                 if (pwrIdx >= 0 && pwrIdx < 13)
                 {
-                    m_selectedPowerUp = kAllWorkshopPowerUps[pwrIdx];
+                    PowerUpType newType = kAllWorkshopPowerUps[pwrIdx];
+                    bool changed = (m_selectedPowerUp != newType);
+                    m_selectedPowerUp = newType;
                     m_inspectedLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
                     m_workshopPreviewLevel = m_inspectedLevel;
                     m_previewAnimTime = 0.0f;
                     m_simAudioTriggerMask = 0;
                     m_simLastLoop = -1;
                     if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+                    if (!changed && m_previewScene)
+                    {
+                        m_previewScene->ResetPreview();
+                        TriggerPreviewChannelSwitch();
+                    }
                     RefreshWorkshopUI();
                 }
             },
@@ -1996,9 +2013,15 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             .Text = "NIV. " + std::to_string(lvl),
             .OnClick = [this, lvl]() {
                 if (m_showDescriptionModal) return;
+                bool levelChanged = (m_inspectedLevel != lvl);
                 m_inspectedLevel = lvl;
                 m_workshopPreviewLevel = lvl;
                 if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+                if (!levelChanged && m_previewScene)
+                {
+                    m_previewScene->ResetPreview();
+                    TriggerPreviewChannelSwitch();
+                }
                 RefreshWorkshopUI();
             },
             .Position = {bx, pipBtnY},
@@ -2395,6 +2418,11 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
     m_inspectedLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
     m_workshopPreviewLevel = m_inspectedLevel;
 
+    if (targetCanvas == m_workshopUpgradesCanvas)
+    {
+        TriggerPreviewChannelSwitch();
+    }
+
     RefreshWorkshopUI();
 }
 
@@ -2717,6 +2745,7 @@ void MenuScene::RefreshWorkshopUI()
             int realLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
             m_previewScene->SetPreviewPowerUp(m_selectedPowerUp, m_inspectedLevel);
             PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLevel);
+            TriggerPreviewChannelSwitch();
         }
     }
 }
@@ -3049,6 +3078,15 @@ void MenuScene::TriggerSimSfx(GameContext& context, uint32_t sfxId, int eventId,
     }
 }
 
+void MenuScene::TriggerPreviewChannelSwitch()
+{
+    m_previewSwitchTimer = 0.38f;
+    if (m_channelSwitchSfxId != 0 && mp_context)
+    {
+        mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
+    }
+}
+
 void MenuScene::RenderPowerUpSimulation(GameContext& context, PowerUpType type, const Vector2f& center, const Vector2f& size)
 {
     (void)type;
@@ -3068,7 +3106,27 @@ void MenuScene::RenderPowerUpSimulation(GameContext& context, PowerUpType type, 
 
         m_previewTexture->display();
 
-        context.Render.DrawRawTexture(m_previewTexture->getTexture(), size.X - 4.0f, size.Y - 4.0f, Transform2D{center});
+        constexpr float kSwitchDuration = 0.38f;
+        float switchProgress = std::clamp(m_previewSwitchTimer / kSwitchDuration, 0.0f, 1.0f);
+        uint32_t previewShader = (context.Rules.GetRule(Rule::Graphics::EnableShader)) ? m_previewShaderId : 0;
+
+        context.Render.DrawRawTexture(
+            m_previewTexture->getTexture(),
+            size.X - 4.0f,
+            size.Y - 4.0f,
+            Transform2D{center},
+            Colors::White,
+            previewShader,
+            m_previewAnimTime,
+            switchProgress
+        );
+
+        if (previewShader == 0 && switchProgress > 0.001f)
+        {
+            // Software static flicker overlay fallback when shaders are disabled
+            uint8_t noiseAlpha = static_cast<uint8_t>(switchProgress * 150.0f);
+            context.Render.DrawRectangle(size.X - 4.0f, size.Y - 4.0f, Transform2D{center}, Color{200, 225, 255, noiseAlpha});
+        }
     }
     else
     {

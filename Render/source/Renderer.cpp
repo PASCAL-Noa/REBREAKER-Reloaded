@@ -308,7 +308,7 @@ const sf::RenderTexture& Renderer::GetActiveRenderTarget() const
     return m_renderTexture;
 }
 
-void Renderer::DrawRawTexture(const sf::Texture& texture, float width, float height, const Transform2D& transform, Color tint)
+void Renderer::DrawRawTexture(const sf::Texture& texture, float width, float height, const Transform2D& transform, Color tint, uint32_t shaderId, float time, float effectProgress)
 {
     sf::Sprite sprite(texture);
     const sf::Vector2u texSize = texture.getSize();
@@ -321,7 +321,22 @@ void Renderer::DrawRawTexture(const sf::Texture& texture, float width, float hei
     sprite.setRotation(sf::degrees(transform.Rotation));
     sprite.setColor(ToSfColor(tint));
 
-    RenderItem(GetActiveRenderTarget(), sprite, BlendMode::Alpha);
+    sf::RenderStates states;
+    states.blendMode = sf::BlendAlpha;
+
+    if (shaderId != 0 && sf::Shader::isAvailable())
+    {
+        if (sf::Shader* shader = m_resources.Get<sf::Shader>(shaderId))
+        {
+            shader->setUniform("u_texture", sf::Shader::CurrentTexture);
+            shader->setUniform("u_time", time);
+            shader->setUniform("u_switch_progress", effectProgress);
+            shader->setUniform("u_resolution", sf::Glsl::Vec2(width, height));
+            states.shader = shader;
+        }
+    }
+
+    GetActiveRenderTarget().draw(sprite, states);
 }
 
 Vector2f Renderer::GetLogicalViewSize() const

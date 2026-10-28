@@ -66,7 +66,7 @@ public:
     void                PopRenderTarget();
     [[nodiscard]] sf::RenderTexture&       GetActiveRenderTarget();
     [[nodiscard]] const sf::RenderTexture& GetActiveRenderTarget() const;
-    void                DrawRawTexture(const sf::Texture& texture, float width, float height, const Transform2D& transform, Color tint = Colors::White);
+    void                DrawRawTexture(const sf::Texture& texture, float width, float height, const Transform2D& transform, Color tint = Colors::White, uint32_t shaderId = 0, float time = 0.0f, float effectProgress = 0.0f);
 
 private:
     void                DrawLetterboxBars(sf::RenderTarget& target, const sf::Vector2u& size) const;
