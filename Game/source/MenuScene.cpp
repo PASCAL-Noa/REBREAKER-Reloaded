@@ -59,6 +59,7 @@ void MenuScene::OnInit(GameContext& context)
     m_powerupBuffSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup_buff.wav");
     m_shaderId = context.Resources.LoadResource("Resources/shaders/menu_fx.frag");
     m_previewShaderId = context.Resources.LoadResource("Resources/shaders/crt_preview.frag");
+    m_luckyShaderId = context.Resources.LoadResource("Resources/shaders/lucky.frag");
     m_channelSwitchSfxId = context.Resources.LoadResource("Resources/audio/sfx/ui_click.wav");
     m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
@@ -3922,6 +3923,32 @@ void MenuScene::RenderPowerUpRainPreview(GameContext& context, int level, const 
             float px = dropPos.X - 8.0f + static_cast<float>(p) * 4.0f;
             context.Render.DrawRectangle(2.0f, 3.0f, Transform2D{Vector2f{px, dropPos.Y + 11.0f}}, Colors::Gold);
         }
+    }
+
+    // Cyber Cascade Shader Overlay in Workshop Preview
+    if (m_luckyShaderId != 0 && context.Rules.GetRule(Rule::Graphics::EnableShader))
+    {
+        Vector2f simSize{1160.0f, 540.0f};
+        Color luckyTint{0, 240, 255, 175};
+        context.Render.DrawScannerEffect(simSize.X, simSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, luckyTint, animTime, m_luckyShaderId);
+    }
+
+    // Floating Cyber Question Mark particles in preview
+    for (int q = 0; q < 8; ++q)
+    {
+        float qSeed = static_cast<float>(q) * 1.35f;
+        float qx = -480.0f + std::fmod(qSeed * 180.0f + animTime * 45.0f, 960.0f);
+        float qy = 190.0f - std::fmod(animTime * (48.0f + static_cast<float>(q * 8)) + qSeed * 95.0f, 420.0f);
+        float qRot = std::sin(animTime * 1.5f + qSeed) * 0.35f;
+        float pulseA = 0.5f + 0.5f * std::sin(animTime * 3.0f + qSeed);
+        uint8_t qa = static_cast<uint8_t>(140.0f + pulseA * 95.0f);
+
+        Color qCol = (q % 3 == 0) ? Color{0, 240, 255, qa} : ((q % 3 == 1) ? Color{255, 20, 147, qa} : Color{255, 200, 30, qa});
+        Color qGlow = (q % 3 == 1) ? Color{0, 240, 255, static_cast<uint8_t>(qa * 0.50f)} : Color{255, 20, 147, static_cast<uint8_t>(qa * 0.50f)};
+
+        Transform2D qTrans{Vector2f{qx, qy}, qRot, Vector2f{1.0f, 1.0f}};
+        context.Render.DrawTextCentered("?", m_fontId, 36.0f, Transform2D{Vector2f{qx + 1.5f, qy + 1.5f}, qRot, Vector2f{1.15f, 1.15f}}, qGlow);
+        context.Render.DrawTextCentered("?", m_fontId, 32.0f, qTrans, qCol);
     }
 
     // Dynamic HUD Overlay

@@ -223,6 +223,7 @@ private:
     int                 m_lastPreviewLevel = 0;
     float               m_previewSwitchTimer = 0.0f;
     uint32_t            m_previewShaderId = 0;
+    uint32_t            m_luckyShaderId = 0;
     uint32_t            m_channelSwitchSfxId = 0;
 
     std::vector<StarParticle> m_stars;

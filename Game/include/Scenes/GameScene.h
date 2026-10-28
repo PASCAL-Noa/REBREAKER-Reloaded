@@ -420,16 +420,39 @@ protected:
     };
     std::vector<PowerUpRainDrop> m_powerUpRainQueue;
 
+    struct LuckyQuestionMarkParticle
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Vector2f Velocity{0.0f, 0.0f};
+        float    Scale = 1.0f;
+        float    Rotation = 0.0f;
+        float    RotSpeed = 0.0f;
+        float    WobblePhase = 0.0f;
+        float    WobbleFreq = 2.0f;
+        float    Lifetime = 3.5f;
+        float    MaxLifetime = 3.5f;
+        uint8_t  BaseAlpha = 220;
+        Color    Tint{255, 235, 60, 255};
+    };
+    std::vector<LuckyQuestionMarkParticle> m_luckyQuestionMarks;
+    float       m_luckyQuestionMarkSpawnTimer = 0.0f;
+    float       m_powerUpRainActiveTimer = 0.0f;
+    float       m_powerUpRainAnimTime = 0.0f;
+    uint32_t    m_powerUpRainShaderId = 0;
+    std::string m_prePowerUpRainMusicPath;
+
     void    ExecutePlasmaOrb(int level);
     void    ExecuteDiscoBall(int level);
     void    ExecutePowerUpRain(int level);
     void    TriggerSoundWave(float targetHeightRatio, int damage);
     void    SpawnDiscoMusicNote(bool randomSpread = false);
+    void    SpawnLuckyQuestionMark(const Vector2f& pos, bool popUp = false);
     void    UpdateUltimateAbilities(float dt);
     void    UpdateRegeneratingItemBricks(float dt);
     void    RenderRegeneratingBricks(GameContext& context);
     void    RenderUltimateMeterHUD(GameContext& context);
     void    RenderDiscoBackgroundMusicNotes(GameContext& context);
+    void    RenderLuckyQuestionMarks(GameContext& context);
     void    RenderActiveUltimateVisuals(GameContext& context);
     void    ClearActiveUltimates();
 };

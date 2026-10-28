@@ -148,6 +148,7 @@ void GameScene::OnInit(GameContext& context)
     m_fontId = context.Resources.LoadResource("Resources/font/vt323.ttf");
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
     m_crackShaderId = context.Resources.LoadResource("Resources/shaders/crack.frag");
+    m_powerUpRainShaderId = context.Resources.LoadResource("Resources/shaders/lucky.frag");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
     m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_brickTexId = context.Resources.LoadResource("Resources/sprite/brick.png");
@@ -4161,6 +4162,26 @@ void GameScene::ClearActiveUltimates()
     m_discoExplosionAnims.clear();
     m_discoMusicNotes.clear();
     m_discoNoteSpawnTimer = 0.0f;
+
+    if (m_powerUpRainActiveTimer > 0.0f || !m_prePowerUpRainMusicPath.empty())
+    {
+        m_powerUpRainActiveTimer = 0.0f;
+        m_luckyQuestionMarks.clear();
+        m_luckyQuestionMarkSpawnTimer = 0.0f;
+
+        if (mp_context)
+        {
+            if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
+            {
+                mp_context->Audio.PlayMusic(m_prePowerUpRainMusicPath, 80.0f, true);
+            }
+            else
+            {
+                m_playlist.PlayNext(*mp_context, 1.2f);
+            }
+            m_prePowerUpRainMusicPath.clear();
+        }
+    }
 }
 
 void GameScene::ExecutePlasmaOrb(int level)
@@ -4456,11 +4477,36 @@ void GameScene::ExecutePowerUpRain(int level)
         m_powerUpRainQueue.push_back(drop);
     }
 
-    if (mp_context && m_ultimateReadySfxId != 0)
+    m_powerUpRainActiveTimer = 7.2f;
+    m_powerUpRainAnimTime = 0.0f;
+    m_luckyQuestionMarkSpawnTimer = 0.0f;
+
+    if (mp_context)
     {
-        mp_context->Audio.PlaySfx(m_ultimateReadySfxId, 100.0f, 1.25f);
+        if (m_ultimateReadySfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_ultimateReadySfxId, 100.0f, 1.25f);
+        }
+
+        std::string cur = mp_context->Audio.GetCurrentMusicPath();
+        if (m_prePowerUpRainMusicPath.empty() || m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") != std::string::npos)
+        {
+            if (cur.find("lucky_drop_ultimate") == std::string::npos && !cur.empty())
+            {
+                m_prePowerUpRainMusicPath = cur;
+            }
+        }
+        mp_context->Audio.PlayMusic("Resources/audio/music/lucky_drop_ultimate.wav", 100.0f, true);
     }
-    TriggerPostProcessFlash(0.035f, 0.6f, Color{255, 215, 0, 255}, 0.35f, Color{255, 240, 160, 255});
+
+    // Spawn an initial cyber burst of Lucky Question Mark particles
+    for (int q = 0; q < 16; ++q)
+    {
+        Vector2f burstPos{-600.0f + static_cast<float>(rand() % 1200), -380.0f + static_cast<float>(rand() % 450)};
+        SpawnLuckyQuestionMark(burstPos, true);
+    }
+
+    TriggerPostProcessFlash(0.045f, 0.75f, Color{0, 240, 255, 255}, 0.45f, Color{255, 20, 147, 255});
     TweenEffects::Shake(m_registry, m_camera, 0.25f, 7.0f);
 }
 
@@ -5192,10 +5238,63 @@ void GameScene::UpdateUltimateAbilities(float dt)
             m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
 
             SpawnExplosionParticles(Vector2f{it->SpawnX, -420.0f}, Color{255, 235, 120, 255}, 8);
+            SpawnLuckyQuestionMark(Vector2f{it->SpawnX, -420.0f}, true);
             it = m_powerUpRainQueue.erase(it);
         }
         else
         {
+            ++it;
+        }
+    }
+
+    // 5. Lucky Drop active duration, music loop & question marks update
+    if (m_powerUpRainActiveTimer > 0.0f)
+    {
+        m_powerUpRainActiveTimer -= dt;
+        m_powerUpRainAnimTime += dt;
+
+        // Periodic ambient floating question marks
+        m_luckyQuestionMarkSpawnTimer += dt;
+        if (m_luckyQuestionMarkSpawnTimer >= 0.16f)
+        {
+            m_luckyQuestionMarkSpawnTimer = 0.0f;
+            Vector2f spawnPos{-720.0f + static_cast<float>(rand() % 1440), 380.0f + static_cast<float>(rand() % 70)};
+            SpawnLuckyQuestionMark(spawnPos, false);
+        }
+
+        // When lucky drop duration ends, smoothly restore stage music
+        if (m_powerUpRainActiveTimer <= 0.0f)
+        {
+            m_powerUpRainActiveTimer = 0.0f;
+            if (mp_context)
+            {
+                if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.FadeToMusic(m_prePowerUpRainMusicPath, 1.2f);
+                }
+                else
+                {
+                    m_playlist.PlayNext(*mp_context, 1.2f);
+                }
+                m_prePowerUpRainMusicPath.clear();
+            }
+        }
+    }
+
+    // Update floating question mark particles
+    for (auto it = m_luckyQuestionMarks.begin(); it != m_luckyQuestionMarks.end(); )
+    {
+        it->Lifetime -= dt;
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_luckyQuestionMarks.erase(it);
+        }
+        else
+        {
+            it->Position += it->Velocity * dt;
+            it->Rotation += it->RotSpeed * dt;
+            it->WobblePhase += it->WobbleFreq * dt;
+            it->Position.X += std::sin(it->WobblePhase) * (20.0f * dt);
             ++it;
         }
     }
@@ -5562,6 +5661,26 @@ void GameScene::RenderActiveUltimateVisuals(GameContext& context)
 
         context.Render.DrawTextCentered("[ GRAND CLIMAX GROOVE ]", m_fontId, 28.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y + 65.0f}}, Colors::Gold);
     }
+
+    // 5. Power-Up Rain / Lucky Fortune Visuals & Question Marks
+    if (m_powerUpRainActiveTimer > 0.0f)
+    {
+        // Fullscreen Cyber Cascade Shader Overlay
+        if (m_powerUpRainShaderId != 0 && context.Rules.GetRule(Rule::Graphics::EnableShader))
+        {
+            Vector2f viewSize = context.Render.GetLogicalViewSize();
+            Color luckyColor{0, 240, 255, static_cast<uint8_t>(std::clamp(m_powerUpRainActiveTimer * 45.0f, 0.0f, 215.0f))};
+            context.Render.DrawScannerEffect(viewSize.X, viewSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, luckyColor, m_powerUpRainAnimTime, m_powerUpRainShaderId);
+        }
+
+        // Cyber Matrix Overdrive Banner
+        float bannerPulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 14.0f);
+        Color bannerGlow = (bannerPulse > 0.5f) ? Color{0, 245, 255, 245} : Color{255, 30, 160, 245};
+        context.Render.DrawTextCentered("[ * CYBER CASCADE // MATRIX OVERDRIVE * ]", m_fontId, 28.0f, Transform2D{Vector2f{0.0f, -220.0f}}, bannerGlow);
+    }
+
+    // Always render active question mark particles
+    RenderLuckyQuestionMarks(context);
 }
 
 void GameScene::SpawnDiscoMusicNote(bool randomSpread)
@@ -5641,6 +5760,79 @@ void GameScene::RenderDiscoBackgroundMusicNotes(GameContext& context)
         DrawMusicNote(context, note.Position, note.Scale * 0.75f, note.Rotation, coreCol, note.IsDoubleNote);
     }
 }
+
+void GameScene::SpawnLuckyQuestionMark(const Vector2f& pos, bool popUp)
+{
+    LuckyQuestionMarkParticle qm;
+    qm.Position = pos;
+    if (popUp)
+    {
+        float angle = static_cast<float>(rand() % 628) * 0.01f;
+        float spd = 70.0f + static_cast<float>(rand() % 160);
+        qm.Velocity = Vector2f{std::cos(angle) * spd, std::sin(angle) * spd - 75.0f};
+    }
+    else
+    {
+        qm.Velocity = Vector2f{static_cast<float>((rand() % 90) - 45), -45.0f - static_cast<float>(rand() % 70)};
+    }
+    qm.Scale = 0.85f + static_cast<float>(rand() % 55) * 0.01f;
+    qm.Rotation = static_cast<float>((rand() % 80) - 40) * 0.01f;
+    qm.RotSpeed = static_cast<float>((rand() % 140) - 70) * 0.01f;
+    qm.WobblePhase = static_cast<float>(rand() % 628) * 0.01f;
+    qm.WobbleFreq = 1.8f + static_cast<float>(rand() % 25) * 0.1f;
+    qm.Lifetime = 3.2f + static_cast<float>(rand() % 25) * 0.1f;
+    qm.MaxLifetime = qm.Lifetime;
+    qm.BaseAlpha = static_cast<uint8_t>(190 + (rand() % 65));
+
+    int pick = rand() % 3;
+    if (pick == 0) qm.Tint = Color{0, 240, 255, 255};      // Electric Cyan
+    else if (pick == 1) qm.Tint = Color{255, 20, 147, 255}; // Hot Neon Magenta
+    else qm.Tint = Color{255, 200, 30, 255};                // Cyber Gold
+
+    m_luckyQuestionMarks.push_back(qm);
+}
+
+void GameScene::RenderLuckyQuestionMarks(GameContext& context)
+{
+    if (m_luckyQuestionMarks.empty()) return;
+
+    for (const auto& qm : m_luckyQuestionMarks)
+    {
+        float ratio = std::clamp(qm.Lifetime / qm.MaxLifetime, 0.0f, 1.0f);
+        float alphaFactor = 1.0f;
+        if (ratio > 0.80f)
+        {
+            alphaFactor = (1.0f - ratio) / 0.20f;
+        }
+        else if (ratio < 0.25f)
+        {
+            alphaFactor = ratio / 0.25f;
+        }
+
+        uint8_t a = static_cast<uint8_t>(static_cast<float>(qm.BaseAlpha) * alphaFactor);
+        if (a < 5) continue;
+
+        float fontSize = 36.0f * qm.Scale;
+        Transform2D trans{qm.Position, qm.Rotation, Vector2f{qm.Scale, qm.Scale}};
+
+        // Chromatic Glitch Aura Shadow (Magenta on Cyan, or Cyan on Magenta/Gold)
+        Color glowCol = (qm.Tint.r > 200 && qm.Tint.g < 100)
+            ? Color{0, 240, 255, static_cast<uint8_t>(a * 0.50f)}
+            : Color{255, 20, 147, static_cast<uint8_t>(a * 0.50f)};
+        Transform2D glowTrans{qm.Position + Vector2f{2.0f, 1.5f}, qm.Rotation, Vector2f{qm.Scale * 1.15f, qm.Scale * 1.15f}};
+        context.Render.DrawTextCentered("?", m_fontId, fontSize * 1.15f, glowTrans, glowCol);
+
+        // Cyberpunk neon main body
+        Color mainCol{qm.Tint.r, qm.Tint.g, qm.Tint.b, a};
+        context.Render.DrawTextCentered("?", m_fontId, fontSize, trans, mainCol);
+
+        // Core bright white-cyan highlight
+        Color coreCol{230, 255, 255, static_cast<uint8_t>(a * 0.90f)};
+        Transform2D coreTrans{qm.Position - Vector2f{1.0f, 1.0f}, qm.Rotation, Vector2f{qm.Scale * 0.85f, qm.Scale * 0.85f}};
+        context.Render.DrawTextCentered("?", m_fontId, fontSize * 0.85f, coreTrans, coreCol);
+    }
+}
+
 
 
 
