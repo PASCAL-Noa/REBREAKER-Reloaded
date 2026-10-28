@@ -49,12 +49,21 @@ public:
     [[nodiscard]] uint32_t GetLifetimeCredits() const;
     void AddLifetimeCredits(uint32_t credits);
 
-    // Ultimate Ability Selection
+    // Ultimate Ability Selection & Upgrades (Levels 1 to 5)
     [[nodiscard]] UltimateAbilityType GetEquippedUltimate() const;
     void SetEquippedUltimate(UltimateAbilityType type);
 
+    [[nodiscard]] int GetUltimateLevel(UltimateAbilityType type) const;
+    void SetUltimateLevel(UltimateAbilityType type, int level);
+    [[nodiscard]] int GetUltimateMaxLevel(UltimateAbilityType type) const;
+    [[nodiscard]] int GetUltimateUpgradeCost(UltimateAbilityType type) const;
+    [[nodiscard]] bool CanUpgradeUltimate(UltimateAbilityType type) const;
+    bool UpgradeUltimate(UltimateAbilityType type);
+
     static std::string GetUltimateName(UltimateAbilityType type);
+    static std::string GetUltimateCategory(UltimateAbilityType type);
     static std::string GetUltimateDescription(UltimateAbilityType type);
+    static std::string GetUltimateTierInfo(UltimateAbilityType type, int level);
 
     // Cosmetics Architecture
     [[nodiscard]] const std::vector<CosmeticItem>& GetAvailableCosmetics();

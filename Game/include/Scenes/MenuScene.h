@@ -40,9 +40,17 @@ struct UltimateCardWidgets
 {
     Entity RootPanel = NULL_ENTITY;
     Entity TitleText = NULL_ENTITY;
+    Entity CategoryText = NULL_ENTITY;
     Entity DescText = NULL_ENTITY;
+    Entity CurTierText = NULL_ENTITY;
+    Entity NextTierText = NULL_ENTITY;
+    Entity CostText = NULL_ENTITY;
+    Entity UpgradeBtn = NULL_ENTITY;
     Entity EquipBtn = NULL_ENTITY;
+    std::array<Entity, 5> LevelPipButtons{};
     UltimateAbilityType Type = UltimateAbilityType::NovaShockwave;
+    int InspectedLevel = 1;
+    float SwitchTimer = 0.0f;
 };
 
 class MenuScene : public DefaultScene
@@ -84,7 +92,10 @@ private:
     void    RefreshWorkshopUI();
     void    RenderWorkshopCustomVisuals(GameContext& context);
     void    RenderPowerUpSimulation(GameContext& context, PowerUpType type, const Vector2f& center, const Vector2f& size);
-    void    RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, const Vector2f& center, const Vector2f& size);
+    void    RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, int level, const Vector2f& center, const Vector2f& size, float switchTimer);
+    void    RenderNovaShockwavePreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderThunderTempestPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderTimeStasisPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
     void    TriggerSimSfx(GameContext& context, uint32_t sfxId, int eventId, float volume = 65.0f);
     void    TriggerPreviewChannelSwitch();
 
@@ -205,6 +216,7 @@ private:
 
     std::unique_ptr<PreviewScene> m_previewScene;
     std::unique_ptr<sf::RenderTexture> m_previewTexture;
+    std::unique_ptr<sf::RenderTexture> m_ultimatePreviewTexture;
     PowerUpType         m_lastPreviewPowerUp = PowerUpType::MultiBall;
     int                 m_lastPreviewLevel = 0;
     float               m_previewSwitchTimer = 0.0f;

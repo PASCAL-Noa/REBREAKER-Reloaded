@@ -108,6 +108,10 @@ void MenuScene::OnInit(GameContext& context)
     (void)m_previewTexture->resize(sf::Vector2u(1280, 600), rtSettings);
     m_previewTexture->setSmooth(true);
 
+    m_ultimatePreviewTexture = std::make_unique<sf::RenderTexture>();
+    (void)m_ultimatePreviewTexture->resize(sf::Vector2u(1160, 540), rtSettings);
+    m_ultimatePreviewTexture->setSmooth(true);
+
     m_previewScene = std::make_unique<PreviewScene>();
     m_previewScene->OnInit(context);
     m_previewScene->SetEmbeddedMode(true);
@@ -450,6 +454,14 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
             m_previewSwitchTimer = 0.0f;
         }
     }
+    for (auto& card : m_ultimateCards)
+    {
+        if (card.SwitchTimer > 0.0f)
+        {
+            card.SwitchTimer -= dt;
+            if (card.SwitchTimer < 0.0f) card.SwitchTimer = 0.0f;
+        }
+    }
 
     if (m_cheatsTabBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_cheatsTabBtn))
     {
@@ -480,6 +492,7 @@ void MenuScene::OnDestroy(GameContext& context)
         m_previewScene.reset();
     }
     m_previewTexture.reset();
+    m_ultimatePreviewTexture.reset();
     DefaultScene::OnDestroy(context);
 }
 
@@ -2149,7 +2162,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     }
 
     // =========================================================================
-    // --- TAB 2: FLAGSHIP ULTIMATES HANGAR ---
+    // --- TAB 2: FLAGSHIP ULTIMATES HANGAR (3 ALL-IN-ONE COLUMNS) ---
     // =========================================================================
     UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
         .Text = "FLAGSHIP ULTIMATE ABILITIES (SMASH BRICKS TO CHARGE AND UNLEASH IN COMBAT)",
@@ -2173,59 +2186,161 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     {
         UltimateCardWidgets card;
         card.Type = ultTypes[i];
+        card.InspectedLevel = ProfileManager::Get().GetUltimateLevel(card.Type);
+        card.SwitchTimer = 0.0f;
         float x = ultColX[i];
-        float y = -30.0f;
+        float y = -35.0f;
+        int cardIdx = i;
 
         card.RootPanel = UIFactory::CreatePanel(m_registry, m_workshopUltimatesCanvas, PanelDescriptor{
             .Position = {x, y},
             .Size = {680.0f, 960.0f},
-            .Tint = Color{22, 28, 46, 250},
+            .Tint = Color{20, 26, 42, 250},
             .ZOrder = 1
         });
 
+        // 1. Title & Role Header
         card.TitleText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
             .Text = ProfileManager::GetUltimateName(card.Type),
-            .Position = {x, y - 410.0f},
+            .Position = {x, -455.0f},
             .FontId = m_fontId,
-            .FontSize = 38.0f,
+            .FontSize = 32.0f,
             .Tint = Colors::Gold,
             .ZOrder = 3
+        });
+
+        card.CategoryText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
+            .Text = ProfileManager::GetUltimateCategory(card.Type),
+            .Position = {x, -420.0f},
+            .FontId = m_fontId,
+            .FontSize = 18.0f,
+            .Tint = Color{120, 205, 255, 230},
+            .ZOrder = 3
+        });
+
+        // 2. Interactive Level Inspection Buttons (NIV. 1 to NIV. 5)
+        constexpr float ultPipW = 96.0f;
+        constexpr float ultPipH = 34.0f;
+        constexpr float ultPipGap = 12.0f;
+        float startUltPipX = x - (5.0f * (ultPipW + ultPipGap) - ultPipGap) * 0.5f + (ultPipW * 0.5f);
+        float ultPipY = -95.0f;
+
+        for (int p = 0; p < 5; ++p)
+        {
+            float bx = startUltPipX + static_cast<float>(p) * (ultPipW + ultPipGap);
+            int lvl = p + 1;
+            Entity pipBtn = UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
+                .Text = "NIV. " + std::to_string(lvl),
+                .OnClick = [this, cardIdx, lvl]() {
+                    if (m_showDescriptionModal) return;
+                    m_ultimateCards[cardIdx].InspectedLevel = lvl;
+                    m_ultimateCards[cardIdx].SwitchTimer = 0.38f;
+                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
+                    else if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+                    RefreshWorkshopUI();
+                },
+                .Position = {bx, ultPipY},
+                .Size = {ultPipW, ultPipH},
+                .DefaultColor = Color{35, 45, 65, 220},
+                .HoverColor = Color{55, 75, 110, 240},
+                .PressedColor = Color{25, 35, 50, 255},
+                .FontId = m_fontId,
+                .FontSize = 20.0f,
+                .ZOrder = 3
+            });
+            card.LevelPipButtons[p] = pipBtn;
+        }
+
+        // 3. Stats & Description Info Box
+        UIFactory::CreatePanel(m_registry, m_workshopUltimatesCanvas, PanelDescriptor{
+            .Position = {x, 40.0f},
+            .Size = {580.0f, 200.0f},
+            .Tint = Color{24, 30, 48, 240},
+            .ZOrder = 2
         });
 
         card.DescText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
             .Text = ProfileManager::GetUltimateDescription(card.Type),
-            .Position = {x, y + 20.0f},
+            .Position = {x, -25.0f},
             .FontId = m_fontId,
-            .FontSize = 22.0f,
+            .FontSize = 18.0f,
             .Tint = Color{215, 230, 250, 255},
+            .MaxWidth = 540.0f,
             .ZOrder = 3
         });
 
-        UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
-            .Text = "CHARGE REQUIREMENT: 100% OVERDRIVE GAUGE",
-            .Position = {x, y + 115.0f},
+        card.CurTierText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
+            .Text = "NIV. ACTUEL: ...",
+            .Position = {x, 30.0f},
             .FontId = m_fontId,
-            .FontSize = 22.0f,
-            .Tint = Colors::Gold,
+            .FontSize = 17.0f,
+            .Tint = Color{100, 220, 255, 255},
+            .MaxWidth = 540.0f,
             .ZOrder = 3
         });
 
+        card.NextTierText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
+            .Text = "NIV. CONSULTE: ...",
+            .Position = {x, 70.0f},
+            .FontId = m_fontId,
+            .FontSize = 17.0f,
+            .Tint = Colors::Gold,
+            .MaxWidth = 540.0f,
+            .ZOrder = 3
+        });
+
+        card.CostText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
+            .Text = "COUT PROCHAIN PALIER: ...",
+            .Position = {x, 110.0f},
+            .FontId = m_fontId,
+            .FontSize = 18.0f,
+            .Tint = Color{80, 240, 140, 255},
+            .MaxWidth = 540.0f,
+            .ZOrder = 3
+        });
+
+        // 4. Big Upgrade Action Button
         UltimateAbilityType ultType = card.Type;
+        card.UpgradeBtn = UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
+            .Text = "AMELIORER",
+            .OnClick = [this, cardIdx, ultType]() {
+                if (m_showDescriptionModal) return;
+                if (ProfileManager::Get().CanUpgradeUltimate(ultType))
+                {
+                    ProfileManager::Get().UpgradeUltimate(ultType);
+                    m_ultimateCards[cardIdx].InspectedLevel = ProfileManager::Get().GetUltimateLevel(ultType);
+                    m_ultimateCards[cardIdx].SwitchTimer = 0.38f;
+                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
+                    if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+                    RefreshWorkshopUI();
+                }
+            },
+            .Position = {x, 185.0f},
+            .Size = {580.0f, 54.0f},
+            .DefaultColor = Color{35, 145, 60, 255},
+            .HoverColor = Color{50, 195, 85, 255},
+            .PressedColor = Color{22, 95, 40, 255},
+            .FontId = m_fontId,
+            .FontSize = 26.0f,
+            .ZOrder = 3
+        });
+
+        // 5. Equip Action Button
         card.EquipBtn = UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
-            .Text = "EQUIP ULTIMATE",
+            .Text = "EQUIPER CETTE CAPACITE",
             .OnClick = [this, ultType]() {
                 if (m_showDescriptionModal) return;
                 ProfileManager::Get().SetEquippedUltimate(ultType);
                 if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 85.0f);
                 RefreshWorkshopUI();
             },
-            .Position = {x, y + 220.0f},
-            .Size = {460.0f, 72.0f},
+            .Position = {x, 255.0f},
+            .Size = {580.0f, 54.0f},
             .DefaultColor = Color{40, 70, 130, 255},
             .HoverColor = Color{60, 105, 195, 255},
             .PressedColor = Color{25, 45, 85, 255},
             .FontId = m_fontId,
-            .FontSize = 32.0f,
+            .FontSize = 26.0f,
             .ZOrder = 3
         });
 
@@ -2422,6 +2537,13 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
     {
         TriggerPreviewChannelSwitch();
     }
+    else if (targetCanvas == m_workshopUltimatesCanvas)
+    {
+        for (auto& card : m_ultimateCards)
+        {
+            card.SwitchTimer = 0.38f;
+        }
+    }
 
     RefreshWorkshopUI();
 }
@@ -2609,30 +2731,134 @@ void MenuScene::RefreshWorkshopUI()
         }
     }
 
-    // 3. Ultimates Tab Refresh
+    // 3. Ultimates Tab Refresh (All 3 Columns)
     UltimateAbilityType equipped = ProfileManager::Get().GetEquippedUltimate();
     for (auto& card : m_ultimateCards)
     {
-        if (m_registry.HasComponent<TextComponent>(card.EquipBtn))
+        int curLvl = ProfileManager::Get().GetUltimateLevel(card.Type);
+        int maxLvl = ProfileManager::Get().GetUltimateMaxLevel(card.Type);
+        if (card.InspectedLevel < 1) card.InspectedLevel = 1;
+        if (card.InspectedLevel > maxLvl) card.InspectedLevel = maxLvl;
+
+        // Pip buttons update
+        for (int p = 0; p < 5; ++p)
         {
-            auto& textComp = m_registry.GetComponent<TextComponent>(card.EquipBtn);
-            if (m_registry.HasComponent<ButtonComponent>(card.EquipBtn))
+            Entity btn = card.LevelPipButtons[p];
+            int lvl = p + 1;
+            bool isOwned = (lvl <= curLvl);
+            bool isInspected = (lvl == card.InspectedLevel);
+
+            if (m_registry.HasComponent<ButtonComponent>(btn))
             {
-                auto& btnComp = m_registry.GetComponent<ButtonComponent>(card.EquipBtn);
-                if (card.Type == equipped)
+                auto& bComp = m_registry.GetComponent<ButtonComponent>(btn);
+                if (isInspected)
                 {
-                    textComp.Text = "[ EQUIPPED & ACTIVE ]";
-                    textComp.Tint = Colors::Gold;
-                    btnComp.DefaultColor = Color{35, 95, 55, 255};
-                    btnComp.HoverColor = Color{45, 125, 75, 255};
+                    bComp.DefaultColor = Color{0, 160, 220, 255};
+                    bComp.HoverColor = Color{20, 190, 255, 255};
+                }
+                else if (isOwned)
+                {
+                    bComp.DefaultColor = Color{25, 80, 120, 220};
+                    bComp.HoverColor = Color{35, 110, 165, 240};
                 }
                 else
                 {
-                    textComp.Text = "EQUIP ULTIMATE";
-                    textComp.Tint = Colors::White;
-                    btnComp.DefaultColor = Color{40, 70, 130, 255};
-                    btnComp.HoverColor = Color{60, 105, 195, 255};
+                    bComp.DefaultColor = Color{30, 38, 54, 200};
+                    bComp.HoverColor = Color{45, 58, 80, 220};
                 }
+            }
+            if (m_registry.HasComponent<TextComponent>(btn))
+            {
+                auto& tComp = m_registry.GetComponent<TextComponent>(btn);
+                tComp.Text = (isInspected ? "[ NIV. " : "NIV. ") + std::to_string(lvl) + (isInspected ? " ]" : "");
+                tComp.Tint = isInspected ? Colors::Gold : (isOwned ? Color{100, 220, 255, 255} : Color{140, 155, 175, 200});
+            }
+        }
+
+        // CurTierText
+        if (m_registry.HasComponent<TextComponent>(card.CurTierText))
+        {
+            m_registry.GetComponent<TextComponent>(card.CurTierText).Text =
+                "NIV. ACTUEL (" + std::to_string(curLvl) + "): " + ProfileManager::GetUltimateTierInfo(card.Type, curLvl);
+        }
+
+        // NextTierText
+        if (m_registry.HasComponent<TextComponent>(card.NextTierText))
+        {
+            std::string status = (card.InspectedLevel == curLvl) ? " [ACTUEL]" : ((card.InspectedLevel < curLvl) ? " [DEBLOQUE]" : " [VERROUILLE]");
+            auto& nextT = m_registry.GetComponent<TextComponent>(card.NextTierText);
+            nextT.Text = "NIV. CONSULTE (" + std::to_string(card.InspectedLevel) + status + "): " + ProfileManager::GetUltimateTierInfo(card.Type, card.InspectedLevel);
+            nextT.Tint = (card.InspectedLevel <= curLvl) ? Colors::Gold : Color{255, 175, 100, 255};
+        }
+
+        // CostText
+        if (m_registry.HasComponent<TextComponent>(card.CostText))
+        {
+            auto& costT = m_registry.GetComponent<TextComponent>(card.CostText);
+            if (curLvl >= maxLvl)
+            {
+                costT.Text = "TOUS LES PALIERS SONT DEBLOQUES (NIV. MAX)";
+                costT.Tint = Colors::Gold;
+            }
+            else
+            {
+                int cost = ProfileManager::Get().GetUltimateUpgradeCost(card.Type);
+                costT.Text = "COUT PROCHAIN PALIER (NIV. " + std::to_string(curLvl + 1) + "): " + std::to_string(cost) + " CREDITS";
+                costT.Tint = (PowerUpManager::Get().GetCoins() >= cost) ? Color{80, 240, 140, 255} : Color{255, 140, 100, 255};
+            }
+        }
+
+        // UpgradeBtn
+        if (m_registry.HasComponent<TextComponent>(card.UpgradeBtn) && m_registry.HasComponent<ButtonComponent>(card.UpgradeBtn))
+        {
+            auto& btnText = m_registry.GetComponent<TextComponent>(card.UpgradeBtn);
+            auto& btnComp = m_registry.GetComponent<ButtonComponent>(card.UpgradeBtn);
+
+            if (curLvl >= maxLvl)
+            {
+                btnText.Text = "[ NIVEAU MAXIMUM ATTEINT ]";
+                btnText.Tint = Colors::Gold;
+                btnComp.DefaultColor = Color{45, 50, 70, 255};
+                btnComp.HoverColor = Color{45, 50, 70, 255};
+            }
+            else
+            {
+                int cost = ProfileManager::Get().GetUltimateUpgradeCost(card.Type);
+                if (PowerUpManager::Get().GetCoins() >= cost)
+                {
+                    btnText.Text = "AMELIORER  [" + std::to_string(cost) + " CREDITS]";
+                    btnText.Tint = Colors::White;
+                    btnComp.DefaultColor = Color{35, 145, 60, 255};
+                    btnComp.HoverColor = Color{50, 195, 85, 255};
+                }
+                else
+                {
+                    btnText.Text = "CREDITS INSUFFISANTS  (" + std::to_string(cost) + " CR)";
+                    btnText.Tint = Color{255, 180, 120, 255};
+                    btnComp.DefaultColor = Color{55, 45, 40, 255};
+                    btnComp.HoverColor = Color{70, 55, 50, 255};
+                }
+            }
+        }
+
+        // EquipBtn
+        if (m_registry.HasComponent<TextComponent>(card.EquipBtn) && m_registry.HasComponent<ButtonComponent>(card.EquipBtn))
+        {
+            auto& textComp = m_registry.GetComponent<TextComponent>(card.EquipBtn);
+            auto& btnComp = m_registry.GetComponent<ButtonComponent>(card.EquipBtn);
+            if (card.Type == equipped)
+            {
+                textComp.Text = "[ EQUIPE & ACTIF ]";
+                textComp.Tint = Colors::Gold;
+                btnComp.DefaultColor = Color{35, 95, 55, 255};
+                btnComp.HoverColor = Color{45, 125, 75, 255};
+            }
+            else
+            {
+                textComp.Text = "EQUIPER CETTE CAPACITE";
+                textComp.Tint = Colors::White;
+                btnComp.DefaultColor = Color{40, 70, 130, 255};
+                btnComp.HoverColor = Color{60, 105, 195, 255};
             }
         }
     }
@@ -3038,6 +3264,10 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
         const float ultColX[3] = {-720.0f, 0.0f, 720.0f};
         UltimateAbilityType equipped = ProfileManager::Get().GetEquippedUltimate();
 
+        constexpr float ultPipW = 96.0f;
+        constexpr float ultPipH = 34.0f;
+        constexpr float ultPipGap = 12.0f;
+
         for (int i = 0; i < 3; ++i)
         {
             float x = screenCenterX + ultColX[i];
@@ -3051,18 +3281,25 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
             context.Render.DrawRectangleOutline(680.0f, 960.0f, Transform2D{Vector2f{x, y}}, borderCol, isEquipped ? 3.5f : 1.5f);
 
             // Simulation Viewport on the card
-            Vector2f simCenter{x, y - 170.0f};
-            Vector2f simSize{580.0f, 280.0f};
+            Vector2f simCenter{x, screenCenterY - 265.0f};
+            Vector2f simSize{580.0f, 260.0f};
 
-            context.Render.DrawRectangle(simSize.X, simSize.Y, Transform2D{simCenter}, Color{10, 14, 24, 255});
-            context.Render.DrawRectangleOutline(simSize.X, simSize.Y, Transform2D{simCenter}, borderCol, 2.0f);
+            RenderUltimateSimulation(context, ultType, m_ultimateCards[i].InspectedLevel, simCenter, simSize, m_ultimateCards[i].SwitchTimer);
 
             // Top tag
             context.Render.DrawText("CAPACITE ULTIME", m_fontId, 20.0f,
                 Transform2D{Vector2f{simCenter.X - (simSize.X * 0.5f) + 15.0f, simCenter.Y - (simSize.Y * 0.5f) + 16.0f}},
                 isEquipped ? Colors::Gold : Color{120, 200, 255, 255});
 
-            RenderUltimateSimulation(context, ultType, simCenter, simSize);
+            // Glowing reticle on currently inspected level pip button
+            float startUltPipX = x - (5.0f * (ultPipW + ultPipGap) - ultPipGap) * 0.5f + (ultPipW * 0.5f);
+            float activePipX = startUltPipX + static_cast<float>(m_ultimateCards[i].InspectedLevel - 1) * (ultPipW + ultPipGap);
+            float pipY = screenCenterY - 95.0f;
+
+            float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 5.0f);
+            uint8_t glowAlpha = static_cast<uint8_t>(180.0f + pulse * 75.0f);
+            context.Render.DrawRectangleOutline(ultPipW + 6.0f, ultPipH + 6.0f,
+                Transform2D{Vector2f{activePipX, pipY}}, Color{255, 215, 60, glowAlpha}, 2.5f);
         }
     }
 }
@@ -3152,14 +3389,375 @@ void MenuScene::RenderPowerUpSimulation(GameContext& context, PowerUpType type, 
     context.Render.DrawLine(Vector2f{center.X + halfW, center.Y + halfH}, Vector2f{center.X + halfW, center.Y + halfH - cw}, bracketCol, 2.5f);
 }
 
-void MenuScene::RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, const Vector2f& center, const Vector2f& size)
+void MenuScene::RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, int level, const Vector2f& center, const Vector2f& size, float switchTimer)
 {
-    (void)type;
+    if (m_ultimatePreviewTexture)
+    {
+        m_ultimatePreviewTexture->clear(sf::Color(8, 11, 18, 255));
+
+        sf::View view(sf::Vector2f(0.0f, 0.0f), sf::Vector2f(1160.0f, 540.0f));
+        m_ultimatePreviewTexture->setView(view);
+
+        context.Render.PushRenderTarget(*m_ultimatePreviewTexture);
+
+        const Vector2f simCenter{0.0f, 0.0f};
+        const Vector2f simSize{1160.0f, 540.0f};
+
+        switch (type)
+        {
+        case UltimateAbilityType::NovaShockwave:
+            RenderNovaShockwavePreview(context, level, simCenter, simSize, m_previewAnimTime);
+            break;
+        case UltimateAbilityType::ThunderTempest:
+            RenderThunderTempestPreview(context, level, simCenter, simSize, m_previewAnimTime);
+            break;
+        case UltimateAbilityType::TimeStasis:
+            RenderTimeStasisPreview(context, level, simCenter, simSize, m_previewAnimTime);
+            break;
+        }
+
+        context.Render.PopRenderTarget();
+        m_ultimatePreviewTexture->display();
+
+        constexpr float kSwitchDuration = 0.38f;
+        float switchProgress = std::clamp(switchTimer / kSwitchDuration, 0.0f, 1.0f);
+        uint32_t previewShader = (context.Rules.GetRule(Rule::Graphics::EnableShader)) ? m_previewShaderId : 0;
+
+        context.Render.DrawRawTexture(
+            m_ultimatePreviewTexture->getTexture(),
+            size.X - 4.0f,
+            size.Y - 4.0f,
+            Transform2D{center},
+            Colors::White,
+            previewShader,
+            m_previewAnimTime,
+            switchProgress
+        );
+
+        if (previewShader == 0 && switchProgress > 0.001f)
+        {
+            uint8_t noiseAlpha = static_cast<uint8_t>(switchProgress * 150.0f);
+            context.Render.DrawRectangle(size.X - 4.0f, size.Y - 4.0f, Transform2D{center}, Color{200, 225, 255, noiseAlpha});
+        }
+    }
+    else
+    {
+        context.Render.DrawRectangle(size.X, size.Y, Transform2D{center}, Color{10, 14, 24, 255});
+    }
+
+    // Outer cyber border & brackets
+    context.Render.DrawRectangleOutline(size.X, size.Y, Transform2D{center}, Color{50, 100, 185, 240}, 2.5f);
+
+    constexpr float cw = 20.0f;
+    float halfW = size.X * 0.5f;
+    float halfH = size.Y * 0.5f;
+    Color bracketCol{255, 215, 60, 220};
+    context.Render.DrawLine(Vector2f{center.X - halfW, center.Y - halfH}, Vector2f{center.X - halfW + cw, center.Y - halfH}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{center.X - halfW, center.Y - halfH}, Vector2f{center.X - halfW, center.Y - halfH + cw}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{center.X + halfW, center.Y - halfH}, Vector2f{center.X + halfW - cw, center.Y - halfH}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{center.X + halfW, center.Y - halfH}, Vector2f{center.X + halfW, center.Y - halfH + cw}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{center.X - halfW, center.Y + halfH}, Vector2f{center.X - halfW + cw, center.Y + halfH}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{center.X - halfW, center.Y + halfH}, Vector2f{center.X - halfW, center.Y + halfH - cw}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{center.X + halfW, center.Y + halfH}, Vector2f{center.X + halfW - cw, center.Y + halfH}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{center.X + halfW, center.Y + halfH}, Vector2f{center.X + halfW, center.Y + halfH - cw}, bracketCol, 2.5f);
+}
+
+void MenuScene::RenderNovaShockwavePreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime)
+{
+    (void)center;
     (void)size;
-    // Placeholder text centered in the frame
-    context.Render.DrawTextCentered("[ APERCU VIDEO DE L'ULTIME ]", m_fontId, 24.0f,
-        Transform2D{Vector2f{center.X, center.Y - 12.0f}}, Color{120, 190, 255, 240});
-    context.Render.DrawTextCentered("EN ATTENTE DE NOUVELLE PRESENTATION", m_fontId, 18.0f,
-        Transform2D{Vector2f{center.X, center.Y + 20.0f}}, Color{150, 165, 195, 180});
+    float cycle = std::fmod(animTime, 3.2f);
+
+    // Subtle background radar rings
+    const Vector2f blastOrigin{0.0f, 130.0f};
+    for (float r : {90.0f, 180.0f, 270.0f, 360.0f, 450.0f})
+    {
+        context.Render.DrawCircleOutline(r, Transform2D{blastOrigin}, Color{90, 45, 20, 40}, 1.0f);
+    }
+
+    // Launch Cannon Vessel at bottom
+    context.Render.DrawRectangle(140.0f, 26.0f, Transform2D{Vector2f{0.0f, 175.0f}}, Color{40, 50, 75, 255});
+    context.Render.DrawRectangleOutline(140.0f, 26.0f, Transform2D{Vector2f{0.0f, 175.0f}}, Colors::Gold, 2.0f);
+
+    // Target Bricks formation (2 rows, 7 columns)
+    const float brickW = 100.0f;
+    const float brickH = 32.0f;
+    for (int row = 0; row < 2; ++row)
+    {
+        float by = (row == 0) ? -120.0f : -70.0f;
+        for (int col = 0; col < 7; ++col)
+        {
+            float bx = -360.0f + static_cast<float>(col) * 120.0f;
+            float dist = std::hypot(bx, by - blastOrigin.Y);
+
+            bool hit = false;
+            bool flashing = false;
+            if (cycle >= 0.9f && cycle < 2.5f)
+            {
+                float curR = (cycle - 0.9f) / 1.6f * 540.0f;
+                if (curR >= dist)
+                {
+                    hit = true;
+                    if (curR <= dist + 80.0f)
+                    {
+                        flashing = true;
+                    }
+                }
+            }
+
+            Color bCol = flashing ? Color{255, 245, 180, 255} : (hit ? Color{110, 35, 25, 160} : ((row == 0) ? Color{200, 60, 40, 240} : Color{235, 125, 45, 240}));
+            context.Render.DrawRectangle(brickW, brickH, Transform2D{Vector2f{bx, by}}, bCol);
+            context.Render.DrawRectangleOutline(brickW, brickH, Transform2D{Vector2f{bx, by}}, flashing ? Colors::White : (hit ? Color{80, 25, 20, 180} : Colors::Gold), 1.5f);
+
+            if (flashing)
+            {
+                context.Render.DrawLine(Vector2f{bx - 20.0f, by}, Vector2f{bx + 20.0f, by}, Colors::White, 2.0f);
+                context.Render.DrawLine(Vector2f{bx, by - 12.0f}, Vector2f{bx, by + 12.0f}, Colors::White, 2.0f);
+            }
+        }
+    }
+
+    // Detonation sequence
+    if (cycle < 0.9f)
+    {
+        // Charging phase
+        float chargeRatio = cycle / 0.9f;
+        float coreR = 12.0f + 16.0f * chargeRatio;
+        context.Render.DrawCircle(coreR, Transform2D{blastOrigin}, Color{255, 200, 80, static_cast<uint8_t>(160.0f + chargeRatio * 95.0f)});
+        context.Render.DrawCircleOutline(coreR + 4.0f, Transform2D{blastOrigin}, Colors::Gold, 2.0f);
+    }
+    else if (cycle < 2.5f)
+    {
+        // Expanding Blastwave
+        float waveProgress = (cycle - 0.9f) / 1.6f;
+        float waveR = waveProgress * 540.0f;
+
+        uint8_t waveAlpha = static_cast<uint8_t>((1.0f - waveProgress) * 255.0f);
+        context.Render.DrawCircleOutline(waveR, Transform2D{blastOrigin}, Color{255, 100, 30, waveAlpha}, 4.0f + static_cast<float>(level) * 1.5f);
+
+        if (waveR > 40.0f)
+        {
+            uint8_t alpha2 = static_cast<uint8_t>((1.0f - waveProgress) * 200.0f);
+            context.Render.DrawCircleOutline(waveR * 0.75f, Transform2D{blastOrigin}, Color{255, 220, 80, alpha2}, 2.5f);
+        }
+
+        if (level >= 3 && waveR > 80.0f)
+        {
+            uint8_t alpha3 = static_cast<uint8_t>((1.0f - waveProgress) * 160.0f);
+            context.Render.DrawCircleOutline(waveR * 0.5f, Transform2D{blastOrigin}, Color{255, 60, 20, alpha3}, 2.0f);
+        }
+
+        float coreDim = 1.0f - waveProgress;
+        context.Render.DrawCircle(18.0f * coreDim, Transform2D{blastOrigin}, Color{255, 220, 100, static_cast<uint8_t>(coreDim * 220.0f)});
+    }
+    else
+    {
+        // Cooldown embers
+        float coolRatio = (cycle - 2.5f) / 0.7f;
+        float emberY = blastOrigin.Y - coolRatio * 40.0f;
+        context.Render.DrawCircle(6.0f * (1.0f - coolRatio), Transform2D{Vector2f{0.0f, emberY}}, Color{255, 120, 40, static_cast<uint8_t>((1.0f - coolRatio) * 150.0f)});
+    }
+
+    // Dynamic HUD Overlay
+    context.Render.DrawText("[ NOVA SHOCKWAVE ]  MK-" + std::to_string(level), m_fontId, 24.0f, Transform2D{Vector2f{-540.0f, -240.0f}}, Colors::Gold);
+    context.Render.DrawText("THERMAL DETONATION CONE", m_fontId, 16.0f, Transform2D{Vector2f{-540.0f, -212.0f}}, Color{255, 170, 90, 220});
+
+    std::string radStr = "BLAST RADIUS: " + std::to_string(100 + (level - 1) * 25) + "%";
+    context.Render.DrawText(radStr, m_fontId, 20.0f, Transform2D{Vector2f{280.0f, -240.0f}}, Color{255, 210, 110, 240});
+
+    std::string dmgStr = "KINETIC IMPACT: " + std::to_string(60 + (level - 1) * 25) + " DMG";
+    context.Render.DrawText(dmgStr, m_fontId, 20.0f, Transform2D{Vector2f{-540.0f, 220.0f}}, Color{255, 140, 80, 240});
+
+    context.Render.DrawText("TARGET FIELD: MULTI-TIER BRICKS", m_fontId, 16.0f, Transform2D{Vector2f{220.0f, 220.0f}}, Color{160, 180, 210, 200});
+}
+
+void MenuScene::RenderThunderTempestPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime)
+{
+    (void)center;
+    (void)size;
+    // Circuit background grid
+    for (float gy = -210.0f; gy <= 210.0f; gy += 70.0f)
+    {
+        context.Render.DrawLine(Vector2f{-560.0f, gy}, Vector2f{560.0f, gy}, Color{25, 45, 80, 45}, 1.0f);
+    }
+    for (float gx = -500.0f; gx <= 500.0f; gx += 100.0f)
+    {
+        context.Render.DrawLine(Vector2f{gx, -240.0f}, Vector2f{gx, 240.0f}, Color{25, 45, 80, 45}, 1.0f);
+    }
+
+    // 7 Metallic Conduction Nodes
+    const Vector2f nodes[7] = {
+        {-380.0f, -120.0f},
+        {-220.0f, -60.0f},
+        {-80.0f, -130.0f},
+        {80.0f, -70.0f},
+        {240.0f, -140.0f},
+        {390.0f, -80.0f},
+        {0.0f, -30.0f}
+    };
+
+    // Bus traces
+    context.Render.DrawLine(nodes[0], nodes[1], Color{40, 85, 140, 100}, 1.5f);
+    context.Render.DrawLine(nodes[1], nodes[6], Color{40, 85, 140, 100}, 1.5f);
+    context.Render.DrawLine(nodes[6], nodes[3], Color{40, 85, 140, 100}, 1.5f);
+    context.Render.DrawLine(nodes[3], nodes[4], Color{40, 85, 140, 100}, 1.5f);
+    context.Render.DrawLine(nodes[4], nodes[5], Color{40, 85, 140, 100}, 1.5f);
+    context.Render.DrawLine(nodes[2], nodes[6], Color{40, 85, 140, 100}, 1.5f);
+
+    // Emitter at bottom
+    const Vector2f emitterPos{0.0f, 130.0f};
+    context.Render.DrawRectangle(140.0f, 26.0f, Transform2D{Vector2f{0.0f, 175.0f}}, Color{35, 45, 75, 255});
+    context.Render.DrawRectangleOutline(140.0f, 26.0f, Transform2D{Vector2f{0.0f, 175.0f}}, Color{100, 200, 255, 255}, 2.0f);
+    context.Render.DrawCircle(14.0f, Transform2D{emitterPos}, Color{120, 220, 255, 240});
+
+    // Lightning discharge simulation
+    int strikeCount = std::min(level, 6);
+    int timeSeed = static_cast<int>(std::floor(animTime * 7.0f));
+
+    for (int t = 0; t < strikeCount; ++t)
+    {
+        int targetIdx = (timeSeed + t * 2) % 7;
+        Vector2f targetPos = nodes[targetIdx];
+
+        // Jagged multi-segment bolt
+        Vector2f currentPt = emitterPos;
+        constexpr int segCount = 5;
+        for (int s = 1; s <= segCount; ++s)
+        {
+            float prog = static_cast<float>(s) / static_cast<float>(segCount);
+            Vector2f nextPt = emitterPos + (targetPos - emitterPos) * prog;
+            if (s < segCount)
+            {
+                float jitter = std::sin(animTime * 35.0f + static_cast<float>(s * 13 + t * 29)) * 22.0f;
+                nextPt.X += jitter;
+            }
+
+            // Halo and core
+            context.Render.DrawLine(currentPt, nextPt, Color{60, 180, 255, 160}, 5.5f);
+            context.Render.DrawLine(currentPt, nextPt, Color{245, 250, 255, 255}, 2.0f);
+            currentPt = nextPt;
+        }
+
+        // Target impact burst
+        context.Render.DrawCircle(15.0f, Transform2D{targetPos}, Color{120, 220, 255, 230});
+        for (int sp = 0; sp < 6; ++sp)
+        {
+            float ang = static_cast<float>(sp) * 1.0471975f + animTime * 10.0f;
+            Vector2f sparkEnd = targetPos + Vector2f{std::cos(ang) * 22.0f, std::sin(ang) * 22.0f};
+            context.Render.DrawLine(targetPos, sparkEnd, Colors::White, 1.5f);
+        }
+
+        // Secondary chain arc for level >= 3
+        if (level >= 3)
+        {
+            int nextNodeIdx = (targetIdx + 1) % 7;
+            Vector2f chainTarget = nodes[nextNodeIdx];
+            Vector2f midPt = (targetPos + chainTarget) * 0.5f + Vector2f{0.0f, std::sin(animTime * 40.0f) * 15.0f};
+            context.Render.DrawLine(targetPos, midPt, Color{100, 220, 255, 200}, 3.0f);
+            context.Render.DrawLine(midPt, chainTarget, Color{100, 220, 255, 200}, 3.0f);
+            context.Render.DrawCircle(10.0f, Transform2D{chainTarget}, Color{140, 230, 255, 200});
+        }
+    }
+
+    // Nodes visual
+    for (int i = 0; i < 7; ++i)
+    {
+        context.Render.DrawRectangle(80.0f, 28.0f, Transform2D{nodes[i]}, Color{20, 32, 54, 255});
+        context.Render.DrawRectangleOutline(80.0f, 28.0f, Transform2D{nodes[i]}, Color{80, 170, 255, 200}, 1.5f);
+        context.Render.DrawCircle(6.0f, Transform2D{nodes[i]}, Color{100, 220, 255, 240});
+    }
+
+    // Dynamic HUD Overlay
+    context.Render.DrawText("[ THUNDER TEMPEST ]  MK-" + std::to_string(level), m_fontId, 24.0f, Transform2D{Vector2f{-540.0f, -240.0f}}, Color{100, 220, 255, 255});
+    context.Render.DrawText("HIGH-VOLTAGE CHAIN DISCHARGE", m_fontId, 16.0f, Transform2D{Vector2f{-540.0f, -212.0f}}, Color{80, 190, 240, 220});
+
+    std::string arcStr = "CHAIN TARGETS: " + std::to_string(level) + (level > 1 ? " NODES" : " NODE");
+    context.Render.DrawText(arcStr, m_fontId, 20.0f, Transform2D{Vector2f{280.0f, -240.0f}}, Color{120, 220, 255, 240});
+
+    std::string dmgStr = "CONDUCTION DMG: " + std::to_string(30 + (level - 1) * 15) + " / SEC";
+    context.Render.DrawText(dmgStr, m_fontId, 20.0f, Transform2D{Vector2f{-540.0f, 220.0f}}, Color{120, 210, 255, 240});
+
+    context.Render.DrawText("CIRCUIT CONDUCTION: 100%", m_fontId, 16.0f, Transform2D{Vector2f{250.0f, 220.0f}}, Color{140, 180, 220, 200});
+}
+
+void MenuScene::RenderTimeStasisPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime)
+{
+    (void)center;
+    (void)size;
+    const Vector2f fieldCenter{0.0f, 0.0f};
+    float fieldR = 180.0f + static_cast<float>(level) * 20.0f;
+
+    // Translucent Stasis Bubble Fill
+    context.Render.DrawCircle(fieldR, Transform2D{fieldCenter}, Color{40, 20, 70, 75});
+
+    // Holographic Chrono-Dials
+    context.Render.DrawCircleOutline(fieldR, Transform2D{fieldCenter}, Color{180, 120, 255, 220}, 2.5f);
+    context.Render.DrawCircleOutline(fieldR * 0.72f, Transform2D{fieldCenter}, Color{120, 200, 255, 180}, 1.5f);
+
+    float pulse = 0.5f + 0.5f * std::sin(animTime * 3.5f);
+    context.Render.DrawCircleOutline(fieldR * 0.4f, Transform2D{fieldCenter}, Color{220, 160, 255, static_cast<uint8_t>(140.0f + pulse * 90.0f)}, 1.5f);
+
+    // 12 Chrono Hash Marks
+    for (int k = 0; k < 12; ++k)
+    {
+        float ang = (static_cast<float>(k) / 12.0f) * 6.2831853f + animTime * 0.3f;
+        Vector2f p1{std::cos(ang) * (fieldR - 10.0f), std::sin(ang) * (fieldR - 10.0f)};
+        Vector2f p2{std::cos(ang) * (fieldR + 4.0f), std::sin(ang) * (fieldR + 4.0f)};
+        context.Render.DrawLine(p1, p2, Color{220, 180, 255, 220}, 2.0f);
+    }
+
+    // Chrono Sweep Vector Hand
+    float sweepAng = animTime * 0.8f;
+    context.Render.DrawLine(fieldCenter, Vector2f{std::cos(sweepAng) * fieldR, std::sin(sweepAng) * fieldR}, Color{160, 230, 255, 160}, 2.0f);
+
+    // Suspended Bricks at Top
+    for (int b = 0; b < 5; ++b)
+    {
+        float bx = -240.0f + static_cast<float>(b) * 120.0f;
+        float by = -140.0f;
+        context.Render.DrawRectangle(90.0f, 28.0f, Transform2D{Vector2f{bx, by}}, Color{35, 25, 55, 240});
+        context.Render.DrawRectangleOutline(90.0f, 28.0f, Transform2D{Vector2f{bx, by}}, Color{180, 140, 240, 200}, 1.5f);
+        // Stasis tether line to center
+        context.Render.DrawLine(Vector2f{bx, by + 14.0f}, fieldCenter, Color{160, 120, 240, 50}, 1.0f);
+    }
+
+    // Slow-Motion Drifting Plasma Projectiles with Temporal Echo Shadows
+    for (int projIdx = 0; projIdx < 3; ++projIdx)
+    {
+        constexpr float speed = 50.0f;
+        float tOffset = animTime * speed + static_cast<float>(projIdx) * 160.0f;
+        float px = -280.0f + std::fmod(tOffset, 560.0f);
+        float py = -50.0f + static_cast<float>(projIdx) * 55.0f + std::sin(px * 0.02f) * 18.0f;
+        Vector2f curPos{px, py};
+
+        bool inField = (std::hypot(px, py) <= fieldR);
+
+        // 4 Trailing temporal echo shadows
+        for (int echo = 4; echo >= 1; --echo)
+        {
+            float echoDist = static_cast<float>(echo) * (inField ? 10.0f : 20.0f);
+            Vector2f echoPos{px - echoDist, py};
+            uint8_t echoAlpha = static_cast<uint8_t>((1.0f - static_cast<float>(echo) / 5.0f) * 110.0f);
+            Color echoCol = inField ? Color{180, 120, 255, echoAlpha} : Color{100, 150, 220, echoAlpha};
+            context.Render.DrawCircle(10.0f, Transform2D{echoPos}, echoCol);
+        }
+
+        Color projCol = inField ? Color{240, 200, 255, 255} : Color{180, 220, 255, 255};
+        context.Render.DrawCircle(11.0f, Transform2D{curPos}, projCol);
+        context.Render.DrawCircleOutline(14.0f, Transform2D{curPos}, inField ? Colors::Gold : Color{120, 200, 255, 200}, 1.5f);
+        context.Render.DrawLine(curPos, Vector2f{curPos.X + 26.0f, curPos.Y}, Color{100, 220, 255, 200}, 1.5f);
+    }
+
+    // Dynamic HUD Overlay
+    context.Render.DrawText("[ TIME STASIS ]  MK-" + std::to_string(level), m_fontId, 24.0f, Transform2D{Vector2f{-540.0f, -240.0f}}, Color{200, 140, 255, 255});
+    context.Render.DrawText("QUANTUM CHRONO-DILATION FIELD", m_fontId, 16.0f, Transform2D{Vector2f{-540.0f, -212.0f}}, Color{180, 130, 240, 220});
+
+    std::string dilStr = "TIME DILATION: -" + std::to_string(45 + (level - 1) * 10) + "%";
+    context.Render.DrawText(dilStr, m_fontId, 20.0f, Transform2D{Vector2f{280.0f, -240.0f}}, Color{220, 170, 255, 240});
+
+    std::string durStr = "FIELD DURATION: " + std::to_string(3 + level) + ".0 SEC";
+    context.Render.DrawText(durStr, m_fontId, 20.0f, Transform2D{Vector2f{-540.0f, 220.0f}}, Color{210, 160, 255, 240});
+
+    context.Render.DrawText("SPACE-TIME DISTORTION: STABLE", m_fontId, 16.0f, Transform2D{Vector2f{220.0f, 220.0f}}, Color{160, 175, 215, 200});
 }
 

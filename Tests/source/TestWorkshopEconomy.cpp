@@ -214,6 +214,73 @@ TEST_SUITE("Workshop, Economy & Player Profile Tests")
         CHECK(PlayerPrefs::GetInt("Profile_EquippedUltimate") == static_cast<int>(UltimateAbilityType::TimeStasis));
     }
 
+    TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Ultimate Ability level progression, upgrade costs and tier descriptions")
+    {
+        auto& pm = ProfileManager::Get();
+        auto& pum = PowerUpManager::Get();
+        pm.ResetToDefaults();
+        pum.ResetToDefaults();
+
+        // Default levels are 1
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::NovaShockwave) == 1);
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::ThunderTempest) == 1);
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::TimeStasis) == 1);
+        CHECK(pm.GetUltimateMaxLevel(UltimateAbilityType::NovaShockwave) == 5);
+
+        // Categories
+        CHECK(!ProfileManager::GetUltimateCategory(UltimateAbilityType::NovaShockwave).empty());
+        CHECK(!ProfileManager::GetUltimateCategory(UltimateAbilityType::ThunderTempest).empty());
+        CHECK(!ProfileManager::GetUltimateCategory(UltimateAbilityType::TimeStasis).empty());
+
+        // Tier info for levels 1 to 5
+        for (int lvl = 1; lvl <= 5; ++lvl)
+        {
+            CHECK(!ProfileManager::GetUltimateTierInfo(UltimateAbilityType::NovaShockwave, lvl).empty());
+            CHECK(!ProfileManager::GetUltimateTierInfo(UltimateAbilityType::ThunderTempest, lvl).empty());
+            CHECK(!ProfileManager::GetUltimateTierInfo(UltimateAbilityType::TimeStasis, lvl).empty());
+        }
+
+        // Upgrade costs: 250, 400, 650, 950
+        CHECK(pm.GetUltimateUpgradeCost(UltimateAbilityType::NovaShockwave) == 250);
+        CHECK(!pm.CanUpgradeUltimate(UltimateAbilityType::NovaShockwave)); // 0 coins
+        CHECK(!pm.UpgradeUltimate(UltimateAbilityType::NovaShockwave));
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::NovaShockwave) == 1);
+
+        // Add 250 coins
+        pum.AddCoins(250);
+        CHECK(pm.CanUpgradeUltimate(UltimateAbilityType::NovaShockwave));
+        CHECK(pm.UpgradeUltimate(UltimateAbilityType::NovaShockwave));
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::NovaShockwave) == 2);
+        CHECK(pum.GetCoins() == 0);
+
+        // Next level cost is 400
+        CHECK(pm.GetUltimateUpgradeCost(UltimateAbilityType::NovaShockwave) == 400);
+
+        // Upgrade to level 5
+        pum.AddCoins(400 + 650 + 950);
+        CHECK(pm.UpgradeUltimate(UltimateAbilityType::NovaShockwave)); // -> 3
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::NovaShockwave) == 3);
+        CHECK(pm.UpgradeUltimate(UltimateAbilityType::NovaShockwave)); // -> 4
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::NovaShockwave) == 4);
+        CHECK(pm.UpgradeUltimate(UltimateAbilityType::NovaShockwave)); // -> 5
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::NovaShockwave) == 5);
+        CHECK(pum.GetCoins() == 0);
+
+        // Max level reached
+        CHECK(pm.GetUltimateUpgradeCost(UltimateAbilityType::NovaShockwave) == 0);
+        CHECK(!pm.CanUpgradeUltimate(UltimateAbilityType::NovaShockwave));
+        CHECK(!pm.UpgradeUltimate(UltimateAbilityType::NovaShockwave));
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::NovaShockwave) == 5);
+
+        // Persistence test
+        PlayerPrefs::Load();
+        CHECK(PlayerPrefs::GetInt("Profile_UltimateLevel_0") == 5);
+
+        // Reset to defaults
+        pm.ResetToDefaults();
+        CHECK(pm.GetUltimateLevel(UltimateAbilityType::NovaShockwave) == 1);
+    }
+
     TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Cosmetic Item architecture and unlocking system")
     {
         auto& pm = ProfileManager::Get();

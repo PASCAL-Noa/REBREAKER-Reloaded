@@ -119,6 +119,52 @@ void ProfileManager::SetEquippedUltimate(UltimateAbilityType type)
     PlayerPrefs::Save();
 }
 
+int ProfileManager::GetUltimateLevel(UltimateAbilityType type) const
+{
+    std::string key = "Profile_UltimateLevel_" + std::to_string(static_cast<int>(type));
+    int lvl = PlayerPrefs::GetInt(key, 1);
+    return std::clamp(lvl, 1, 5);
+}
+
+void ProfileManager::SetUltimateLevel(UltimateAbilityType type, int level)
+{
+    std::string key = "Profile_UltimateLevel_" + std::to_string(static_cast<int>(type));
+    PlayerPrefs::SetInt(key, std::clamp(level, 1, 5));
+    PlayerPrefs::Save();
+}
+
+int ProfileManager::GetUltimateMaxLevel(UltimateAbilityType /*type*/) const
+{
+    return 5;
+}
+
+int ProfileManager::GetUltimateUpgradeCost(UltimateAbilityType type) const
+{
+    int lvl = GetUltimateLevel(type);
+    if (lvl >= 5) return 0;
+    constexpr int kCosts[4] = { 250, 400, 650, 950 };
+    return kCosts[std::clamp(lvl - 1, 0, 3)];
+}
+
+bool ProfileManager::CanUpgradeUltimate(UltimateAbilityType type) const
+{
+    int lvl = GetUltimateLevel(type);
+    if (lvl >= 5) return false;
+    return PowerUpManager::Get().GetCoins() >= GetUltimateUpgradeCost(type);
+}
+
+bool ProfileManager::UpgradeUltimate(UltimateAbilityType type)
+{
+    if (!CanUpgradeUltimate(type)) return false;
+    int cost = GetUltimateUpgradeCost(type);
+    if (PowerUpManager::Get().SpendCoins(cost))
+    {
+        SetUltimateLevel(type, GetUltimateLevel(type) + 1);
+        return true;
+    }
+    return false;
+}
+
 std::string ProfileManager::GetUltimateName(UltimateAbilityType type)
 {
     switch (type)
@@ -134,19 +180,78 @@ std::string ProfileManager::GetUltimateName(UltimateAbilityType type)
     }
 }
 
+std::string ProfileManager::GetUltimateCategory(UltimateAbilityType type)
+{
+    switch (type)
+    {
+        case UltimateAbilityType::NovaShockwave:
+            return "[ASSAUT THERMIQUE RADIAL]";
+        case UltimateAbilityType::ThunderTempest:
+            return "[SURCHARGE ELECTRIQUE]";
+        case UltimateAbilityType::TimeStasis:
+            return "[DISTORSION TACTIQUE]";
+        default:
+            return "[CAPACITE ULTIME]";
+    }
+}
+
 std::string ProfileManager::GetUltimateDescription(UltimateAbilityType type)
 {
     switch (type)
     {
         case UltimateAbilityType::NovaShockwave:
-            return "Radial thermal energy pulse clearing hazards\nand fracturing bricks in 360 degrees.";
+            return "Impulsion d'energie thermique radiale balayant les projectiles ennemis et fracturant les briques a 360 degres.";
         case UltimateAbilityType::ThunderTempest:
-            return "Overcharges the sky, unleashing an immediate\nmulti-target lightning barrage\nthrough conductive circuits.";
+            return "Surcharge l'atmosphere et declenche un deluge d'eclairs cibles se propageant a travers les circuits conducteurs.";
         case UltimateAbilityType::TimeStasis:
-            return "Manipulates local gravity, slowing velocity\nby 75% for 6s for precision trajectory control.";
+            return "Manipule la gravite locale et ralentit le flux temporel pour un controle chirurgical des trajectoires.";
         default:
             return "";
     }
+}
+
+std::string ProfileManager::GetUltimateTierInfo(UltimateAbilityType type, int level)
+{
+    int safeLvl = std::clamp(level, 1, 5);
+    switch (type)
+    {
+        case UltimateAbilityType::NovaShockwave:
+            switch (safeLvl)
+            {
+                case 1: return "Rayon: 400px, 1 dmg, repousse les projectiles ennemis";
+                case 2: return "Rayon: 480px, 1 dmg, propagation de l'onde +25% vitesse";
+                case 3: return "Rayon: 560px, 2 dmg au coeur de l'impact thermique";
+                case 4: return "Rayon: 640px, 2 dmg, incinere instantanement tous les tirs";
+                case 5: return "Supernova: Rayon 720px, 3 dmg, jauge de recharge +20%";
+                default: break;
+            }
+            break;
+        case UltimateAbilityType::ThunderTempest:
+            switch (safeLvl)
+            {
+                case 1: return "4 eclairs cibles, 2 dmg/eclair, conduction metallique";
+                case 2: return "6 eclairs cibles, 2 dmg, arc electrique de rebond";
+                case 3: return "8 eclairs cibles, 3 dmg, foudroie les briques d'acier";
+                case 4: return "10 eclairs cibles, 3 dmg, surtension ionique de zone";
+                case 5: return "Tempete Cataclysmique: 12 eclairs cibles, 4 dmg/eclair";
+                default: break;
+            }
+            break;
+        case UltimateAbilityType::TimeStasis:
+            switch (safeLvl)
+            {
+                case 1: return "Ralentissement 65% pendant 5.0s, stabilite de raquette";
+                case 2: return "Ralentissement 70% pendant 6.0s, guide de visee etendu";
+                case 3: return "Ralentissement 75% pendant 7.0s, impulsion balle boostee";
+                case 4: return "Ralentissement 80% pendant 8.0s, cadence de tir acceleree";
+                case 5: return "Arret Temporel: 85% distorsion pendant 9.0s chirurgicales";
+                default: break;
+            }
+            break;
+        default:
+            break;
+    }
+    return "Palier standard";
 }
 
 const std::vector<CosmeticItem>& ProfileManager::GetAvailableCosmetics()
@@ -213,6 +318,10 @@ void ProfileManager::ResetToDefaults()
     PlayerPrefs::SetInt("Economy_LifetimeScore", 0);
     PlayerPrefs::SetInt("Economy_LifetimeCredits", 0);
     PlayerPrefs::SetInt("Profile_EquippedUltimate", 0);
+    for (int i = 0; i < static_cast<int>(UltimateAbilityType::Count); ++i)
+    {
+        PlayerPrefs::SetInt("Profile_UltimateLevel_" + std::to_string(i), 1);
+    }
     PlayerPrefs::SetString("Equipped_PaddleSkin", "paddle_neon_cyan");
     PlayerPrefs::SetString("Equipped_BallTrail", "trail_plasma_blue");
 
