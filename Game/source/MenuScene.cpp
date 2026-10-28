@@ -60,6 +60,7 @@ void MenuScene::OnInit(GameContext& context)
     m_shaderId = context.Resources.LoadResource("Resources/shaders/menu_fx.frag");
     m_previewShaderId = context.Resources.LoadResource("Resources/shaders/crt_preview.frag");
     m_luckyShaderId = context.Resources.LoadResource("Resources/shaders/lucky.frag");
+    m_plasmaShaderId = context.Resources.LoadResource("Resources/shaders/plasma.frag");
     m_channelSwitchSfxId = context.Resources.LoadResource("Resources/audio/sfx/ui_click.wav");
     m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
@@ -3541,6 +3542,14 @@ void MenuScene::RenderPlasmaOrbPreview(GameContext& context, int level, const Ve
     (void)center;
     (void)size;
     float cycle = std::fmod(animTime, 3.5f);
+
+    // High-Voltage Plasma Storm Shader Overlay in Workshop Preview
+    if (m_plasmaShaderId != 0 && context.Rules.GetRule(Rule::Graphics::EnableShader))
+    {
+        Vector2f simSize{1160.0f, 540.0f};
+        Color plasmaTint{180, 80, 255, 160};
+        context.Render.DrawScannerEffect(simSize.X, simSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, plasmaTint, animTime, m_plasmaShaderId);
+    }
 
     // Subtle plasma grid / ambient energy lines
     for (float gy = -200.0f; gy <= 200.0f; gy += 80.0f)

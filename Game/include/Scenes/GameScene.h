@@ -317,6 +317,9 @@ protected:
         std::vector<PlasmaTrailPoint> Trail;
     };
     std::vector<PlasmaOrbInstance> m_plasmaOrbs;
+    float       m_plasmaActiveTimer = 0.0f;
+    float       m_plasmaAnimTime = 0.0f;
+    std::string m_prePlasmaMusicPath;
 
     // Active Ultimate 2: Ball Disco (Disco Fever)
     float       m_discoTimer = 0.0f;

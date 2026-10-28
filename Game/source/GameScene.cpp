@@ -184,7 +184,7 @@ void GameScene::OnInit(GameContext& context)
     m_discoHitSfxIds[4] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_cowbell.wav");
     m_discoHitSfxIds[5] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_strings.wav");
     m_itemRegenRestoreSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup_buff.wav");
-    m_plasmaShaderId = context.Resources.LoadResource("Resources/shaders/plasma_orb.frag");
+    m_plasmaShaderId = context.Resources.LoadResource("Resources/shaders/plasma.frag");
     m_discoShaderId = context.Resources.LoadResource("Resources/shaders/disco_ball.frag");
 
     mp_paddleSystem = m_systemManager.AddSystem<PaddleSystem>(m_registry, context);
@@ -4135,6 +4135,24 @@ void GameScene::ClearActiveUltimates()
     m_soundWaves.clear();
     m_powerUpRainQueue.clear();
 
+    if (m_plasmaActiveTimer > 0.0f || !m_prePlasmaMusicPath.empty())
+    {
+        m_plasmaActiveTimer = 0.0f;
+        m_plasmaAnimTime = 0.0f;
+        if (mp_context)
+        {
+            if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
+            {
+                mp_context->Audio.PlayMusic(m_prePlasmaMusicPath, 80.0f, true);
+            }
+            else
+            {
+                m_playlist.PlayNext(*mp_context, 1.2f);
+            }
+            m_prePlasmaMusicPath.clear();
+        }
+    }
+
     if (m_discoTimer > 0.0f || !m_preDiscoMusicPath.empty())
     {
         m_discoTimer = 0.0f;
@@ -4272,9 +4290,25 @@ void GameScene::ExecutePlasmaOrb(int level)
         m_plasmaOrbs.push_back(orb);
     }
 
-    if (mp_context && m_plasmaLaunchSfxId != 0)
+    m_plasmaAnimTime = 0.0f;
+    m_plasmaActiveTimer = 5.0f + static_cast<float>(gen) * 1.5f;
+
+    if (mp_context)
     {
-        mp_context->Audio.PlaySfx(m_plasmaLaunchSfxId, 100.0f);
+        if (m_plasmaLaunchSfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_plasmaLaunchSfxId, 100.0f);
+        }
+
+        std::string cur = mp_context->Audio.GetCurrentMusicPath();
+        if (m_prePlasmaMusicPath.empty() || m_prePlasmaMusicPath.find("plasma_ultimate") != std::string::npos)
+        {
+            if (cur.find("plasma_ultimate") == std::string::npos && !cur.empty())
+            {
+                m_prePlasmaMusicPath = cur;
+            }
+        }
+        mp_context->Audio.PlayMusic("Resources/audio/music/plasma_ultimate.wav", 100.0f, true);
     }
     TriggerPostProcessFlash(0.04f, 0.65f, Color{150, 40, 255, 255}, 0.35f, Color{0, 220, 255, 255});
     TweenEffects::Shake(m_registry, m_camera, 0.28f, 11.0f);
@@ -4735,6 +4769,37 @@ void GameScene::UpdateUltimateAbilities(float dt)
         }
     }
     m_plasmaOrbs.insert(m_plasmaOrbs.end(), newChildren.begin(), newChildren.end());
+
+    // Plasma Ultimate duration, shader animation & music loop update
+    if (m_plasmaActiveTimer > 0.0f)
+    {
+        m_plasmaActiveTimer -= dt;
+        m_plasmaAnimTime += dt;
+
+        if (m_plasmaOrbs.empty())
+        {
+            // Allow 0.85s of residual electric storm dissipation once all orbs have detonated
+            m_plasmaActiveTimer = std::min(m_plasmaActiveTimer, 0.85f);
+        }
+
+        // When plasma ultimate ends, smoothly restore stage music
+        if (m_plasmaActiveTimer <= 0.0f)
+        {
+            m_plasmaActiveTimer = 0.0f;
+            if (mp_context)
+            {
+                if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f);
+                }
+                else
+                {
+                    m_playlist.PlayNext(*mp_context, 1.2f);
+                }
+                m_prePlasmaMusicPath.clear();
+            }
+        }
+    }
 
     // 2. Disco Soundwaves update
     for (auto it = m_soundWaves.begin(); it != m_soundWaves.end(); )
@@ -5428,6 +5493,22 @@ void GameScene::RenderUltimateMeterHUD(GameContext& context)
 
 void GameScene::RenderActiveUltimateVisuals(GameContext& context)
 {
+    // 0. Fullscreen High-Voltage Plasma Storm Shader Overlay & HUD Banner
+    if (m_plasmaActiveTimer > 0.0f)
+    {
+        if (m_plasmaShaderId != 0 && context.Rules.GetRule(Rule::Graphics::EnableShader))
+        {
+            Vector2f viewSize = context.Render.GetLogicalViewSize();
+            Color plasmaColor{190, 90, 255, static_cast<uint8_t>(std::clamp(m_plasmaActiveTimer * 50.0f, 0.0f, 215.0f))};
+            context.Render.DrawScannerEffect(viewSize.X, viewSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, plasmaColor, m_plasmaAnimTime, m_plasmaShaderId);
+        }
+
+        // Plasma High-Voltage Banner
+        float bannerPulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 16.0f);
+        Color bannerGlow = (bannerPulse > 0.5f) ? Color{180, 80, 255, 245} : Color{0, 220, 255, 245};
+        context.Render.DrawTextCentered("[ * HIGH-VOLTAGE PLASMA ANNIHILATION * ]", m_fontId, 28.0f, Transform2D{Vector2f{0.0f, -220.0f}}, bannerGlow);
+    }
+
     // 1. Plasma Orbs Rendering
     for (const auto& orb : m_plasmaOrbs)
     {
