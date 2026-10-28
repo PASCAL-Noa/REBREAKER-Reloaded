@@ -1,12 +1,19 @@
 #pragma once
 #include <cstdint>
 #include <vector>
+#include <array>
 #include <string>
+#include <memory>
 #include "Scenes/DefaultScene.h"
 #include "ECS/Entity.h"
 #include "LeaderboardManager.h"
 #include "LevelManager.h"
 #include "Core/InputActions.h"
+#include "PowerUps/PowerUpConfig.h"
+#include "Core/ProfileManager.h"
+
+namespace sf { class RenderTexture; }
+class PreviewScene;
 
 struct StarParticle
 {
@@ -18,14 +25,46 @@ struct StarParticle
     float TwinkleFreq = 2.0f;
 };
 
+struct UpgradeCardWidgets
+{
+    Entity RootPanel = NULL_ENTITY;
+    Entity CardBtn = NULL_ENTITY;
+    Entity TitleText = NULL_ENTITY;
+    Entity CategoryText = NULL_ENTITY;
+    Entity LevelText = NULL_ENTITY;
+    Entity CostText = NULL_ENTITY;
+    PowerUpType Type = PowerUpType::MultiBall;
+};
+
+struct UltimateCardWidgets
+{
+    Entity RootPanel = NULL_ENTITY;
+    Entity TitleText = NULL_ENTITY;
+    Entity CategoryText = NULL_ENTITY;
+    Entity DescText = NULL_ENTITY;
+    Entity CurTierText = NULL_ENTITY;
+    Entity NextTierText = NULL_ENTITY;
+    Entity CostText = NULL_ENTITY;
+    Entity UpgradeBtn = NULL_ENTITY;
+    Entity EquipBtn = NULL_ENTITY;
+    std::array<Entity, 5> LevelPipButtons{};
+    UltimateAbilityType Type = UltimateAbilityType::NovaShockwave;
+    int InspectedLevel = 1;
+    float SwitchTimer = 0.0f;
+};
+
 class MenuScene : public DefaultScene
 {
 public:
+    MenuScene();
+    ~MenuScene() override;
+
     void    OnInit(GameContext& context) override;
     void    OnUpdate(float dt, GameContext& context) override;
     void    OnRender(GameContext& context) override;
     void    OnDestroy(GameContext& context) override;
     [[nodiscard]] uint32_t GetPostProcessShader() const override;
+    [[nodiscard]] PostProcessParams GetPostProcessParams() const override;
 
 protected:
     [[nodiscard]] bool PreservesMusicOnDestroy() const override { return true; }
@@ -48,10 +87,24 @@ private:
     void    CreateLeaderboardModal(const GameContext& context);
     void    CreateDebugModal(const GameContext& context);
 
+    void    CreateWorkshopModal(const GameContext& context);
+    void    OpenWorkshopTab(Entity targetCanvas);
+    void    RefreshWorkshopUI();
+    void    RenderWorkshopCustomVisuals(GameContext& context);
+    void    RenderPowerUpSimulation(GameContext& context, PowerUpType type, const Vector2f& center, const Vector2f& size);
+    void    RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, int level, const Vector2f& center, const Vector2f& size, float switchTimer);
+    void    RenderNovaShockwavePreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderThunderTempestPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderTimeStasisPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    TriggerSimSfx(GameContext& context, uint32_t sfxId, int eventId, float volume = 65.0f);
+    void    TriggerPreviewChannelSwitch();
+
     void    PreloadGameAssets(GameContext& context);
 
     void    OpenModal(Entity modalCanvas);
     void    CloseModals();
+    void    OpenDescriptionModal();
+    void    CloseDescriptionModal();
 
     void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
 
@@ -66,7 +119,53 @@ private:
     Entity  m_cheatsTabBtn = NULL_ENTITY;
     Entity  m_leaderboardCanvas = NULL_ENTITY;
     Entity  m_debugCanvas = NULL_ENTITY;
+    Entity  m_workshopCanvas = NULL_ENTITY;
+    Entity  m_workshopUpgradesCanvas = NULL_ENTITY;
+    Entity  m_workshopUltimatesCanvas = NULL_ENTITY;
+    Entity  m_workshopProfileCanvas = NULL_ENTITY;
+    Entity  m_workshopActiveTabCanvas = NULL_ENTITY;
+    Entity  m_workshopBankText = NULL_ENTITY;
+    Entity  m_workshopPlayerText = NULL_ENTITY;
+    Entity  m_workshopPageText = NULL_ENTITY;
+    Entity  m_workshopProfileNameText = NULL_ENTITY;
+    Entity  m_workshopProfileStatsText = NULL_ENTITY;
     Entity  m_activeModal = NULL_ENTITY;
+
+    // Workshop Inspector Entities (Right Column)
+    Entity  m_inspectorTitleText = NULL_ENTITY;
+    Entity  m_inspectorCategoryText = NULL_ENTITY;
+    Entity  m_inspectorDescText = NULL_ENTITY;
+    Entity  m_inspectorCurTierText = NULL_ENTITY;
+    Entity  m_inspectorArrowText = NULL_ENTITY;
+    Entity  m_inspectorNextTierText = NULL_ENTITY;
+    Entity  m_inspectorUpgradeBtn = NULL_ENTITY;
+    Entity  m_inspectorDescBtn = NULL_ENTITY;
+    Entity  m_inspectorTierCostText = NULL_ENTITY;
+
+    // Workshop Description & Stats Popup Modal Entities
+    Entity  m_workshopDescCanvas = NULL_ENTITY;
+    Entity  m_workshopDescBackdrop = NULL_ENTITY;
+    Entity  m_descModalCloseBtn = NULL_ENTITY;
+    Entity  m_descModalXBtn = NULL_ENTITY;
+    Entity  m_descModalTitleText = NULL_ENTITY;
+    Entity  m_descModalCategoryText = NULL_ENTITY;
+    Entity  m_descModalDescText = NULL_ENTITY;
+    std::array<Entity, 5> m_descModalTierPanels{};
+    std::array<Entity, 5> m_descModalTierTags{};
+    std::array<Entity, 5> m_descModalTierTexts{};
+
+    std::vector<UpgradeCardWidgets> m_upgradeCards;
+    std::vector<UltimateCardWidgets> m_ultimateCards;
+    PowerUpType m_selectedPowerUp = PowerUpType::Storm;
+    int     m_workshopCurrentPage = 0;
+    int     m_workshopScrollRow = 0;
+    int     m_inspectedLevel = 1;
+    int     m_workshopPreviewLevel = 1;
+    bool    m_showDescriptionModal = false;
+    float   m_previewAnimTime = 0.0f;
+    std::vector<Entity> m_levelPipButtons;
+    Entity  m_workshopScrollUpBtn = NULL_ENTITY;
+    Entity  m_workshopScrollDownBtn = NULL_ENTITY;
 
     // Settings widgets
     Entity  m_fsBtn = NULL_ENTITY;
@@ -95,7 +194,34 @@ private:
 
     uint32_t            m_clickSfxId = 0;
     uint32_t            m_bounceSfxId = 0;
+    uint32_t            m_brickHitSfxId = 0;
+    uint32_t            m_brickDestroySfxId = 0;
+    uint32_t            m_lightningSfxId = 0;
+    uint32_t            m_conductionSfxId = 0;
+    uint32_t            m_fireballBurnSfxId = 0;
+    uint32_t            m_fireballExplosionSfxId = 0;
+    uint32_t            m_laserSfxId = 0;
+    uint32_t            m_powerupSfxId = 0;
+    uint32_t            m_powerupBuffSfxId = 0;
     uint32_t            m_shaderId = 0;
+    uint32_t            m_paddleTexId = 0;
+    uint32_t            m_ballTexId = 0;
+    uint32_t            m_brickTexId = 0;
+    uint32_t            m_brickCrackTexId = 0;
+    uint32_t            m_fireTexId = 0;
+    uint32_t            m_heartTexId = 0;
+
+    int                 m_simLastLoop = -1;
+    uint32_t            m_simAudioTriggerMask = 0;
+
+    std::unique_ptr<PreviewScene> m_previewScene;
+    std::unique_ptr<sf::RenderTexture> m_previewTexture;
+    std::unique_ptr<sf::RenderTexture> m_ultimatePreviewTexture;
+    PowerUpType         m_lastPreviewPowerUp = PowerUpType::MultiBall;
+    int                 m_lastPreviewLevel = 0;
+    float               m_previewSwitchTimer = 0.0f;
+    uint32_t            m_previewShaderId = 0;
+    uint32_t            m_channelSwitchSfxId = 0;
 
     std::vector<StarParticle> m_stars;
     float               m_gridAnimOffset = 0.0f;

@@ -77,7 +77,7 @@ public:
     void    SetTransitionTimer(float timer) { m_levelTransitionTimer = timer; }
 
     // Countdown & Ready Sequence
-    void    StartCountdown();
+    virtual void StartCountdown();
     [[nodiscard]] bool  IsCountdownActive() const noexcept { return m_countdownActive; }
     [[nodiscard]] bool  IsCountdownComplete() const noexcept { return !m_countdownActive; }
     [[nodiscard]] float GetCountdownTimer() const noexcept { return m_countdownTimer; }
@@ -104,7 +104,7 @@ public:
     void    OnReplayRequested();
 
     // Power-Up Tester callbacks
-    void    ApplyPowerUp(PowerUpType type);
+    virtual void ApplyPowerUp(PowerUpType type);
     void    SpawnPowerUpAtPaddle();
     void    SpawnAllPowerUps();
     void    RespawnBricks();
@@ -125,7 +125,7 @@ protected:
     void    SpawnFireExplosionParticles(const Vector2f& position, float radius, int count = 45);
 
     Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
-    void    SpawnPowerUp(const Vector2f& position);
+    virtual void SpawnPowerUp(const Vector2f& position);
     void    TriggerStormStrike();
     void    FireLasers();
     static Color GetPowerUpColor(PowerUpType type);
@@ -133,6 +133,7 @@ protected:
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
     void    UpdatePowerUpTimers(float dt);
+    void    UpdatePaddleSpeed();
 
     std::unique_ptr<StateMachine<GameScene>> mp_state_machine;
     Entity  m_ball{};
@@ -141,6 +142,7 @@ protected:
 
     uint32_t    m_shaderId = 0;
     uint32_t    m_crackShaderId = 0;
+    uint32_t    m_fontId = 0;
     uint32_t    m_ballTexId = 0;
     uint32_t    m_paddleTexId = 0;
     uint32_t    m_brickTexId = 0;
@@ -194,6 +196,7 @@ protected:
     BallSystem*   mp_ballSystem = nullptr;
 
     float   m_paddleSizeDuration = 0.0f;
+    bool    m_isShrinkPaddle = false;
     float   m_stormDuration = 0.0f;
     int     m_stormCharges = 0;
     float   m_laserDuration = 0.0f;
@@ -206,6 +209,8 @@ protected:
     bool    m_bottomBarrierActive = false;
     float   m_magnetDuration = 0.0f;
     float   m_ghostBallDuration = 0.0f;
+    bool    m_ghostBallPendingExpiry = false;
+    float   m_ghostBallExpiryGraceTimer = 0.0f;
 
     struct LightningSegment
     {
@@ -242,6 +247,8 @@ protected:
 
     // Dedicated UI Controller
     std::unique_ptr<GameUIController> m_uiController;
+    bool                m_musicEnabled = true;
+    bool                m_renderGameUI = true;
 
     // Ambient background & dynamic shader effects
     AmbientBackground   m_ambientBackground;

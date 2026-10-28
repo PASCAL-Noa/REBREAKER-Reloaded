@@ -2,6 +2,8 @@
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/Camera2D.h"
 #include "ECS/Components/SpriteComponent.h"
+#include <sstream>
+#include <vector>
 
 static sf::Color ToSfColor(const Color& c)
 {
@@ -105,6 +107,12 @@ void Renderer::EndDraw(uint32_t postProcessShaderId, const PostProcessParams& pa
             params.FlashColor.r / 255.f,
             params.FlashColor.g / 255.f,
             params.FlashColor.b / 255.f
+        ));
+        shader->setUniform("u_previewRect", sf::Glsl::Vec4(
+            params.PreviewRect[0],
+            params.PreviewRect[1],
+            params.PreviewRect[2],
+            params.PreviewRect[3]
         ));
 
         sf::RenderStates states;
@@ -228,26 +236,133 @@ sf::FloatRect Renderer::GetLetterboxViewport() const
 
 void Renderer::SetCamera(const Camera2D& camera)
 {
-    const Vector2f viewSize = GetLogicalViewSize();
-    sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(viewSize.X, viewSize.Y));
-    view.setCenter({camera.Position.X, camera.Position.Y});
-    view.setRotation(sf::degrees(camera.Rotation));
-    view.zoom(camera.Zoom);
-    view.setViewport(GetLetterboxViewport());
-    m_renderTexture.setView(view);
+    auto& rt = GetActiveRenderTarget();
+    if (&rt == &m_renderTexture)
+    {
+        const Vector2f viewSize = GetLogicalViewSize();
+        sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(viewSize.X, viewSize.Y));
+        view.setCenter({camera.Position.X, camera.Position.Y});
+        view.setRotation(sf::degrees(camera.Rotation));
+        view.zoom(camera.Zoom);
+        view.setViewport(GetLetterboxViewport());
+        rt.setView(view);
+    }
+    else
+    {
+        const sf::Vector2u texSize = rt.getSize();
+        sf::View view(sf::Vector2f(0.f, 0.f), sf::Vector2f(static_cast<float>(texSize.x), static_cast<float>(texSize.y)));
+        view.setCenter({camera.Position.X, camera.Position.Y});
+        view.setRotation(sf::degrees(camera.Rotation));
+        view.zoom(camera.Zoom);
+        rt.setView(view);
+    }
 }
 
 void Renderer::ResetCamera()
 {
-    const Vector2f viewSize = GetLogicalViewSize();
-    sf::View view(sf::Vector2f(viewSize.X / 2.0f, viewSize.Y / 2.0f), sf::Vector2f(viewSize.X, viewSize.Y));
-    view.setViewport(GetLetterboxViewport());
-    m_renderTexture.setView(view);
+    auto& rt = GetActiveRenderTarget();
+    if (&rt == &m_renderTexture)
+    {
+        const Vector2f viewSize = GetLogicalViewSize();
+        sf::View view(sf::Vector2f(viewSize.X / 2.0f, viewSize.Y / 2.0f), sf::Vector2f(viewSize.X, viewSize.Y));
+        view.setViewport(GetLetterboxViewport());
+        rt.setView(view);
+    }
+    else
+    {
+        const sf::Vector2u texSize = rt.getSize();
+        sf::View view(sf::Vector2f(static_cast<float>(texSize.x) * 0.5f, static_cast<float>(texSize.y) * 0.5f),
+                      sf::Vector2f(static_cast<float>(texSize.x), static_cast<float>(texSize.y)));
+        rt.setView(view);
+    }
+}
+
+void Renderer::PushRenderTarget(sf::RenderTexture& target)
+{
+    m_targetStack.push_back(&target);
+}
+
+void Renderer::PopRenderTarget()
+{
+    if (!m_targetStack.empty())
+    {
+        m_targetStack.pop_back();
+    }
+}
+
+sf::RenderTexture& Renderer::GetActiveRenderTarget()
+{
+    if (!m_targetStack.empty() && m_targetStack.back() != nullptr)
+    {
+        return *m_targetStack.back();
+    }
+    return m_renderTexture;
+}
+
+const sf::RenderTexture& Renderer::GetActiveRenderTarget() const
+{
+    if (!m_targetStack.empty() && m_targetStack.back() != nullptr)
+    {
+        return *m_targetStack.back();
+    }
+    return m_renderTexture;
+}
+
+void Renderer::DrawRawTexture(const sf::Texture& texture, float width, float height, const Transform2D& transform, Color tint, uint32_t shaderId, float time, float effectProgress)
+{
+    sf::Sprite sprite(texture);
+    const sf::Vector2u texSize = texture.getSize();
+    if (texSize.x == 0 || texSize.y == 0) return;
+
+    sprite.setOrigin({static_cast<float>(texSize.x) * 0.5f, static_cast<float>(texSize.y) * 0.5f});
+    sprite.setScale({(width / static_cast<float>(texSize.x)) * transform.Scale.X,
+                     (height / static_cast<float>(texSize.y)) * transform.Scale.Y});
+    sprite.setPosition({transform.Position.X, transform.Position.Y});
+    sprite.setRotation(sf::degrees(transform.Rotation));
+    sprite.setColor(ToSfColor(tint));
+
+    sf::RenderStates states;
+    states.blendMode = sf::BlendAlpha;
+
+    if (shaderId != 0 && sf::Shader::isAvailable())
+    {
+        if (sf::Shader* shader = m_resources.Get<sf::Shader>(shaderId))
+        {
+            shader->setUniform("u_texture", sf::Shader::CurrentTexture);
+            shader->setUniform("u_time", time);
+            shader->setUniform("u_switch_progress", effectProgress);
+            shader->setUniform("u_resolution", sf::Glsl::Vec2(width, height));
+            states.shader = shader;
+        }
+    }
+
+    GetActiveRenderTarget().draw(sprite, states);
 }
 
 Vector2f Renderer::GetLogicalViewSize() const
 {
     return Vector2f{kLogicalHeight * GetEffectiveAspectRatio(), kLogicalHeight};
+}
+
+std::array<float, 4> Renderer::WorldRectToNormalizedUV(const Vector2f& center, const Vector2f& size) const
+{
+    const Vector2f viewSize = GetLogicalViewSize();
+    if (viewSize.X <= 0.0f || viewSize.Y <= 0.0f)
+        return {0.0f, 0.0f, 0.0f, 0.0f};
+
+    float lxMin = (center.X - size.X * 0.5f) / viewSize.X;
+    float lxMax = (center.X + size.X * 0.5f) / viewSize.X;
+    float lyMin = (center.Y - size.Y * 0.5f) / viewSize.Y;
+    float lyMax = (center.Y + size.Y * 0.5f) / viewSize.Y;
+
+    const sf::FloatRect vp = GetLetterboxViewport();
+    float uMin = vp.position.x + lxMin * vp.size.x;
+    float uMax = vp.position.x + lxMax * vp.size.x;
+    // SFML RenderTexture FBO has Y inverted in sprite texture coordinates
+    float vMin = 1.0f - (vp.position.y + lyMax * vp.size.y);
+    float vMax = 1.0f - (vp.position.y + lyMin * vp.size.y);
+
+    return { uMin, vMin, uMax, vMax };
 }
 
 Vector2f Renderer::MapPixelToCoords(const Vector2f& pixelPos) const
@@ -316,7 +431,7 @@ void Renderer::DrawSprite(const SpriteComponent& spriteData, const Transform2D& 
         }
     }
     
-    m_renderTexture.draw(sprite, states);
+    GetActiveRenderTarget().draw(sprite, states);
 }
 
 void Renderer::DrawCircle(float radius, const Transform2D& transform, Color color, BlendMode blendMode)
@@ -325,7 +440,7 @@ void Renderer::DrawCircle(float radius, const Transform2D& transform, Color colo
     circle.setOrigin({radius, radius});
     ApplyTransform(circle, transform);
     circle.setFillColor(ToSfColor(color));
-    RenderItem(m_renderTexture, circle, blendMode);
+    RenderItem(GetActiveRenderTarget(), circle, blendMode);
 }
 
 void Renderer::DrawRectangle(float width, float height, const Transform2D& transform, Color color, BlendMode blendMode)
@@ -334,7 +449,7 @@ void Renderer::DrawRectangle(float width, float height, const Transform2D& trans
     rect.setOrigin({width / 2.0f, height / 2.0f});
     ApplyTransform(rect, transform);
     rect.setFillColor(ToSfColor(color));
-    RenderItem(m_renderTexture, rect, blendMode);
+    RenderItem(GetActiveRenderTarget(), rect, blendMode);
 }
 
 void Renderer::DrawScannerEffect(float width, float height, const Transform2D& transform, Color color, float time, uint32_t shaderId)
@@ -358,7 +473,7 @@ void Renderer::DrawScannerEffect(float width, float height, const Transform2D& t
         }
     }
 
-    m_renderTexture.draw(rect, states);
+    GetActiveRenderTarget().draw(rect, states);
 }
 
 void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize, const Transform2D& transform, Color color, BlendMode blendMode)
@@ -368,7 +483,7 @@ void Renderer::DrawText(const std::string& text, uint32_t fontId, float fontSize
         sf::Text sfText(*font, text, static_cast<unsigned int>(fontSize));
         ApplyTransform(sfText, transform);
         sfText.setFillColor(ToSfColor(color));
-        RenderItem(m_renderTexture, sfText, blendMode);
+        RenderItem(GetActiveRenderTarget(), sfText, blendMode);
     }
 }
 
@@ -376,12 +491,43 @@ void Renderer::DrawTextCentered(const std::string& text, uint32_t fontId, float 
 {
     if (sf::Font* font = m_resources.Get<sf::Font>(fontId))
     {
+        if (text.find('\n') != std::string::npos)
+        {
+            std::vector<std::string> lines;
+            std::stringstream ss(text);
+            std::string line;
+            while (std::getline(ss, line))
+            {
+                lines.push_back(line);
+            }
+            if (!lines.empty())
+            {
+                float lineSpacing = fontSize * 1.25f;
+                float totalH = static_cast<float>(lines.size() - 1) * lineSpacing;
+                float startY = transform.Position.Y - totalH * 0.5f;
+
+                for (size_t i = 0; i < lines.size(); ++i)
+                {
+                    if (lines[i].empty()) continue;
+                    sf::Text sfLine(*font, lines[i], static_cast<unsigned int>(fontSize));
+                    const sf::FloatRect bounds = sfLine.getLocalBounds();
+                    sfLine.setOrigin({bounds.position.x + bounds.size.x * 0.5f, bounds.position.y + bounds.size.y * 0.5f});
+                    Transform2D lineTransform = transform;
+                    lineTransform.Position.Y = startY + static_cast<float>(i) * lineSpacing;
+                    ApplyTransform(sfLine, lineTransform);
+                    sfLine.setFillColor(ToSfColor(color));
+                    RenderItem(GetActiveRenderTarget(), sfLine, blendMode);
+                }
+                return;
+            }
+        }
+
         sf::Text sfText(*font, text, static_cast<unsigned int>(fontSize));
         const sf::FloatRect bounds = sfText.getLocalBounds();
         sfText.setOrigin({bounds.position.x + bounds.size.x * 0.5f, bounds.position.y + bounds.size.y * 0.5f});
         ApplyTransform(sfText, transform);
         sfText.setFillColor(ToSfColor(color));
-        RenderItem(m_renderTexture, sfText, blendMode);
+        RenderItem(GetActiveRenderTarget(), sfText, blendMode);
     }
 }
 
@@ -394,6 +540,77 @@ Vector2f Renderer::GetTextSize(const std::string& text, uint32_t fontId, float f
         return {bounds.size.x, bounds.size.y};
     }
     return {0.0f, 0.0f};
+}
+
+std::string Renderer::WrapText(const std::string& text, float maxWidth, uint32_t fontId, float fontSize) const
+{
+    if (maxWidth <= 0.0f || text.empty()) return text;
+
+    sf::Font* font = m_resources.Get<sf::Font>(fontId);
+    auto measureWidth = [&](const std::string& str) -> float {
+        if (font)
+        {
+            sf::Text sfText(*font, str, static_cast<unsigned int>(fontSize));
+            return sfText.getLocalBounds().size.x;
+        }
+        return static_cast<float>(str.size()) * (fontSize * 0.55f);
+    };
+
+    std::istringstream stream(text);
+    std::string result;
+    std::string paragraph;
+    bool firstParagraph = true;
+
+    while (std::getline(stream, paragraph))
+    {
+        if (!firstParagraph)
+        {
+            result += '\n';
+        }
+        firstParagraph = false;
+
+        if (paragraph.empty()) continue;
+
+        std::istringstream wordStream(paragraph);
+        std::string currentLine;
+        std::string word;
+
+        while (wordStream >> word)
+        {
+            if (currentLine.empty())
+            {
+                currentLine = word;
+            }
+            else
+            {
+                std::string testLine = currentLine + " " + word;
+                if (measureWidth(testLine) <= maxWidth)
+                {
+                    currentLine = testLine;
+                }
+                else
+                {
+                    if (!result.empty() && result.back() != '\n')
+                    {
+                        result += '\n';
+                    }
+                    result += currentLine;
+                    currentLine = word;
+                }
+            }
+        }
+
+        if (!currentLine.empty())
+        {
+            if (!result.empty() && result.back() != '\n')
+            {
+                result += '\n';
+            }
+            result += currentLine;
+        }
+    }
+
+    return result;
 }
 
 void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType type, uint32_t textureId, BlendMode blendMode)
@@ -416,7 +633,7 @@ void Renderer::DrawVertices(const std::vector<Vertex> &vertices, PrimitiveType t
         states.texture = m_resources.Get<sf::Texture>(textureId);
     }
 
-    m_renderTexture.draw(m_vertexScratch.data(), m_vertexScratch.size(), ToSfPrimitiveType(type), states);
+    GetActiveRenderTarget().draw(m_vertexScratch.data(), m_vertexScratch.size(), ToSfPrimitiveType(type), states);
 }
 
 void Renderer::DrawRectangleOutline(float width, float height, const Transform2D& transform, Color color, float thickness)
@@ -429,7 +646,7 @@ void Renderer::DrawRectangleOutline(float width, float height, const Transform2D
     rect.setFillColor(sf::Color::Transparent);
     rect.setOutlineColor(ToSfColor(color));
     rect.setOutlineThickness(thickness);
-    RenderItem(m_renderTexture, rect, BlendMode::Alpha);
+    RenderItem(GetActiveRenderTarget(), rect, BlendMode::Alpha);
 }
 
 void Renderer::DrawCircleOutline(float radius, const Transform2D& transform, Color color, float thickness)
@@ -442,7 +659,7 @@ void Renderer::DrawCircleOutline(float radius, const Transform2D& transform, Col
     circle.setFillColor(sf::Color::Transparent);
     circle.setOutlineColor(ToSfColor(color));
     circle.setOutlineThickness(thickness);
-    RenderItem(m_renderTexture, circle, BlendMode::Alpha);
+    RenderItem(GetActiveRenderTarget(), circle, BlendMode::Alpha);
 }
 
 void Renderer::DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, float thickness)
@@ -458,7 +675,7 @@ void Renderer::DrawLine(const Vector2f& p1, const Vector2f& p2, Color color, flo
     line.setRotation(sf::degrees(angle));
     line.setFillColor(ToSfColor(color));
 
-    m_renderTexture.draw(line);
+    GetActiveRenderTarget().draw(line);
 }
 
 Vector2f Renderer::GetTextureSize(uint32_t textureId) const
@@ -582,8 +799,18 @@ void Renderer::DrawSceneTransition(SceneTransitionType type, float progress, Col
 
 void Renderer::BeginLightingPass(Color ambientDarkness)
 {
+    auto& rt = GetActiveRenderTarget();
+    const sf::Vector2u targetSize = rt.getSize();
+    if (m_lightMapTexture.getSize() != targetSize && targetSize.x > 0 && targetSize.y > 0)
+    {
+        sf::ContextSettings settings;
+        settings.antiAliasingLevel = 4;
+        (void)m_lightMapTexture.resize(targetSize, settings);
+        m_lightMapTexture.setSmooth(true);
+    }
+
     // Match current camera view and clear to ambient darkness level
-    m_lightMapTexture.setView(m_renderTexture.getView());
+    m_lightMapTexture.setView(rt.getView());
     m_lightMapTexture.clear(sf::Color(ambientDarkness.r, ambientDarkness.g, ambientDarkness.b, ambientDarkness.a));
 }
 
@@ -603,15 +830,14 @@ void Renderer::DrawPointLight(const Vector2f& position, float radius, Color colo
     const sf::Color centerColor(r, g, b, a);
     const sf::Color edgeColor(0, 0, 0, 0);
 
-    // Triangle fan with center vertex and outer circle vertices
-    std::vector<sf::Vertex> fanVertices;
-    fanVertices.reserve(kSegments + 2);
-    fanVertices.emplace_back(sf::Vector2f(position.X, position.Y), centerColor);
+    // Triangle fan with center vertex and outer circle vertices (zero heap allocation)
+    std::array<sf::Vertex, kSegments + 2> fanVertices;
+    fanVertices[0] = sf::Vertex(sf::Vector2f(position.X, position.Y), centerColor);
 
     for (int i = 0; i <= kSegments; ++i)
     {
         const float angle = static_cast<float>(i) * (2.0f * kPi / static_cast<float>(kSegments));
-        fanVertices.emplace_back(
+        fanVertices[i + 1] = sf::Vertex(
             sf::Vector2f(position.X + radius * std::cos(angle), position.Y + radius * std::sin(angle)),
             edgeColor
         );
@@ -643,14 +869,13 @@ void Renderer::DrawConeLight(const Vector2f& position, float radius, float direc
     const float startAngle = centerRad - halfCone;
     const float totalAngle = coneAngleDeg * kDegToRad;
 
-    std::vector<sf::Vertex> fanVertices;
-    fanVertices.reserve(kSegments + 2);
-    fanVertices.emplace_back(sf::Vector2f(position.X, position.Y), apexColor);
+    std::array<sf::Vertex, kSegments + 2> fanVertices;
+    fanVertices[0] = sf::Vertex(sf::Vector2f(position.X, position.Y), apexColor);
 
     for (int i = 0; i <= kSegments; ++i)
     {
         const float angle = startAngle + (static_cast<float>(i) / static_cast<float>(kSegments)) * totalAngle;
-        fanVertices.emplace_back(
+        fanVertices[i + 1] = sf::Vertex(
             sf::Vector2f(position.X + radius * std::cos(angle), position.Y + radius * std::sin(angle)),
             edgeColor
         );
@@ -692,7 +917,7 @@ void Renderer::DrawCapsuleLight(const Vector2f& start, const Vector2f& end, floa
     sf::RenderStates states;
     states.blendMode = ToSfBlendMode(blendMode);
 
-    // 1. Central rectangular falloff body
+    // 1. Central rectangular falloff body (zero heap allocation)
     const sf::Vector2f c1(start.X, start.Y);
     const sf::Vector2f c2(end.X, end.Y);
     const sf::Vector2f t1(start.X + nx * radius, start.Y + ny * radius);
@@ -700,37 +925,22 @@ void Renderer::DrawCapsuleLight(const Vector2f& start, const Vector2f& end, floa
     const sf::Vector2f b1(start.X - nx * radius, start.Y - ny * radius);
     const sf::Vector2f b2(end.X - nx * radius, end.Y - ny * radius);
 
-    std::vector<sf::Vertex> bodyVertices;
-    bodyVertices.reserve(12);
-
-    // Top quad
-    bodyVertices.emplace_back(c1, centerColor);
-    bodyVertices.emplace_back(c2, centerColor);
-    bodyVertices.emplace_back(t2, edgeColor);
-
-    bodyVertices.emplace_back(c1, centerColor);
-    bodyVertices.emplace_back(t2, edgeColor);
-    bodyVertices.emplace_back(t1, edgeColor);
-
-    // Bottom quad
-    bodyVertices.emplace_back(c1, centerColor);
-    bodyVertices.emplace_back(b1, edgeColor);
-    bodyVertices.emplace_back(b2, edgeColor);
-
-    bodyVertices.emplace_back(c1, centerColor);
-    bodyVertices.emplace_back(b2, edgeColor);
-    bodyVertices.emplace_back(c2, centerColor);
+    std::array<sf::Vertex, 12> bodyVertices = {
+        sf::Vertex(c1, centerColor), sf::Vertex(c2, centerColor), sf::Vertex(t2, edgeColor),
+        sf::Vertex(c1, centerColor), sf::Vertex(t2, edgeColor), sf::Vertex(t1, edgeColor),
+        sf::Vertex(c1, centerColor), sf::Vertex(b1, edgeColor), sf::Vertex(b2, edgeColor),
+        sf::Vertex(c1, centerColor), sf::Vertex(b2, edgeColor), sf::Vertex(c2, centerColor)
+    };
 
     m_lightMapTexture.draw(bodyVertices.data(), bodyVertices.size(), sf::PrimitiveType::Triangles, states);
 
-    // 2. End-cap semicircles
+    // 2. End-cap semicircles (zero heap allocation)
     constexpr int kCapSegments = 16;
     constexpr float kPi = 3.14159265f;
 
     // Right cap at `end`
-    std::vector<sf::Vertex> rightCap;
-    rightCap.reserve(kCapSegments + 2);
-    rightCap.emplace_back(c2, centerColor);
+    std::array<sf::Vertex, kCapSegments + 2> rightCap;
+    rightCap[0] = sf::Vertex(c2, centerColor);
     for (int i = 0; i <= kCapSegments; ++i)
     {
         const float angle = -kPi * 0.5f + (static_cast<float>(i) / static_cast<float>(kCapSegments)) * kPi;
@@ -738,14 +948,13 @@ void Renderer::DrawCapsuleLight(const Vector2f& start, const Vector2f& end, floa
         const float sinA = std::sin(angle);
         const float px = end.X + (tx * cosA - ty * sinA) * radius;
         const float py = end.Y + (ty * cosA + tx * sinA) * radius;
-        rightCap.emplace_back(sf::Vector2f(px, py), edgeColor);
+        rightCap[i + 1] = sf::Vertex(sf::Vector2f(px, py), edgeColor);
     }
     m_lightMapTexture.draw(rightCap.data(), rightCap.size(), sf::PrimitiveType::TriangleFan, states);
 
     // Left cap at `start`
-    std::vector<sf::Vertex> leftCap;
-    leftCap.reserve(kCapSegments + 2);
-    leftCap.emplace_back(c1, centerColor);
+    std::array<sf::Vertex, kCapSegments + 2> leftCap;
+    leftCap[0] = sf::Vertex(c1, centerColor);
     for (int i = 0; i <= kCapSegments; ++i)
     {
         const float angle = kPi * 0.5f + (static_cast<float>(i) / static_cast<float>(kCapSegments)) * kPi;
@@ -753,7 +962,7 @@ void Renderer::DrawCapsuleLight(const Vector2f& start, const Vector2f& end, floa
         const float sinA = std::sin(angle);
         const float px = start.X + (tx * cosA - ty * sinA) * radius;
         const float py = start.Y + (ty * cosA + tx * sinA) * radius;
-        leftCap.emplace_back(sf::Vector2f(px, py), edgeColor);
+        leftCap[i + 1] = sf::Vertex(sf::Vector2f(px, py), edgeColor);
     }
     m_lightMapTexture.draw(leftCap.data(), leftCap.size(), sf::PrimitiveType::TriangleFan, states);
 }
@@ -762,18 +971,19 @@ void Renderer::EndLightingPass(BlendMode compositeBlendMode)
 {
     m_lightMapTexture.display();
 
-    // Composite light map over m_renderTexture in normalized screen overlay space
-    const sf::View prevView = m_renderTexture.getView();
-    const sf::Vector2u texSize = m_renderTexture.getSize();
+    // Composite light map over active render target in normalized screen overlay space
+    auto& rt = GetActiveRenderTarget();
+    const sf::View prevView = rt.getView();
+    const sf::Vector2u texSize = rt.getSize();
     const sf::View screenView(sf::FloatRect({0.0f, 0.0f}, {static_cast<float>(texSize.x), static_cast<float>(texSize.y)}));
-    m_renderTexture.setView(screenView);
+    rt.setView(screenView);
 
     sf::Sprite lightSprite(m_lightMapTexture.getTexture());
     sf::RenderStates states;
     states.blendMode = ToSfBlendMode(compositeBlendMode);
-    m_renderTexture.draw(lightSprite, states);
+    rt.draw(lightSprite, states);
 
-    m_renderTexture.setView(prevView);
+    rt.setView(prevView);
 }
 
 

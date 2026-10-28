@@ -382,16 +382,70 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
     else
     {
         // Mouse mode
+        struct ButtonHitItem
+        {
+            Entity entity;
+            int zOrder;
+            int depth;
+            uint32_t entityId;
+        };
+        std::vector<ButtonHitItem> hitList;
+
         registry.View<RectTransform, ButtonComponent>([&](const Entity entity, const RectTransform& transform, ButtonComponent& button)
         {
-            if (!transform.IsActive || !IsParentEnabled(registry, transform.Parent)) return;
+            if (!transform.IsActive || !IsParentEnabled(registry, transform.Parent))
+            {
+                button.State = ButtonState::Normal;
+                return;
+            }
 
             Vector2f absolutePos = GetAbsolutePosition(registry, entity, transform, viewSize);
             bool isHovered = IsPointInsideRect(logicalMousePos, absolutePos, transform.Size);
 
             if (isHovered)
             {
-                s_focusedButton = entity;
+                int depth = 0;
+                Entity curr = transform.Parent;
+                while (curr != NULL_ENTITY && registry.HasComponent<RectTransform>(curr))
+                {
+                    depth++;
+                    curr = registry.GetComponent<RectTransform>(curr).Parent;
+                    if (depth > 64) break;
+                }
+                hitList.push_back(ButtonHitItem{
+                    .entity = entity,
+                    .zOrder = transform.ZOrder,
+                    .depth = depth,
+                    .entityId = static_cast<uint32_t>(entity)
+                });
+            }
+            else
+            {
+                if (button.State == ButtonState::Hovered && button.OnHoverExit)
+                {
+                    button.OnHoverExit();
+                }
+                button.State = ButtonState::Normal;
+            }
+        });
+
+        Entity topHovered = NULL_ENTITY;
+        if (!hitList.empty())
+        {
+            std::stable_sort(hitList.begin(), hitList.end(), [](const ButtonHitItem& a, const ButtonHitItem& b) {
+                if (a.zOrder != b.zOrder) return a.zOrder > b.zOrder;
+                if (a.depth != b.depth) return a.depth > b.depth;
+                return a.entityId > b.entityId;
+            });
+            topHovered = hitList.front().entity;
+        }
+
+        for (const auto& item : hitList)
+        {
+            auto& button = registry.GetComponent<ButtonComponent>(item.entity);
+            if (item.entity == topHovered)
+            {
+                s_focusedButton = topHovered;
                 if (isLeftMousePress)
                 {
                     button.State = ButtonState::Pressed;
@@ -399,7 +453,7 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
                 else if (isLeftMouseRelease && button.State == ButtonState::Pressed)
                 {
                     button.State = ButtonState::Hovered;
-                    clickedEntity = entity;
+                    clickedEntity = topHovered;
                     onClickToCall = button.OnClick;
                 }
                 else if (!isLeftMouseDown && button.State != ButtonState::Hovered)
@@ -421,7 +475,7 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
                 }
                 button.State = ButtonState::Normal;
             }
-        });
+        }
     }
 
     if (clickedEntity != NULL_ENTITY && registry.HasComponent<ButtonComponent>(clickedEntity))
@@ -620,14 +674,18 @@ void UISystem::RenderText(Registry& registry, const GameContext& context, Entity
     const auto& textComp = registry.GetComponent<TextComponent>(entity);
     if (!textComp.Text.empty())
     {
+        std::string displayText = (textComp.MaxWidth > 0.0f)
+            ? context.Render.WrapText(textComp.Text, textComp.MaxWidth, textComp.FontId, textComp.FontSize)
+            : textComp.Text;
+
         Vector2f textPos = absolutePos + textComp.Offset;
         if (textComp.TextCenter)
         {
-            context.Render.DrawTextCentered(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
+            context.Render.DrawTextCentered(displayText, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
         }
         else
         {
-            context.Render.DrawText(textComp.Text, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
+            context.Render.DrawText(displayText, textComp.FontId, textComp.FontSize, Transform2D{textPos}, textComp.Tint);
         }
     }
 }
@@ -709,9 +767,75 @@ void UISystem::OnRender(Registry& registry, const GameContext& context)
     context.Render.ResetCamera();
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
 
+    struct UIRenderItem
+    {
+        Entity entity;
+        int zOrder;
+        int depth;
+        int typePriority;
+        uint32_t entityId;
+    };
+
+    std::vector<UIRenderItem> renderList;
+    renderList.reserve(128);
+
     registry.View<RectTransform>([&](Entity entity, const RectTransform& transform)
     {
         if (!transform.IsActive || !IsParentEnabled(registry, transform.Parent)) return;
+
+        int depth = 0;
+        Entity curr = transform.Parent;
+        while (curr != NULL_ENTITY && registry.HasComponent<RectTransform>(curr))
+        {
+            depth++;
+            curr = registry.GetComponent<RectTransform>(curr).Parent;
+            if (depth > 64) break;
+        }
+
+        // Priority order:
+        // 0: Pure Panels (backgrounds, frames)
+        // 1: Buttons (including buttons with built-in text label)
+        // 2: Sprites
+        // 3: Standalone Texts / TextInputs
+        int typePriority = 0;
+        if (registry.HasComponent<ButtonComponent>(entity))
+        {
+            typePriority = 1;
+        }
+        else if (registry.HasComponent<SpriteComponent>(entity))
+        {
+            typePriority = 2;
+        }
+        else if (registry.HasComponent<TextComponent>(entity) || registry.HasComponent<TextInputComponent>(entity))
+        {
+            typePriority = 3;
+        }
+        else if (registry.HasComponent<PanelComponent>(entity))
+        {
+            typePriority = 0;
+        }
+
+        renderList.push_back(UIRenderItem{
+            .entity = entity,
+            .zOrder = transform.ZOrder,
+            .depth = depth,
+            .typePriority = typePriority,
+            .entityId = static_cast<uint32_t>(entity)
+        });
+    });
+
+    std::stable_sort(renderList.begin(), renderList.end(), [](const UIRenderItem& a, const UIRenderItem& b) {
+        if (a.zOrder != b.zOrder) return a.zOrder < b.zOrder;
+        if (a.depth != b.depth) return a.depth < b.depth;
+        if (a.typePriority != b.typePriority) return a.typePriority < b.typePriority;
+        return a.entityId < b.entityId;
+    });
+
+    for (const auto& item : renderList)
+    {
+        Entity entity = item.entity;
+        if (!registry.HasComponent<RectTransform>(entity)) continue;
+        const auto& transform = registry.GetComponent<RectTransform>(entity);
 
         const Vector2f absolutePos = GetAbsolutePosition(registry, entity, transform, viewSize);
         Transform2D drawTransform{absolutePos};
@@ -728,5 +852,5 @@ void UISystem::OnRender(Registry& registry, const GameContext& context)
         RenderSprite(registry, context, entity, transform, drawTransform);
         RenderText(registry, context, entity, absolutePos);
         RenderTextInput(registry, context, entity, transform, drawTransform, absolutePos);
-    });
+    }
 }

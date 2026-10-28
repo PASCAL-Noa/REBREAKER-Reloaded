@@ -5,6 +5,7 @@
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleAudio.h"
 #include "Scenes/GameScene.h"
+#include "Scenes/PreviewScene.h"
 #include "Scenes/SampleStateMachine.h"
 #include "Scenes/SampleTween.h"
 #include "Scenes/SampleUI.h"
@@ -37,7 +38,7 @@ void DefaultScene::OnUpdate(float dt, GameContext& context)
     mp_context = &context;
 
     // Universal quick scene navigation from anywhere
-    if (context.Input.IsKeyPress(KeyCode::F1))      context.Scenes.LoadScene<SandBox>();
+    if (context.Input.IsKeyPress(KeyCode::F1) || context.Input.IsKeyPress(KeyCode::F10)) context.Scenes.LoadScene<PreviewScene>();
     else if (context.Input.IsKeyPress(KeyCode::F2)) context.Scenes.LoadScene<SamplePhysics>();
     else if (context.Input.IsKeyPress(KeyCode::F3)) context.Scenes.LoadScene<SampleAudio>();
     else if (context.Input.IsKeyPress(KeyCode::F4)) context.Scenes.LoadScene<GameScene>();
@@ -62,9 +63,9 @@ void DefaultScene::OnDestroy(GameContext& context)
 {
     if (mp_context)
     {
-        mp_context->Audio.StopSfx();
         if (!PreservesMusicOnDestroy())
         {
+            mp_context->Audio.StopSfx();
             mp_context->Audio.StopMusic();
         }
     }

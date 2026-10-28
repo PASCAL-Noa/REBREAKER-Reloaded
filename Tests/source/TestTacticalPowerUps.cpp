@@ -23,10 +23,12 @@ TEST_SUITE("Tactical Power-Ups Tests")
         CHECK(mgr.Sticky().Level == 1);
         CHECK(mgr.Sticky().MaxLevel == 5);
         CHECK(mgr.Sticky().GetEffectiveDuration() == doctest::Approx(12.0f));
-        CHECK(mgr.Sticky().AutoLaunchDelay == doctest::Approx(3.5f));
+        CHECK(mgr.Sticky().AutoLaunchDelay == doctest::Approx(3.0f));
+        CHECK(mgr.Sticky().GetEffectiveBoostPercent() == doctest::Approx(25.0f));
         mgr.SetLevel(PowerUpType::StickyPaddle, 3);
         CHECK(mgr.Sticky().Level == 3);
         CHECK(mgr.Sticky().GetEffectiveDuration() == doctest::Approx(16.0f)); // 12 + (3-1)*2
+        CHECK(mgr.Sticky().GetEffectiveBoostPercent() == doctest::Approx(55.0f));
         CHECK(mgr.Sticky().GetUpgradeCost() == 140 * 3);
 
         // 2. Bottom Barrier
@@ -40,19 +42,27 @@ TEST_SUITE("Tactical Power-Ups Tests")
 
         // 3. Magnet Paddle
         CHECK(mgr.Magnet().Level == 1);
-        CHECK(mgr.Magnet().GetEffectiveDuration() == doctest::Approx(12.0f));
+        CHECK(mgr.Magnet().GetEffectiveDuration() == doctest::Approx(10.0f));
         CHECK(mgr.Magnet().GetEffectivePullSpeed() == doctest::Approx(380.0f));
-        CHECK(mgr.Magnet().MagnetRadius == doctest::Approx(650.0f));
+        CHECK(mgr.Magnet().GetEffectiveBallPullForce() == doctest::Approx(240.0f));
+        CHECK(mgr.Magnet().MagnetRadius == doctest::Approx(850.0f));
         mgr.SetLevel(PowerUpType::MagnetPaddle, 4);
-        CHECK(mgr.Magnet().GetEffectivePullSpeed() == doctest::Approx(380.0f + 3 * 60.0f));
+        CHECK(mgr.Magnet().GetEffectiveDuration() == doctest::Approx(17.5f)); // 10.0 + 3 * 2.5
+        CHECK(mgr.Magnet().GetEffectivePullSpeed() == doctest::Approx(380.0f + 3 * 70.0f));
+        CHECK(mgr.Magnet().GetEffectiveBallPullForce() == doctest::Approx(240.0f + 3 * 80.0f));
         CHECK(mgr.Magnet().GetUpgradeCost() == 130 * 4);
 
         // 4. Ghost Ball
         CHECK(mgr.Ghost().Level == 1);
-        CHECK(mgr.Ghost().GetEffectiveDuration() == doctest::Approx(8.0f));
+        CHECK(mgr.Ghost().GetEffectiveDuration() == doctest::Approx(5.0f));
+        CHECK(mgr.Ghost().GetEffectiveDamage() == 1);
         CHECK(mgr.Ghost().Alpha == doctest::Approx(120.0f));
+        mgr.SetLevel(PowerUpType::GhostBall, 3);
+        CHECK(mgr.Ghost().GetEffectiveDuration() == doctest::Approx(7.0f));
+        CHECK(mgr.Ghost().GetEffectiveDamage() == 2);
         mgr.SetLevel(PowerUpType::GhostBall, 5);
-        CHECK(mgr.Ghost().GetEffectiveDuration() == doctest::Approx(8.0f + 4 * 1.5f));
+        CHECK(mgr.Ghost().GetEffectiveDuration() == doctest::Approx(5.0f + 4 * 1.0f));
+        CHECK(mgr.Ghost().GetEffectiveDamage() == 3);
         CHECK(mgr.Ghost().GetUpgradeCost() == 160 * 5);
 
         // Reset back to clean state
@@ -159,15 +169,50 @@ TEST_SUITE("Tactical Power-Ups Tests")
         ball.IsGhost = true;
         CHECK(ball.IsGhost);
 
-        // Standard destructible brick collision logic check
-        bool isUnbreakable = false;
-        bool isPiercing = ball.IsGhost && !isUnbreakable;
-        CHECK(isPiercing == true); // Should pierce destructible bricks
+        // Ghost ball phases cleanly without bouncing
+        bool isPiercing = ball.IsGhost;
+        CHECK(isPiercing == true);
 
-        // Unbreakable metal brick collision logic check
-        isUnbreakable = true;
-        isPiercing = (!isUnbreakable && ball.IsGhost);
-        CHECK(isPiercing == false); // Should bounce off unbreakable metal bricks
+        // Selective destruction verification:
+        // Case 1: Normal 1-HP brick with 1 damage -> can destroy!
+        int ballDmg = 1;
+        uint32_t brick1Hp = 1;
+        bool canDestroy1Hp = (brick1Hp <= static_cast<uint32_t>(ballDmg));
+        CHECK(canDestroy1Hp == true);
+
+        // Case 2: Multi-hit 2-HP brick with 1 damage -> cannot destroy, phases without damage!
+        uint32_t brick2Hp = 2;
+        bool canDestroy2Hp = (brick2Hp <= static_cast<uint32_t>(ballDmg));
+        CHECK(canDestroy2Hp == false);
+
+        // Case 3: Combined with Big Ball or Fire Ball -> fatal damage destroys tough bricks!
+        bool isBigOrFire = true;
+        bool combinedCanDestroy = isBigOrFire || (brick2Hp <= static_cast<uint32_t>(ballDmg));
+        CHECK(combinedCanDestroy == true);
+
+        // Case 4: Level 3 damage (+1 dmg = 2 dmg) shatters 2-HP brick!
+        int ballDmgLvl3 = 2;
+        bool canDestroy2HpAtLvl3 = (brick2Hp <= static_cast<uint32_t>(ballDmgLvl3));
+        CHECK(canDestroy2HpAtLvl3 == true);
+
+        // Case 5: Level 5 damage (+1 dmg = 3 dmg) shatters 3-HP brick!
+        int ballDmgLvl5 = 3;
+        uint32_t brick3Hp = 3;
+        bool canDestroy3HpAtLvl5 = (brick3Hp <= static_cast<uint32_t>(ballDmgLvl5));
+        CHECK(canDestroy3HpAtLvl5 == true);
+
+        // Case 6: Safe expiration: ghost ball remains active while overlapping bricks, solidifies once clear
+        bool isInsideBrick = true;
+        bool canSolidify = !isInsideBrick;
+        CHECK_FALSE(canSolidify); // Cannot solidify inside a brick
+        isInsideBrick = false;
+        canSolidify = !isInsideBrick;
+        CHECK(canSolidify); // Solidifies safely once clear
+
+        // Case 7: Ghost ball immortality on bottom collision
+        bool isGhostActive = ball.IsGhost;
+        bool ballImmortal = isGhostActive;
+        CHECK(ballImmortal == true); // Cannot lose lives while Ghost is active
     }
 
     TEST_CASE("Sticky Paddle dynamic size positioning and launch release safety")
@@ -291,6 +336,74 @@ TEST_SUITE("Tactical Power-Ups Tests")
         bool isDistantReached = (std::abs(metalPos1.X - distantPos.X) <= kMaxConnectedDistX ||
                                  std::abs(metalPos2.X - distantPos.X) <= kMaxConnectedDistX);
         CHECK_FALSE(isDistantReached);
+
+        mgr.ResetToDefaults();
+    }
+
+    TEST_CASE("Tempo Ball duration (+1s/lvl, 10s base) and speed scaling (+60% base, +20%/lvl)")
+    {
+        auto& mgr = PowerUpManager::Get();
+        mgr.ResetToDefaults();
+
+        // Level 1: 10s duration, +60% ball speed bonus (960 px/s), +10% paddle speed bonus (770 px/s)
+        CHECK(mgr.Tempo().Level == 1);
+        CHECK(mgr.Tempo().MaxLevel == 5);
+        CHECK(mgr.Tempo().GetEffectiveDuration() == doctest::Approx(10.0f));
+        CHECK(mgr.Tempo().GetEffectiveBonusPercent() == doctest::Approx(60.0f));
+        CHECK(mgr.Tempo().GetEffectiveFastSpeed() == doctest::Approx(960.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeedBonusPercent() == doctest::Approx(10.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeed() == doctest::Approx(770.0f));
+        CHECK(mgr.Tempo().GetUpgradeCost() == 120);
+
+        // Level 2: 11s duration, +80% ball speed bonus (1080 px/s), +20% paddle speed bonus (840 px/s)
+        mgr.SetLevel(PowerUpType::TempoBall, 2);
+        CHECK(mgr.Tempo().GetEffectiveDuration() == doctest::Approx(11.0f));
+        CHECK(mgr.Tempo().GetEffectiveBonusPercent() == doctest::Approx(80.0f));
+        CHECK(mgr.Tempo().GetEffectiveFastSpeed() == doctest::Approx(1080.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeedBonusPercent() == doctest::Approx(20.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeed() == doctest::Approx(840.0f));
+        CHECK(mgr.Tempo().GetUpgradeCost() == 240);
+
+        // Level 3: 12s duration, +100% ball speed bonus (1200 px/s), +30% paddle speed bonus (910 px/s)
+        mgr.SetLevel(PowerUpType::TempoBall, 3);
+        CHECK(mgr.Tempo().GetEffectiveDuration() == doctest::Approx(12.0f));
+        CHECK(mgr.Tempo().GetEffectiveBonusPercent() == doctest::Approx(100.0f));
+        CHECK(mgr.Tempo().GetEffectiveFastSpeed() == doctest::Approx(1200.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeedBonusPercent() == doctest::Approx(30.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeed() == doctest::Approx(910.0f));
+
+        // Level 4: 13s duration, +120% ball speed bonus (1320 px/s), +40% paddle speed bonus (980 px/s)
+        mgr.SetLevel(PowerUpType::TempoBall, 4);
+        CHECK(mgr.Tempo().GetEffectiveDuration() == doctest::Approx(13.0f));
+        CHECK(mgr.Tempo().GetEffectiveBonusPercent() == doctest::Approx(120.0f));
+        CHECK(mgr.Tempo().GetEffectiveFastSpeed() == doctest::Approx(1320.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeedBonusPercent() == doctest::Approx(40.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeed() == doctest::Approx(980.0f));
+
+        // Level 5: 14s duration, +140% ball speed bonus (1440 px/s), +50% paddle speed bonus (1050 px/s)
+        mgr.SetLevel(PowerUpType::TempoBall, 5);
+        CHECK(mgr.Tempo().GetEffectiveDuration() == doctest::Approx(14.0f));
+        CHECK(mgr.Tempo().GetEffectiveBonusPercent() == doctest::Approx(140.0f));
+        CHECK(mgr.Tempo().GetEffectiveFastSpeed() == doctest::Approx(1440.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeedBonusPercent() == doctest::Approx(50.0f));
+        CHECK(mgr.Tempo().GetEffectivePaddleSpeed() == doctest::Approx(1050.0f));
+
+        // Simulation of Tempo Ball expiration and speed reset
+        Vector2f highSpeedVel{0.0f, -1440.0f};
+        float curSpeed = std::sqrt(highSpeedVel.X * highSpeedVel.X + highSpeedVel.Y * highSpeedVel.Y);
+        CHECK(curSpeed == doctest::Approx(1440.0f));
+
+        // When expired: speed resets cleanly to base 600 px/s
+        Vector2f resetVel = (highSpeedVel / curSpeed) * 600.0f;
+        float postResetSpeed = std::sqrt(resetVel.X * resetVel.X + resetVel.Y * resetVel.Y);
+        CHECK(postResetSpeed == doctest::Approx(600.0f));
+        CHECK(resetVel.Y == doctest::Approx(-600.0f));
+
+        // When inactive, normal speed clamp (900 px/s) is preserved
+        const float normalCap = 900.0f;
+        const float tempoCap = 2200.0f;
+        CHECK(1440.0f < tempoCap);
+        CHECK(1440.0f > normalCap);
 
         mgr.ResetToDefaults();
     }

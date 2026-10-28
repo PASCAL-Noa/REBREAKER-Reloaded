@@ -15,37 +15,59 @@ void ParticleSystem::Spawn(const Vector2f& position, const Vector2f& velocity, f
 {
     if (m_pool.empty()) return;
 
-    // Fast O(1) circular ring buffer insertion
-    Particle& p = m_pool[m_nextPoolIndex];
+    size_t targetIndex = 0;
+    if (m_activeCount < m_poolCapacity)
+    {
+        targetIndex = m_activeCount++;
+    }
+    else
+    {
+        targetIndex = m_nextPoolIndex;
+        m_nextPoolIndex = (m_nextPoolIndex + 1) % m_poolCapacity;
+    }
+
+    Particle& p = m_pool[targetIndex];
     p.Position = position;
     p.Velocity = velocity;
     p.Life = life;
     p.MaxLife = life;
     p.Size = size;
     p.Tint = tint;
-
-    m_nextPoolIndex = (m_nextPoolIndex + 1) % m_poolCapacity;
 }
 
 void ParticleSystem::Clear()
 {
-    for (auto& p : m_pool)
+    for (size_t i = 0; i < m_activeCount; ++i)
     {
-        p.Life = 0.0f;
+        m_pool[i].Life = 0.0f;
     }
+    m_activeCount = 0;
     m_nextPoolIndex = 0;
 }
 
 void ParticleSystem::OnUpdate(float dt)
 {
-    // 1. Update internal pooled particles (Zero ECS overhead)
-    for (auto& p : m_pool)
+    // 1. Update internal pooled particles (Zero dead iterations, O(1) removal)
+    for (size_t i = 0; i < m_activeCount; )
     {
-        if (p.Life <= 0.0f) continue;
-
+        auto& p = m_pool[i];
         p.Position.X += p.Velocity.X * dt;
         p.Position.Y += p.Velocity.Y * dt;
         p.Life -= dt;
+
+        if (p.Life <= 0.0f)
+        {
+            // Swap with last active particle
+            if (m_activeCount > 1 && i < m_activeCount - 1)
+            {
+                p = m_pool[m_activeCount - 1];
+            }
+            --m_activeCount;
+        }
+        else
+        {
+            ++i;
+        }
     }
 
     // 2. Legacy / backward compatibility: Update any ParticleComponent remaining in ECS
@@ -95,10 +117,10 @@ void ParticleSystem::OnRender()
         m_vertices.push_back({ left, top, c, 0.0f, 0.0f });
     };
 
-    // 1. Render internal pooled particles
-    for (const auto& p : m_pool)
+    // 1. Render internal pooled particles (only active count)
+    for (size_t i = 0; i < m_activeCount; ++i)
     {
-        if (p.Life <= 0.0f) continue;
+        const auto& p = m_pool[i];
         appendQuad(p.Position, p.Size, p.Life, p.MaxLife, p.Tint);
     }
 

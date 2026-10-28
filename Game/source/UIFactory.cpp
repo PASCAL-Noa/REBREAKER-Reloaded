@@ -13,7 +13,8 @@ Entity UIFactory::CreatePanel(Registry& registry, Entity parent, const PanelDesc
         .Position = desc.Position,
         .Size = desc.Size,
         .AnchorPoint = desc.AnchorPoint,
-        .Parent = parent
+        .Parent = parent,
+        .ZOrder = desc.ZOrder
     });
     registry.AddComponent<PanelComponent>(entity, PanelComponent{
         .Tint = desc.Tint,
@@ -29,7 +30,8 @@ Entity UIFactory::CreateText(Registry& registry, Entity parent, const TextDescri
         .Position = desc.Position,
         .Size = {0.0f, 0.0f}, // Text generally auto-sizes or doesn't need strict Rect bounds unless word-wrapping
         .AnchorPoint = desc.AnchorPoint,
-        .Parent = parent
+        .Parent = parent,
+        .ZOrder = desc.ZOrder
     });
     registry.AddComponent<TextComponent>(entity, TextComponent{
         .Text = desc.Text,
@@ -37,7 +39,8 @@ Entity UIFactory::CreateText(Registry& registry, Entity parent, const TextDescri
         .FontSize = desc.FontSize,
         .Tint = desc.Tint,
         .TextCenter = desc.TextCenter,
-        .Offset = desc.Offset
+        .Offset = desc.Offset,
+        .MaxWidth = desc.MaxWidth
     });
     return entity;
 }
@@ -49,7 +52,8 @@ Entity UIFactory::CreateButton(Registry& registry, Entity parent, const ButtonDe
         .Position = desc.Position,
         .Size = desc.Size,
         .AnchorPoint = desc.AnchorPoint,
-        .Parent = parent
+        .Parent = parent,
+        .ZOrder = desc.ZOrder
     });
     registry.AddComponent<PanelComponent>(entity, PanelComponent{
         .TextureId = desc.TextureId
@@ -274,7 +278,8 @@ Entity UIFactory::CreateTextInput(Registry& registry, Entity parent, const TextI
         .Position = desc.Position,
         .Size = desc.Size,
         .AnchorPoint = desc.AnchorPoint,
-        .Parent = parent
+        .Parent = parent,
+        .ZOrder = desc.ZOrder
     });
     
     registry.AddComponent<TextInputComponent>(entity, TextInputComponent{

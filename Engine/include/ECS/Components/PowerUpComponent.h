@@ -15,6 +15,7 @@ enum class PowerUpType : uint8_t
     BottomBarrier,
     MagnetPaddle,
     GhostBall,
+    ItemRegen,
     LaserPaddle = Storm
 };
 

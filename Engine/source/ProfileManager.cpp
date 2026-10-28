@@ -1,0 +1,334 @@
+#include "Core/ProfileManager.h"
+#include "Core/PlayerPrefs.h"
+#include "PowerUps/PowerUpConfig.h"
+#include <algorithm>
+
+ProfileManager& ProfileManager::Get()
+{
+    static ProfileManager instance;
+    return instance;
+}
+
+ProfileManager::ProfileManager()
+{
+    InitCosmetics();
+}
+
+void ProfileManager::InitCosmetics()
+{
+    m_cosmetics = {
+        {"paddle_neon_cyan", "Neon Cyber", "Sleek retro-futuristic cyan paddle hull", CosmeticSlot::PaddleSkin, 0, true},
+        {"paddle_gold_plating", "Gold Armor", "Gleaming polished gold champion chassis", CosmeticSlot::PaddleSkin, 500, false},
+        {"paddle_obsidian", "Void Obsidian", "Matte dark stealth frame infused with void core", CosmeticSlot::PaddleSkin, 1000, false},
+        {"trail_plasma_blue", "Plasma Ribbon", "Electric blue energetic particle ribbon", CosmeticSlot::BallTrail, 0, true},
+        {"trail_inferno_sparks", "Inferno Sparks", "Blazing fiery trail particles leaving heat trails", CosmeticSlot::BallTrail, 600, false},
+        {"trail_rainbow_warp", "Rainbow Warp", "Chromatic spectral light ribbon with prism flair", CosmeticSlot::BallTrail, 1200, false}
+    };
+
+    // Load unlocked states from PlayerPrefs
+    for (auto& item : m_cosmetics)
+    {
+        if (item.Price == 0)
+        {
+            item.Unlocked = true;
+        }
+        else
+        {
+            item.Unlocked = PlayerPrefs::GetBool("Cosmetic_Unlocked_" + item.Id, false);
+        }
+    }
+}
+
+std::string ProfileManager::GetUsername() const
+{
+    std::string name = PlayerPrefs::GetString("PlayerProfile_Username", "PLAYER");
+    if (name.empty()) name = "PLAYER";
+    return name;
+}
+
+void ProfileManager::SetUsername(const std::string& name)
+{
+    std::string trimmed = name;
+    trimmed.erase(0, trimmed.find_first_not_of(" \t\n\r"));
+    if (trimmed.find_last_not_of(" \t\n\r") != std::string::npos)
+    {
+        trimmed.erase(trimmed.find_last_not_of(" \t\n\r") + 1);
+    }
+    if (trimmed.empty())
+    {
+        trimmed = "PLAYER";
+    }
+    if (trimmed.length() > 16)
+    {
+        trimmed = trimmed.substr(0, 16);
+    }
+
+    PlayerPrefs::SetString("PlayerProfile_Username", trimmed);
+    PlayerPrefs::Save();
+}
+
+uint32_t ProfileManager::ConvertScoreToCredits(uint32_t score)
+{
+    if (score == 0) return 0;
+    uint32_t credits = score / 50;
+    return (credits == 0) ? 1 : credits;
+}
+
+uint32_t ProfileManager::GetLifetimeScore() const
+{
+    return static_cast<uint32_t>(std::max(0, PlayerPrefs::GetInt("Economy_LifetimeScore", 0)));
+}
+
+void ProfileManager::AddLifetimeScore(uint32_t score)
+{
+    uint32_t current = GetLifetimeScore();
+    PlayerPrefs::SetInt("Economy_LifetimeScore", static_cast<int>(current + score));
+    PlayerPrefs::Save();
+}
+
+uint32_t ProfileManager::GetLifetimeCredits() const
+{
+    return static_cast<uint32_t>(std::max(0, PlayerPrefs::GetInt("Economy_LifetimeCredits", 0)));
+}
+
+void ProfileManager::AddLifetimeCredits(uint32_t credits)
+{
+    uint32_t current = GetLifetimeCredits();
+    PlayerPrefs::SetInt("Economy_LifetimeCredits", static_cast<int>(current + credits));
+    PlayerPrefs::Save();
+}
+
+UltimateAbilityType ProfileManager::GetEquippedUltimate() const
+{
+    int val = PlayerPrefs::GetInt("Profile_EquippedUltimate", 0);
+    if (val < 0 || val >= static_cast<int>(UltimateAbilityType::Count))
+    {
+        val = 0;
+    }
+    return static_cast<UltimateAbilityType>(val);
+}
+
+void ProfileManager::SetEquippedUltimate(UltimateAbilityType type)
+{
+    int val = static_cast<int>(type);
+    if (val < 0 || val >= static_cast<int>(UltimateAbilityType::Count))
+    {
+        val = 0;
+    }
+    PlayerPrefs::SetInt("Profile_EquippedUltimate", val);
+    PlayerPrefs::Save();
+}
+
+int ProfileManager::GetUltimateLevel(UltimateAbilityType type) const
+{
+    std::string key = "Profile_UltimateLevel_" + std::to_string(static_cast<int>(type));
+    int lvl = PlayerPrefs::GetInt(key, 1);
+    return std::clamp(lvl, 1, 5);
+}
+
+void ProfileManager::SetUltimateLevel(UltimateAbilityType type, int level)
+{
+    std::string key = "Profile_UltimateLevel_" + std::to_string(static_cast<int>(type));
+    PlayerPrefs::SetInt(key, std::clamp(level, 1, 5));
+    PlayerPrefs::Save();
+}
+
+int ProfileManager::GetUltimateMaxLevel(UltimateAbilityType /*type*/) const
+{
+    return 5;
+}
+
+int ProfileManager::GetUltimateUpgradeCost(UltimateAbilityType type) const
+{
+    int lvl = GetUltimateLevel(type);
+    if (lvl >= 5) return 0;
+    constexpr int kCosts[4] = { 250, 400, 650, 950 };
+    return kCosts[std::clamp(lvl - 1, 0, 3)];
+}
+
+bool ProfileManager::CanUpgradeUltimate(UltimateAbilityType type) const
+{
+    int lvl = GetUltimateLevel(type);
+    if (lvl >= 5) return false;
+    return PowerUpManager::Get().GetCoins() >= GetUltimateUpgradeCost(type);
+}
+
+bool ProfileManager::UpgradeUltimate(UltimateAbilityType type)
+{
+    if (!CanUpgradeUltimate(type)) return false;
+    int cost = GetUltimateUpgradeCost(type);
+    if (PowerUpManager::Get().SpendCoins(cost))
+    {
+        SetUltimateLevel(type, GetUltimateLevel(type) + 1);
+        return true;
+    }
+    return false;
+}
+
+std::string ProfileManager::GetUltimateName(UltimateAbilityType type)
+{
+    switch (type)
+    {
+        case UltimateAbilityType::NovaShockwave:
+            return "NOVA SHOCKWAVE";
+        case UltimateAbilityType::ThunderTempest:
+            return "THUNDER TEMPEST";
+        case UltimateAbilityType::TimeStasis:
+            return "TIME STASIS";
+        default:
+            return "NOVA SHOCKWAVE";
+    }
+}
+
+std::string ProfileManager::GetUltimateCategory(UltimateAbilityType type)
+{
+    switch (type)
+    {
+        case UltimateAbilityType::NovaShockwave:
+            return "[ASSAUT THERMIQUE RADIAL]";
+        case UltimateAbilityType::ThunderTempest:
+            return "[SURCHARGE ELECTRIQUE]";
+        case UltimateAbilityType::TimeStasis:
+            return "[DISTORSION TACTIQUE]";
+        default:
+            return "[CAPACITE ULTIME]";
+    }
+}
+
+std::string ProfileManager::GetUltimateDescription(UltimateAbilityType type)
+{
+    switch (type)
+    {
+        case UltimateAbilityType::NovaShockwave:
+            return "Impulsion d'energie thermique radiale balayant les projectiles ennemis et fracturant les briques a 360 degres.";
+        case UltimateAbilityType::ThunderTempest:
+            return "Surcharge l'atmosphere et declenche un deluge d'eclairs cibles se propageant a travers les circuits conducteurs.";
+        case UltimateAbilityType::TimeStasis:
+            return "Manipule la gravite locale et ralentit le flux temporel pour un controle chirurgical des trajectoires.";
+        default:
+            return "";
+    }
+}
+
+std::string ProfileManager::GetUltimateTierInfo(UltimateAbilityType type, int level)
+{
+    int safeLvl = std::clamp(level, 1, 5);
+    switch (type)
+    {
+        case UltimateAbilityType::NovaShockwave:
+            switch (safeLvl)
+            {
+                case 1: return "Rayon: 400px, 1 dmg, repousse les projectiles ennemis";
+                case 2: return "Rayon: 480px, 1 dmg, propagation de l'onde +25% vitesse";
+                case 3: return "Rayon: 560px, 2 dmg au coeur de l'impact thermique";
+                case 4: return "Rayon: 640px, 2 dmg, incinere instantanement tous les tirs";
+                case 5: return "Supernova: Rayon 720px, 3 dmg, jauge de recharge +20%";
+                default: break;
+            }
+            break;
+        case UltimateAbilityType::ThunderTempest:
+            switch (safeLvl)
+            {
+                case 1: return "4 eclairs cibles, 2 dmg/eclair, conduction metallique";
+                case 2: return "6 eclairs cibles, 2 dmg, arc electrique de rebond";
+                case 3: return "8 eclairs cibles, 3 dmg, foudroie les briques d'acier";
+                case 4: return "10 eclairs cibles, 3 dmg, surtension ionique de zone";
+                case 5: return "Tempete Cataclysmique: 12 eclairs cibles, 4 dmg/eclair";
+                default: break;
+            }
+            break;
+        case UltimateAbilityType::TimeStasis:
+            switch (safeLvl)
+            {
+                case 1: return "Ralentissement 65% pendant 5.0s, stabilite de raquette";
+                case 2: return "Ralentissement 70% pendant 6.0s, guide de visee etendu";
+                case 3: return "Ralentissement 75% pendant 7.0s, impulsion balle boostee";
+                case 4: return "Ralentissement 80% pendant 8.0s, cadence de tir acceleree";
+                case 5: return "Arret Temporel: 85% distorsion pendant 9.0s chirurgicales";
+                default: break;
+            }
+            break;
+        default:
+            break;
+    }
+    return "Palier standard";
+}
+
+const std::vector<CosmeticItem>& ProfileManager::GetAvailableCosmetics()
+{
+    return m_cosmetics;
+}
+
+bool ProfileManager::IsCosmeticUnlocked(const std::string& id) const
+{
+    for (const auto& item : m_cosmetics)
+    {
+        if (item.Id == id)
+        {
+            return item.Unlocked;
+        }
+    }
+    return false;
+}
+
+bool ProfileManager::UnlockCosmetic(const std::string& id)
+{
+    for (auto& item : m_cosmetics)
+    {
+        if (item.Id == id)
+        {
+            if (item.Unlocked) return true;
+            if (PowerUpManager::Get().SpendCoins(item.Price))
+            {
+                item.Unlocked = true;
+                PlayerPrefs::SetBool("Cosmetic_Unlocked_" + id, true);
+                PlayerPrefs::Save();
+                return true;
+            }
+            return false;
+        }
+    }
+    return false;
+}
+
+std::string ProfileManager::GetEquippedCosmetic(CosmeticSlot slot) const
+{
+    std::string key = (slot == CosmeticSlot::PaddleSkin) ? "Equipped_PaddleSkin" :
+                      (slot == CosmeticSlot::BallTrail)   ? "Equipped_BallTrail" :
+                                                            "Equipped_SoundPack";
+    std::string fallback = (slot == CosmeticSlot::PaddleSkin) ? "paddle_neon_cyan" :
+                           (slot == CosmeticSlot::BallTrail)   ? "trail_plasma_blue" :
+                                                                 "default_audio";
+    return PlayerPrefs::GetString(key, fallback);
+}
+
+void ProfileManager::EquipCosmetic(CosmeticSlot slot, const std::string& id)
+{
+    if (!IsCosmeticUnlocked(id)) return;
+    std::string key = (slot == CosmeticSlot::PaddleSkin) ? "Equipped_PaddleSkin" :
+                      (slot == CosmeticSlot::BallTrail)   ? "Equipped_BallTrail" :
+                                                            "Equipped_SoundPack";
+    PlayerPrefs::SetString(key, id);
+    PlayerPrefs::Save();
+}
+
+void ProfileManager::ResetToDefaults()
+{
+    PlayerPrefs::SetString("PlayerProfile_Username", "PLAYER");
+    PlayerPrefs::SetInt("Economy_LifetimeScore", 0);
+    PlayerPrefs::SetInt("Economy_LifetimeCredits", 0);
+    PlayerPrefs::SetInt("Profile_EquippedUltimate", 0);
+    for (int i = 0; i < static_cast<int>(UltimateAbilityType::Count); ++i)
+    {
+        PlayerPrefs::SetInt("Profile_UltimateLevel_" + std::to_string(i), 1);
+    }
+    PlayerPrefs::SetString("Equipped_PaddleSkin", "paddle_neon_cyan");
+    PlayerPrefs::SetString("Equipped_BallTrail", "trail_plasma_blue");
+
+    for (auto& item : m_cosmetics)
+    {
+        item.Unlocked = (item.Price == 0);
+        PlayerPrefs::SetBool("Cosmetic_Unlocked_" + item.Id, item.Unlocked);
+    }
+    PlayerPrefs::Save();
+}

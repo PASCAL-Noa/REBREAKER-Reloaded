@@ -22,6 +22,7 @@
 #include "Graphics/Renderer.h"
 #include "Events/CheatSubmitEvent.h"
 #include "PowerUps/PowerUpConfig.h"
+#include "Core/ProfileManager.h"
 #include <algorithm>
 #include <cmath>
 
@@ -499,7 +500,11 @@ void GameUIController::SetHeartActive(int index, bool active)
 
 void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
 {
-    m_enteredPlayerName = "";
+    std::string defaultName = ProfileManager::Get().GetUsername();
+    m_enteredPlayerName = defaultName;
+
+    uint32_t earnedCredits = ProfileManager::ConvertScoreToCredits(finalScore);
+    int currentBank = PowerUpManager::Get().GetCoins();
 
     if (m_gameOverTitleText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverTitleText))
     {
@@ -516,13 +521,14 @@ void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
     if (m_gameOverScoreText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverScoreText))
     {
         m_registry.GetComponent<TextComponent>(m_gameOverScoreText).Text =
-            "FINAL SCORE: " + std::to_string(finalScore) + "  |  STAGE REACHED: " + std::to_string(finalLevel);
+            "FINAL SCORE: " + std::to_string(finalScore) + "  |  +" + std::to_string(earnedCredits) +
+            " CR (BANK: " + std::to_string(currentBank) + " CR)  |  STAGE: " + std::to_string(finalLevel);
     }
 
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
         auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
-        statusComp.Text = "ENTER YOUR PSEUDO [PRESS ENTER OR SAVE]:";
+        statusComp.Text = "PLAYER: " + defaultName + " (CLICK PSEUDO TO EDIT)";
         statusComp.Tint = Color{120, 230, 255, 255};
     }
 
@@ -533,9 +539,9 @@ void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
     if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
     {
         auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
-        input.Text = "";
+        input.Text = defaultName;
         input.Placeholder = "ENTER PSEUDO";
-        input.IsFocused = true;
+        input.IsFocused = false;
     }
     if (m_submitNameBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_submitNameBtn))
     {
@@ -559,12 +565,23 @@ void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
         m_registry.GetComponent<RectTransform>(m_gameOverMainMenuBtn).Position = {260.0f, 310.0f};
     }
 
-    RefreshLeaderboardUI();
+    if (!defaultName.empty())
+    {
+        SubmitHighScore(defaultName, finalScore, finalLevel);
+    }
+    else
+    {
+        RefreshLeaderboardUI();
+    }
 }
 
 void GameUIController::SetupVictory(uint32_t finalScore)
 {
-    m_enteredPlayerName = "";
+    std::string defaultName = ProfileManager::Get().GetUsername();
+    m_enteredPlayerName = defaultName;
+
+    uint32_t earnedCredits = ProfileManager::ConvertScoreToCredits(finalScore);
+    int currentBank = PowerUpManager::Get().GetCoins();
 
     if (m_gameOverTitleText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverTitleText))
     {
@@ -581,13 +598,14 @@ void GameUIController::SetupVictory(uint32_t finalScore)
     if (m_gameOverScoreText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverScoreText))
     {
         m_registry.GetComponent<TextComponent>(m_gameOverScoreText).Text =
-            "VICTORY SCORE: " + std::to_string(finalScore) + "  |  ALL " + std::to_string(m_scene.GetLevelCount()) + " STAGES CLEARED!";
+            "VICTORY SCORE: " + std::to_string(finalScore) + "  |  +" + std::to_string(earnedCredits) +
+            " CR (BANK: " + std::to_string(currentBank) + " CR)  |  ALL " + std::to_string(m_scene.GetLevelCount()) + " STAGES!";
     }
 
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
         auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
-        statusComp.Text = "CHAMPION! ENTER YOUR PSEUDO:";
+        statusComp.Text = "CHAMPION: " + defaultName + " (CLICK PSEUDO TO EDIT)";
         statusComp.Tint = Color{255, 215, 0, 255};
     }
 
@@ -598,9 +616,9 @@ void GameUIController::SetupVictory(uint32_t finalScore)
     if (m_nameInputEntity != NULL_ENTITY && m_registry.HasComponent<TextInputComponent>(m_nameInputEntity))
     {
         auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
-        input.Text = "";
+        input.Text = defaultName;
         input.Placeholder = "ENTER PSEUDO";
-        input.IsFocused = true;
+        input.IsFocused = false;
     }
     if (m_submitNameBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_submitNameBtn))
     {
@@ -628,10 +646,17 @@ void GameUIController::SetupVictory(uint32_t finalScore)
     if (m_victoryStatsText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_victoryStatsText))
     {
         m_registry.GetComponent<TextComponent>(m_victoryStatsText).Text =
-            "FINAL SCORE: " + std::to_string(finalScore);
+            "FINAL SCORE: " + std::to_string(finalScore) + "  |  +" + std::to_string(earnedCredits) + " CR";
     }
 
-    RefreshLeaderboardUI();
+    if (!defaultName.empty())
+    {
+        SubmitHighScore(defaultName, finalScore, m_scene.GetLevelCount());
+    }
+    else
+    {
+        RefreshLeaderboardUI();
+    }
 }
 
 bool GameUIController::IsTypingName() const
@@ -716,6 +741,7 @@ void GameUIController::RefreshLeaderboardUI()
 void GameUIController::SubmitHighScore(const std::string& name, uint32_t score, int levelNumber)
 {
     std::string safeName = name.empty() ? "PLAYER" : name;
+    ProfileManager::Get().SetUsername(safeName);
     int rank = m_scene.GetLeaderboard().AddOrUpdateEntry(m_enteredPlayerName, safeName, score, levelNumber);
     m_enteredPlayerName = safeName;
 
