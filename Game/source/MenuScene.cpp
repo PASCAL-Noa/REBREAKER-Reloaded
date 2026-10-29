@@ -794,14 +794,16 @@ void MenuScene::UpdateVolumeBars(const std::vector<Entity>& bars, float volume)
         if (m_registry.HasComponent<PanelComponent>(bars[i]))
         {
             auto& panel = m_registry.GetComponent<PanelComponent>(bars[i]);
-            if ((static_cast<float>(i) * 10.0f) < volume)
-            {
-                panel.Tint.a = 255;
-            }
+            bool isLit = ((static_cast<float>(i) * 10.0f) < volume);
+
+            if (i < 5)
+                panel.Tint = isLit ? Color{50, 255, 100, 255} : Color{18, 65, 30, 90};
+            else if (i < 8)
+                panel.Tint = isLit ? Color{255, 240, 50, 255} : Color{70, 65, 15, 90};
+            else if (i == 8)
+                panel.Tint = isLit ? Color{255, 140, 25, 255} : Color{75, 40, 12, 90};
             else
-            {
-                panel.Tint.a = 50;
-            }
+                panel.Tint = isLit ? Color{255, 45, 55, 255} : Color{75, 18, 18, 90};
         }
     }
 }
@@ -1616,24 +1618,6 @@ void MenuScene::CreateGamerulesTab(const GameContext& context)
         .Position = {rightPanelX, -viewY * 0.1f},
         .FontId = m_fontId
     });
-
-    UIFactory::CreateButton(m_registry, m_gamerulesCanvas, ButtonDescriptor{
-        .Text = "RESET SAVE DATA",
-        .OnClick = [this]() {
-            ResetSaveData();
-            if (m_brickDestroySfxId != 0 && mp_context)
-            {
-                mp_context->Audio.PlaySfx(m_brickDestroySfxId, 85.0f);
-            }
-        },
-        .Position = {rightPanelX, 0.0f},
-        .Size = {rightPanelWidth * 0.5f, 60.0f},
-        .DefaultColor = Color{140, 35, 45, 255},
-        .HoverColor = Color{195, 50, 65, 255},
-        .PressedColor = Color{90, 20, 30, 255},
-        .FontId = m_fontId,
-        .FontSize = 26.0f
-    });
     
     UIFactory::CreatePanel(m_registry, m_gamerulesCanvas, PanelDescriptor{
       .Position = {rightPanelX, 0.0f},
@@ -1715,6 +1699,12 @@ void MenuScene::OpenSettingsTab(Entity targetCanvas)
                     });
                 }
             });
+        }
+
+        if (targetCanvas == m_audioCanvas && mp_context)
+        {
+            UpdateVolumeBars(m_sfxVolumeBars, mp_context->Audio.GetSfxVolume());
+            UpdateVolumeBars(m_musicVolumeBars, mp_context->Audio.GetMusicVolume());
         }
     }
 }
@@ -1969,6 +1959,14 @@ static constexpr PowerUpType kAllWorkshopPowerUps[13] = {
     PowerUpType::ItemRegen
 };
 
+static constexpr float kWorkshopPipW = 96.0f;
+static constexpr float kWorkshopPipH = 34.0f;
+static constexpr float kWorkshopPipGap = 12.0f;
+
+static constexpr float kWorkshopUltPipW = 98.0f;
+static constexpr float kWorkshopUltPipH = 38.0f;
+static constexpr float kWorkshopUltPipGap = 12.0f;
+
 void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
 {
     m_workshopCanvas = m_registry.CreateEntity();
@@ -2217,9 +2215,9 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
 
     // Level Selector / Inspection Buttons (LVL. 1 to LVL. 5)
     m_levelPipButtons.clear();
-    constexpr float pipBtnW = 96.0f;
-    constexpr float pipBtnH = 34.0f;
-    constexpr float pipBtnGap = 12.0f;
+    constexpr float pipBtnW = kWorkshopPipW;
+    constexpr float pipBtnH = kWorkshopPipH;
+    constexpr float pipBtnGap = kWorkshopPipGap;
     float startPipX = 600.0f - (5.0f * (pipBtnW + pipBtnGap) - pipBtnGap) * 0.5f + (pipBtnW * 0.5f);
     float pipBtnY = -65.0f;
 
@@ -2290,7 +2288,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .Text = "Description.",
         .Position = {600.0f, 65.0f},
         .FontId = m_fontId,
-        .FontSize = 21.0f,
+        .FontSize = 24.0f,
         .Tint = Color{225, 235, 250, 255},
         .MaxWidth = 780.0f,
         .ZOrder = 3
@@ -2300,7 +2298,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .Text = "CURRENT: ...",
         .Position = {600.0f, 125.0f},
         .FontId = m_fontId,
-        .FontSize = 20.0f,
+        .FontSize = 22.0f,
         .Tint = Color{100, 220, 255, 255},
         .MaxWidth = 800.0f,
         .ZOrder = 3
@@ -2310,7 +2308,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .Text = "VIEWING: ...",
         .Position = {600.0f, 180.0f},
         .FontId = m_fontId,
-        .FontSize = 20.0f,
+        .FontSize = 22.0f,
         .Tint = Color{255, 215, 80, 255},
         .MaxWidth = 800.0f,
         .ZOrder = 3
@@ -2320,7 +2318,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .Text = "COST: ...",
         .Position = {600.0f, 235.0f},
         .FontId = m_fontId,
-        .FontSize = 20.0f,
+        .FontSize = 22.0f,
         .Tint = Color{160, 210, 255, 255},
         .MaxWidth = 800.0f,
         .ZOrder = 3
@@ -2386,13 +2384,13 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         card.InspectedLevel = ProfileManager::Get().GetUltimateLevel(card.Type);
         card.SwitchTimer = 0.0f;
         float x = ultColX[i];
-        float y = -35.0f;
+        float y = -30.0f;
         int cardIdx = i;
 
         card.RootPanel = UIFactory::CreatePanel(m_registry, m_workshopUltimatesCanvas, PanelDescriptor{
             .Position = {x, y},
             .Size = {680.0f, 960.0f},
-            .Tint = Color{20, 26, 42, 250},
+            .Tint = Color{22, 30, 50, 255},
             .ZOrder = 1
         });
 
@@ -2401,7 +2399,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             .Text = ProfileManager::GetUltimateName(card.Type),
             .Position = {x, -440.0f},
             .FontId = m_fontId,
-            .FontSize = 32.0f,
+            .FontSize = 34.0f,
             .Tint = Colors::Gold,
             .ZOrder = 3
         });
@@ -2409,9 +2407,9 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         card.CategoryText = NULL_ENTITY;
 
         // 2. Interactive Level Inspection Buttons (NIV. 1 to NIV. 5)
-        constexpr float ultPipW = 96.0f;
-        constexpr float ultPipH = 34.0f;
-        constexpr float ultPipGap = 12.0f;
+        constexpr float ultPipW = kWorkshopUltPipW;
+        constexpr float ultPipH = kWorkshopUltPipH;
+        constexpr float ultPipGap = kWorkshopUltPipGap;
         float startUltPipX = x - (5.0f * (ultPipW + ultPipGap) - ultPipGap) * 0.5f + (ultPipW * 0.5f);
         float ultPipY = -95.0f;
 
@@ -2451,7 +2449,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 .HoverColor = Color{55, 75, 110, 240},
                 .PressedColor = Color{25, 35, 50, 255},
                 .FontId = m_fontId,
-                .FontSize = 20.0f,
+                .FontSize = 22.0f,
                 .ZOrder = 3
             });
             card.LevelPipButtons[p] = pipBtn;
@@ -2474,20 +2472,20 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     OpenDescriptionModal();
                 }
             },
-            .Position = {x, -42.0f},
-            .Size = {580.0f, 40.0f},
+            .Position = {x, -38.0f},
+            .Size = {600.0f, 44.0f},
             .DefaultColor = Color{30, 60, 95, 240},
             .HoverColor = Color{45, 90, 145, 255},
             .PressedColor = Color{20, 45, 75, 255},
             .FontId = m_fontId,
-            .FontSize = 22.0f,
+            .FontSize = 24.0f,
             .ZOrder = 3
         });
 
         // 4. Stats & Description Info Box
         UIFactory::CreatePanel(m_registry, m_workshopUltimatesCanvas, PanelDescriptor{
-            .Position = {x, 50.0f},
-            .Size = {580.0f, 130.0f},
+            .Position = {x, 80.0f},
+            .Size = {600.0f, 180.0f},
             .Tint = Color{24, 30, 48, 240},
             .ZOrder = 2
         });
@@ -2496,31 +2494,31 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
 
         card.CurTierText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
             .Text = "CURRENT LEVEL: ...",
-            .Position = {x, 10.0f},
+            .Position = {x, 20.0f},
             .FontId = m_fontId,
-            .FontSize = 17.0f,
+            .FontSize = 21.0f,
             .Tint = Color{100, 220, 255, 255},
-            .MaxWidth = 540.0f,
+            .MaxWidth = 560.0f,
             .ZOrder = 3
         });
 
         card.NextTierText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
             .Text = "VIEWING LEVEL: ...",
-            .Position = {x, 45.0f},
+            .Position = {x, 75.0f},
             .FontId = m_fontId,
-            .FontSize = 17.0f,
+            .FontSize = 21.0f,
             .Tint = Colors::Gold,
-            .MaxWidth = 540.0f,
+            .MaxWidth = 560.0f,
             .ZOrder = 3
         });
 
         card.CostText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
             .Text = "NEXT TIER COST: ...",
-            .Position = {x, 80.0f},
+            .Position = {x, 130.0f},
             .FontId = m_fontId,
-            .FontSize = 18.0f,
+            .FontSize = 22.0f,
             .Tint = Color{80, 240, 140, 255},
-            .MaxWidth = 540.0f,
+            .MaxWidth = 560.0f,
             .ZOrder = 3
         });
 
@@ -2545,13 +2543,13 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     RefreshWorkshopUI();
                 }
             },
-            .Position = {x, 150.0f},
-            .Size = {580.0f, 52.0f},
+            .Position = {x, 235.0f},
+            .Size = {600.0f, 62.0f},
             .DefaultColor = Color{35, 145, 60, 255},
             .HoverColor = Color{50, 195, 85, 255},
             .PressedColor = Color{22, 95, 40, 255},
             .FontId = m_fontId,
-            .FontSize = 26.0f,
+            .FontSize = 28.0f,
             .ZOrder = 3
         });
 
@@ -2586,13 +2584,13 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 85.0f);
                 RefreshWorkshopUI();
             },
-            .Position = {x, 215.0f},
-            .Size = {580.0f, 52.0f},
+            .Position = {x, 325.0f},
+            .Size = {600.0f, 62.0f},
             .DefaultColor = Color{40, 70, 130, 255},
             .HoverColor = Color{60, 105, 195, 255},
             .PressedColor = Color{25, 45, 85, 255},
             .FontId = m_fontId,
-            .FontSize = 26.0f,
+            .FontSize = 28.0f,
             .ZOrder = 3
         });
 
@@ -3197,6 +3195,13 @@ void MenuScene::RefreshWorkshopUI()
                 btnComp.HoverColor = Color{60, 105, 195, 255};
             }
         }
+
+        // Root card panel tint
+        if (m_registry.HasComponent<PanelComponent>(card.RootPanel))
+        {
+            auto& panelComp = m_registry.GetComponent<PanelComponent>(card.RootPanel);
+            panelComp.Tint = (card.Type == equipped) ? Color{28, 38, 65, 255} : Color{22, 30, 50, 255};
+        }
     }
 
     // 4. Profile & Stats Refresh
@@ -3486,17 +3491,17 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
         RenderPowerUpSimulation(context, m_selectedPowerUp, monitorCenter, monitorSize);
 
         // Reticle on Inspected Level Button
-        constexpr float pipW = 96.0f;
-        constexpr float pipH = 34.0f;
-        constexpr float pipGap = 12.0f;
+        constexpr float pipW = kWorkshopPipW;
+        constexpr float pipH = kWorkshopPipH;
+        constexpr float pipGap = kWorkshopPipGap;
         float startX = screenCenterX + 600.0f - (5.0f * (pipW + pipGap) - pipGap) * 0.5f + (pipW * 0.5f);
         float barY = screenCenterY - 65.0f;
         float activeBx = startX + static_cast<float>(m_inspectedLevel - 1) * (pipW + pipGap);
 
         float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 5.0f);
         uint8_t glowAlpha = static_cast<uint8_t>(180.0f + pulse * 75.0f);
-        context.Render.DrawRectangleOutline(pipW + 6.0f, pipH + 6.0f,
-            Transform2D{Vector2f{activeBx, barY}}, Color{255, 215, 60, glowAlpha}, 2.5f);
+        context.Render.DrawRectangleOutline(pipW, pipH,
+            Transform2D{Vector2f{activeBx, barY}}, Color{255, 215, 60, glowAlpha}, 2.0f);
 
     }
 
@@ -3506,9 +3511,9 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
         const float ultColX[3] = {-720.0f, 0.0f, 720.0f};
         UltimateAbilityType equipped = ProfileManager::Get().GetEquippedUltimate();
 
-        constexpr float ultPipW = 96.0f;
-        constexpr float ultPipH = 34.0f;
-        constexpr float ultPipGap = 12.0f;
+        constexpr float ultPipW = kWorkshopUltPipW;
+        constexpr float ultPipH = kWorkshopUltPipH;
+        constexpr float ultPipGap = kWorkshopUltPipGap;
 
         for (int i = 0; i < 3; ++i)
         {
@@ -3542,8 +3547,8 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
 
             float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 5.0f);
             uint8_t glowAlpha = static_cast<uint8_t>(180.0f + pulse * 75.0f);
-            context.Render.DrawRectangleOutline(ultPipW + 6.0f, ultPipH + 6.0f,
-                Transform2D{Vector2f{activePipX, pipY}}, Color{255, 215, 60, glowAlpha}, 2.5f);
+            context.Render.DrawRectangleOutline(ultPipW, ultPipH,
+                Transform2D{Vector2f{activePipX, pipY}}, Color{255, 215, 60, glowAlpha}, 2.0f);
         }
     }
 
@@ -3762,6 +3767,9 @@ void MenuScene::RenderUltimateSimulation(GameContext& context, UltimateAbilityTy
     else if (type == UltimateAbilityType::PowerUpRain) idx = 2;
 
     bool isActive = (type == m_lastInspectedUltimate);
+
+    // Solid dark monitor screen background
+    context.Render.DrawRectangle(size.X, size.Y, Transform2D{center}, Color{10, 14, 24, 255});
 
     if (isActive && m_ultimatePreviewScenes[idx] && m_ultimateCardTextures[idx])
     {

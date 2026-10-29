@@ -4240,9 +4240,17 @@ void GameScene::TryTriggerUltimate()
             break;
     }
 
-    m_ultimateCharge = 0.0f;
-    m_ultimateReady = false;
-    m_ultimateReadyPulseTime = 0.0f;
+    if (mp_context && mp_context->Rules.GetRule(Rule::Gameplay::InfiniteUltimate))
+    {
+        m_ultimateCharge = m_ultimateMaxCharge;
+        m_ultimateReady = true;
+    }
+    else
+    {
+        m_ultimateCharge = 0.0f;
+        m_ultimateReady = false;
+        m_ultimateReadyPulseTime = 0.0f;
+    }
 }
 
 void GameScene::ClearActiveUltimates()
@@ -4715,6 +4723,12 @@ void GameScene::ExecutePowerUpRain(int level)
 
 void GameScene::UpdateUltimateAbilities(float dt)
 {
+    if (mp_context && mp_context->Rules.GetRule(Rule::Gameplay::InfiniteUltimate))
+    {
+        m_ultimateCharge = m_ultimateMaxCharge;
+        m_ultimateReady = true;
+    }
+
     if (m_ultimateReady)
     {
         m_ultimateReadyPulseTime += dt;

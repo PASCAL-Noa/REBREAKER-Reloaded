@@ -947,8 +947,9 @@ void GameUIController::CreatePauseMenu()
     UIFactory::CreatePanel(m_registry, m_pauseCanvas, PanelDescriptor{
         .Position = {0, 0},
         .Size = {m_context.Render.GetLogicalViewSize().X * 2.0f, m_context.Render.GetLogicalViewSize().Y * 2.0f},
-        .Tint = Color{0, 0, 0, 200},
-        .AnchorPoint = Anchor::Center
+        .Tint = Color{0, 0, 0, 160},
+        .AnchorPoint = Anchor::Center,
+        .ZOrder = -1
     });
 }
 
@@ -959,10 +960,22 @@ void GameUIController::UpdateVolumeBars(const std::vector<Entity>& bars, float v
         if (m_registry.HasComponent<PanelComponent>(bars[i]))
         {
             auto& panel = m_registry.GetComponent<PanelComponent>(bars[i]);
-            if ((i * 10.0f) < volume)
-                panel.Tint.a = 255;
+            bool isLit = ((i * 10.0f) < volume);
+            if (isLit)
+            {
+                if (i < 5) panel.Tint = Color{50, 255, 100, 255}; // Glowing neon green
+                else if (i < 8) panel.Tint = Color{255, 240, 50, 255}; // Glowing neon yellow
+                else if (i == 8) panel.Tint = Color{255, 140, 25, 255}; // Glowing neon orange
+                else panel.Tint = Color{255, 45, 55, 255}; // Glowing neon red
+            }
             else
-                panel.Tint.a = 50;
+            {
+                // Dim unlit LED state
+                if (i < 5) panel.Tint = Color{20, 45, 30, 140};
+                else if (i < 8) panel.Tint = Color{45, 40, 20, 140};
+                else if (i == 8) panel.Tint = Color{45, 30, 20, 140};
+                else panel.Tint = Color{45, 20, 25, 140};
+            }
         }
     }
 }
@@ -1057,8 +1070,9 @@ void GameUIController::CreateSettingsLayout()
     UIFactory::CreatePanel(m_registry, m_settingsLayoutCanvas, PanelDescriptor{
         .Position = {0.0f, 0.0f},
         .Size = {viewX + 300.0f, viewY + 350.0f},
-        .Tint = Color{0, 0, 0, 200},
-        .AnchorPoint = Anchor::Center
+        .Tint = Color{0, 0, 0, 160},
+        .AnchorPoint = Anchor::Center,
+        .ZOrder = -1
     });
 
     // Left Tabs Panel
@@ -1592,6 +1606,12 @@ void GameUIController::OpenSettingsTab(Entity targetCanvas)
 
     m_activeTabCanvas = targetCanvas;
     m_registry.GetComponent<CanvasComponent>(targetCanvas).IsEnabled = true;
+
+    if (targetCanvas == m_audioCanvas)
+    {
+        UpdateVolumeBars(m_sfxVolumeBars, m_context.Audio.GetSfxVolume());
+        UpdateVolumeBars(m_musicVolumeBars, m_context.Audio.GetMusicVolume());
+    }
 
     if (m_registry.HasComponent<TweenComponent>(targetCanvas))
     {

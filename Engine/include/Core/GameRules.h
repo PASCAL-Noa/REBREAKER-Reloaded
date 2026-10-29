@@ -24,7 +24,8 @@ namespace Rule
     {
         Invincible = 0x2000,
         InfiniteLives,
-        CheatsUnlocked
+        CheatsUnlocked,
+        InfiniteUltimate
     };
 
     enum class Debug : uint32_t

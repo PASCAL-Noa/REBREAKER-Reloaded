@@ -103,17 +103,18 @@ void UIFactory::CreateVolumeControl(Registry& registry, Entity parent, const Vol
     // Bars
     for (int i = 0; i < 10; ++i)
     {
-        Color barColor = Colors::Green;
-        if (i >= 5 && i < 8) barColor = Colors::Yellow;
-        else if (i == 8) barColor = Colors::Orange;
-        else if (i == 9) barColor = Colors::Red;
+        Color barColor = Color{50, 255, 100, 255}; // Glowing neon green
+        if (i >= 5 && i < 8) barColor = Color{255, 240, 50, 255}; // Glowing neon yellow
+        else if (i == 8) barColor = Color{255, 140, 25, 255}; // Glowing neon orange
+        else if (i == 9) barColor = Color{255, 45, 55, 255}; // Glowing neon red
 
         if (desc.BarsOut)
         {
             desc.BarsOut->push_back(CreatePanel(registry, parent, PanelDescriptor{
                 .Position = {desc.Position.X - 115.0f + (i * 65.0f), desc.Position.Y},
                 .Size = {45.0f, 70.0f},
-                .Tint = barColor
+                .Tint = barColor,
+                .ZOrder = 1
             }));
         }
         else
@@ -121,7 +122,8 @@ void UIFactory::CreateVolumeControl(Registry& registry, Entity parent, const Vol
             CreatePanel(registry, parent, PanelDescriptor{
                 .Position = {desc.Position.X - 115.0f + (i * 65.0f), desc.Position.Y},
                 .Size = {45.0f, 70.0f},
-                .Tint = barColor
+                .Tint = barColor,
+                .ZOrder = 1
             });
         }
     }
