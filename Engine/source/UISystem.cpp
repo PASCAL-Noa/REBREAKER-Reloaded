@@ -776,7 +776,8 @@ void UISystem::OnRender(Registry& registry, const GameContext& context)
         uint32_t entityId;
     };
 
-    std::vector<UIRenderItem> renderList;
+    static thread_local std::vector<UIRenderItem> renderList;
+    renderList.clear();
     renderList.reserve(128);
 
     registry.View<RectTransform>([&](Entity entity, const RectTransform& transform)

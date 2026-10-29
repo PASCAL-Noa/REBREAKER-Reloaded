@@ -87,8 +87,7 @@ void RenderSystem::RenderTrails()
             for (size_t i = 0; i < numPoints; ++i)
             {
                 const auto& pt = trail.Points[i];
-                float t = pt.Age / cfg.Lifetime;
-                t = std::clamp(t, 0.0f, 1.0f);
+                float t = (cfg.Lifetime > 0.0f) ? std::clamp(pt.Age / cfg.Lifetime, 0.0f, 1.0f) : 1.0f;
 
                 float width = cfg.FadeWidth ? ((1.0f - t) * pt.Width + t * cfg.EndWidth) : pt.Width;
                 float radius = width * 0.5f;
@@ -115,15 +114,14 @@ void RenderSystem::RenderTrails()
         }
         else
         {
-            // Ribbon Quad Strip (TriangleStrip)
-            std::vector<Vertex> vertices;
-            vertices.reserve(numPoints * 2);
+            // Ribbon Quad Strip (TriangleStrip) - zero per-frame heap allocation
+            m_trailVerticesScratch.clear();
+            m_trailVerticesScratch.reserve(numPoints * 2);
 
             for (size_t i = 0; i < numPoints; ++i)
             {
                 const auto& pt = trail.Points[i];
-                float t = pt.Age / cfg.Lifetime;
-                t = std::clamp(t, 0.0f, 1.0f);
+                float t = (cfg.Lifetime > 0.0f) ? std::clamp(pt.Age / cfg.Lifetime, 0.0f, 1.0f) : 1.0f;
 
                 Vector2f dir{0.0f, 0.0f};
                 if (i == 0)
@@ -170,13 +168,13 @@ void RenderSystem::RenderTrails()
                 Vector2f left = pt.Position + normal * halfWidth;
                 Vector2f right = pt.Position - normal * halfWidth;
 
-                vertices.push_back(Vertex{left.X, left.Y, c, 0.0f, t});
-                vertices.push_back(Vertex{right.X, right.Y, c, 1.0f, t});
+                m_trailVerticesScratch.push_back(Vertex{left.X, left.Y, c, 0.0f, t});
+                m_trailVerticesScratch.push_back(Vertex{right.X, right.Y, c, 1.0f, t});
             }
 
-            if (vertices.size() >= 4)
+            if (m_trailVerticesScratch.size() >= 4)
             {
-                m_renderer.DrawVertices(vertices, PrimitiveType::TriangleStrip, 0, cfg.Blend);
+                m_renderer.DrawVertices(m_trailVerticesScratch, PrimitiveType::TriangleStrip, 0, cfg.Blend);
             }
         }
     });

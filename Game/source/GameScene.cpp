@@ -1227,22 +1227,15 @@ void GameScene::OnRender(GameContext& context)
             context.Render.DrawCapsuleLight(Vector2f{-780.0f, 442.0f}, Vector2f{780.0f, 442.0f}, 75.0f, Color{0, 210, 255, 255}, 1.3f, BlendMode::Add);
         }
 
-        // 6. Active Plasma Orbs illumination in dark levels
+        // 6. Active Plasma Orbs illumination in dark levels (capped at 12 to preserve GPU fillrate)
+        size_t plasmaLightCount = 0;
         for (const auto& orb : m_plasmaOrbs)
         {
+            if (++plasmaLightCount > 12) break;
             float lightRadius = 160.0f * orb.Scale;
             float pulse = 1.0f + 0.2f * std::sin(orb.AnimTime * 15.0f);
-            // Outer deep violet aura
-            context.Render.DrawPointLight(orb.Position, lightRadius * 1.5f, Color{160, 60, 255, 255}, 1.3f * pulse, BlendMode::Add);
-            // Inner bright cyan core
-            context.Render.DrawPointLight(orb.Position, lightRadius * 0.8f, Color{100, 210, 255, 255}, 1.8f * pulse, BlendMode::Add);
-
-            // Trail illumination
-            for (size_t ti = 0; ti < orb.Trail.size(); ti += 2)
-            {
-                float trailRatio = orb.Trail[ti].Lifetime / orb.Trail[ti].MaxLifetime;
-                context.Render.DrawPointLight(orb.Trail[ti].Position, lightRadius * 0.45f * trailRatio, Color{140, 70, 255, 255}, 0.85f * trailRatio, BlendMode::Add);
-            }
+            Color orbCol = (orb.Generation > 1) ? Color{160, 60, 255, 255} : Color{90, 210, 255, 255};
+            context.Render.DrawPointLight(orb.Position, lightRadius * 1.3f, orbCol, 1.6f * pulse, BlendMode::Add);
         }
 
         // 7. Disco Fever dynamic illumination in club darkness
@@ -4396,21 +4389,21 @@ void GameScene::ExecutePlasmaOrb(int level)
             orbCount = 2;
             scale = 1.5f;
             gen = 2;
-            childCount = 4;
+            childCount = 2; // 2 orbs split into 4 total
             damage = 3;
             break;
         case 4:
             orbCount = 3;
             scale = 1.5f;
             gen = 2;
-            childCount = 4;
+            childCount = 2; // 3 orbs split into 4 total
             damage = 3;
             break;
         case 5:
             orbCount = 3;
             scale = 2.0f;
             gen = 3;
-            childCount = 8;
+            childCount = 4; // 3 mega orbs split into 12, then 48, then 96 total
             damage = 4;
             break;
         default:
@@ -4735,6 +4728,22 @@ void GameScene::UpdateUltimateAbilities(float dt)
     }
 
     // 1. Plasma Orbs update
+    struct ActiveBrickCache
+    {
+        Entity entity;
+        Vector2f pos;
+    };
+    static thread_local std::vector<ActiveBrickCache> s_activeBricks;
+    s_activeBricks.clear();
+    m_registry.View<Transform2D, BrickComponent>([&](Entity e, const Transform2D& t, const BrickComponent& b)
+    {
+        if (!b.IsRegenerating)
+        {
+            s_activeBricks.push_back({e, t.Position});
+        }
+    });
+
+    constexpr size_t kMaxPlasmaOrbs = 120;
     std::vector<PlasmaOrbInstance> newChildren;
     for (auto it = m_plasmaOrbs.begin(); it != m_plasmaOrbs.end(); )
     {
@@ -4757,36 +4766,35 @@ void GameScene::UpdateUltimateAbilities(float dt)
         newPt.MaxLifetime = 0.22f;
         it->Trail.push_back(newPt);
 
-        // Spawn trailing plasma spark particles
+        // Spawn trailing plasma spark particles (throttled when many orbs are active)
         if (m_particleSystem && mp_context && mp_context->Rules.GetRule(Rule::Graphics::EnableParticles))
         {
-            static std::mt19937 trailRng(1337);
-            std::uniform_real_distribution<float> jitterDist(-7.0f, 7.0f);
-            std::uniform_real_distribution<float> velJitter(-30.0f, 30.0f);
-            Vector2f spawnPos{it->Position.X + jitterDist(trailRng), it->Position.Y + jitterDist(trailRng)};
-            Vector2f pVel{-it->Velocity.X * 0.12f + velJitter(trailRng), -it->Velocity.Y * 0.12f + velJitter(trailRng)};
-            Color pCol = (trailRng() % 2 == 0) ? Color{160, 60, 255, 220} : Color{80, 210, 255, 230};
-            m_particleSystem->Spawn(spawnPos, pVel, 0.22f, 9.0f * it->Scale, pCol);
+            static uint32_t s_trailFrameCounter = 0;
+            s_trailFrameCounter++;
+            if (m_plasmaOrbs.size() <= 6 || (s_trailFrameCounter % 2 == 0))
+            {
+                static std::mt19937 trailRng(1337);
+                std::uniform_real_distribution<float> jitterDist(-6.0f, 6.0f);
+                std::uniform_real_distribution<float> velJitter(-25.0f, 25.0f);
+                Vector2f spawnPos{it->Position.X + jitterDist(trailRng), it->Position.Y + jitterDist(trailRng)};
+                Vector2f pVel{-it->Velocity.X * 0.12f + velJitter(trailRng), -it->Velocity.Y * 0.12f + velJitter(trailRng)};
+                Color pCol = (trailRng() % 2 == 0) ? Color{160, 60, 255, 220} : Color{80, 210, 255, 230};
+                m_particleSystem->Spawn(spawnPos, pVel, 0.20f, 8.0f * it->Scale, pCol);
+            }
         }
 
-        // Damage bricks on contact
-        std::vector<Entity> hitBricks;
-        m_registry.View<Transform2D, BrickComponent>([&](Entity e, const Transform2D& t, const BrickComponent& b)
+        // Damage bricks on contact using cached active bricks and squared distance (zero per-orb allocation)
+        const float hitRadius = it->Radius + 22.0f;
+        const float hitRadiusSq = hitRadius * hitRadius;
+        for (const auto& brick : s_activeBricks)
         {
-            if (b.IsRegenerating) return;
-            float dist = (t.Position - it->Position).Length();
-            if (dist <= it->Radius + 22.0f)
+            if (!m_registry.IsAlive(brick.entity) || m_registry.IsPendingDestroy(brick.entity)) continue;
+            const float dx = brick.pos.X - it->Position.X;
+            const float dy = brick.pos.Y - it->Position.Y;
+            if (dx * dx + dy * dy <= hitRadiusSq)
             {
-                hitBricks.push_back(e);
-            }
-        });
-
-        for (Entity be : hitBricks)
-        {
-            if (m_registry.IsAlive(be) && !m_registry.IsPendingDestroy(be))
-            {
-                HandleBrickCollision(be, NULL_ENTITY, /*isLaser=*/false, /*isExplosion=*/true, it->Damage);
-                SpawnExplosionParticles(it->Position, Color{80, 200, 255, 230}, 6);
+                HandleBrickCollision(brick.entity, NULL_ENTITY, /*isLaser=*/false, /*isExplosion=*/true, it->Damage);
+                SpawnExplosionParticles(it->Position, Color{80, 200, 255, 230}, 4);
             }
         }
 
@@ -4868,7 +4876,10 @@ void GameScene::UpdateUltimateAbilities(float dt)
 
         if (shouldExpire)
         {
-            if (it->Generation > 0)
+            bool canDivide = (it->Generation > 0 && it->ChildCount > 0 &&
+                             (m_plasmaOrbs.size() + newChildren.size() < kMaxPlasmaOrbs));
+
+            if (canDivide)
             {
                 // Divide into ChildCount smaller plasma orbs
                 int nextGen = it->Generation - 1;
@@ -4909,7 +4920,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                     newChildren.push_back(child);
                 }
 
-                SpawnPlasmaExplosionParticles(spawnPos, 45.0f, 16);
+                SpawnPlasmaExplosionParticles(spawnPos, 40.0f, 10);
                 if (mp_context && m_audioEnabled && m_plasmaLaunchSfxId != 0)
                 {
                     mp_context->Audio.PlaySfx(m_plasmaLaunchSfxId, 80.0f, 1.35f);
@@ -4917,29 +4928,29 @@ void GameScene::UpdateUltimateAbilities(float dt)
             }
             else
             {
-                // Final generation detonation!
+                // Final detonation
+                static float s_lastDetonationSfx = -1.0f;
                 if (mp_context && m_audioEnabled && m_plasmaExplodeSfxId != 0)
                 {
-                    mp_context->Audio.PlaySfx(m_plasmaExplodeSfxId, 85.0f);
-                }
-                SpawnPlasmaExplosionParticles(it->Position, 85.0f, 35);
-                SpawnLightFlash(it->Position, 360.0f, Color{80, 180, 255, 255}, 1.9f, 0.35f);
-
-                // Area damage on explosion
-                std::vector<Entity> explBricks;
-                m_registry.View<Transform2D, BrickComponent>([&](Entity e, const Transform2D& t, const BrickComponent& b)
-                {
-                    if (b.IsRegenerating) return;
-                    if ((t.Position - it->Position).Length() <= 95.0f)
+                    if (m_gameplayTime - s_lastDetonationSfx >= 0.05f)
                     {
-                        explBricks.push_back(e);
+                        s_lastDetonationSfx = m_gameplayTime;
+                        mp_context->Audio.PlaySfx(m_plasmaExplodeSfxId, 85.0f);
                     }
-                });
-                for (Entity be : explBricks)
+                }
+                SpawnPlasmaExplosionParticles(it->Position, 75.0f, 18);
+                SpawnLightFlash(it->Position, 320.0f, Color{80, 180, 255, 255}, 1.9f, 0.35f);
+
+                // Area damage on explosion using cached bricks and squared distance
+                constexpr float explRadiusSq = 95.0f * 95.0f;
+                for (const auto& brick : s_activeBricks)
                 {
-                    if (m_registry.IsAlive(be) && !m_registry.IsPendingDestroy(be))
+                    if (!m_registry.IsAlive(brick.entity) || m_registry.IsPendingDestroy(brick.entity)) continue;
+                    const float dx = brick.pos.X - it->Position.X;
+                    const float dy = brick.pos.Y - it->Position.Y;
+                    if (dx * dx + dy * dy <= explRadiusSq)
                     {
-                        HandleBrickCollision(be, NULL_ENTITY, false, true, it->Damage);
+                        HandleBrickCollision(brick.entity, NULL_ENTITY, false, true, it->Damage);
                     }
                 }
             }
@@ -5752,24 +5763,25 @@ void GameScene::RenderActiveUltimateVisuals(GameContext& context)
     // 1. Plasma Orbs Rendering
     for (const auto& orb : m_plasmaOrbs)
     {
-        // Trailing plasma ribbon / nodes
+        // Trailing plasma ribbon / nodes (optimized connection lines & sampled glow nodes)
         for (size_t ti = 0; ti < orb.Trail.size(); ++ti)
         {
             const auto& pt = orb.Trail[ti];
             float ratio = std::clamp(pt.Lifetime / pt.MaxLifetime, 0.0f, 1.0f);
-            float trailR = (orb.Radius * 0.70f) * ratio;
+            float trailR = (orb.Radius * 0.65f) * ratio;
             uint8_t trailAlpha = static_cast<uint8_t>(ratio * 160.0f);
 
             Transform2D tt{pt.Position};
-            context.Render.DrawCircle(trailR + 4.0f * ratio, tt, Color{130, 40, 255, static_cast<uint8_t>(trailAlpha * 0.5f)});
-            context.Render.DrawCircle(trailR, tt, Color{40, 180, 255, trailAlpha});
-            context.Render.DrawCircle(trailR * 0.4f, tt, Color{220, 245, 255, trailAlpha});
+            if (ti % 2 == 0)
+            {
+                context.Render.DrawCircle(trailR, tt, Color{40, 180, 255, trailAlpha});
+                context.Render.DrawCircle(trailR * 0.4f, tt, Color{220, 245, 255, trailAlpha});
+            }
 
             if (ti + 1 < orb.Trail.size())
             {
                 const auto& nextPt = orb.Trail[ti + 1];
-                context.Render.DrawLine(pt.Position, nextPt.Position, Color{100, 120, 255, trailAlpha}, 3.5f * ratio);
-                context.Render.DrawLine(pt.Position, nextPt.Position, Color{220, 245, 255, trailAlpha}, 1.5f * ratio);
+                context.Render.DrawLine(pt.Position, nextPt.Position, Color{110, 140, 255, trailAlpha}, 3.0f * ratio);
             }
         }
 

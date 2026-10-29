@@ -218,11 +218,11 @@ void PhysicsSystem::ResolveCollision(Entity e1, Transform2D& t1, Entity e2, Tran
     RigidBody* rb1 = m_registry.HasComponent<RigidBody>(e1) ? &m_registry.GetComponent<RigidBody>(e1) : nullptr;
     RigidBody* rb2 = m_registry.HasComponent<RigidBody>(e2) ? &m_registry.GetComponent<RigidBody>(e2) : nullptr;
 
-    float invMass1 = (rb1 && !rb1->IsKinematic) ? 1.0f / rb1->Mass : 0.0f;
-    float invMass2 = (rb2 && !rb2->IsKinematic) ? 1.0f / rb2->Mass : 0.0f;
+    float invMass1 = (rb1 && !rb1->IsKinematic && rb1->Mass > 0.0f) ? 1.0f / rb1->Mass : 0.0f;
+    float invMass2 = (rb2 && !rb2->IsKinematic && rb2->Mass > 0.0f) ? 1.0f / rb2->Mass : 0.0f;
     float sumInvMass = invMass1 + invMass2;
 
-    if (sumInvMass == 0.0f) return;
+    if (sumInvMass <= 0.0f) return;
 
     ResolvePenetration(t1, invMass1, t2, invMass2, manifold);
     ResolveImpulse(rb1, invMass1, rb2, invMass2, manifold);
@@ -231,6 +231,7 @@ void PhysicsSystem::ResolveCollision(Entity e1, Transform2D& t1, Entity e2, Tran
 void PhysicsSystem::ResolvePenetration(Transform2D& t1, float invMass1, Transform2D& t2, float invMass2, const CollisionManifold& manifold)
 {
     float sumInvMass = invMass1 + invMass2;
+    if (sumInvMass <= 0.0f) return;
     if (invMass1 > 0.0f) t1.Position += manifold.Normal * (manifold.Penetration * (invMass1 / sumInvMass));
     if (invMass2 > 0.0f) t2.Position -= manifold.Normal * (manifold.Penetration * (invMass2 / sumInvMass));
 }
@@ -250,6 +251,7 @@ void PhysicsSystem::ResolveImpulse(RigidBody* rb1, float invMass1, RigidBody* rb
     else if (rb2) e = rb2->Restitution;
 
     float sumInvMass = invMass1 + invMass2;
+    if (sumInvMass <= 0.0f) return;
     float j = -(1.0f + e) * velAlongNormal;
     j /= sumInvMass;
 
