@@ -47,6 +47,7 @@ struct UltimateCardWidgets
     Entity CostText = NULL_ENTITY;
     Entity UpgradeBtn = NULL_ENTITY;
     Entity EquipBtn = NULL_ENTITY;
+    Entity DescStatsBtn = NULL_ENTITY;
     std::array<Entity, 5> LevelPipButtons{};
     UltimateAbilityType Type = UltimateAbilityType::NovaShockwave;
     int InspectedLevel = 1;
@@ -164,6 +165,8 @@ private:
     int     m_inspectedLevel = 1;
     int     m_workshopPreviewLevel = 1;
     bool    m_showDescriptionModal = false;
+    bool    m_descModalForUltimate = false;
+    UltimateAbilityType m_descModalUltimate = UltimateAbilityType::PlasmaOrb;
     float   m_previewAnimTime = 0.0f;
     std::vector<Entity> m_levelPipButtons;
     Entity  m_workshopScrollUpBtn = NULL_ENTITY;

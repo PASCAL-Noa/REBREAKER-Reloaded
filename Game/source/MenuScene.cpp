@@ -755,6 +755,7 @@ void MenuScene::CloseModals()
         }
     }
     m_showDescriptionModal = false;
+    m_descModalForUltimate = false;
     m_workshopActiveTabCanvas = NULL_ENTITY;
     m_activeModal = NULL_ENTITY;
     if (m_registry.IsAlive(m_mainCanvas) && m_registry.HasComponent<CanvasComponent>(m_mainCanvas))
@@ -777,6 +778,7 @@ void MenuScene::OpenDescriptionModal()
 void MenuScene::CloseDescriptionModal()
 {
     m_showDescriptionModal = false;
+    m_descModalForUltimate = false;
     if (m_workshopDescCanvas != NULL_ENTITY && m_registry.IsAlive(m_workshopDescCanvas) && m_registry.HasComponent<CanvasComponent>(m_workshopDescCanvas))
     {
         m_registry.GetComponent<CanvasComponent>(m_workshopDescCanvas).IsEnabled = false;
@@ -2262,6 +2264,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             }
             else
             {
+                m_descModalForUltimate = false;
                 OpenDescriptionModal();
             }
         },
@@ -2365,17 +2368,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     }
 
     // =========================================================================
-    // --- TAB 2: FLAGSHIP ULTIMATES HANGAR (3 ALL-IN-ONE COLUMNS) ---
+    // --- TAB 2: ULTIMATES HANGAR (3 ALL-IN-ONE COLUMNS) ---
     // =========================================================================
-    UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
-        .Text = "FLAGSHIP ULTIMATE ABILITIES (SMASH BRICKS TO CHARGE AND UNLEASH IN COMBAT)",
-        .Position = {0.0f, -540.0f},
-        .FontId = m_fontId,
-        .FontSize = 30.0f,
-        .Tint = Colors::Gold,
-        .ZOrder = 2
-    });
-
     const UltimateAbilityType ultTypes[3] = {
         UltimateAbilityType::NovaShockwave,
         UltimateAbilityType::ThunderTempest,
@@ -2402,24 +2396,17 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             .ZOrder = 1
         });
 
-        // 1. Title & Role Header
+        // 1. Title Header
         card.TitleText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
             .Text = ProfileManager::GetUltimateName(card.Type),
-            .Position = {x, -455.0f},
+            .Position = {x, -440.0f},
             .FontId = m_fontId,
             .FontSize = 32.0f,
             .Tint = Colors::Gold,
             .ZOrder = 3
         });
 
-        card.CategoryText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
-            .Text = ProfileManager::GetUltimateCategory(card.Type),
-            .Position = {x, -420.0f},
-            .FontId = m_fontId,
-            .FontSize = 18.0f,
-            .Tint = Color{120, 205, 255, 230},
-            .ZOrder = 3
-        });
+        card.CategoryText = NULL_ENTITY;
 
         // 2. Interactive Level Inspection Buttons (NIV. 1 to NIV. 5)
         constexpr float ultPipW = 96.0f;
@@ -2470,27 +2457,46 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             card.LevelPipButtons[p] = pipBtn;
         }
 
-        // 3. Stats & Description Info Box
+        UltimateAbilityType ultType = card.Type;
+
+        // 3. Description & Stats Toggle Button
+        card.DescStatsBtn = UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
+            .Text = "DESCRIPTION & STATS",
+            .OnClick = [this, ultType]() {
+                if (m_showDescriptionModal)
+                {
+                    CloseDescriptionModal();
+                }
+                else
+                {
+                    m_descModalForUltimate = true;
+                    m_descModalUltimate = ultType;
+                    OpenDescriptionModal();
+                }
+            },
+            .Position = {x, -42.0f},
+            .Size = {580.0f, 40.0f},
+            .DefaultColor = Color{30, 60, 95, 240},
+            .HoverColor = Color{45, 90, 145, 255},
+            .PressedColor = Color{20, 45, 75, 255},
+            .FontId = m_fontId,
+            .FontSize = 22.0f,
+            .ZOrder = 3
+        });
+
+        // 4. Stats & Description Info Box
         UIFactory::CreatePanel(m_registry, m_workshopUltimatesCanvas, PanelDescriptor{
-            .Position = {x, 40.0f},
-            .Size = {580.0f, 200.0f},
+            .Position = {x, 50.0f},
+            .Size = {580.0f, 130.0f},
             .Tint = Color{24, 30, 48, 240},
             .ZOrder = 2
         });
 
-        card.DescText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
-            .Text = ProfileManager::GetUltimateDescription(card.Type),
-            .Position = {x, -25.0f},
-            .FontId = m_fontId,
-            .FontSize = 18.0f,
-            .Tint = Color{215, 230, 250, 255},
-            .MaxWidth = 540.0f,
-            .ZOrder = 3
-        });
+        card.DescText = NULL_ENTITY;
 
         card.CurTierText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
             .Text = "CURRENT LEVEL: ...",
-            .Position = {x, 30.0f},
+            .Position = {x, 10.0f},
             .FontId = m_fontId,
             .FontSize = 17.0f,
             .Tint = Color{100, 220, 255, 255},
@@ -2500,7 +2506,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
 
         card.NextTierText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
             .Text = "VIEWING LEVEL: ...",
-            .Position = {x, 70.0f},
+            .Position = {x, 45.0f},
             .FontId = m_fontId,
             .FontSize = 17.0f,
             .Tint = Colors::Gold,
@@ -2510,7 +2516,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
 
         card.CostText = UIFactory::CreateText(m_registry, m_workshopUltimatesCanvas, TextDescriptor{
             .Text = "NEXT TIER COST: ...",
-            .Position = {x, 110.0f},
+            .Position = {x, 80.0f},
             .FontId = m_fontId,
             .FontSize = 18.0f,
             .Tint = Color{80, 240, 140, 255},
@@ -2518,8 +2524,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             .ZOrder = 3
         });
 
-        // 4. Big Upgrade Action Button
-        UltimateAbilityType ultType = card.Type;
+        // 5. Big Upgrade Action Button
         card.UpgradeBtn = UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
             .Text = "UPGRADE",
             .OnClick = [this, cardIdx, ultType]() {
@@ -2540,8 +2545,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     RefreshWorkshopUI();
                 }
             },
-            .Position = {x, 185.0f},
-            .Size = {580.0f, 54.0f},
+            .Position = {x, 150.0f},
+            .Size = {580.0f, 52.0f},
             .DefaultColor = Color{35, 145, 60, 255},
             .HoverColor = Color{50, 195, 85, 255},
             .PressedColor = Color{22, 95, 40, 255},
@@ -2550,7 +2555,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             .ZOrder = 3
         });
 
-        // 5. Equip Action Button
+        // 6. Equip Action Button
         card.EquipBtn = UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
             .Text = "EQUIP ULTIMATE",
             .OnClick = [this, ultType]() {
@@ -2581,8 +2586,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 85.0f);
                 RefreshWorkshopUI();
             },
-            .Position = {x, 255.0f},
-            .Size = {580.0f, 54.0f},
+            .Position = {x, 215.0f},
+            .Size = {580.0f, 52.0f},
             .DefaultColor = Color{40, 70, 130, 255},
             .HoverColor = Color{60, 105, 195, 255},
             .PressedColor = Color{25, 45, 85, 255},
@@ -3493,100 +3498,6 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
         context.Render.DrawRectangleOutline(pipW + 6.0f, pipH + 6.0f,
             Transform2D{Vector2f{activeBx, barY}}, Color{255, 215, 60, glowAlpha}, 2.5f);
 
-        // Description Modal Overlay (100% Solid & Opaque, Blocks everything underneath)
-        if (m_showDescriptionModal)
-        {
-            Vector2f modalCenter{screenCenterX, screenCenterY};
-            Vector2f modalSize{1360.0f, 860.0f};
-
-            // 1. Fullscreen Dark Dimming Backdrop (solid opaque dimming)
-            context.Render.DrawRectangle(viewSize.X * 2.0f, viewSize.Y * 2.0f, Transform2D{modalCenter}, Color{6, 10, 20, 245});
-
-            // 2. Main Dialog Solid Window Panel
-            context.Render.DrawRectangle(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{14, 18, 30, 255});
-            context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{45, 75, 130, 255}, 1.5f);
-
-            // Header Banner Panel
-            context.Render.DrawRectangle(1320.0f, 76.0f, Transform2D{Vector2f{modalCenter.X, modalCenter.Y - 370.0f}}, Color{22, 30, 52, 255});
-            context.Render.DrawRectangleOutline(1320.0f, 76.0f, Transform2D{Vector2f{modalCenter.X, modalCenter.Y - 370.0f}}, Color{40, 65, 110, 220}, 1.0f);
-
-            // Glowing cyber gold outline for the dialog window
-            float modalPulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 4.0f);
-            uint8_t modalGlowAlpha = static_cast<uint8_t>(180.0f + modalPulse * 75.0f);
-            context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{255, 215, 60, modalGlowAlpha}, 2.5f);
-
-            // Corner decorative cyber brackets
-            constexpr float mcw = 32.0f;
-            float mhw = modalSize.X * 0.5f;
-            float mhh = modalSize.Y * 0.5f;
-            Color cGold{255, 225, 90, 255};
-
-            // Top-Left
-            context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X - mhw + mcw, modalCenter.Y - mhh}, cGold, 3.0f);
-            context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X - mhw, modalCenter.Y - mhh + mcw}, cGold, 3.0f);
-            // Top-Right
-            context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X + mhw - mcw, modalCenter.Y - mhh}, cGold, 3.0f);
-            context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X + mhw, modalCenter.Y - mhh + mcw}, cGold, 3.0f);
-            // Bottom-Left
-            context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X - mhw + mcw, modalCenter.Y + mhh}, cGold, 3.0f);
-            context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X - mhw, modalCenter.Y + mhh - mcw}, cGold, 3.0f);
-            // Bottom-Right
-            context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X + mhw - mcw, modalCenter.Y + mhh}, cGold, 3.0f);
-            context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X + mhw, modalCenter.Y + mhh - mcw}, cGold, 3.0f);
-
-            // Dialog Title
-            std::string title = PowerUpManager::Get().GetName(m_selectedPowerUp);
-            context.Render.DrawTextCentered(title, m_fontId, 34.0f, Transform2D{Vector2f{modalCenter.X - 40.0f, modalCenter.Y - 370.0f}}, Colors::Gold);
-
-            // [X] Close button in top-right of dialog
-            auto [mx, my] = context.Input.GetMousePosition();
-            Vector2f mousePos{mx, my};
-            Vector2f xBtnPos{modalCenter.X + 610.0f, modalCenter.Y - 370.0f};
-            bool xHover = (std::abs(mousePos.X - xBtnPos.X) <= 26.0f && std::abs(mousePos.Y - xBtnPos.Y) <= 26.0f);
-            context.Render.DrawRectangle(52.0f, 52.0f, Transform2D{xBtnPos}, xHover ? Color{210, 50, 65, 255} : Color{140, 35, 45, 255});
-            context.Render.DrawRectangleOutline(52.0f, 52.0f, Transform2D{xBtnPos}, Colors::White, 1.5f);
-            context.Render.DrawTextCentered("X", m_fontId, 32.0f, Transform2D{xBtnPos}, Colors::White);
-
-            // Full Description text
-            std::string desc = PowerUpManager::Get().GetDescription(m_selectedPowerUp);
-            std::string wrappedDesc = context.Render.WrapText(desc, 1200.0f, m_fontId, 23.0f);
-            context.Render.DrawTextCentered(wrappedDesc, m_fontId, 23.0f, Transform2D{Vector2f{modalCenter.X, modalCenter.Y - 265.0f}}, Color{225, 235, 250, 255});
-
-            // 5 Tier Rows for NIV. 1 to NIV. 5
-            int selCurLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
-            constexpr float rowCenterY[5] = {-160.0f, -75.0f, 10.0f, 95.0f, 180.0f};
-            for (int lvl = 1; lvl <= 5; ++lvl)
-            {
-                float ry = modalCenter.Y + rowCenterY[lvl - 1];
-                bool isCur = (lvl == selCurLvl);
-                bool isIns = (lvl == m_inspectedLevel);
-                bool isUnlocked = (lvl <= selCurLvl);
-
-                Color rowBg = isCur ? Color{25, 65, 110, 250} : (isIns ? Color{55, 45, 20, 240} : (isUnlocked ? Color{20, 32, 50, 230} : Color{16, 20, 32, 230}));
-                Color rowBorder = isCur ? Color{80, 220, 255, 255} : (isIns ? Colors::Gold : Color{45, 60, 95, 180});
-
-                context.Render.DrawRectangle(1260.0f, 68.0f, Transform2D{Vector2f{modalCenter.X, ry}}, rowBg);
-                context.Render.DrawRectangleOutline(1260.0f, 68.0f, Transform2D{Vector2f{modalCenter.X, ry}}, rowBorder, (isCur || isIns) ? 2.0f : 1.0f);
-
-                std::string tag = "LVL. " + std::to_string(lvl);
-                Color tagCol = Colors::Gold;
-                if (isCur) { tag += " [CURRENT]"; tagCol = Color{80, 220, 255, 255}; }
-                else if (isUnlocked) { tag += " [UNLOCKED]"; tagCol = Colors::Gold; }
-                else { tag += " [LOCKED]"; tagCol = Color{140, 150, 170, 220}; }
-
-                context.Render.DrawTextCentered(tag, m_fontId, 22.0f, Transform2D{Vector2f{modalCenter.X - 480.0f, ry}}, tagCol);
-
-                std::string tierInfo = PowerUpManager::Get().GetTierInfoForLevel(m_selectedPowerUp, lvl);
-                context.Render.DrawText(tierInfo, m_fontId, 20.0f, Transform2D{Vector2f{modalCenter.X - 320.0f, ry - 10.0f}}, isUnlocked ? Colors::White : Color{180, 190, 205, 200});
-            }
-
-            // Prominent "BACK" Button at the bottom
-            Vector2f retBtnPos{modalCenter.X, modalCenter.Y + 330.0f};
-            bool retHover = (std::abs(mousePos.X - retBtnPos.X) <= 180.0f && std::abs(mousePos.Y - retBtnPos.Y) <= 30.0f);
-            context.Render.DrawRectangle(360.0f, 60.0f, Transform2D{retBtnPos}, retHover ? Color{165, 50, 65, 255} : Color{120, 35, 45, 255});
-            context.Render.DrawRectangleOutline(360.0f, 60.0f, Transform2D{retBtnPos}, Colors::White, 1.5f);
-            context.Render.DrawTextCentered("BACK", m_fontId, 30.0f, Transform2D{retBtnPos}, Colors::White);
-        }
     }
 
     // 3. Tab 2 Custom Visuals: Ultimates Ability Simulation Viewports
@@ -3620,17 +3531,8 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
             bool isInspected = (ultType == m_lastInspectedUltimate);
             if (!isInspected)
             {
-                // Calque semi-transparent noir pour marquer visuellement l'equipement inactif
+                // Calque semi-transparent noir pour marquer visuellement l'equipement inactif (sans badge superflu)
                 context.Render.DrawRectangle(simSize.X - 4.0f, simSize.Y - 4.0f, Transform2D{simCenter}, Color{0, 0, 0, 160});
-
-                // Badge cyber discret et soigne indiquant l'etat inactif
-                Vector2f badgeCenter{simCenter.X, simCenter.Y + (simSize.Y * 0.5f) - 24.0f};
-                context.Render.DrawRectangle(210.0f, 30.0f, Transform2D{badgeCenter}, Color{12, 16, 26, 220});
-                context.Render.DrawRectangleOutline(210.0f, 30.0f, Transform2D{badgeCenter}, Color{70, 95, 140, 180}, 1.5f);
-                std::string badgeText = isEquipped ? "[ EQUIPE (STANDBY) ]" : "[ NON EQUIPE ]";
-                context.Render.DrawText(badgeText, m_fontId, 16.0f,
-                    Transform2D{Vector2f{badgeCenter.X - 65.0f, badgeCenter.Y - 10.0f}},
-                    Color{140, 165, 205, 220});
             }
 
             // Glowing reticle on currently inspected level pip button
@@ -3643,6 +3545,127 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
             context.Render.DrawRectangleOutline(ultPipW + 6.0f, ultPipH + 6.0f,
                 Transform2D{Vector2f{activePipX, pipY}}, Color{255, 215, 60, glowAlpha}, 2.5f);
         }
+    }
+
+    // 4. Description & Stats Modal Overlay (Universal for PowerUps and Ultimates)
+    if (m_showDescriptionModal)
+    {
+        Vector2f modalCenter{screenCenterX, screenCenterY};
+        Vector2f modalSize{1360.0f, 860.0f};
+
+        // 1. Fullscreen Dark Dimming Backdrop (solid opaque dimming)
+        context.Render.DrawRectangle(viewSize.X * 2.0f, viewSize.Y * 2.0f, Transform2D{modalCenter}, Color{6, 10, 20, 245});
+
+        // 2. Main Dialog Solid Window Panel
+        context.Render.DrawRectangle(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{14, 18, 30, 255});
+        context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{45, 75, 130, 255}, 1.5f);
+
+        // Header Banner Panel
+        context.Render.DrawRectangle(1320.0f, 76.0f, Transform2D{Vector2f{modalCenter.X, modalCenter.Y - 370.0f}}, Color{22, 30, 52, 255});
+        context.Render.DrawRectangleOutline(1320.0f, 76.0f, Transform2D{Vector2f{modalCenter.X, modalCenter.Y - 370.0f}}, Color{40, 65, 110, 220}, 1.0f);
+
+        // Glowing cyber gold outline for the dialog window
+        float modalPulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 4.0f);
+        uint8_t modalGlowAlpha = static_cast<uint8_t>(180.0f + modalPulse * 75.0f);
+        context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{255, 215, 60, modalGlowAlpha}, 2.5f);
+
+        // Corner decorative cyber brackets
+        constexpr float mcw = 32.0f;
+        float mhw = modalSize.X * 0.5f;
+        float mhh = modalSize.Y * 0.5f;
+        Color cGold{255, 225, 90, 255};
+
+        // Top-Left
+        context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X - mhw + mcw, modalCenter.Y - mhh}, cGold, 3.0f);
+        context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X - mhw, modalCenter.Y - mhh + mcw}, cGold, 3.0f);
+        // Top-Right
+        context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X + mhw - mcw, modalCenter.Y - mhh}, cGold, 3.0f);
+        context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y - mhh}, Vector2f{modalCenter.X + mhw, modalCenter.Y - mhh + mcw}, cGold, 3.0f);
+        // Bottom-Left
+        context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X - mhw + mcw, modalCenter.Y + mhh}, cGold, 3.0f);
+        context.Render.DrawLine(Vector2f{modalCenter.X - mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X - mhw, modalCenter.Y + mhh - mcw}, cGold, 3.0f);
+        // Bottom-Right
+        context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X + mhw - mcw, modalCenter.Y + mhh}, cGold, 3.0f);
+        context.Render.DrawLine(Vector2f{modalCenter.X + mhw, modalCenter.Y + mhh}, Vector2f{modalCenter.X + mhw, modalCenter.Y + mhh - mcw}, cGold, 3.0f);
+
+        std::string title;
+        std::string desc;
+        int selCurLvl = 1;
+        int selInsLvl = 1;
+
+        if (m_descModalForUltimate)
+        {
+            title = ProfileManager::GetUltimateName(m_descModalUltimate);
+            desc = ProfileManager::GetUltimateDescription(m_descModalUltimate);
+            selCurLvl = ProfileManager::Get().GetUltimateLevel(m_descModalUltimate);
+            for (const auto& uc : m_ultimateCards)
+            {
+                if (uc.Type == m_descModalUltimate)
+                {
+                    selInsLvl = uc.InspectedLevel;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            title = PowerUpManager::Get().GetName(m_selectedPowerUp);
+            desc = PowerUpManager::Get().GetDescription(m_selectedPowerUp);
+            selCurLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+            selInsLvl = m_inspectedLevel;
+        }
+
+        // Dialog Title
+        context.Render.DrawTextCentered(title, m_fontId, 34.0f, Transform2D{Vector2f{modalCenter.X - 40.0f, modalCenter.Y - 370.0f}}, Colors::Gold);
+
+        // [X] Close button in top-right of dialog
+        auto [mx, my] = context.Input.GetMousePosition();
+        Vector2f mousePos{mx, my};
+        Vector2f xBtnPos{modalCenter.X + 610.0f, modalCenter.Y - 370.0f};
+        bool xHover = (std::abs(mousePos.X - xBtnPos.X) <= 26.0f && std::abs(mousePos.Y - xBtnPos.Y) <= 26.0f);
+        context.Render.DrawRectangle(52.0f, 52.0f, Transform2D{xBtnPos}, xHover ? Color{210, 50, 65, 255} : Color{140, 35, 45, 255});
+        context.Render.DrawRectangleOutline(52.0f, 52.0f, Transform2D{xBtnPos}, Colors::White, 1.5f);
+        context.Render.DrawTextCentered("X", m_fontId, 32.0f, Transform2D{xBtnPos}, Colors::White);
+
+        // Full Description text
+        std::string wrappedDesc = context.Render.WrapText(desc, 1200.0f, m_fontId, 23.0f);
+        context.Render.DrawTextCentered(wrappedDesc, m_fontId, 23.0f, Transform2D{Vector2f{modalCenter.X, modalCenter.Y - 265.0f}}, Color{225, 235, 250, 255});
+
+        // 5 Tier Rows for NIV. 1 to NIV. 5
+        constexpr float rowCenterY[5] = {-160.0f, -75.0f, 10.0f, 95.0f, 180.0f};
+        for (int lvl = 1; lvl <= 5; ++lvl)
+        {
+            float ry = modalCenter.Y + rowCenterY[lvl - 1];
+            bool isCur = (lvl == selCurLvl);
+            bool isIns = (lvl == selInsLvl);
+            bool isUnlocked = (lvl <= selCurLvl);
+
+            Color rowBg = isCur ? Color{25, 65, 110, 250} : (isIns ? Color{55, 45, 20, 240} : (isUnlocked ? Color{20, 32, 50, 230} : Color{16, 20, 32, 230}));
+            Color rowBorder = isCur ? Color{80, 220, 255, 255} : (isIns ? Colors::Gold : Color{45, 60, 95, 180});
+
+            context.Render.DrawRectangle(1260.0f, 68.0f, Transform2D{Vector2f{modalCenter.X, ry}}, rowBg);
+            context.Render.DrawRectangleOutline(1260.0f, 68.0f, Transform2D{Vector2f{modalCenter.X, ry}}, rowBorder, (isCur || isIns) ? 2.0f : 1.0f);
+
+            std::string tag = "LVL. " + std::to_string(lvl);
+            Color tagCol = Colors::Gold;
+            if (isCur) { tag += " [CURRENT]"; tagCol = Color{80, 220, 255, 255}; }
+            else if (isUnlocked) { tag += " [UNLOCKED]"; tagCol = Colors::Gold; }
+            else { tag += " [LOCKED]"; tagCol = Color{140, 150, 170, 220}; }
+
+            context.Render.DrawTextCentered(tag, m_fontId, 22.0f, Transform2D{Vector2f{modalCenter.X - 480.0f, ry}}, tagCol);
+
+            std::string tierInfo = m_descModalForUltimate
+                ? ProfileManager::GetUltimateTierInfo(m_descModalUltimate, lvl)
+                : PowerUpManager::Get().GetTierInfoForLevel(m_selectedPowerUp, lvl);
+            context.Render.DrawText(tierInfo, m_fontId, 20.0f, Transform2D{Vector2f{modalCenter.X - 320.0f, ry - 10.0f}}, isUnlocked ? Colors::White : Color{180, 190, 205, 200});
+        }
+
+        // Prominent "BACK" Button at the bottom
+        Vector2f retBtnPos{modalCenter.X, modalCenter.Y + 330.0f};
+        bool retHover = (std::abs(mousePos.X - retBtnPos.X) <= 180.0f && std::abs(mousePos.Y - retBtnPos.Y) <= 30.0f);
+        context.Render.DrawRectangle(360.0f, 60.0f, Transform2D{retBtnPos}, retHover ? Color{165, 50, 65, 255} : Color{120, 35, 45, 255});
+        context.Render.DrawRectangleOutline(360.0f, 60.0f, Transform2D{retBtnPos}, Colors::White, 1.5f);
+        context.Render.DrawTextCentered("BACK", m_fontId, 30.0f, Transform2D{retBtnPos}, Colors::White);
     }
 }
 

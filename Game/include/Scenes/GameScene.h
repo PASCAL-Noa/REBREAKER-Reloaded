@@ -350,6 +350,7 @@ protected:
         float MaxLifetime = 0.75f;
         int   Damage = 1;
         float ArcWidth = 1400.0f;
+        float Delay = 0.0f;
     };
     std::vector<SoundWaveInstance> m_soundWaves;
 
@@ -460,7 +461,7 @@ protected:
     void    ExecutePlasmaOrb(int level);
     void    ExecuteDiscoBall(int level);
     void    ExecutePowerUpRain(int level);
-    void    TriggerSoundWave(float targetHeightRatio, int damage);
+    void    TriggerSoundWave(float targetHeightRatio, int damage, float delay = 0.0f);
     void    SpawnDiscoMusicNote(bool randomSpread = false);
     void    SpawnLuckyQuestionMark(const Vector2f& pos, bool popUp = false);
     void    UpdateUltimateAbilities(float dt);

@@ -4467,7 +4467,7 @@ void GameScene::ExecutePlasmaOrb(int level)
     TweenEffects::Shake(m_registry, m_camera, 0.28f, 11.0f);
 }
 
-void GameScene::TriggerSoundWave(float targetHeightRatio, int damage)
+void GameScene::TriggerSoundWave(float targetHeightRatio, int damage, float delay)
 {
     Vector2f paddlePos{0.0f, 350.0f};
     if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
@@ -4487,14 +4487,18 @@ void GameScene::TriggerSoundWave(float targetHeightRatio, int damage)
     wave.MaxLifetime = 0.85f;
     wave.Damage = damage;
     wave.ArcWidth = 1450.0f;
+    wave.Delay = delay;
 
     m_soundWaves.push_back(wave);
 
-    if (mp_context && m_audioEnabled && m_discoShockwaveSfxId != 0)
+    if (delay <= 0.0f)
     {
-        mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f);
+        if (mp_context && m_audioEnabled && m_discoShockwaveSfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f);
+        }
+        TweenEffects::Shake(m_registry, m_camera, 0.22f, 8.0f);
     }
-    TweenEffects::Shake(m_registry, m_camera, 0.22f, 8.0f);
 }
 
 void GameScene::ExecuteDiscoBall(int level)
@@ -4530,16 +4534,15 @@ void GameScene::ExecuteDiscoBall(int level)
         }
     }
 
-    // Soundwaves from paddle (focused reach so as not to instantly clear stages)
-    float heightRatio = 0.16f + static_cast<float>(m_discoLevel - 1) * 0.04f; // 16%, 20%, 24%, 28%, 32%
+    // Soundwaves from paddle (scaling reach from 30% to 70% height smoothly across 5 levels)
+    float heightRatio = 0.30f + static_cast<float>(m_discoLevel - 1) * 0.10f; // 30%, 40%, 50%, 60%, 70%
     int waveDmg = (m_discoLevel >= 3) ? 2 : 1;
 
-    TriggerSoundWave(heightRatio, waveDmg);
-    if (m_discoLevel >= 4)
+    TriggerSoundWave(heightRatio, waveDmg, 0.0f);
+    if (m_discoLevel >= 5)
     {
-        // 2 extra shockwaves in quick succession
-        TriggerSoundWave(heightRatio * 0.85f, waveDmg);
-        TriggerSoundWave(heightRatio * 0.70f, waveDmg);
+        // Max level fires 2 shockwaves reaching up to 70% of the playfield height
+        TriggerSoundWave(heightRatio, waveDmg, 0.20f);
     }
 
     // Rainbow Big Balls dancing in the playfield
@@ -4970,6 +4973,34 @@ void GameScene::UpdateUltimateAbilities(float dt)
     // 2. Disco Soundwaves update
     for (auto it = m_soundWaves.begin(); it != m_soundWaves.end(); )
     {
+        if (it->Delay > 0.0f)
+        {
+            it->Delay -= dt;
+            if (it->Delay <= 0.0f)
+            {
+                it->Delay = 0.0f;
+                if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+                {
+                    const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+                    it->StartY = pTrans.Position.Y - 20.0f;
+                    it->CurrentY = it->StartY;
+                    float totalPlayHeight = 820.0f;
+                    float heightRatio = 0.30f + static_cast<float>(m_discoLevel - 1) * 0.10f;
+                    it->TargetY = it->StartY - totalPlayHeight * heightRatio;
+                }
+                if (mp_context && m_audioEnabled && m_discoShockwaveSfxId != 0)
+                {
+                    mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f);
+                }
+                TweenEffects::Shake(m_registry, m_camera, 0.22f, 8.0f);
+            }
+            else
+            {
+                ++it;
+                continue;
+            }
+        }
+
         it->Lifetime -= dt;
         float progress = 1.0f - (it->Lifetime / it->MaxLifetime);
         it->CurrentY = it->StartY + (it->TargetY - it->StartY) * progress;
@@ -5747,6 +5778,8 @@ void GameScene::RenderActiveUltimateVisuals(GameContext& context)
     // 2. Disco Soundwaves & Dancefloor Show
     for (const auto& wave : m_soundWaves)
     {
+        if (wave.Delay > 0.0f) continue;
+
         float ratio = std::clamp(wave.Lifetime / wave.MaxLifetime, 0.0f, 1.0f);
         uint8_t a = static_cast<uint8_t>(255.0f * ratio);
 

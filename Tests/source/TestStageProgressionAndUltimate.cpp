@@ -156,7 +156,7 @@ TEST_SUITE("Stage Progression and Ultimate Abilities Tests")
         CHECK(plasmaLvl5.find("splits into 8 then 4 then 2") != std::string::npos);
 
         std::string discoLvl1 = ProfileManager::GetUltimateTierInfo(UltimateAbilityType::DiscoBall, 1);
-        CHECK(discoLvl1.find("50% height") != std::string::npos);
+        CHECK(discoLvl1.find("30% height") != std::string::npos);
 
         std::string discoLvl5 = ProfileManager::GetUltimateTierInfo(UltimateAbilityType::DiscoBall, 5);
         CHECK(discoLvl5.find("Mirror Ball") != std::string::npos);

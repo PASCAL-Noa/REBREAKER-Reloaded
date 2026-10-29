@@ -200,11 +200,11 @@ std::string ProfileManager::GetUltimateDescription(UltimateAbilityType type)
     switch (type)
     {
         case UltimateAbilityType::PlasmaOrb:
-            return "Launches undulating blue-violet plasma orbs that vaporize bricks and split into cascading energy spheres.";
+            return "Launches high-energy blue-violet plasma orbs that vaporize bricks on contact and split into cascading clusters of explosive child orbs upon detonation.";
         case UltimateAbilityType::DiscoBall:
-            return "Ignites disco fever: devastating shockwaves, rainbow spotlights, dancing big balls and a giant mirror ball climax.";
+            return "Ignites disco fever: devastating acoustic shockwaves from paddle, cycling spotlights, dancing rainbow big balls and a spinning mirror ball climax.";
         case UltimateAbilityType::PowerUpRain:
-            return "Summons a massive orbital cascade of upgraded enhancement capsules.";
+            return "Summons a torrential orbital drop of upgraded power-up capsules raining down across the entire playfield.";
         default:
             return "";
     }
@@ -218,22 +218,22 @@ std::string ProfileManager::GetUltimateTierInfo(UltimateAbilityType type, int le
         case UltimateAbilityType::PlasmaOrb:
             switch (safeLvl)
             {
-                case 1: return "1 plasma orb, splits into 2 small explosive orbs";
-                case 2: return "2 plasma orbs, each splits into 2 small orbs";
-                case 3: return "2 enlarged plasma orbs, splits into 4 then 2 orbs";
-                case 4: return "3 enlarged plasma orbs, splits into 4 then 2 orbs";
-                case 5: return "3 mega plasma orbs, splits into 8 then 4 then 2";
+                case 1: return "1 plasma orb (2 dmg), splits into 2 small explosive orbs";
+                case 2: return "2 plasma orbs (2 dmg), each splits into 2 small explosive orbs";
+                case 3: return "2 enlarged plasma orbs (3 dmg), splits into 4 then 2 orbs";
+                case 4: return "3 enlarged plasma orbs (3 dmg), splits into 4 then 2 orbs";
+                case 5: return "3 mega plasma orbs (4 dmg), splits into 8 then 4 then 2";
                 default: break;
             }
             break;
         case UltimateAbilityType::DiscoBall:
             switch (safeLvl)
             {
-                case 1: return "Shockwave 50% height, 1 dmg, 2 big balls & funk beat";
-                case 2: return "Shockwave 60% height, 1 dmg, 3 orbiting big balls";
-                case 3: return "Shockwave 70% height, 2 dmg, 4 orbiting big balls";
-                case 4: return "Shockwave 80% height, 2 dmg, 2 extra shockwaves, 5 big balls";
-                case 5: return "Shockwave 90% height, 6 big balls & Mirror Ball unleash (5s)";
+                case 1: return "Shockwave 30% height (1 dmg), 2 dancing rainbow big balls & funk beat";
+                case 2: return "Shockwave 40% height (1 dmg), 3 dancing rainbow big balls";
+                case 3: return "Shockwave 50% height (2 dmg), 4 dancing rainbow big balls";
+                case 4: return "Shockwave 60% height (2 dmg), 5 dancing rainbow big balls";
+                case 5: return "2 shockwaves up to 70% height (2 dmg), 6 big balls & Mirror Ball unleash (5s)";
                 default: break;
             }
             break;

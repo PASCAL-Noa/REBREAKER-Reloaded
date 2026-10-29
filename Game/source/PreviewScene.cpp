@@ -92,8 +92,8 @@ void PreviewScene::SetEmbeddedMode(bool embedded)
         if (m_registry.HasComponent<Camera2D>(m_camera))
         {
             auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
-            cam.Position = Vector2f{0.0f, -20.0f};
-            cam.Zoom = 1.35f;
+            cam.Position = Vector2f{0.0f, -25.0f};
+            cam.Zoom = 1.60f;
             cam.Rotation = 0.0f;
         }
     }
@@ -391,8 +391,8 @@ void PreviewScene::OnInit(GameContext& context)
     if (m_isEmbeddedMode && m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
     {
         auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
-        cam.Position = Vector2f{0.0f, -20.0f};
-        cam.Zoom = 1.35f;
+        cam.Position = Vector2f{0.0f, -25.0f};
+        cam.Zoom = 1.60f;
     }
 }
 
@@ -584,8 +584,8 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         if (m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
         {
             auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
-            cam.Position = Vector2f{0.0f, -20.0f};
-            cam.Zoom = 1.35f;
+            cam.Position = Vector2f{0.0f, -25.0f};
+            cam.Zoom = 1.60f;
             cam.Rotation = 0.0f;
         }
     }
