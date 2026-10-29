@@ -863,8 +863,25 @@ void GameScene::OnRender(GameContext& context)
         paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
     }
 
+    // Smoothly calculate disco blackout / club darkness factor (lights turned off)
+    float discoDarkFactor = 0.0f;
+    if (m_discoTimer > 0.0f)
+    {
+        float entry = std::clamp((m_discoDuration - m_discoTimer) / 0.45f, 0.0f, 1.0f);
+        float exit = std::clamp(m_discoTimer / 0.75f, 0.0f, 1.0f);
+        discoDarkFactor = std::min(entry, exit);
+    }
+
+    Color effectiveBgColor = m_bgColor;
+    if (discoDarkFactor > 0.0f)
+    {
+        effectiveBgColor.r = static_cast<uint8_t>(m_bgColor.r * (1.0f - discoDarkFactor * 0.85f));
+        effectiveBgColor.g = static_cast<uint8_t>(m_bgColor.g * (1.0f - discoDarkFactor * 0.85f));
+        effectiveBgColor.b = static_cast<uint8_t>(m_bgColor.b * (1.0f - discoDarkFactor * 0.85f));
+    }
+
     // Render ambient background layer (behind gameplay entities)
-    m_ambientBackground.OnRender(context.Render, m_bgColor, cameraComp.Position, paddlePos);
+    m_ambientBackground.OnRender(context.Render, effectiveBgColor, cameraComp.Position, paddlePos);
 
     // Wandering yellow musical note particles in the background
     RenderDiscoBackgroundMusicNotes(context);
@@ -966,6 +983,25 @@ void GameScene::OnRender(GameContext& context)
         }
     });
 
+    // Disco Fever illuminated dancefloor tile frames around bricks
+    if (m_discoTimer > 0.0f)
+    {
+        float pulse = 0.5f + 0.5f * std::sin(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 20.0f : 12.0f));
+        m_registry.View<Transform2D, BoxCollider, BrickComponent>([&](Entity, const Transform2D& t, const BoxCollider& b, const BrickComponent& brick)
+        {
+            if (brick.IsRegenerating) return;
+            float colIdx = std::floor((t.Position.X + 800.0f) / 70.0f);
+            float rowIdx = std::floor((t.Position.Y + 450.0f) / 30.0f);
+            float discoHue = std::fmod(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 2.5f : 1.2f) + (colIdx * 0.08f) + (rowIdx * 0.12f), 1.0f);
+            Color discoOutline = DiscoRainbowColor(discoHue + 0.5f, static_cast<uint8_t>(180 + 75 * pulse));
+
+            // Disco dancefloor illuminated tile frame
+            context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, discoOutline, -2.0f);
+            // Inner neon facet reflection
+            context.Render.DrawRectangleOutline(b.Size.X - 8.0f, b.Size.Y - 6.0f, t, Color{255, 255, 255, static_cast<uint8_t>(120 + 80 * pulse)}, -1.0f);
+        });
+    }
+
     const bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
     if (showDebug)
     {
@@ -1049,9 +1085,18 @@ void GameScene::OnRender(GameContext& context)
     }
 
     // 2D Dynamic Lighting Pass
-    if (m_currentTheme.HasLighting())
+    const bool isDiscoDarkActive = (discoDarkFactor > 0.0f);
+    if (m_currentTheme.HasLighting() || isDiscoDarkActive)
     {
-        context.Render.BeginLightingPass(m_currentTheme.AmbientLight);
+        Color baseAmbient = m_currentTheme.AmbientLight;
+        Color clubDark{10, 8, 18, 255}; // Extinguished room lights -> Authentic Disco Club!
+        Color ambient{
+            static_cast<uint8_t>(baseAmbient.r * (1.0f - discoDarkFactor) + clubDark.r * discoDarkFactor),
+            static_cast<uint8_t>(baseAmbient.g * (1.0f - discoDarkFactor) + clubDark.g * discoDarkFactor),
+            static_cast<uint8_t>(baseAmbient.b * (1.0f - discoDarkFactor) + clubDark.b * discoDarkFactor),
+            255
+        };
+        context.Render.BeginLightingPass(ambient);
 
         // 1. Dynamic light sources (point and cone) from ECS entities (lanterns, standard balls, etc.)
         m_registry.View<Transform2D, LightSourceComponent>([&](Entity e, const Transform2D& t, const LightSourceComponent& light)
@@ -1170,10 +1215,48 @@ void GameScene::OnRender(GameContext& context)
             }
         }
 
-        // 7. Disco Fever dynamic illumination in dark levels
+        // 7. Disco Fever dynamic illumination in club darkness
         if (m_discoTimer > 0.0f)
         {
-            // A. Dancing Rainbow Big Balls & Trails
+            // A. Sweeping ceiling spotlights illuminating the dancefloor
+            const Vector2f spotOrigins[4] = {
+                {-650.0f, -440.0f},
+                {-220.0f, -440.0f},
+                {220.0f, -440.0f},
+                {650.0f, -440.0f}
+            };
+            const Color spotColors[4] = {
+                Color{255, 40, 140, 255},  // Neon Magenta
+                Color{40, 220, 255, 255},  // Electric Cyan
+                Color{255, 220, 40, 255},  // Golden Sun
+                Color{170, 50, 255, 255}   // Ultraviolet
+            };
+            for (int sp = 0; sp < 4; ++sp)
+            {
+                float sweep = std::sin(m_gameplayTime * 2.2f + static_cast<float>(sp) * 1.57f);
+                Vector2f targetFloor{
+                    spotOrigins[sp].X * 0.4f + sweep * 440.0f,
+                    380.0f
+                };
+                Vector2f toFloor = targetFloor - spotOrigins[sp];
+                float spotAngleDeg = std::atan2(toFloor.Y, toFloor.X) * 180.0f / 3.14159265f;
+                float spotDist = toFloor.Length() + 60.0f;
+                context.Render.DrawConeLight(spotOrigins[sp], spotDist, spotAngleDeg, 38.0f, spotColors[sp], 2.4f * discoDarkFactor, BlendMode::Add);
+                context.Render.DrawPointLight(targetFloor, 140.0f, spotColors[sp], 1.9f * discoDarkFactor, BlendMode::Add);
+            }
+
+            // B. Glowing Disco Bricks illumination in the darkened club
+            m_registry.View<Transform2D, BoxCollider, BrickComponent>([&](Entity, const Transform2D& t, const BoxCollider&, const BrickComponent& brick)
+            {
+                if (brick.IsRegenerating) return;
+                float colIdx = std::floor((t.Position.X + 800.0f) / 70.0f);
+                float rowIdx = std::floor((t.Position.Y + 450.0f) / 30.0f);
+                float discoHue = std::fmod(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 2.5f : 1.2f) + (colIdx * 0.08f) + (rowIdx * 0.12f), 1.0f);
+                Color discoCol = DiscoRainbowColor(discoHue, 255);
+                context.Render.DrawPointLight(t.Position, 72.0f, discoCol, 1.25f * discoDarkFactor, BlendMode::Add);
+            });
+
+            // C. Dancing Rainbow Big Balls & Trails
             for (const auto& db : m_discoBigBalls)
             {
                 context.Render.DrawPointLight(db.Position, 220.0f, db.BaseColor, 1.8f, BlendMode::Add);
@@ -1482,7 +1565,8 @@ void GameScene::SpawnFireExplosionParticles(const Vector2f& position, float radi
     std::uniform_real_distribution<float> speedDist(150.0f, 550.0f);
     std::uniform_real_distribution<float> lifeDist(0.35f, 0.75f);
     std::uniform_real_distribution<float> sizeDist(8.0f, 22.0f);
-    std::uniform_real_distribution<float> offsetDist(0.0f, radius * 0.25f);
+    const float safeMaxOffsetFire = std::max(0.0f, radius * 0.25f);
+    std::uniform_real_distribution<float> offsetDist(0.0f, safeMaxOffsetFire);
     std::uniform_int_distribution<int> colorPick(0, 3);
 
     for (int i = 0; i < count; ++i)
@@ -1520,7 +1604,8 @@ void GameScene::SpawnPlasmaExplosionParticles(const Vector2f& position, float ra
     std::uniform_real_distribution<float> speedDist(140.0f, 540.0f);
     std::uniform_real_distribution<float> lifeDist(0.35f, 0.75f);
     std::uniform_real_distribution<float> sizeDist(7.0f, 22.0f);
-    std::uniform_real_distribution<float> offsetDist(0.0f, radius * 0.25f);
+    const float safeMaxOffsetPlasma = std::max(0.0f, radius * 0.25f);
+    std::uniform_real_distribution<float> offsetDist(0.0f, safeMaxOffsetPlasma);
     std::uniform_int_distribution<int> colorPick(0, 4);
 
     for (int i = 0; i < count; ++i)
@@ -4053,6 +4138,7 @@ void GameScene::SpawnAllPowerUps()
 
 void GameScene::RespawnBricks()
 {
+    m_preDiscoBrickTints.clear();
     m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
         m_registry.DestroyEntityDeferred(e);
     });
@@ -4153,9 +4239,10 @@ void GameScene::ClearActiveUltimates()
         }
     }
 
-    if (m_discoTimer > 0.0f || !m_preDiscoMusicPath.empty())
+    if (m_discoTimer > 0.0f || !m_preDiscoMusicPath.empty() || !m_preDiscoBrickTints.empty())
     {
         m_discoTimer = 0.0f;
+        RestoreDiscoBricks();
         m_discoBigBalls.clear();
         m_discoMirrorBall.IsActive = false;
         m_discoMirrorBall.IsFrenzy = false;
@@ -4351,6 +4438,13 @@ void GameScene::ExecuteDiscoBall(int level)
     m_discoTimer = m_discoDuration;
     m_discoRainbowHue = 0.0f;
     m_discoGrandFinaleBannerTimer = 0.0f;
+
+    // Snapshot original tints of all alive bricks before applying disco theme
+    m_preDiscoBrickTints.clear();
+    m_registry.View<SpriteComponent, BrickComponent>([&](Entity e, const SpriteComponent& sc, const BrickComponent&)
+    {
+        m_preDiscoBrickTints[e] = sc.Tint;
+    });
 
     // Switch music to the groovy layered disco stem for this level
     if (mp_context)
@@ -4920,6 +5014,20 @@ void GameScene::UpdateUltimateAbilities(float dt)
         m_discoTimer -= dt;
         m_discoRainbowHue += dt * 2.8f;
 
+        // Animate bricks with a groovy, dynamic disco dancefloor theme without altering characteristics
+        m_registry.View<Transform2D, SpriteComponent, BrickComponent>([&](Entity e, const Transform2D& t, SpriteComponent& sc, const BrickComponent& brick)
+        {
+            if (brick.IsRegenerating) return;
+            if (m_preDiscoBrickTints.find(e) == m_preDiscoBrickTints.end())
+            {
+                m_preDiscoBrickTints[e] = sc.Tint;
+            }
+            float colIdx = std::floor((t.Position.X + 800.0f) / 70.0f);
+            float rowIdx = std::floor((t.Position.Y + 450.0f) / 30.0f);
+            float discoHue = std::fmod(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 2.5f : 1.2f) + (colIdx * 0.08f) + (rowIdx * 0.12f), 1.0f);
+            sc.Tint = DiscoRainbowColor(discoHue, 255);
+        });
+
         // A. Update Dancing & Independent Big Balls
         for (auto& db : m_discoBigBalls)
         {
@@ -5227,6 +5335,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
         if (m_discoTimer <= 0.0f)
         {
             m_discoTimer = 0.0f;
+            RestoreDiscoBricks();
 
             for (const auto& db : m_discoBigBalls)
             {
@@ -5914,8 +6023,27 @@ void GameScene::RenderLuckyQuestionMarks(GameContext& context)
     }
 }
 
-
-
-
-
-
+void GameScene::RestoreDiscoBricks()
+{
+    for (const auto& [entity, originalTint] : m_preDiscoBrickTints)
+    {
+        if (m_registry.IsAlive(entity) && !m_registry.IsPendingDestroy(entity))
+        {
+            if (m_registry.HasComponent<SpriteComponent>(entity))
+            {
+                auto& sc = m_registry.GetComponent<SpriteComponent>(entity);
+                Color restored = originalTint;
+                if (m_registry.HasComponent<BrickComponent>(entity))
+                {
+                    const auto& brick = m_registry.GetComponent<BrickComponent>(entity);
+                    if (brick.IsRegenerating)
+                    {
+                        restored.a = 0;
+                    }
+                }
+                sc.Tint = restored;
+            }
+        }
+    }
+    m_preDiscoBrickTints.clear();
+}

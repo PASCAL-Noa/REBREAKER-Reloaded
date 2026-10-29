@@ -20,6 +20,7 @@
 #include "ECS/Components/LightSourceComponent.h"
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 struct Color;
 
@@ -327,6 +328,7 @@ protected:
     float       m_discoRainbowHue = 0.0f;
     int         m_discoLevel = 1;
     std::string m_preDiscoMusicPath;
+    std::unordered_map<Entity, Color> m_preDiscoBrickTints;
 
     struct SoundWaveInstance
     {
@@ -458,4 +460,5 @@ protected:
     void    RenderLuckyQuestionMarks(GameContext& context);
     void    RenderActiveUltimateVisuals(GameContext& context);
     void    ClearActiveUltimates();
+    void    RestoreDiscoBricks();
 };

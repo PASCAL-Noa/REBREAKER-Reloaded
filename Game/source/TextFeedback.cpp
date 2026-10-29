@@ -203,8 +203,12 @@ void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& /*world
     // Pick a random position across the safe play area of the screen
     const Vector2f viewSize = m_context.Render.GetLogicalViewSize();
     static std::mt19937 rng(1337);
-    std::uniform_real_distribution<float> distX(viewSize.X * 0.20f, viewSize.X * 0.75f);
-    std::uniform_real_distribution<float> distY(viewSize.Y * 0.25f, viewSize.Y * 0.70f);
+    const float minX = std::max(0.0f, std::min(viewSize.X * 0.20f, viewSize.X * 0.75f));
+    const float maxX = std::max(minX, std::max(viewSize.X * 0.20f, viewSize.X * 0.75f));
+    const float minY = std::max(0.0f, std::min(viewSize.Y * 0.25f, viewSize.Y * 0.70f));
+    const float maxY = std::max(minY, std::max(viewSize.Y * 0.25f, viewSize.Y * 0.70f));
+    std::uniform_real_distribution<float> distX(minX, maxX);
+    std::uniform_real_distribution<float> distY(minY, maxY);
     Vector2f uiPosition{distX(rng), distY(rng)};
 
     Entity ft = m_registry.CreateEntity();
