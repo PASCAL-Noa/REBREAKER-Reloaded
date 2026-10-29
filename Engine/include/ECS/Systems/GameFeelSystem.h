@@ -13,8 +13,12 @@ public:
     ~GameFeelSystem() override = default;
     void OnUpdate(float dt) override;
 
+    void SetAudioEnabled(bool enabled) { m_audioEnabled = enabled; }
+    [[nodiscard]] bool IsAudioEnabled() const { return m_audioEnabled; }
+
 private:
     GameContext&    m_context;
+    bool            m_audioEnabled = true;
 
     ScopedSubscription m_brickHitSub;
     ScopedSubscription m_paddleHitSub;

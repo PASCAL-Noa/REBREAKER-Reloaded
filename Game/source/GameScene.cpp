@@ -133,6 +133,29 @@ namespace
 #include "Scenes/MenuScene.h"
 #include "TweenEffects/TweenEffects.h"
 
+void GameScene::PlaySfx(uint32_t id, float volume, float pitch, float pan) const
+{
+    if (m_audioEnabled && mp_context)
+    {
+        mp_context->Audio.PlaySfx(id, volume, pitch, pan);
+    }
+}
+
+void GameScene::SetAudioEnabled(bool enabled)
+{
+    m_audioEnabled = enabled;
+    if (mp_gameFeelSystem)
+    {
+        mp_gameFeelSystem->SetAudioEnabled(enabled);
+    }
+}
+
+void GameScene::RestorePostUltimateMusic()
+{
+    if (!mp_context || !m_musicEnabled) return;
+    m_playlist.PlayNext(*mp_context, 1.2f);
+}
+
 void GameScene::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
@@ -198,7 +221,11 @@ void GameScene::OnInit(GameContext& context)
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
     m_systemManager.AddSystem<AnimatorSystem>(m_registry);
     m_particleSystem = m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
-    m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
+    mp_gameFeelSystem = m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
+    if (mp_gameFeelSystem)
+    {
+        mp_gameFeelSystem->SetAudioEnabled(m_audioEnabled);
+    }
     m_systemManager.AddSystem<TweenSystem>(m_registry);
     m_systemManager.AddSystem<PowerUpSystem>(m_registry, context.Events);
 
@@ -338,7 +365,10 @@ void GameScene::OnInit(GameContext& context)
                 constexpr float kHalfPlayfieldWidth = 800.0f;
                 bouncePan = std::clamp(m_registry.GetComponent<Transform2D>(ballEntity).Position.X / kHalfPlayfieldWidth, -1.0f, 1.0f);
             }
-            context.Audio.PlaySfx(m_bounceSfxId, 50.0f, 1.0f, bouncePan);
+            if (m_audioEnabled)
+            {
+                context.Audio.PlaySfx(m_bounceSfxId, 50.0f, 1.0f, bouncePan);
+            }
         }
 
         if (isPaddle || (!isBrick && !isPaddle && !isBottomWall))
@@ -699,7 +729,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
                     ballRb.IsKinematic = false;
                     ballComp.IsStuck = false;
 
-                    if (m_bounceSfxId != 0)
+                    if (m_bounceSfxId != 0 && m_audioEnabled)
                     {
                         context.Audio.PlaySfx(m_bounceSfxId, sweetSpotHit ? 100.0f : 90.0f);
                     }
@@ -1660,7 +1690,7 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
     SpawnFireExplosionParticles(explosionCenter, aoeRadius, 45);
     SpawnLightFlash(explosionCenter, 500.0f, Color{255, 170, 60, 255}, 2.2f, 0.45f);
 
-    if (mp_context)
+    if (mp_context && m_audioEnabled)
     {
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_fireballExplosionSfxId != 0)
@@ -1807,8 +1837,8 @@ void GameScene::StartLevelTransition()
     ClearActiveUltimates();
     if (mp_context)
     {
-        mp_context->Audio.FadeOutMusic(0.8f);
-        if (m_levelClearSfxId != 0)
+        if (m_musicEnabled) mp_context->Audio.FadeOutMusic(0.8f);
+        if (m_audioEnabled && m_levelClearSfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_levelClearSfxId, 100.0f);
         }
@@ -1825,7 +1855,7 @@ void GameScene::UpdateLevelTransition()
 void GameScene::CompleteLevelTransition()
 {
     m_levelTransitionTimer = 0.0f;
-    if (mp_context)
+    if (mp_context && m_musicEnabled)
     {
         m_playlist.PlayNext(*mp_context, 1.5f);
     }
@@ -1854,7 +1884,7 @@ void GameScene::StartCountdown()
     if (m_renderGameUI && mp_context)
     {
         mp_context->Events.Publish(GameStateChangedEvent(GameUIState::Countdown));
-        if (m_countdownReadySfxId != 0)
+        if (m_audioEnabled && m_countdownReadySfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_countdownReadySfxId, 100.0f);
         }
@@ -1874,8 +1904,8 @@ void GameScene::OnGameOverEnter()
     if (mp_context)
     {
         // Smoothly fade out stage music and fade in game-over stinger
-        mp_context->Audio.FadeToMusic("Resources/audio/music/Game-death.ogg", 0.6f, 50.0f, false);
-        if (m_gameOverSfxId != 0)
+        if (m_musicEnabled) mp_context->Audio.FadeToMusic("Resources/audio/music/Game-death.ogg", 0.6f, 50.0f, false);
+        if (m_audioEnabled && m_gameOverSfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_gameOverSfxId, 100.0f);
         }
@@ -2365,7 +2395,7 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
     bombQueue.push(initialBomb);
     processedBombs.insert(initialBomb);
 
-    if (mp_context)
+    if (mp_context && m_audioEnabled)
     {
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_explosionSfxId != 0)
@@ -2546,7 +2576,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
                 SpawnExplosionParticles(contactPos, Color{130, 220, 255, 255}, 10);
                 TweenEffects::Shake(m_registry, entity, 0.12f, 4.0f);
             }
-            if (mp_context && m_bounceSfxId != 0)
+            if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 90.0f, 1.4f);
             }
@@ -2567,7 +2597,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
             mp_context->Events.Publish(BrickHitEvent(entity, true, false, m_scoreManager.GetComboMultiplier(), contactPos));
 
-            if (mp_context && m_explosionSfxId != 0)
+            if (mp_context && m_audioEnabled && m_explosionSfxId != 0)
             {
                 mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
             }
@@ -2599,7 +2629,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
                 TweenEffects::Shake(m_registry, entity, 0.1f, 3.0f);
             }
 
-            if (mp_context && m_bounceSfxId != 0)
+            if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f, 1.25f);
             }
@@ -2825,7 +2855,7 @@ void GameScene::HandlePaddleCollision(Entity ballEntity)
 
         m_stuckBalls.push_back(StuckBall{ballEntity, ballComp.StuckOffsetX, 0.0f});
 
-        if (m_bounceSfxId != 0 && mp_context)
+        if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
         {
             mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
         }
@@ -2880,7 +2910,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
             SpawnExplosionParticles(trans.Position, Color{160, 240, 255, 255}, 20);
             TriggerPostProcessFlash(0.015f, 0.35f, Color{160, 240, 255, 255});
 
-            if (m_bounceSfxId != 0 && mp_context)
+            if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
             {
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f, 1.35f);
             }
@@ -2908,7 +2938,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
             SpawnExplosionParticles(trans.Position, Color{0, 240, 255, 255}, 25);
             TriggerPostProcessFlash(0.018f, 0.45f, Color{0, 220, 255, 255});
 
-            if (m_bounceSfxId != 0 && mp_context)
+            if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
             {
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f);
             }
@@ -2936,7 +2966,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
             const auto& sprite = m_registry.GetComponent<SpriteComponent>(ballEntity);
             SpawnExplosionParticles(transform.Position, sprite.Tint, 15);
         }
-        if (mp_context) mp_context->Audio.PlaySfx(m_despawnSfxId, 80.0f);
+        if (mp_context && m_audioEnabled) mp_context->Audio.PlaySfx(m_despawnSfxId, 80.0f);
 
         if (ballEntity == m_ball)
         {
@@ -3237,7 +3267,7 @@ void GameScene::TriggerStormStrike()
         }
 
         // High-voltage electrical conduction SFX
-        if (mp_context && m_conductionSfxId != 0)
+        if (mp_context && m_audioEnabled && m_conductionSfxId != 0)
         {
             float zapPitch = 0.95f + static_cast<float>(rand() % 15) * 0.01f;
             mp_context->Audio.PlaySfx(m_conductionSfxId, 100.0f, zapPitch);
@@ -3265,7 +3295,7 @@ void GameScene::TriggerStormStrike()
     }
 
     // Audio & Game Feel
-    if (mp_context)
+    if (mp_context && m_audioEnabled)
     {
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_lightningSfxId != 0)
@@ -4174,7 +4204,7 @@ void GameScene::AddUltimateCharge(float amount)
     {
         m_ultimateCharge = m_ultimateMaxCharge;
         m_ultimateReady = true;
-        if (mp_context && m_ultimateReadySfxId != 0)
+        if (mp_context && m_audioEnabled && m_ultimateReadySfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_ultimateReadySfxId, 95.0f);
         }
@@ -4227,13 +4257,24 @@ void GameScene::ClearActiveUltimates()
         m_plasmaAnimTime = 0.0f;
         if (mp_context)
         {
-            if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
+            if (m_musicEnabled)
             {
-                mp_context->Audio.PlayMusic(m_prePlasmaMusicPath, 80.0f, true);
+                if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic(m_prePlasmaMusicPath, 80.0f, true);
+                }
+                else
+                {
+                    RestorePostUltimateMusic();
+                }
             }
             else
             {
-                m_playlist.PlayNext(*mp_context, 1.2f);
+                std::string cur = mp_context->Audio.GetCurrentMusicPath();
+                if (cur.find("plasma_ultimate") != std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                }
             }
             m_prePlasmaMusicPath.clear();
         }
@@ -4251,13 +4292,24 @@ void GameScene::ClearActiveUltimates()
 
         if (mp_context)
         {
-            if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
+            if (m_musicEnabled)
             {
-                mp_context->Audio.PlayMusic(m_preDiscoMusicPath, 80.0f, true);
+                if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic(m_preDiscoMusicPath, 80.0f, true);
+                }
+                else
+                {
+                    RestorePostUltimateMusic();
+                }
             }
             else
             {
-                m_playlist.PlayNext(*mp_context, 1.2f);
+                std::string cur = mp_context->Audio.GetCurrentMusicPath();
+                if (cur.find("disco_ultimate") != std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                }
             }
             m_preDiscoMusicPath.clear();
         }
@@ -4276,13 +4328,24 @@ void GameScene::ClearActiveUltimates()
 
         if (mp_context)
         {
-            if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
+            if (m_musicEnabled)
             {
-                mp_context->Audio.PlayMusic(m_prePowerUpRainMusicPath, 80.0f, true);
+                if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic(m_prePowerUpRainMusicPath, 80.0f, true);
+                }
+                else
+                {
+                    RestorePostUltimateMusic();
+                }
             }
             else
             {
-                m_playlist.PlayNext(*mp_context, 1.2f);
+                std::string cur = mp_context->Audio.GetCurrentMusicPath();
+                if (cur.find("lucky_drop_ultimate") != std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                }
             }
             m_prePowerUpRainMusicPath.clear();
         }
@@ -4382,7 +4445,7 @@ void GameScene::ExecutePlasmaOrb(int level)
 
     if (mp_context)
     {
-        if (m_plasmaLaunchSfxId != 0)
+        if (m_plasmaLaunchSfxId != 0 && m_audioEnabled)
         {
             mp_context->Audio.PlaySfx(m_plasmaLaunchSfxId, 100.0f);
         }
@@ -4395,7 +4458,10 @@ void GameScene::ExecutePlasmaOrb(int level)
                 m_prePlasmaMusicPath = cur;
             }
         }
-        mp_context->Audio.PlayMusic("Resources/audio/music/plasma_ultimate.wav", 100.0f, true);
+        if (m_musicEnabled)
+        {
+            mp_context->Audio.PlayMusic("Resources/audio/music/plasma_ultimate.wav", 100.0f, true);
+        }
     }
     TriggerPostProcessFlash(0.04f, 0.65f, Color{150, 40, 255, 255}, 0.35f, Color{0, 220, 255, 255});
     TweenEffects::Shake(m_registry, m_camera, 0.28f, 11.0f);
@@ -4424,7 +4490,7 @@ void GameScene::TriggerSoundWave(float targetHeightRatio, int damage)
 
     m_soundWaves.push_back(wave);
 
-    if (mp_context && m_discoShockwaveSfxId != 0)
+    if (mp_context && m_audioEnabled && m_discoShockwaveSfxId != 0)
     {
         mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f);
     }
@@ -4458,7 +4524,10 @@ void GameScene::ExecuteDiscoBall(int level)
             }
         }
         std::string musicPath = "Resources/audio/music/disco_ultimate_lvl" + std::to_string(m_discoLevel) + ".wav";
-        mp_context->Audio.PlayMusic(musicPath, 100.0f, true);
+        if (m_musicEnabled)
+        {
+            mp_context->Audio.PlayMusic(musicPath, 100.0f, true);
+        }
     }
 
     // Soundwaves from paddle (focused reach so as not to instantly clear stages)
@@ -4611,7 +4680,7 @@ void GameScene::ExecutePowerUpRain(int level)
 
     if (mp_context)
     {
-        if (m_ultimateReadySfxId != 0)
+        if (m_audioEnabled && m_ultimateReadySfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_ultimateReadySfxId, 100.0f, 1.25f);
         }
@@ -4624,7 +4693,10 @@ void GameScene::ExecutePowerUpRain(int level)
                 m_prePowerUpRainMusicPath = cur;
             }
         }
-        mp_context->Audio.PlayMusic("Resources/audio/music/lucky_drop_ultimate.wav", 100.0f, true);
+        if (m_musicEnabled)
+        {
+            mp_context->Audio.PlayMusic("Resources/audio/music/lucky_drop_ultimate.wav", 100.0f, true);
+        }
     }
 
     // Spawn an initial cyber burst of Lucky Question Mark particles
@@ -4768,7 +4840,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
         if (bounced)
         {
             SpawnPlasmaExplosionParticles(it->Position, it->Radius * 1.5f, 8);
-            if (mp_context && m_bounceSfxId != 0)
+            if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
                 float pan = std::clamp(it->Position.X / 800.0f, -1.0f, 1.0f);
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 45.0f, 1.35f, pan);
@@ -4821,7 +4893,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                 }
 
                 SpawnPlasmaExplosionParticles(spawnPos, 45.0f, 16);
-                if (mp_context && m_plasmaLaunchSfxId != 0)
+                if (mp_context && m_audioEnabled && m_plasmaLaunchSfxId != 0)
                 {
                     mp_context->Audio.PlaySfx(m_plasmaLaunchSfxId, 80.0f, 1.35f);
                 }
@@ -4829,7 +4901,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
             else
             {
                 // Final generation detonation!
-                if (mp_context && m_plasmaExplodeSfxId != 0)
+                if (mp_context && m_audioEnabled && m_plasmaExplodeSfxId != 0)
                 {
                     mp_context->Audio.PlaySfx(m_plasmaExplodeSfxId, 85.0f);
                 }
@@ -4880,7 +4952,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
         if (m_plasmaActiveTimer <= 0.0f)
         {
             m_plasmaActiveTimer = 0.0f;
-            if (mp_context)
+            if (mp_context && m_musicEnabled)
             {
                 if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
                 {
@@ -5058,11 +5130,11 @@ void GameScene::UpdateUltimateAbilities(float dt)
 
                         // Unique disco instrument SFX for this specific ball
                         uint32_t hitSfx = (db.InstrumentIndex >= 0 && db.InstrumentIndex < 6) ? m_discoHitSfxIds[db.InstrumentIndex] : 0;
-                        if (hitSfx != 0 && mp_context)
+                        if (hitSfx != 0 && mp_context && m_audioEnabled)
                         {
                             mp_context->Audio.PlaySfx(hitSfx, 100.0f);
                         }
-                        else if (m_conductionSfxId != 0 && mp_context)
+                        else if (m_conductionSfxId != 0 && mp_context && m_audioEnabled)
                         {
                             mp_context->Audio.PlaySfx(m_conductionSfxId, 85.0f);
                         }
@@ -5224,11 +5296,14 @@ void GameScene::UpdateUltimateAbilities(float dt)
 
             if (mp_context)
             {
-                if (m_discoShockwaveSfxId != 0)
+                if (m_discoShockwaveSfxId != 0 && m_audioEnabled)
                 {
                     mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f, 1.3f);
                 }
-                mp_context->Audio.PlayMusic("Resources/audio/music/disco_ultimate_crazy.wav", 100.0f, true);
+                if (m_musicEnabled)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/disco_ultimate_crazy.wav", 100.0f, true);
+                }
             }
         }
 
@@ -5304,7 +5379,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
             if (m_discoMirrorBall.Lifetime <= 0.0f)
             {
                 m_discoMirrorBall.IsActive = false;
-                if (mp_context)
+                if (mp_context && m_audioEnabled)
                 {
                     mp_context->Audio.TriggerDucking(0.20f, 1.6f);
                     if (m_discoVoiceoverSfxId != 0)
@@ -5351,7 +5426,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                 SpawnExplosionParticles(db.Position, db.BaseColor, 32);
                 SpawnLightFlash(db.Position, 420.0f, db.BaseColor, 2.2f, 0.45f);
             }
-            if (m_plasmaExplodeSfxId != 0 && mp_context)
+            if (m_plasmaExplodeSfxId != 0 && mp_context && m_audioEnabled)
             {
                 mp_context->Audio.PlaySfx(m_plasmaExplodeSfxId, 90.0f);
             }
@@ -5371,7 +5446,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
 
                 SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 255, 255, 255}, 60);
                 SpawnLightFlash(m_discoMirrorBall.Position, 750.0f, Color{255, 250, 255, 255}, 3.2f, 0.85f);
-                if (mp_context)
+                if (mp_context && m_audioEnabled)
                 {
                     mp_context->Audio.TriggerDucking(0.20f, 1.6f);
                     if (m_discoVoiceoverSfxId != 0)
@@ -5385,13 +5460,24 @@ void GameScene::UpdateUltimateAbilities(float dt)
             // Restore stage music
             if (mp_context)
             {
-                if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
+                if (m_musicEnabled)
                 {
-                    mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f);
+                    if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
+                    {
+                        mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f);
+                    }
+                    else
+                    {
+                        RestorePostUltimateMusic();
+                    }
                 }
                 else
                 {
-                    m_playlist.PlayNext(*mp_context, 1.2f);
+                    std::string cur = mp_context->Audio.GetCurrentMusicPath();
+                    if (cur.find("disco_ultimate") != std::string::npos)
+                    {
+                        mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                    }
                 }
                 m_preDiscoMusicPath.clear();
             }
@@ -5440,7 +5526,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
         if (m_powerUpRainActiveTimer <= 0.0f)
         {
             m_powerUpRainActiveTimer = 0.0f;
-            if (mp_context)
+            if (mp_context && m_musicEnabled)
             {
                 if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
                 {
@@ -5496,7 +5582,7 @@ void GameScene::UpdateRegeneratingItemBricks(float dt)
             SpawnExplosionParticles(t.Position, Color{255, 235, 100, 255}, 20);
             SpawnLightFlash(t.Position, 420.0f, Color{255, 240, 140, 255}, 1.9f, 0.45f);
 
-            if (mp_context && m_itemRegenRestoreSfxId != 0)
+            if (mp_context && m_audioEnabled && m_itemRegenRestoreSfxId != 0)
             {
                 mp_context->Audio.PlaySfx(m_itemRegenRestoreSfxId, 85.0f);
             }

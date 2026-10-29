@@ -23,6 +23,7 @@
 #include <unordered_map>
 
 struct Color;
+class GameFeelSystem;
 
 enum class SceneState : int
 {
@@ -67,7 +68,7 @@ public:
     [[nodiscard]] const LevelManager& GetLevelManager() const { return m_levelManager; }
     [[nodiscard]] int                 GetCurrentLevel() const;
     [[nodiscard]] int                 GetLevelCount() const;
-    [[nodiscard]] bool                HasNextLevel() const;
+    [[nodiscard]] virtual bool        HasNextLevel() const;
     void    AdvanceToNextLevel();
     void    LoadLevel(int levelIndex, bool preserveStats = false);
     void    StartLevelTransition();
@@ -76,6 +77,13 @@ public:
     [[nodiscard]] bool                IsLevelTransitionComplete() const;
     [[nodiscard]] float               GetTransitionTimer() const { return m_levelTransitionTimer; }
     void    SetTransitionTimer(float timer) { m_levelTransitionTimer = timer; }
+
+    virtual void SetMusicEnabled(bool enabled) { m_musicEnabled = enabled; }
+    [[nodiscard]] bool IsMusicEnabled() const { return m_musicEnabled; }
+    virtual void SetAudioEnabled(bool enabled);
+    [[nodiscard]] bool IsAudioEnabled() const { return m_audioEnabled; }
+    virtual void RestorePostUltimateMusic();
+    void ClearActiveUltimates();
 
     // Countdown & Ready Sequence
     virtual void StartCountdown();
@@ -89,9 +97,9 @@ public:
     void    OnGameOverEnter();
     void    OnGameOverUpdate();
     void    OnGameOverExit();
-    void    OnVictoryEnter();
-    void    OnVictoryUpdate();
-    void    OnVictoryExit();
+    virtual void    OnVictoryEnter();
+    virtual void    OnVictoryUpdate();
+    virtual void    OnVictoryExit();
 
     // Leaderboard & UI Interaction
     [[nodiscard]] LeaderboardManager&       GetLeaderboard() { return m_leaderboard; }
@@ -116,11 +124,12 @@ public:
     [[nodiscard]] bool  IsUltimateReady() const { return m_ultimateReady; }
     void  AddUltimateCharge(float amount);
     void  SetUltimateCharge(float charge);
-    void  TryTriggerUltimate();
+    virtual void TryTriggerUltimate();
 
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
+    void    PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
 
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY, bool isLaser = false, bool isExplosion = false, int damage = 1);
@@ -253,10 +262,12 @@ protected:
     std::vector<StuckBall> m_stuckBalls;
 
     ParticleSystem* m_particleSystem = nullptr;
+    GameFeelSystem* mp_gameFeelSystem = nullptr;
 
     // Dedicated UI Controller
     std::unique_ptr<GameUIController> m_uiController;
     bool                m_musicEnabled = true;
+    bool                m_audioEnabled = true;
     bool                m_renderGameUI = true;
 
     // Ambient background & dynamic shader effects
@@ -459,6 +470,5 @@ protected:
     void    RenderDiscoBackgroundMusicNotes(GameContext& context);
     void    RenderLuckyQuestionMarks(GameContext& context);
     void    RenderActiveUltimateVisuals(GameContext& context);
-    void    ClearActiveUltimates();
     void    RestoreDiscoBricks();
 };

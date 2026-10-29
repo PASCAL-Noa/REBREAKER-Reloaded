@@ -114,14 +114,59 @@ void MenuScene::OnInit(GameContext& context)
     (void)m_ultimatePreviewTexture->resize(sf::Vector2u(1160, 540), rtSettings);
     m_ultimatePreviewTexture->setSmooth(true);
 
+    const UltimateAbilityType ultTypes[3] = {
+        UltimateAbilityType::PlasmaOrb,
+        UltimateAbilityType::DiscoBall,
+        UltimateAbilityType::PowerUpRain
+    };
+    UltimateAbilityType equippedUlt = ProfileManager::Get().GetEquippedUltimate();
+    m_lastInspectedUltimate = equippedUlt;
+
+    for (int i = 0; i < 3; ++i)
+    {
+        m_ultimateCardTextures[i] = std::make_unique<sf::RenderTexture>();
+        (void)m_ultimateCardTextures[i]->resize(sf::Vector2u(1160, 520), rtSettings);
+        m_ultimateCardTextures[i]->setSmooth(true);
+
+        m_ultimatePreviewScenes[i] = std::make_unique<PreviewScene>();
+        m_ultimatePreviewScenes[i]->SetEmbeddedMode(true);
+        m_ultimatePreviewScenes[i]->SetMusicEnabled(false);
+        m_ultimatePreviewScenes[i]->SetAudioEnabled(false);
+        m_ultimatePreviewScenes[i]->OnInit(context);
+        m_ultimatePreviewScenes[i]->SetMusicEnabled(false);
+        m_ultimatePreviewScenes[i]->SetOnResetCallback([this, i]() {
+            if (i < static_cast<int>(m_ultimateCards.size()))
+            {
+                m_ultimateCards[i].SwitchTimer = 0.38f;
+            }
+            if (i < static_cast<int>(m_ultimateCards.size()) && m_ultimateCards[i].Type == m_lastInspectedUltimate && mp_context)
+            {
+                mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+            }
+        });
+        int lvl = ProfileManager::Get().GetUltimateLevel(ultTypes[i]);
+        m_ultimatePreviewScenes[i]->SetPreviewUltimate(ultTypes[i], lvl);
+    }
+
     m_previewScene = std::make_unique<PreviewScene>();
-    m_previewScene->OnInit(context);
     m_previewScene->SetEmbeddedMode(true);
+    m_previewScene->SetMusicEnabled(false);
+    m_previewScene->SetAudioEnabled(false);
+    m_previewScene->OnInit(context);
+    m_previewScene->SetMusicEnabled(false);
+    m_previewScene->SetAudioEnabled(false);
+    m_previewScene->SetOnResetCallback([this]() {
+        m_previewSwitchTimer = 0.38f;
+    });
     m_lastPreviewPowerUp = m_selectedPowerUp;
     m_lastPreviewLevel = m_inspectedLevel;
+    m_lastEquippedUltimate = ProfileManager::Get().GetEquippedUltimate();
+    m_lastInspectedUltimate = m_lastEquippedUltimate;
     int realLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
     m_previewScene->SetPreviewPowerUp(m_selectedPowerUp, m_inspectedLevel);
     PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLvl);
+
+    context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
 
     PreloadGameAssets(context);
 }
@@ -245,7 +290,24 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     if (!m_isRebinding && !m_showDescriptionModal && (context.Input.IsKeyPress(KeyCode::P) || context.Input.IsKeyPress(KeyCode::F1) || context.Input.IsKeyPress(KeyCode::F10)))
     {
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
-        PreviewScene::SetInitialPowerUp(m_selectedPowerUp);
+        if (m_activeModal == m_workshopCanvas && m_workshopActiveTabCanvas == m_workshopUltimatesCanvas)
+        {
+            UltimateAbilityType ultToTest = m_lastInspectedUltimate;
+            int ultLvl = ProfileManager::Get().GetUltimateLevel(ultToTest);
+            for (const auto& card : m_ultimateCards)
+            {
+                if (card.Type == ultToTest)
+                {
+                    ultLvl = card.InspectedLevel;
+                    break;
+                }
+            }
+            PreviewScene::SetInitialUltimate(ultToTest, ultLvl);
+        }
+        else
+        {
+            PreviewScene::SetInitialPowerUp(m_selectedPowerUp);
+        }
         context.Scenes.LoadScene<PreviewScene>();
         return;
     }
@@ -433,16 +495,117 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     }
 
     // Workshop Upgrades Live Simulation Autopilot & Physics Update
-    if (m_activeModal == m_workshopCanvas && m_workshopActiveTabCanvas == m_workshopUpgradesCanvas)
+    if (m_activeModal == m_workshopCanvas)
     {
-        if (m_previewScene)
+        if (m_workshopActiveTabCanvas == m_workshopUpgradesCanvas)
         {
-            int realLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
-            PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, m_inspectedLevel);
+            if (m_previewScene)
+            {
+                if (!m_previewScene->IsAudioEnabled())
+                {
+                    m_previewScene->SetAudioEnabled(true);
+                    m_previewScene->SetMusicEnabled(false);
+                }
 
-            m_previewScene->OnUpdate(dt, context);
+                int realLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+                PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, m_inspectedLevel);
 
-            PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLevel);
+                m_previewScene->OnUpdate(dt, context);
+
+                PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLevel);
+            }
+        }
+        else if (m_workshopActiveTabCanvas == m_workshopUltimatesCanvas)
+        {
+            if (m_previewScene && m_previewScene->IsAudioEnabled())
+            {
+                m_previewScene->SetAudioEnabled(false);
+            }
+
+            UltimateAbilityType equippedUlt = ProfileManager::Get().GetEquippedUltimate();
+            if (equippedUlt != m_lastEquippedUltimate)
+            {
+                m_lastEquippedUltimate = equippedUlt;
+                m_lastInspectedUltimate = equippedUlt;
+                if (mp_context)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                }
+                for (int i = 0; i < 3; ++i)
+                {
+                    if (m_ultimatePreviewScenes[i])
+                    {
+                        m_ultimatePreviewScenes[i]->ClearActiveUltimates();
+                        m_ultimatePreviewScenes[i]->ResetPreview();
+                    }
+                }
+            }
+
+            int activeIdx = 0;
+            if (m_lastInspectedUltimate == UltimateAbilityType::DiscoBall) activeIdx = 1;
+            else if (m_lastInspectedUltimate == UltimateAbilityType::PowerUpRain) activeIdx = 2;
+
+            for (int i = 0; i < 3; ++i)
+            {
+                if (m_ultimatePreviewScenes[i])
+                {
+                    bool isActive = (i == activeIdx);
+                    m_ultimatePreviewScenes[i]->SetAudioEnabled(isActive);
+                    m_ultimatePreviewScenes[i]->SetMusicEnabled(isActive);
+                    if (isActive)
+                    {
+                        m_ultimatePreviewScenes[i]->OnUpdate(dt, context);
+                    }
+                }
+            }
+
+            // Click anywhere on an ultimate card's viewport to inspect that ultimate
+            if (context.Input.IsMouseButtonPress(MouseButton::Left))
+            {
+                auto [mx, my] = context.Input.GetMousePosition();
+                Vector2f mPos{mx, my};
+                float screenCenterX = context.Render.GetLogicalViewSize().X * 0.5f;
+                float screenCenterY = context.Render.GetLogicalViewSize().Y * 0.5f;
+                const float ultColX[3] = {-720.0f, 0.0f, 720.0f};
+
+                for (int i = 0; i < 3; ++i)
+                {
+                    float x = screenCenterX + ultColX[i];
+                    Vector2f simCenter{x, screenCenterY - 265.0f};
+                    if (std::abs(mPos.X - simCenter.X) <= 290.0f && std::abs(mPos.Y - simCenter.Y) <= 130.0f)
+                    {
+                        if (m_lastInspectedUltimate != m_ultimateCards[i].Type)
+                        {
+                            m_lastInspectedUltimate = m_ultimateCards[i].Type;
+                            m_ultimateCards[i].SwitchTimer = 0.38f;
+                            if (m_ultimatePreviewScenes[i])
+                            {
+                                m_ultimatePreviewScenes[i]->ResetPreview();
+                            }
+                            if (m_channelSwitchSfxId != 0 && mp_context)
+                            {
+                                mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 80.0f, 1.2f);
+                            }
+                            RefreshWorkshopUI();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (m_previewScene && m_previewScene->IsAudioEnabled())
+            {
+                m_previewScene->SetAudioEnabled(false);
+            }
+        }
+    }
+    else
+    {
+        if (m_previewScene && m_previewScene->IsAudioEnabled())
+        {
+            m_previewScene->SetAudioEnabled(false);
         }
     }
 
@@ -492,6 +655,15 @@ void MenuScene::OnDestroy(GameContext& context)
     {
         m_previewScene->OnDestroy(context);
         m_previewScene.reset();
+    }
+    for (int i = 0; i < 3; ++i)
+    {
+        if (m_ultimatePreviewScenes[i])
+        {
+            m_ultimatePreviewScenes[i]->OnDestroy(context);
+            m_ultimatePreviewScenes[i].reset();
+        }
+        m_ultimateCardTextures[i].reset();
     }
     m_previewTexture.reset();
     m_ultimatePreviewTexture.reset();
@@ -544,11 +716,22 @@ void MenuScene::CloseModals()
     {
         if (m_previewScene)
         {
+            m_previewScene->SetAudioEnabled(false);
             m_previewScene->ResetPreview();
+        }
+        for (int i = 0; i < 3; ++i)
+        {
+            if (m_ultimatePreviewScenes[i])
+            {
+                m_ultimatePreviewScenes[i]->SetMusicEnabled(false);
+                m_ultimatePreviewScenes[i]->SetAudioEnabled(false);
+                m_ultimatePreviewScenes[i]->ResetPreview();
+            }
         }
         if (mp_context)
         {
             mp_context->Audio.StopSfx();
+            mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
         }
     }
 
@@ -2251,10 +2434,26 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             int lvl = p + 1;
             Entity pipBtn = UIFactory::CreateButton(m_registry, m_workshopUltimatesCanvas, ButtonDescriptor{
                 .Text = "LVL. " + std::to_string(lvl),
-                .OnClick = [this, cardIdx, lvl]() {
+                .OnClick = [this, cardIdx, lvl, ultType = card.Type]() {
                     if (m_showDescriptionModal) return;
                     m_ultimateCards[cardIdx].InspectedLevel = lvl;
                     m_ultimateCards[cardIdx].SwitchTimer = 0.38f;
+                    m_lastInspectedUltimate = ultType;
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        if (c != cardIdx && m_ultimatePreviewScenes[c])
+                        {
+                            m_ultimatePreviewScenes[c]->ClearActiveUltimates();
+                        }
+                    }
+                    if (cardIdx < 3 && m_ultimatePreviewScenes[cardIdx])
+                    {
+                        m_ultimatePreviewScenes[cardIdx]->SetPreviewUltimate(ultType, lvl);
+                    }
+                    if (mp_context)
+                    {
+                        mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                    }
                     if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
                     else if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
                     RefreshWorkshopUI();
@@ -2328,8 +2527,14 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 if (ProfileManager::Get().CanUpgradeUltimate(ultType))
                 {
                     ProfileManager::Get().UpgradeUltimate(ultType);
-                    m_ultimateCards[cardIdx].InspectedLevel = ProfileManager::Get().GetUltimateLevel(ultType);
+                    int newLvl = ProfileManager::Get().GetUltimateLevel(ultType);
+                    m_ultimateCards[cardIdx].InspectedLevel = newLvl;
                     m_ultimateCards[cardIdx].SwitchTimer = 0.38f;
+                    m_lastInspectedUltimate = ultType;
+                    if (cardIdx < 3 && m_ultimatePreviewScenes[cardIdx])
+                    {
+                        m_ultimatePreviewScenes[cardIdx]->SetPreviewUltimate(ultType, newLvl);
+                    }
                     if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
                     if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
                     RefreshWorkshopUI();
@@ -2351,6 +2556,28 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             .OnClick = [this, ultType]() {
                 if (m_showDescriptionModal) return;
                 ProfileManager::Get().SetEquippedUltimate(ultType);
+                m_lastInspectedUltimate = ultType;
+                m_lastEquippedUltimate = ultType;
+                if (mp_context)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                }
+                const UltimateAbilityType allUltTypes[3] = {
+                    UltimateAbilityType::PlasmaOrb,
+                    UltimateAbilityType::DiscoBall,
+                    UltimateAbilityType::PowerUpRain
+                };
+                for (int c = 0; c < 3; ++c)
+                {
+                    if (m_ultimatePreviewScenes[c])
+                    {
+                        bool isEquipped = (allUltTypes[c] == ultType);
+                        m_ultimatePreviewScenes[c]->SetMusicEnabled(isEquipped);
+                        m_ultimatePreviewScenes[c]->SetAudioEnabled(isEquipped);
+                        m_ultimatePreviewScenes[c]->ClearActiveUltimates();
+                        m_ultimatePreviewScenes[c]->ResetPreview();
+                    }
+                }
                 if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 85.0f);
                 RefreshWorkshopUI();
             },
@@ -2560,11 +2787,29 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
     {
         if (m_previewScene)
         {
+            m_previewScene->SetAudioEnabled(false);
             m_previewScene->ResetPreview();
         }
         if (mp_context)
         {
             mp_context->Audio.StopSfx();
+        }
+    }
+    if (targetCanvas != m_workshopUltimatesCanvas)
+    {
+        for (int i = 0; i < 3; ++i)
+        {
+            if (m_ultimatePreviewScenes[i])
+            {
+                m_ultimatePreviewScenes[i]->SetMusicEnabled(false);
+                m_ultimatePreviewScenes[i]->SetAudioEnabled(false);
+                m_ultimatePreviewScenes[i]->ClearActiveUltimates();
+                m_ultimatePreviewScenes[i]->ResetPreview();
+            }
+        }
+        if (mp_context)
+        {
+            mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
         }
     }
 
@@ -2590,13 +2835,26 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
 
     if (targetCanvas == m_workshopUpgradesCanvas)
     {
+        if (m_previewScene)
+        {
+            m_previewScene->SetAudioEnabled(true);
+            m_previewScene->SetMusicEnabled(false);
+        }
         TriggerPreviewChannelSwitch();
     }
     else if (targetCanvas == m_workshopUltimatesCanvas)
     {
-        for (auto& card : m_ultimateCards)
+        UltimateAbilityType equippedUlt = ProfileManager::Get().GetEquippedUltimate();
+        for (size_t i = 0; i < m_ultimateCards.size(); ++i)
         {
-            card.SwitchTimer = 0.38f;
+            m_ultimateCards[i].SwitchTimer = 0.38f;
+            if (i < 3 && m_ultimatePreviewScenes[i])
+            {
+                bool isEquipped = (m_ultimateCards[i].Type == equippedUlt);
+                m_ultimatePreviewScenes[i]->SetMusicEnabled(isEquipped);
+                m_ultimatePreviewScenes[i]->SetAudioEnabled(isEquipped);
+                m_ultimatePreviewScenes[i]->SetPreviewUltimate(m_ultimateCards[i].Type, m_ultimateCards[i].InspectedLevel);
+            }
         }
     }
 
@@ -3359,10 +3617,21 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
 
             RenderUltimateSimulation(context, ultType, m_ultimateCards[i].InspectedLevel, simCenter, simSize, m_ultimateCards[i].SwitchTimer);
 
-            // Top tag
-            context.Render.DrawText("ULTIMATE ABILITY", m_fontId, 20.0f,
-                Transform2D{Vector2f{simCenter.X - (simSize.X * 0.5f) + 15.0f, simCenter.Y - (simSize.Y * 0.5f) + 16.0f}},
-                isEquipped ? Colors::Gold : Color{120, 200, 255, 255});
+            bool isInspected = (ultType == m_lastInspectedUltimate);
+            if (!isInspected)
+            {
+                // Calque semi-transparent noir pour marquer visuellement l'equipement inactif
+                context.Render.DrawRectangle(simSize.X - 4.0f, simSize.Y - 4.0f, Transform2D{simCenter}, Color{0, 0, 0, 160});
+
+                // Badge cyber discret et soigne indiquant l'etat inactif
+                Vector2f badgeCenter{simCenter.X, simCenter.Y + (simSize.Y * 0.5f) - 24.0f};
+                context.Render.DrawRectangle(210.0f, 30.0f, Transform2D{badgeCenter}, Color{12, 16, 26, 220});
+                context.Render.DrawRectangleOutline(210.0f, 30.0f, Transform2D{badgeCenter}, Color{70, 95, 140, 180}, 1.5f);
+                std::string badgeText = isEquipped ? "[ EQUIPE (STANDBY) ]" : "[ NON EQUIPE ]";
+                context.Render.DrawText(badgeText, m_fontId, 16.0f,
+                    Transform2D{Vector2f{badgeCenter.X - 65.0f, badgeCenter.Y - 10.0f}},
+                    Color{140, 165, 205, 220});
+            }
 
             // Glowing reticle on currently inspected level pip button
             float startUltPipX = x - (5.0f * (ultPipW + ultPipGap) - ultPipGap) * 0.5f + (ultPipW * 0.5f);
@@ -3464,42 +3733,29 @@ void MenuScene::RenderPowerUpSimulation(GameContext& context, PowerUpType type, 
 
 void MenuScene::RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, int level, const Vector2f& center, const Vector2f& size, float switchTimer)
 {
-    if (m_ultimatePreviewTexture)
+    (void)level;
+    int idx = 0;
+    if (type == UltimateAbilityType::DiscoBall) idx = 1;
+    else if (type == UltimateAbilityType::PowerUpRain) idx = 2;
+
+    bool isActive = (type == m_lastInspectedUltimate);
+
+    if (isActive && m_ultimatePreviewScenes[idx] && m_ultimateCardTextures[idx])
     {
-        m_ultimatePreviewTexture->clear(sf::Color(8, 11, 18, 255));
+        m_ultimateCardTextures[idx]->clear(sf::Color(8, 11, 18, 255));
 
-        sf::View view(sf::Vector2f(0.0f, 0.0f), sf::Vector2f(1160.0f, 540.0f));
-        m_ultimatePreviewTexture->setView(view);
-
-        context.Render.PushRenderTarget(*m_ultimatePreviewTexture);
-
-        const Vector2f simCenter{0.0f, 0.0f};
-        const Vector2f simSize{1160.0f, 540.0f};
-
-        switch (type)
-        {
-        case UltimateAbilityType::PlasmaOrb:
-            RenderPlasmaOrbPreview(context, level, simCenter, simSize, m_previewAnimTime);
-            break;
-        case UltimateAbilityType::DiscoBall:
-            RenderDiscoBallPreview(context, level, simCenter, simSize, m_previewAnimTime);
-            break;
-        case UltimateAbilityType::PowerUpRain:
-            RenderPowerUpRainPreview(context, level, simCenter, simSize, m_previewAnimTime);
-            break;
-        default:
-            break;
-        }
-
+        context.Render.PushRenderTarget(*m_ultimateCardTextures[idx]);
+        m_ultimatePreviewScenes[idx]->OnRender(context);
         context.Render.PopRenderTarget();
-        m_ultimatePreviewTexture->display();
+
+        m_ultimateCardTextures[idx]->display();
 
         constexpr float kSwitchDuration = 0.38f;
         float switchProgress = std::clamp(switchTimer / kSwitchDuration, 0.0f, 1.0f);
         uint32_t previewShader = (context.Rules.GetRule(Rule::Graphics::EnableShader)) ? m_previewShaderId : 0;
 
         context.Render.DrawRawTexture(
-            m_ultimatePreviewTexture->getTexture(),
+            m_ultimateCardTextures[idx]->getTexture(),
             size.X - 4.0f,
             size.Y - 4.0f,
             Transform2D{center},
@@ -3517,7 +3773,30 @@ void MenuScene::RenderUltimateSimulation(GameContext& context, UltimateAbilityTy
     }
     else
     {
-        context.Render.DrawRectangle(size.X, size.Y, Transform2D{center}, Color{10, 14, 24, 255});
+        // Inactive card: Render retro CRT pixel static noise ("bruit de pixel") with zero simulation overhead!
+        uint32_t previewShader = (context.Rules.GetRule(Rule::Graphics::EnableShader)) ? m_previewShaderId : 0;
+        if (previewShader != 0 && m_ultimateCardTextures[idx])
+        {
+            context.Render.DrawRawTexture(
+                m_ultimateCardTextures[idx]->getTexture(),
+                size.X - 4.0f,
+                size.Y - 4.0f,
+                Transform2D{center},
+                Colors::White,
+                previewShader,
+                m_previewAnimTime,
+                1.0f
+            );
+        }
+        else
+        {
+            context.Render.DrawRectangle(size.X - 4.0f, size.Y - 4.0f, Transform2D{center}, Color{10, 14, 24, 255});
+            for (int p = 0; p < 8; ++p)
+            {
+                float py = center.Y - (size.Y * 0.4f) + static_cast<float>(p) * (size.Y * 0.1f);
+                context.Render.DrawRectangle(size.X * 0.85f, 2.5f, Transform2D{Vector2f{center.X, py}}, Color{120, 160, 220, 45});
+            }
+        }
     }
 
     // Outer cyber border & brackets

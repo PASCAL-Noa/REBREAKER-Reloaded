@@ -219,7 +219,11 @@ private:
     std::unique_ptr<PreviewScene> m_previewScene;
     std::unique_ptr<sf::RenderTexture> m_previewTexture;
     std::unique_ptr<sf::RenderTexture> m_ultimatePreviewTexture;
+    std::unique_ptr<PreviewScene> m_ultimatePreviewScenes[3];
+    std::unique_ptr<sf::RenderTexture> m_ultimateCardTextures[3];
     PowerUpType         m_lastPreviewPowerUp = PowerUpType::MultiBall;
+    UltimateAbilityType m_lastInspectedUltimate = UltimateAbilityType::PlasmaOrb;
+    UltimateAbilityType m_lastEquippedUltimate = UltimateAbilityType::PlasmaOrb;
     int                 m_lastPreviewLevel = 0;
     float               m_previewSwitchTimer = 0.0f;
     uint32_t            m_previewShaderId = 0;

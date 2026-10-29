@@ -20,6 +20,8 @@
 #include "Graphics/Renderer.h"
 #include "PowerUps/PowerUpConfig.h"
 #include <filesystem>
+#include <algorithm>
+#include <cmath>
 
 struct PreviewItemInfo
 {
@@ -48,9 +50,14 @@ static constexpr size_t kPreviewItemCount = sizeof(kPreviewItems) / sizeof(kPrev
 static PowerUpType s_initialPowerUpType = PowerUpType::Storm;
 static bool s_hasExplicitInitialPowerUp = false;
 
+static UltimateAbilityType s_initialUltimateType = UltimateAbilityType::PlasmaOrb;
+static int s_initialUltimateLevel = 1;
+static bool s_hasExplicitInitialUltimate = false;
+
 PreviewScene::PreviewScene()
 {
     m_musicEnabled = false;
+    m_audioEnabled = false;
     m_renderGameUI = false;
 }
 
@@ -58,6 +65,15 @@ void PreviewScene::SetInitialPowerUp(PowerUpType type)
 {
     s_initialPowerUpType = type;
     s_hasExplicitInitialPowerUp = true;
+    s_hasExplicitInitialUltimate = false;
+}
+
+void PreviewScene::SetInitialUltimate(UltimateAbilityType type, int level)
+{
+    s_initialUltimateType = type;
+    s_initialUltimateLevel = std::clamp(level, 1, 5);
+    s_hasExplicitInitialUltimate = true;
+    s_hasExplicitInitialPowerUp = false;
 }
 
 void PreviewScene::SetEmbeddedMode(bool embedded)
@@ -83,8 +99,40 @@ void PreviewScene::SetEmbeddedMode(bool embedded)
     }
 }
 
+void PreviewScene::SetAudioEnabled(bool enabled)
+{
+    GameScene::SetAudioEnabled(enabled);
+    if (!enabled && mp_context && m_fireballBurnSfxId != 0)
+    {
+        mp_context->Audio.StopLoopingSfx(m_fireballBurnSfxId);
+    }
+}
+
+void PreviewScene::SetMusicEnabled(bool enabled)
+{
+    bool wasEnabled = m_musicEnabled;
+    GameScene::SetMusicEnabled(enabled);
+    if (wasEnabled && !enabled && mp_context)
+    {
+        std::string cur = mp_context->Audio.GetCurrentMusicPath();
+        if (cur.find("disco_ultimate") != std::string::npos ||
+            cur.find("plasma_ultimate") != std::string::npos ||
+            cur.find("lucky_drop_ultimate") != std::string::npos)
+        {
+            mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+        }
+    }
+}
+
+void PreviewScene::RestorePostUltimateMusic()
+{
+    if (!mp_context || !m_musicEnabled) return;
+    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+}
+
 void PreviewScene::SetPreviewPowerUp(PowerUpType type, int level)
 {
+    m_previewMode = PreviewMode::PowerUp;
     m_previewLevel = std::clamp(level, 1, PowerUpManager::Get().GetMaxLevel(type));
     for (size_t i = 0; i < kPreviewItemCount; ++i)
     {
@@ -95,6 +143,29 @@ void PreviewScene::SetPreviewPowerUp(PowerUpType type, int level)
         }
     }
     PowerUpManager::Get().SetLevelTransient(type, m_previewLevel);
+    ResetPreview();
+}
+
+void PreviewScene::SetPreviewUltimate(UltimateAbilityType type, int level)
+{
+    m_previewMode = PreviewMode::Ultimate;
+    m_currentUltimate = type;
+    m_previewLevel = std::clamp(level, 1, 5);
+    ResetPreview();
+}
+
+void PreviewScene::TogglePreviewMode()
+{
+    if (m_previewMode == PreviewMode::PowerUp)
+    {
+        m_previewMode = PreviewMode::Ultimate;
+        m_previewLevel = ProfileManager::Get().GetUltimateLevel(m_currentUltimate);
+    }
+    else
+    {
+        m_previewMode = PreviewMode::PowerUp;
+        m_previewLevel = PowerUpManager::Get().GetLevel(kPreviewItems[m_currentItemIndex].Type);
+    }
     ResetPreview();
 }
 
@@ -124,50 +195,116 @@ void PreviewScene::UpdateAutopilot(float dt)
         m_autoLaunchTimer = 0.0f;
     }
 
-    // 2. Autopilot paddle positioning: follow balls & falling capsules
+    // 2. Autopilot paddle positioning
     if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
     {
         auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
         float targetX = paddleTrans.Position.X;
 
-        // Target falling power-up capsule first
-        if (m_previewCapsule != NULL_ENTITY && m_registry.IsAlive(m_previewCapsule) &&
-            m_registry.HasComponent<Transform2D>(m_previewCapsule))
-        {
-            targetX = m_registry.GetComponent<Transform2D>(m_previewCapsule).Position.X;
-        }
-        else
-        {
-            // Follow lowest active ball
-            float lowestY = -9999.0f;
-            bool foundBall = false;
+        // Find the lowest falling ball that could threaten paddle miss
+        float lowestFallingBallY = -9999.0f;
+        float lowestFallingBallX = paddleTrans.Position.X;
+        bool hasFallingBall = false;
 
-            if (mp_ballSystem)
+        float lowestAnyBallY = -9999.0f;
+        float lowestAnyBallX = paddleTrans.Position.X;
+        bool hasAnyBall = false;
+
+        if (mp_ballSystem)
+        {
+            for (Entity b : mp_ballSystem->GetBalls())
             {
-                for (Entity b : mp_ballSystem->GetBalls())
+                if (m_registry.IsAlive(b) && m_registry.HasComponent<Transform2D>(b))
                 {
-                    if (m_registry.IsAlive(b) && m_registry.HasComponent<Transform2D>(b))
+                    const auto& bt = m_registry.GetComponent<Transform2D>(b);
+                    if (bt.Position.Y > lowestAnyBallY)
                     {
-                        const auto& bt = m_registry.GetComponent<Transform2D>(b);
-                        if (bt.Position.Y > lowestY)
+                        lowestAnyBallY = bt.Position.Y;
+                        lowestAnyBallX = bt.Position.X;
+                        hasAnyBall = true;
+                    }
+
+                    if (m_registry.HasComponent<RigidBody>(b))
+                    {
+                        const auto& rb = m_registry.GetComponent<RigidBody>(b);
+                        if (rb.Velocity.Y > 0.0f && bt.Position.Y > lowestFallingBallY)
                         {
-                            lowestY = bt.Position.Y;
-                            targetX = bt.Position.X;
-                            foundBall = true;
+                            lowestFallingBallY = bt.Position.Y;
+                            lowestFallingBallX = bt.Position.X;
+                            hasFallingBall = true;
                         }
                     }
                 }
             }
+        }
 
-            if (!foundBall && m_registry.IsAlive(m_ball) && m_registry.HasComponent<Transform2D>(m_ball))
+        if (!hasAnyBall && m_registry.IsAlive(m_ball) && m_registry.HasComponent<Transform2D>(m_ball))
+        {
+            const auto& bt = m_registry.GetComponent<Transform2D>(m_ball);
+            lowestAnyBallY = bt.Position.Y;
+            lowestAnyBallX = bt.Position.X;
+            hasAnyBall = true;
+            if (m_registry.HasComponent<RigidBody>(m_ball))
             {
-                targetX = m_registry.GetComponent<Transform2D>(m_ball).Position.X;
+                const auto& rb = m_registry.GetComponent<RigidBody>(m_ball);
+                if (rb.Velocity.Y > 0.0f)
+                {
+                    lowestFallingBallY = bt.Position.Y;
+                    lowestFallingBallX = bt.Position.X;
+                    hasFallingBall = true;
+                }
             }
         }
 
-        // Smoothly interpolate paddle position to targetX with high tracking speed
+        // Ball preservation rule:
+        // If a ball is falling towards paddle and getting below Y=60 (paddle is ~300),
+        // we MUST prioritize protecting the ball!
+        const bool isBallCritical = (hasFallingBall && lowestFallingBallY > 60.0f);
+
+        // Find best falling power-up capsule
+        Entity targetCapsule = NULL_ENTITY;
+        float lowestCapsuleY = -9999.0f;
+        m_registry.View<Transform2D, PowerUpComponent>([&](Entity e, const Transform2D& ct, const PowerUpComponent&)
+        {
+            if (ct.Position.Y > lowestCapsuleY && ct.Position.Y < paddleTrans.Position.Y + 30.0f)
+            {
+                lowestCapsuleY = ct.Position.Y;
+                targetCapsule = e;
+            }
+        });
+
+        if (!isBallCritical && targetCapsule != NULL_ENTITY && m_registry.IsAlive(targetCapsule) && m_registry.HasComponent<Transform2D>(targetCapsule))
+        {
+            // Catch falling power-up capsule while ball is safe!
+            targetX = m_registry.GetComponent<Transform2D>(targetCapsule).Position.X;
+        }
+        else if (hasFallingBall)
+        {
+            targetX = lowestFallingBallX;
+
+            // In Disco Ball preview: actively steer reflection towards unactivated big balls
+            if (m_previewMode == PreviewMode::Ultimate && m_currentUltimate == UltimateAbilityType::DiscoBall)
+            {
+                for (const auto& db : m_discoBigBalls)
+                {
+                    if (!db.IsIndependent)
+                    {
+                        // Aim paddle so reflection angle directs ball towards db.Position.X
+                        float offset = std::clamp((paddleTrans.Position.X - db.Position.X) * 0.18f, -40.0f, 40.0f);
+                        targetX += offset;
+                        break;
+                    }
+                }
+            }
+        }
+        else if (hasAnyBall)
+        {
+            targetX = lowestAnyBallX;
+        }
+
+        // Fast & responsive paddle tracking
         float diff = targetX - paddleTrans.Position.X;
-        float maxSpeed = 820.0f;
+        float maxSpeed = 1150.0f;
         float step = std::clamp(diff, -maxSpeed * dt, maxSpeed * dt);
         paddleTrans.Position.X += step;
         paddleTrans.Position.X = std::clamp(paddleTrans.Position.X, -680.0f, 680.0f);
@@ -176,13 +313,26 @@ void PreviewScene::UpdateAutopilot(float dt)
 
 void PreviewScene::OnInit(GameContext& context)
 {
+    m_musicEnabled = false;
+    m_audioEnabled = false;
     GameScene::OnInit(context);
+
+    if (!m_isEmbeddedMode)
+    {
+        m_musicEnabled = true;
+        m_audioEnabled = true;
+    }
 
     // Infinite lives & safe testing rules
     context.Rules.SetRule(Rule::Gameplay::InfiniteLives, true);
     m_lives = 99;
 
-    // Hide HUD counter (Score : 0 and hearts) for preview scene only
+    // Isolate preview state machine: strictly Playing state without LevelTransition or Victory transitions
+    mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 6);
+    mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
+    mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+
+    // Hide HUD counter in preview
     if (m_uiController)
     {
         Entity hudCanvas = m_uiController->GetMainUICanvas();
@@ -192,9 +342,16 @@ void PreviewScene::OnInit(GameContext& context)
         }
     }
 
-    m_currentItemIndex = 0;
-    if (s_hasExplicitInitialPowerUp)
+    if (s_hasExplicitInitialUltimate)
     {
+        m_previewMode = PreviewMode::Ultimate;
+        m_currentUltimate = s_initialUltimateType;
+        m_previewLevel = s_initialUltimateLevel;
+        s_hasExplicitInitialUltimate = false;
+    }
+    else if (s_hasExplicitInitialPowerUp)
+    {
+        m_previewMode = PreviewMode::PowerUp;
         for (size_t i = 0; i < kPreviewItemCount; ++i)
         {
             if (kPreviewItems[i].Type == s_initialPowerUpType)
@@ -205,8 +362,17 @@ void PreviewScene::OnInit(GameContext& context)
         }
         s_hasExplicitInitialPowerUp = false;
     }
+    else
+    {
+        m_currentItemIndex = 0;
+        m_previewMode = PreviewMode::PowerUp;
+    }
 
-    PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, 1);
+    if (m_previewMode == PreviewMode::PowerUp)
+    {
+        PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, 1);
+    }
+
     ResetPreview();
 
     if (mp_paddleSystem)
@@ -221,6 +387,7 @@ void PreviewScene::OnInit(GameContext& context)
             OnBallLaunched();
         });
     }
+
     if (m_isEmbeddedMode && m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
     {
         auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
@@ -249,7 +416,6 @@ void PreviewScene::OnDestroy(GameContext& context)
     m_powerUpSub.Reset();
     m_nextLevelSub.Reset();
 
-    // Directly invoke Scene::OnDestroy to avoid DefaultScene::OnDestroy stopping global music/sfx
     Scene::OnDestroy(context);
 }
 
@@ -257,19 +423,21 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
 {
     if (!m_isEmbeddedMode)
     {
-        // Arrow keys: Left / Right to change power-up (resets level to 1 and refreshes scene)
+        if (context.Input.IsKeyPress(KeyCode::Tab))
+        {
+            TogglePreviewMode();
+            return;
+        }
         if (context.Input.IsKeyPress(KeyCode::Left))
         {
-            PrevPowerUp();
+            PrevItem();
             return;
         }
         if (context.Input.IsKeyPress(KeyCode::Right))
         {
-            NextPowerUp();
+            NextItem();
             return;
         }
-
-        // Arrow keys: Up / Down to level up / level down (refreshes scene)
         if (context.Input.IsKeyPress(KeyCode::Up))
         {
             LevelUp();
@@ -280,15 +448,11 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
             LevelDown();
             return;
         }
-
-        // R key: manual refresh
         if (context.Input.IsKeyPress(KeyCode::R))
         {
             ResetPreview();
             return;
         }
-
-        // Escape: Return to main menu
         if (context.Input.IsKeyPress(KeyCode::Escape) || context.Input.IsJoystickButtonPress(0, 6))
         {
             context.Scenes.LoadScene<MenuScene>();
@@ -296,49 +460,27 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         }
     }
 
-    // Check if the preview finished (all bricks cleared or ball dying/lost) -> instantly refresh!
-    if (m_brickCount <= 0 || m_ballState == BallState::Dying)
+    if (m_resetTransitionTimer > 0.0f)
     {
-        ResetPreview();
-        return;
+        m_resetTransitionTimer = std::max(0.0f, m_resetTransitionTimer - dt);
     }
 
-    if (mp_state_machine)
+    // USER REQUIREMENT:
+    // PowerUpRain preview must refresh every 20s because it is too long
+    if (m_previewMode == PreviewMode::Ultimate && m_currentUltimate == UltimateAbilityType::PowerUpRain)
     {
-        int st = mp_state_machine->GetCurrentState();
-        if (st == static_cast<int>(SceneState::LevelTransition) || st == static_cast<int>(SceneState::Victory))
+        m_powerUpRainPreviewTimer += dt;
+        if (m_powerUpRainPreviewTimer >= 20.0f)
         {
+            m_powerUpRainPreviewTimer = 0.0f;
             ResetPreview();
             return;
         }
     }
 
-    // Ball loss check:
-    // Only reset if NO balls remain in play, or if the sole remaining ball fell well below the paddle (Y > 440)
-    if (m_ballState == BallState::Active && mp_ballSystem)
-    {
-        if (mp_ballSystem->GetBallCount() == 0 && m_capsuleSpawnedForLaunch)
-        {
-            ResetPreview();
-            return;
-        }
-        else if (mp_ballSystem->GetBallCount() == 1)
-        {
-            const auto& balls = mp_ballSystem->GetBalls();
-            if (!balls.empty() && m_registry.IsAlive(balls.front()) && m_registry.HasComponent<Transform2D>(balls.front()))
-            {
-                // In Ghost Ball preview, the ball is immortal and rebounds off the bottom wall
-                if (m_ghostBallDuration <= 0.0f && !m_ghostBallPendingExpiry && m_registry.GetComponent<Transform2D>(balls.front()).Position.Y > 440.0f)
-                {
-                    ResetPreview();
-                    return;
-                }
-            }
-        }
-    }
-
-    // For Magnet Paddle preview: spawn falling capsules periodically off-center to showcase magnetic attraction
-    if (kPreviewItems[m_currentItemIndex].Type == PowerUpType::MagnetPaddle && m_ballState == BallState::Active && m_capsuleSpawnedForLaunch && m_magnetDuration > 0.0f)
+    // Magnet Paddle preview extra capsules
+    if (m_previewMode == PreviewMode::PowerUp && kPreviewItems[m_currentItemIndex].Type == PowerUpType::MagnetPaddle &&
+        m_ballState == BallState::Active && m_capsuleSpawnedForLaunch && m_magnetDuration > 0.0f)
     {
         m_magnetCapsuleTimer += dt;
         if (m_magnetCapsuleTimer >= 1.4f)
@@ -352,7 +494,7 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         m_magnetCapsuleTimer = 0.0f;
     }
 
-    // Keep preview capsule horizontally aligned with paddle center so it drops straight onto it
+    // Keep preview capsule horizontally aligned with paddle center for smooth collection
     if (m_previewCapsule != NULL_ENTITY && m_registry.IsAlive(m_previewCapsule))
     {
         if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle) &&
@@ -371,7 +513,6 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
     }
     m_wasBallAttached = (m_ballState == BallState::Attached);
 
-    // Keep lives at 99
     m_lives = 99;
 
     // Sticky Paddle autopilot sweet-spot release
@@ -386,11 +527,60 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         }
     }
 
+    // Update base gameplay
     GameScene::OnUpdate(dt, context);
+
+    // Autopilot AI continuously plays the demonstration in both embedded and fullscreen mode
+    UpdateAutopilot(dt);
+
+    // Disco Ball preview: guide balls toward unactivated dancing big balls to unlock all instruments & Frenzy
+    if (m_previewMode == PreviewMode::Ultimate && m_currentUltimate == UltimateAbilityType::DiscoBall)
+    {
+        const DiscoBigBall* targetDb = nullptr;
+        float closestDistSq = 9999999.0f;
+        for (const auto& db : m_discoBigBalls)
+        {
+            if (!db.IsIndependent)
+            {
+                float d = db.Position.X * db.Position.X + db.Position.Y * db.Position.Y;
+                if (d < closestDistSq)
+                {
+                    closestDistSq = d;
+                    targetDb = &db;
+                }
+            }
+        }
+
+        if (targetDb)
+        {
+            m_registry.View<BallComponent, Transform2D, RigidBody>([&](Entity, BallComponent&, const Transform2D& bt, RigidBody& rb)
+            {
+                if (rb.Velocity.Y < 0.0f) // ball moving upwards towards big balls
+                {
+                    Vector2f toTarget = targetDb->Position - bt.Position;
+                    if (toTarget.Length() > 25.0f)
+                    {
+                        Vector2f desiredDir = toTarget.Normalized();
+                        float currentSpeed = rb.Velocity.Length();
+                        rb.Velocity = (rb.Velocity + desiredDir * (420.0f * dt)).Normalized() * currentSpeed;
+                    }
+                }
+            });
+        }
+    }
+
+    // Ball loss safety bounce in preview: ensure autopilot never loses the ball
+    m_registry.View<BallComponent, Transform2D, RigidBody>([&](Entity, BallComponent&, Transform2D& bt, RigidBody& rb)
+    {
+        if (bt.Position.Y > 380.0f && rb.Velocity.Y > 0.0f)
+        {
+            rb.Velocity.Y = -std::abs(rb.Velocity.Y);
+            bt.Position.Y = 378.0f;
+        }
+    });
 
     if (m_isEmbeddedMode)
     {
-        UpdateAutopilot(dt);
         if (m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
         {
             auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
@@ -405,27 +595,155 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         m_extraLifeTimer -= dt;
     }
 
-    // Auto-reset once the previewed power-up effect has finished
-    if (m_powerUpActivated)
+    // USER REQUIREMENT:
+    // If the playing AI manages to finish the preview level before the effect has finished,
+    // we let the effect finish before resetting the scene.
+    const bool isLevelFinished = (m_brickCount <= 0);
+    const bool effectActive = IsEffectActive();
+
+    if (isLevelFinished)
     {
-        if (!IsPowerUpEffectActive())
+        // Keep state machine in Playing so rendering, physics, and visual effects do not halt
+        if (mp_state_machine)
         {
+            int st = mp_state_machine->GetCurrentState();
+            if (st != static_cast<int>(SceneState::Playing))
+            {
+                mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+            }
+        }
+
+        if (effectActive)
+        {
+            // Effect is still running: let it play out fully!
+            m_autoResetTimer = 0.0f;
+        }
+        else
+        {
+            // Effect has finished after clearing the level: wait a short comfortable moment then reset cleanly
             m_autoResetTimer += dt;
-            if (m_autoResetTimer >= 0.7f)
+            if (m_autoResetTimer >= 0.85f)
             {
                 ResetPreview();
                 return;
             }
         }
-        else
-        {
-            m_autoResetTimer = 0.0f;
-        }
     }
     else
     {
-        m_autoResetTimer = 0.0f;
+        // Level not finished yet: normal auto-reset once the active power-up / ultimate effect expires
+        bool hasActivated = (m_previewMode == PreviewMode::Ultimate) ? m_ultimateActivated : m_powerUpActivated;
+        if (hasActivated)
+        {
+            if (!effectActive)
+            {
+                m_autoResetTimer += dt;
+                if (m_autoResetTimer >= 0.70f)
+                {
+                    ResetPreview();
+                    return;
+                }
+            }
+            else
+            {
+                m_autoResetTimer = 0.0f;
+            }
+        }
     }
+
+    // Ball loss check: only reset if no effect is currently running
+    if (m_ballState == BallState::Active && mp_ballSystem)
+    {
+        if (mp_ballSystem->GetBallCount() == 0 && m_capsuleSpawnedForLaunch)
+        {
+            if (!effectActive)
+            {
+                m_autoResetTimer += dt;
+                if (m_autoResetTimer >= 0.5f)
+                {
+                    ResetPreview();
+                    return;
+                }
+            }
+        }
+        else if (mp_ballSystem->GetBallCount() == 1)
+        {
+            const auto& balls = mp_ballSystem->GetBalls();
+            if (!balls.empty() && m_registry.IsAlive(balls.front()) && m_registry.HasComponent<Transform2D>(balls.front()))
+            {
+                if (m_ghostBallDuration <= 0.0f && !m_ghostBallPendingExpiry && m_registry.GetComponent<Transform2D>(balls.front()).Position.Y > 440.0f)
+                {
+                    if (!effectActive)
+                    {
+                        ResetPreview();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+bool PreviewScene::IsEffectActive()
+{
+    if (m_previewMode == PreviewMode::Ultimate)
+    {
+        return IsUltimateEffectActive();
+    }
+    return IsPowerUpEffectActive();
+}
+
+bool PreviewScene::IsUltimateEffectActive()
+{
+    switch (m_currentUltimate)
+    {
+    case UltimateAbilityType::PlasmaOrb:
+        return !m_plasmaOrbs.empty() || (m_plasmaActiveTimer > 0.0f);
+
+    case UltimateAbilityType::DiscoBall:
+        return (m_discoTimer > 0.0f) || !m_discoBigBalls.empty() || !m_discoExplosionAnims.empty()
+            || (m_discoGrandFinaleBannerTimer > 0.0f) || !m_soundWaves.empty();
+
+    case UltimateAbilityType::PowerUpRain:
+    {
+        if (m_powerUpRainActiveTimer > 0.0f || !m_powerUpRainQueue.empty())
+            return true;
+        bool hasCapsules = false;
+        m_registry.View<PowerUpComponent>([&](Entity, PowerUpComponent&) {
+            hasCapsules = true;
+        });
+        if (hasCapsules) return true;
+        return IsAnyPowerUpEffectActive();
+    }
+    default:
+        return false;
+    }
+}
+
+bool PreviewScene::IsAnyPowerUpEffectActive()
+{
+    if (m_bigBallDuration > 0.0f) return true;
+    if (m_stormDuration > 0.0f || m_stormCharges > 0 || !m_activeLightningBolts.empty()) return true;
+    if (m_stickyPaddleDuration > 0.0f || !m_stuckBalls.empty()) return true;
+    if (m_bottomBarrierDuration > 0.0f && (m_bottomBarrierActive || m_bottomBarrierCharges > 0)) return true;
+    if (m_magnetDuration > 0.0f) return true;
+    if (m_ghostBallDuration > 0.0f || m_ghostBallPendingExpiry) return true;
+    if (m_tempoBallDuration > 0.0f) return true;
+    if (m_paddleSizeDuration > 0.0f) return true;
+    if (mp_ballSystem && mp_ballSystem->GetBallCount() > 1) return true;
+
+    if (mp_ballSystem)
+    {
+        for (Entity b : mp_ballSystem->GetBalls())
+        {
+            if (m_registry.IsAlive(b) && m_registry.HasComponent<BallComponent>(b))
+            {
+                if (m_registry.GetComponent<BallComponent>(b).IsFireBall) return true;
+                if (m_registry.GetComponent<BallComponent>(b).IsGhost) return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool PreviewScene::IsPowerUpEffectActive()
@@ -504,7 +822,6 @@ bool PreviewScene::IsPowerUpEffectActive()
 
 void PreviewScene::OnRender(GameContext& context)
 {
-    // Completely disable countdown timer in preview
     m_countdownActive = false;
     m_countdownTimer = 0.0f;
     m_countdownGoTimer = 0.0f;
@@ -516,117 +833,107 @@ void PreviewScene::OnRender(GameContext& context)
         return;
     }
 
-    // Overlay Header Banner showing preview info and controls (without clutter counters)
-    const auto& item = kPreviewItems[m_currentItemIndex];
-    int curLvl = PowerUpManager::Get().GetLevel(item.Type);
-    int maxLvl = PowerUpManager::Get().GetMaxLevel(item.Type);
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+    const float bannerW = 1040.0f;
+    const float bannerH = 110.0f;
+    const Vector2f bannerPos{viewSize.X * 0.5f, 65.0f};
 
-    // Top banner background
-    context.Render.DrawRectangle(1920.0f, 66.0f, Transform2D{Vector2f{0.0f, -495.0f}}, Color{12, 16, 26, 230});
-    context.Render.DrawRectangleOutline(1920.0f, 66.0f, Transform2D{Vector2f{0.0f, -495.0f}}, Color{0, 200, 255, 180}, 1.5f);
+    context.Render.DrawRectangle(bannerW, bannerH, Transform2D{bannerPos}, Color{12, 16, 28, 230});
+    context.Render.DrawRectangleOutline(bannerW, bannerH, Transform2D{bannerPos}, Color{45, 95, 175, 230}, 2.5f);
 
-    // Item Name, Level, and live FPS (e.g. "GHOST PHASE BALL [GHO]   |   LVL. 1 / 5   |   GHOST: 4.8s   |   60 FPS")
-    std::string title = std::string(item.Name) + " [" + item.Badge + "]   |   LVL. " +
-                        std::to_string(curLvl) + " / " + std::to_string(maxLvl);
-    if (m_ghostBallDuration > 0.0f)
+    constexpr float cw = 18.0f;
+    float halfW = bannerW * 0.5f;
+    float halfH = bannerH * 0.5f;
+    Color bracketCol{255, 215, 60, 240};
+    context.Render.DrawLine(Vector2f{bannerPos.X - halfW, bannerPos.Y - halfH}, Vector2f{bannerPos.X - halfW + cw, bannerPos.Y - halfH}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{bannerPos.X - halfW, bannerPos.Y - halfH}, Vector2f{bannerPos.X - halfW, bannerPos.Y - halfH + cw}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{bannerPos.X + halfW, bannerPos.Y - halfH}, Vector2f{bannerPos.X + halfW - cw, bannerPos.Y - halfH}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{bannerPos.X + halfW, bannerPos.Y - halfH}, Vector2f{bannerPos.X + halfW, bannerPos.Y - halfH + cw}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{bannerPos.X - halfW, bannerPos.Y + halfH}, Vector2f{bannerPos.X - halfW + cw, bannerPos.Y + halfH}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{bannerPos.X - halfW, bannerPos.Y + halfH}, Vector2f{bannerPos.X - halfW, bannerPos.Y + halfH - cw}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{bannerPos.X + halfW, bannerPos.Y + halfH}, Vector2f{bannerPos.X + halfW - cw, bannerPos.Y + halfH}, bracketCol, 2.5f);
+    context.Render.DrawLine(Vector2f{bannerPos.X + halfW, bannerPos.Y + halfH}, Vector2f{bannerPos.X + halfW, bannerPos.Y + halfH - cw}, bracketCol, 2.5f);
+
+    if (m_previewMode == PreviewMode::Ultimate)
     {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "   |   GHOST: %.1fs", m_ghostBallDuration);
-        title += buf;
+        std::string ultName = ProfileManager::GetUltimateName(m_currentUltimate);
+        std::string ultCat = ProfileManager::GetUltimateCategory(m_currentUltimate);
+        std::string tierInfo = ProfileManager::GetUltimateTierInfo(m_currentUltimate, m_previewLevel);
+
+        std::string title = "[ PREVIEW ULTIME ]  " + ultName + "  -  NIV. " + std::to_string(m_previewLevel) + " / 5";
+        std::string sub = ultCat + "  |  " + tierInfo;
+        std::string controls = "[GAUCHE/DROITE] CHANGER ULTIME  |  [HAUT/BAS] NIVEAU  |  [TAB] MODE POWER-UPS  |  [R] RESET  |  [ESC] RETOUR";
+
+        context.Render.DrawTextCentered(title, m_fontId, 28.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y - 26.0f}}, Colors::Gold);
+        context.Render.DrawTextCentered(sub, m_fontId, 20.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y + 6.0f}}, Color{120, 210, 255, 235});
+        context.Render.DrawTextCentered(controls, m_fontId, 16.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y + 34.0f}}, Color{180, 200, 230, 210});
     }
-    else if (m_ghostBallPendingExpiry)
+    else
     {
-        title += "   |   GHOST: CLEARING BRICK...";
-    }
-    else if (m_tempoBallDuration > 0.0f)
-    {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "   |   TEMPO: %.1fs", m_tempoBallDuration);
-        title += buf;
-    }
-    else if (m_stormDuration > 0.0f)
-    {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "   |   STORM: %.1fs", m_stormDuration);
-        title += buf;
-    }
-    else if (m_stormCharges > 0)
-    {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "   |   LIGHTNING: %d", m_stormCharges);
-        title += buf;
-    }
-    else if (m_bigBallDuration > 0.0f)
-    {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "   |   BIG: %.1fs", m_bigBallDuration);
-        title += buf;
-    }
-    else if (m_stickyPaddleDuration > 0.0f)
-    {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "   |   STICKY: %.1fs", m_stickyPaddleDuration);
-        title += buf;
-    }
-    else if (m_bottomBarrierDuration > 0.0f)
-    {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "   |   BARRIER: %.1fs", m_bottomBarrierDuration);
-        title += buf;
-    }
-    else if (m_magnetDuration > 0.0f)
-    {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "   |   MAGNET: %.1fs", m_magnetDuration);
-        title += buf;
-    }
-    else if (m_paddleSizeDuration > 0.0f)
-    {
-        char buf[64];
-        if (m_isShrinkPaddle)
-        {
-            snprintf(buf, sizeof(buf), "   |   SHRINK (+%d%% SPD): %.1fs",
-                     static_cast<int>(PowerUpManager::Get().Shrink().GetEffectivePaddleSpeedBonusPercent()),
-                     m_paddleSizeDuration);
-        }
-        else
-        {
-            snprintf(buf, sizeof(buf), "   |   EXPAND (+%d%%): %.1fs",
-                     static_cast<int>((PowerUpManager::Get().Expand().GetEffectiveScale() - 1.0f) * 100.0f + 0.5f),
-                     m_paddleSizeDuration);
-        }
-        title += buf;
+        const auto& item = kPreviewItems[m_currentItemIndex];
+        int maxLvl = PowerUpManager::Get().GetMaxLevel(item.Type);
+        std::string title = "[ PREVIEW POWER-UP ]  " + std::string(item.Name) + "  -  NIV. " + std::to_string(m_previewLevel) + " / " + std::to_string(maxLvl);
+        std::string controls = "[GAUCHE/DROITE] CHANGER POWER-UP  |  [HAUT/BAS] NIVEAU  |  [TAB] MODE ULTIMES  |  [R] RESET  |  [ESC] RETOUR";
+
+        context.Render.DrawTextCentered(title, m_fontId, 28.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y - 20.0f}}, item.CapsuleColor);
+        context.Render.DrawTextCentered(controls, m_fontId, 17.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y + 22.0f}}, Color{180, 200, 230, 210});
     }
 
-    if (m_autoResetTimer > 0.0f)
+    if (m_brickCount <= 0 && IsEffectActive())
     {
-        title += "   |   EFFECT END (RESET...)";
+        float pulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 8.0f);
+        uint8_t a = static_cast<uint8_t>(180 + pulse * 75);
+        context.Render.DrawTextCentered("[ NIVEAU TERMINE - FINALISATION DE L'EFFET ... ]", m_fontId, 24.0f,
+            Transform2D{Vector2f{viewSize.X * 0.5f, bannerPos.Y + 80.0f}}, Color{255, 225, 60, a});
     }
-
-    title += "   |   " + std::to_string(context.Data.FPS) + " FPS";
-    context.Render.DrawTextCentered(title, m_fontId, 28.0f, Transform2D{Vector2f{0.0f, -508.0f}}, Colors::Gold);
-
-    // Controls reminder
-    std::string instructions = "[<- / ->] Power-Up  |  [^ / v] Level  |  [SPACE] Launch Ball  |  [R] Reset  |  [ESC] Menu";
-    context.Render.DrawTextCentered(instructions, m_fontId, 20.0f, Transform2D{Vector2f{0.0f, -480.0f}}, Color{180, 220, 255, 240});
 }
 
 void PreviewScene::NextPowerUp()
 {
-    m_currentItemIndex = (m_currentItemIndex + 1) % kPreviewItemCount;
-    PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, 1);
-    if (m_bounceSfxId != 0 && mp_context)
+    NextItem();
+}
+
+void PreviewScene::PrevPowerUp()
+{
+    PrevItem();
+}
+
+void PreviewScene::NextItem()
+{
+    if (m_previewMode == PreviewMode::PowerUp)
+    {
+        m_currentItemIndex = (m_currentItemIndex + 1) % kPreviewItemCount;
+        m_previewLevel = 1;
+        PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, 1);
+    }
+    else
+    {
+        int next = (static_cast<int>(m_currentUltimate) + 1) % 3;
+        m_currentUltimate = static_cast<UltimateAbilityType>(next);
+        m_previewLevel = ProfileManager::Get().GetUltimateLevel(m_currentUltimate);
+    }
+    if (mp_context && m_bounceSfxId != 0 && !m_isEmbeddedMode)
     {
         mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
     }
     ResetPreview();
 }
 
-void PreviewScene::PrevPowerUp()
+void PreviewScene::PrevItem()
 {
-    m_currentItemIndex = (m_currentItemIndex + kPreviewItemCount - 1) % kPreviewItemCount;
-    PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, 1);
-    if (m_bounceSfxId != 0 && mp_context)
+    if (m_previewMode == PreviewMode::PowerUp)
+    {
+        m_currentItemIndex = (m_currentItemIndex + kPreviewItemCount - 1) % kPreviewItemCount;
+        m_previewLevel = 1;
+        PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, 1);
+    }
+    else
+    {
+        int prev = (static_cast<int>(m_currentUltimate) + 2) % 3;
+        m_currentUltimate = static_cast<UltimateAbilityType>(prev);
+        m_previewLevel = ProfileManager::Get().GetUltimateLevel(m_currentUltimate);
+    }
+    if (mp_context && m_bounceSfxId != 0 && !m_isEmbeddedMode)
     {
         mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
     }
@@ -635,13 +942,24 @@ void PreviewScene::PrevPowerUp()
 
 void PreviewScene::LevelUp()
 {
-    PowerUpType type = kPreviewItems[m_currentItemIndex].Type;
-    int cur = PowerUpManager::Get().GetLevel(type);
-    int maxL = PowerUpManager::Get().GetMaxLevel(type);
-    if (cur < maxL)
+    int maxLevel = 5;
+    if (m_previewMode == PreviewMode::PowerUp)
     {
-        PowerUpManager::Get().SetLevel(type, cur + 1);
-        if (m_bounceSfxId != 0 && mp_context)
+        maxLevel = PowerUpManager::Get().GetMaxLevel(kPreviewItems[m_currentItemIndex].Type);
+    }
+    else
+    {
+        maxLevel = ProfileManager::Get().GetUltimateMaxLevel(m_currentUltimate);
+    }
+
+    if (m_previewLevel < maxLevel)
+    {
+        m_previewLevel++;
+        if (m_previewMode == PreviewMode::PowerUp)
+        {
+            PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, m_previewLevel);
+        }
+        if (mp_context && m_bounceSfxId != 0 && !m_isEmbeddedMode)
         {
             mp_context->Audio.PlaySfx(m_bounceSfxId, 95.0f, 1.25f);
         }
@@ -651,12 +969,14 @@ void PreviewScene::LevelUp()
 
 void PreviewScene::LevelDown()
 {
-    PowerUpType type = kPreviewItems[m_currentItemIndex].Type;
-    int cur = PowerUpManager::Get().GetLevel(type);
-    if (cur > 1)
+    if (m_previewLevel > 1)
     {
-        PowerUpManager::Get().SetLevel(type, cur - 1);
-        if (m_bounceSfxId != 0 && mp_context)
+        m_previewLevel--;
+        if (m_previewMode == PreviewMode::PowerUp)
+        {
+            PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, m_previewLevel);
+        }
+        if (mp_context && m_bounceSfxId != 0 && !m_isEmbeddedMode)
         {
             mp_context->Audio.PlaySfx(m_bounceSfxId, 80.0f, 0.85f);
         }
@@ -664,9 +984,32 @@ void PreviewScene::LevelDown()
     }
 }
 
+void PreviewScene::TryTriggerUltimate()
+{
+    if (m_previewMode == PreviewMode::Ultimate)
+    {
+        m_ultimateActivated = true;
+        switch (m_currentUltimate)
+        {
+        case UltimateAbilityType::PlasmaOrb:
+            ExecutePlasmaOrb(m_previewLevel);
+            break;
+        case UltimateAbilityType::DiscoBall:
+            ExecuteDiscoBall(m_previewLevel);
+            break;
+        case UltimateAbilityType::PowerUpRain:
+            ExecutePowerUpRain(m_previewLevel);
+            break;
+        default:
+            break;
+        }
+    }
+    m_ultimateCharge = 0.0f;
+    m_ultimateReady = false;
+}
+
 void PreviewScene::ResetPreview()
 {
-    // Clean all particles, lights, and flashes to avoid memory accumulation / frame drops
     if (m_particleSystem)
     {
         m_particleSystem->Clear();
@@ -681,7 +1024,8 @@ void PreviewScene::ResetPreview()
         mp_context->Audio.StopLoopingSfx(m_fireballBurnSfxId);
     }
 
-    // Reset all power-up durations and flags
+    ClearActiveUltimates();
+
     m_paddleSizeDuration = 0.0f;
     m_stormDuration = 0.0f;
     m_stormCharges = 0;
@@ -704,15 +1048,21 @@ void PreviewScene::ResetPreview()
     m_magnetDuration = 0.0f;
     m_ghostBallDuration = 0.0f;
     m_ghostBallPendingExpiry = false;
-    m_paddleSizeDuration = 0.0f;
     m_isShrinkPaddle = false;
     UpdatePaddleSpeed();
+
     m_powerUpActivated = false;
+    m_ultimateActivated = false;
     m_autoResetTimer = 0.0f;
     m_extraLifeTimer = 0.0f;
+    m_powerUpRainPreviewTimer = 0.0f;
+    m_resetTransitionTimer = 0.38f;
+    if (m_onResetCallback)
+    {
+        m_onResetCallback();
+    }
     m_scoreManager.Reset();
 
-    // Reset paddle position, scale, and size
     if (m_registry.IsAlive(m_paddle))
     {
         if (m_registry.HasComponent<Transform2D>(m_paddle))
@@ -742,7 +1092,6 @@ void PreviewScene::ResetPreview()
         }
     }
 
-    // Clear existing balls and lasers
     if (mp_ballSystem)
     {
         mp_ballSystem->ClearBalls();
@@ -753,68 +1102,69 @@ void PreviewScene::ResetPreview()
         mp_paddleSystem->DetachBall();
     }
 
-    // Clear any falling capsules
     m_registry.View<PowerUpComponent>([this](Entity e, PowerUpComponent&) {
         m_registry.DestroyEntityDeferred(e);
     });
     m_previewCapsule = NULL_ENTITY;
 
-    // Reload bricks cleanly:
-    // 1. Storm Thunder: load dedicated conductive metal circuit (preview_storm.txt) + Level 7 theme ("STORM VAULT")
-    // 2. Fire Ball: load dedicated metal bunker (preview_fireball.txt) + Level 3 theme ("SOLAR FLARE")
-    // 3. Other power-ups: load Level 1 (level01.txt) + Level 1 theme ("CYBER ODYSSEY")
-    PowerUpType curType = kPreviewItems[m_currentItemIndex].Type;
     std::string levelPath;
-    if (curType == PowerUpType::Storm)
+    if (m_previewMode == PreviewMode::Ultimate)
     {
-        m_levelManager.SetLevel(6);
-        ApplyLevelTheme(7);
-        const std::string stormLevel = "Resources/levels/preview_storm.txt";
-        std::error_code ec;
-        if (std::filesystem::exists(stormLevel, ec))
+        switch (m_currentUltimate)
         {
-            levelPath = stormLevel;
-        }
-        else
-        {
-            levelPath = m_levelManager.GetCurrentLevelPath();
-        }
-    }
-    else if (curType == PowerUpType::FireBall)
-    {
-        m_levelManager.SetLevel(2);
-        ApplyLevelTheme(3);
-        const std::string fireballLevel = "Resources/levels/preview_fireball.txt";
-        std::error_code ec;
-        if (std::filesystem::exists(fireballLevel, ec))
-        {
-            levelPath = fireballLevel;
-        }
-        else
-        {
-            levelPath = m_levelManager.GetCurrentLevelPath();
-        }
-    }
-    else if (curType == PowerUpType::GhostBall)
-    {
-        m_levelManager.SetLevel(3);
-        ApplyLevelTheme(4); // AMETHYST VOID
-        const std::string ghostLevel = "Resources/levels/preview_ghost.txt";
-        std::error_code ec;
-        if (std::filesystem::exists(ghostLevel, ec))
-        {
-            levelPath = ghostLevel;
-        }
-        else
-        {
-            levelPath = m_levelManager.GetCurrentLevelPath();
+        case UltimateAbilityType::PlasmaOrb:
+            m_levelManager.SetLevel(1);
+            ApplyLevelTheme(2);
+            levelPath = "Resources/levels/preview_plasma.txt";
+            break;
+        case UltimateAbilityType::DiscoBall:
+            m_levelManager.SetLevel(4);
+            ApplyLevelTheme(5);
+            levelPath = "Resources/levels/preview_disco.txt";
+            break;
+        case UltimateAbilityType::PowerUpRain:
+            m_levelManager.SetLevel(0);
+            ApplyLevelTheme(1);
+            levelPath = "Resources/levels/preview_poweruprain.txt";
+            break;
+        default:
+            levelPath = "Resources/levels/level01.txt";
+            break;
         }
     }
     else
     {
-        m_levelManager.SetLevel(0);
-        ApplyLevelTheme(1);
-        levelPath = m_levelManager.GetCurrentLevelPath();
+        PowerUpType curType = kPreviewItems[m_currentItemIndex].Type;
+        if (curType == PowerUpType::Storm)
+        {
+            m_levelManager.SetLevel(6);
+            ApplyLevelTheme(7);
+            const std::string stormLevel = "Resources/levels/preview_storm.txt";
+            std::error_code ec;
+            levelPath = std::filesystem::exists(stormLevel, ec) ? stormLevel : m_levelManager.GetCurrentLevelPath();
+        }
+        else if (curType == PowerUpType::FireBall)
+        {
+            m_levelManager.SetLevel(2);
+            ApplyLevelTheme(3);
+            const std::string fireballLevel = "Resources/levels/preview_fireball.txt";
+            std::error_code ec;
+            levelPath = std::filesystem::exists(fireballLevel, ec) ? fireballLevel : m_levelManager.GetCurrentLevelPath();
+        }
+        else if (curType == PowerUpType::GhostBall)
+        {
+            m_levelManager.SetLevel(3);
+            ApplyLevelTheme(4);
+            const std::string ghostLevel = "Resources/levels/preview_ghost.txt";
+            std::error_code ec;
+            levelPath = std::filesystem::exists(ghostLevel, ec) ? ghostLevel : m_levelManager.GetCurrentLevelPath();
+        }
+        else
+        {
+            m_levelManager.SetLevel(0);
+            ApplyLevelTheme(1);
+            levelPath = m_levelManager.GetCurrentLevelPath();
+        }
     }
 
     m_magnetCapsuleTimer = 0.0f;
@@ -830,7 +1180,6 @@ void PreviewScene::ResetPreview()
         m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
     }
 
-    // Create a fresh single ball and attach it
     m_ball = CreateBall(Vector2f{0.0f, 260.0f}, Vector2f{0.0f, 0.0f});
     if (m_registry.IsAlive(m_ball))
     {
@@ -851,7 +1200,6 @@ void PreviewScene::ResetPreview()
         mp_paddleSystem->AttachBall(m_paddle, m_ball);
     }
 
-    // Bypass countdown
     m_countdownActive = false;
     m_countdownTimer = 0.0f;
     m_countdownGoTimer = 0.0f;
@@ -864,7 +1212,6 @@ void PreviewScene::ResetPreview()
     m_wasBallAttached = true;
     m_lives = 99;
 
-    // Hide HUD counter in preview
     if (m_uiController)
     {
         Entity hudCanvas = m_uiController->GetMainUICanvas();
@@ -884,7 +1231,7 @@ void PreviewScene::ApplyPowerUp(PowerUpType type)
 {
     GameScene::ApplyPowerUp(type);
 
-    if (type == kPreviewItems[m_currentItemIndex].Type)
+    if (m_previewMode == PreviewMode::PowerUp && type == kPreviewItems[m_currentItemIndex].Type)
     {
         m_powerUpActivated = true;
         if (type == PowerUpType::ExtraLife)
@@ -898,14 +1245,12 @@ void PreviewScene::SpawnMagnetDemoCapsule()
 {
     if (!m_registry.IsAlive(m_paddle) || !m_registry.HasComponent<Transform2D>(m_paddle)) return;
 
-    // Pick an offset X to clearly demonstrate the curved gravitational pull into the paddle
     const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
     float offsetDir = (rand() % 2 == 0) ? -1.0f : 1.0f;
     float offsetX = offsetDir * (130.0f + static_cast<float>(rand() % 250));
     float spawnX = std::clamp(paddleTrans.Position.X + offsetX, -650.0f, 650.0f);
     float spawnY = -270.0f - static_cast<float>(rand() % 70);
 
-    // Variety of colorful capsules falling
     int typeIndex = rand() % kPreviewItemCount;
     PowerUpType type = kPreviewItems[typeIndex].Type;
     Color color = kPreviewItems[typeIndex].CapsuleColor;
@@ -930,7 +1275,6 @@ void PreviewScene::SpawnPreviewCapsule()
         m_registry.ProcessDeferredCommands();
     }
 
-    // Spawn capsule directly above paddle
     Vector2f pos{ paddleTrans.Position.X, -100.0f };
 
     m_previewCapsule = m_registry.CreateEntity();
@@ -945,5 +1289,27 @@ void PreviewScene::OnBallLaunched()
 {
     if (m_capsuleSpawnedForLaunch) return;
     m_capsuleSpawnedForLaunch = true;
-    SpawnPreviewCapsule();
+
+    if (m_previewMode == PreviewMode::PowerUp)
+    {
+        SpawnPreviewCapsule();
+    }
+    else if (m_previewMode == PreviewMode::Ultimate)
+    {
+        m_ultimateActivated = true;
+        switch (m_currentUltimate)
+        {
+        case UltimateAbilityType::PlasmaOrb:
+            ExecutePlasmaOrb(m_previewLevel);
+            break;
+        case UltimateAbilityType::DiscoBall:
+            ExecuteDiscoBall(m_previewLevel);
+            break;
+        case UltimateAbilityType::PowerUpRain:
+            ExecutePowerUpRain(m_previewLevel);
+            break;
+        default:
+            break;
+        }
+    }
 }
