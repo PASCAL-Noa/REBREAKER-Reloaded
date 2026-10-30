@@ -33,7 +33,8 @@ public:
     void SetupGameOver(uint32_t finalScore, int finalLevel);
     void SetupVictory(uint32_t finalScore);
 
-    // Exploding heart animation on life lost
+    // Multi-tier heart HUD (Green, Yellow, Red)
+    void UpdateHearts(int lives);
     void TriggerLifeLostAnimation(int currentLives);
     void SetHeartActive(int index, bool active);
     size_t GetHeartCount() const noexcept { return m_heartEntities.size(); }
@@ -102,6 +103,8 @@ private:
 
     uint32_t        m_fontId = 0;
     uint32_t        m_heartTexId = 0;
+    uint32_t        m_heartYellowTexId = 0;
+    uint32_t        m_heartGreenTexId = 0;
     uint32_t        m_fireTexId = 0;
     uint32_t        m_bounceSfxId = 0;
     uint32_t        m_scoreRecordedSfxId = 0;

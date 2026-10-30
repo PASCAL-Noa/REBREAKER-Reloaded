@@ -3734,6 +3734,15 @@ void MenuScene::RenderPowerUpSimulation(GameContext& context, PowerUpType type, 
             uint8_t noiseAlpha = static_cast<uint8_t>(switchProgress * 150.0f);
             context.Render.DrawRectangle(size.X - 4.0f, size.Y - 4.0f, Transform2D{center}, Color{200, 225, 255, noiseAlpha});
         }
+
+        // Render dynamic explosion / storm lightning flash impact onto the preview monitor
+        const auto& postParams = m_previewScene->GetPostProcessParams();
+        if (postParams.FlashIntensity > 0.001f)
+        {
+            Color flashCol = postParams.FlashColor;
+            flashCol.a = static_cast<uint8_t>(std::clamp(postParams.FlashIntensity * 255.0f, 0.0f, 255.0f));
+            context.Render.DrawRectangle(size.X - 4.0f, size.Y - 4.0f, Transform2D{center}, flashCol);
+        }
     }
     else
     {
@@ -3800,6 +3809,15 @@ void MenuScene::RenderUltimateSimulation(GameContext& context, UltimateAbilityTy
         {
             uint8_t noiseAlpha = static_cast<uint8_t>(switchProgress * 150.0f);
             context.Render.DrawRectangle(size.X - 4.0f, size.Y - 4.0f, Transform2D{center}, Color{200, 225, 255, noiseAlpha});
+        }
+
+        // Render dynamic ultimate flash impact onto the preview card
+        const auto& postParams = m_ultimatePreviewScenes[idx]->GetPostProcessParams();
+        if (postParams.FlashIntensity > 0.001f)
+        {
+            Color flashCol = postParams.FlashColor;
+            flashCol.a = static_cast<uint8_t>(std::clamp(postParams.FlashIntensity * 255.0f, 0.0f, 255.0f));
+            context.Render.DrawRectangle(size.X - 4.0f, size.Y - 4.0f, Transform2D{center}, flashCol);
         }
     }
     else

@@ -37,6 +37,8 @@ void GameUIController::OnInit(uint32_t fontId, uint32_t heartTexId, uint32_t fir
 {
     m_fontId = fontId;
     m_heartTexId = heartTexId;
+    m_heartYellowTexId = m_context.Resources.LoadResource("Resources/sprite/heart_yellow.png");
+    m_heartGreenTexId = m_context.Resources.LoadResource("Resources/sprite/heart_green.png");
     m_fireTexId = fireTexId;
     m_bounceSfxId = bounceSfxId;
     m_scoreRecordedSfxId = scoreRecordedSfxId;
@@ -83,10 +85,7 @@ void GameUIController::SetupSubscriptions()
     });
 
     m_livesSub = m_context.Events.SubscribeScoped<LivesChangedEvent>([this](const LivesChangedEvent& e) {
-        for (size_t i = 0; i < m_heartEntities.size(); ++i)
-        {
-            SetHeartActive(static_cast<int>(i), static_cast<int>(i) < e.Lives);
-        }
+        UpdateHearts(e.Lives);
     });
 }
 
@@ -439,11 +438,88 @@ void GameUIController::OnUpdate(float dt)
     }
 }
 
+void GameUIController::UpdateHearts(int lives)
+{
+    for (int i = 0; i < 3; ++i)
+    {
+        if (static_cast<size_t>(i) >= m_heartEntities.size()) continue;
+        Entity heart = m_heartEntities[i];
+        if (!m_registry.IsAlive(heart)) continue;
+
+        int tier = 0;
+        if (lives > 0)
+        {
+            if (lives <= 3)
+            {
+                tier = (i < lives) ? 1 : 0;
+            }
+            else
+            {
+                int extra = lives - 3;
+                tier = 1;
+                if (extra >= i + 1) tier++;
+                if (extra >= i + 4) tier++;
+            }
+        }
+
+        if (m_registry.HasComponent<RectTransform>(heart))
+        {
+            m_registry.GetComponent<RectTransform>(heart).IsActive = (tier > 0);
+        }
+
+        if (tier > 0 && m_registry.HasComponent<SpriteComponent>(heart))
+        {
+            auto& sprite = m_registry.GetComponent<SpriteComponent>(heart);
+            if (tier == 3 && m_heartGreenTexId != 0)
+            {
+                sprite.TextureId = m_heartGreenTexId;
+            }
+            else if (tier == 2 && m_heartYellowTexId != 0)
+            {
+                sprite.TextureId = m_heartYellowTexId;
+            }
+            else
+            {
+                sprite.TextureId = m_heartTexId;
+            }
+            sprite.Tint = Colors::White;
+        }
+    }
+}
+
 void GameUIController::TriggerLifeLostAnimation(int currentLives)
 {
-    if (currentLives >= 0 && static_cast<size_t>(currentLives) < m_heartEntities.size())
+    if (currentLives <= 0) return;
+
+    int heartIndex = 0;
+    uint32_t hitTextureId = m_heartTexId;
+    int previousTier = 1;
+
+    if (currentLives <= 3)
     {
-        Entity actualHeart = m_heartEntities[currentLives];
+        heartIndex = currentLives - 1;
+        hitTextureId = m_heartTexId;
+        previousTier = 1;
+    }
+    else
+    {
+        int extra = currentLives - 3;
+        heartIndex = (extra - 1) % 3;
+        if (extra > 3)
+        {
+            hitTextureId = (m_heartGreenTexId != 0) ? m_heartGreenTexId : m_heartTexId;
+            previousTier = 3;
+        }
+        else
+        {
+            hitTextureId = (m_heartYellowTexId != 0) ? m_heartYellowTexId : m_heartTexId;
+            previousTier = 2;
+        }
+    }
+
+    if (heartIndex >= 0 && static_cast<size_t>(heartIndex) < m_heartEntities.size())
+    {
+        Entity actualHeart = m_heartEntities[heartIndex];
 
         if (m_registry.HasComponent<RectTransform>(actualHeart) &&
             m_registry.HasComponent<RectTransform>(m_explodingHeart) &&
@@ -459,6 +535,7 @@ void GameUIController::TriggerLifeLostAnimation(int currentLives)
             t.AnchorPoint = actualTransform.AnchorPoint;
             t.Parent = actualTransform.Parent;
             t.Size = actualTransform.Size;
+            s.TextureId = hitTextureId;
             s.Tint = Colors::White;
 
             TweenConfig<float> config;
@@ -481,7 +558,25 @@ void GameUIController::TriggerLifeLostAnimation(int currentLives)
             };
 
             tweenComp.AddTween(config);
-            actualTransform.IsActive = false;
+
+            if (previousTier == 1)
+            {
+                actualTransform.IsActive = false;
+            }
+            else if (previousTier == 2)
+            {
+                if (m_registry.HasComponent<SpriteComponent>(actualHeart))
+                {
+                    m_registry.GetComponent<SpriteComponent>(actualHeart).TextureId = m_heartTexId;
+                }
+            }
+            else if (previousTier == 3)
+            {
+                if (m_registry.HasComponent<SpriteComponent>(actualHeart))
+                {
+                    m_registry.GetComponent<SpriteComponent>(actualHeart).TextureId = (m_heartYellowTexId != 0) ? m_heartYellowTexId : m_heartTexId;
+                }
+            }
         }
     }
 }
@@ -878,6 +973,8 @@ void GameUIController::CreateHUD()
     });
     m_registry.AddComponent<SpriteComponent>(m_explodingHeart, SpriteComponent{m_heartTexId, Colors::Transparent});
     m_registry.AddComponent<TweenComponent>(m_explodingHeart, TweenComponent{});
+
+    UpdateHearts(m_scene.GetLives());
 }
 
 void GameUIController::CreatePauseMenu()

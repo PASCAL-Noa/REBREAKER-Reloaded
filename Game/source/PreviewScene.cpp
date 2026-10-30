@@ -85,15 +85,11 @@ void PreviewScene::SetEmbeddedMode(bool embedded)
     }
     if (m_isEmbeddedMode && m_registry.IsAlive(m_camera))
     {
-        if (m_registry.HasComponent<TweenComponent>(m_camera))
-        {
-            m_registry.RemoveComponent<TweenComponent>(m_camera);
-        }
         if (m_registry.HasComponent<Camera2D>(m_camera))
         {
             auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
-            cam.Position = Vector2f{0.0f, -25.0f};
-            cam.Zoom = 1.60f;
+            cam.Position = Vector2f{0.0f, 0.0f};
+            cam.Zoom = 1.95f;
             cam.Rotation = 0.0f;
         }
     }
@@ -323,8 +319,7 @@ void PreviewScene::OnInit(GameContext& context)
         m_audioEnabled = true;
     }
 
-    // Infinite lives & safe testing rules
-    context.Rules.SetRule(Rule::Gameplay::InfiniteLives, true);
+    // Safe preview lives (isolated to PreviewScene)
     m_lives = 99;
 
     // Isolate preview state machine: strictly Playing state without LevelTransition or Victory transitions
@@ -391,8 +386,8 @@ void PreviewScene::OnInit(GameContext& context)
     if (m_isEmbeddedMode && m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
     {
         auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
-        cam.Position = Vector2f{0.0f, -25.0f};
-        cam.Zoom = 1.60f;
+        cam.Position = Vector2f{0.0f, 0.0f};
+        cam.Zoom = 1.95f;
     }
 }
 
@@ -584,9 +579,12 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         if (m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
         {
             auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
-            cam.Position = Vector2f{0.0f, -25.0f};
-            cam.Zoom = 1.60f;
-            cam.Rotation = 0.0f;
+            cam.Zoom = 1.95f;
+            if (!m_registry.HasComponent<TweenComponent>(m_camera))
+            {
+                cam.Position = Vector2f{0.0f, 0.0f};
+                cam.Rotation = 0.0f;
+            }
         }
     }
 
@@ -701,7 +699,7 @@ bool PreviewScene::IsUltimateEffectActive()
         return !m_plasmaOrbs.empty() || (m_plasmaActiveTimer > 0.0f);
 
     case UltimateAbilityType::DiscoBall:
-        return (m_discoTimer > 0.0f) || !m_discoBigBalls.empty() || !m_discoExplosionAnims.empty()
+        return (m_discoTimer > 0.0f) || !m_discoBigBalls.empty() || m_discoMirrorBall.IsActive || !m_discoExplosionAnims.empty()
             || (m_discoGrandFinaleBannerTimer > 0.0f) || !m_soundWaves.empty();
 
     case UltimateAbilityType::PowerUpRain:

@@ -2359,7 +2359,7 @@ void GameScene::HandleDeath()
         {
             if (m_uiController)
             {
-                m_uiController->TriggerLifeLostAnimation(m_lives - 1);
+                m_uiController->TriggerLifeLostAnimation(m_lives);
             }
             m_lives--;
             if (mp_context)
@@ -3549,12 +3549,32 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             bool infiniteLives = mp_context ? mp_context->Rules.GetRule(Rule::Gameplay::InfiniteLives) : false;
             if (!infiniteLives)
             {
-                for (int i = 0; i < cfg.LivesGranted; ++i)
+                int lvl = std::clamp(cfg.Level, 1, 5);
+                switch (lvl)
                 {
-                    if (m_lives < cfg.MaxLivesCap)
-                    {
-                        m_lives++;
-                    }
+                    case 1:
+                        // Niv 1 : +1 vie (plafonné à 9 / 3 coeurs verts)
+                        m_lives = std::min(m_lives + 1, 9);
+                        break;
+                    case 2:
+                        // Niv 2 : +2 vies
+                        m_lives = std::min(m_lives + 2, 9);
+                        break;
+                    case 3:
+                        // Niv 3 : +1 vie jaune (garantit au moins 1 coeur jaune = santé 4, ou +1 si déjà supérieur)
+                        m_lives = std::clamp(std::max(m_lives + 1, 4), 1, 9);
+                        break;
+                    case 4:
+                        // Niv 4 : +2 vies jaunes (garantit au moins 2 coeurs jaunes = santé 5, ou +2 si déjà supérieur)
+                        m_lives = std::clamp(std::max(m_lives + 2, 5), 1, 9);
+                        break;
+                    case 5:
+                        // Niv 5 : +3 vies vertes (bouclier max : 3 coeurs verts = 9)
+                        m_lives = 9;
+                        break;
+                    default:
+                        m_lives = std::min(m_lives + 1, 9);
+                        break;
                 }
                 if (mp_context)
                 {
@@ -4603,7 +4623,7 @@ void GameScene::ExecuteDiscoBall(int level)
     if (m_discoLevel >= 5)
     {
         m_discoMirrorBall.IsActive = true;
-        m_discoMirrorBall.Lifetime = 5.0f;
+        m_discoMirrorBall.Lifetime = m_discoDuration;
         m_discoMirrorBall.Position = Vector2f{0.0f, -140.0f};
         m_discoMirrorBall.Velocity = Vector2f{350.0f, -260.0f};
         m_discoMirrorBall.Radius = 26.0f;
@@ -5321,8 +5341,8 @@ void GameScene::UpdateUltimateAbilities(float dt)
         {
             m_discoMirrorBall.IsFrenzy = true;
             m_discoMirrorBall.TargetScale = 2.40f; // Grossis !
-            m_discoMirrorBall.Lifetime = std::max(m_discoMirrorBall.Lifetime, 5.0f);
             m_discoTimer = std::max(m_discoTimer, 5.5f);
+            m_discoMirrorBall.Lifetime = m_discoTimer;
 
             if (!m_discoMirrorBall.IsActive)
             {
@@ -5431,38 +5451,9 @@ void GameScene::UpdateUltimateAbilities(float dt)
                 }
             }
 
-            // Grand Climax Explosion of Mirror Ball
-            if (m_discoMirrorBall.Lifetime <= 0.0f)
-            {
-                m_discoMirrorBall.IsActive = false;
-                if (mp_context && m_audioEnabled)
-                {
-                    mp_context->Audio.TriggerDucking(0.20f, 1.6f);
-                    if (m_discoVoiceoverSfxId != 0)
-                    {
-                        mp_context->Audio.PlaySfx(m_discoVoiceoverSfxId, 100.0f);
-                    }
-                }
-                m_discoGrandFinaleBannerTimer = 2.4f;
-
-                DiscoExplosionAnim mAnim;
-                mAnim.Position = m_discoMirrorBall.Position;
-                mAnim.BallColor = Color{255, 245, 255, 255};
-                mAnim.Lifetime = 0.85f;
-                mAnim.MaxLifetime = 0.85f;
-                mAnim.Radius = m_discoMirrorBall.Radius * m_discoMirrorBall.Scale;
-                mAnim.MaxRadius = 280.0f;
-                m_discoExplosionAnims.push_back(mAnim);
-
-                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 255, 255, 255}, 60);
-                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 80, 220, 255}, 40);
-                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{80, 240, 255, 255}, 40);
-                SpawnLightFlash(m_discoMirrorBall.Position, 750.0f, Color{255, 250, 255, 255}, 3.2f, 0.85f);
-                TriggerPostProcessFlash(0.06f, 0.85f, Color{255, 255, 255, 255}, 0.5f, Color{255, 40, 200, 255});
-            }
         }
-
-        // C. End of Disco Fever: Synchronous Big Balls Explosion Animation!
+ 
+        // C. End of Disco Fever: Synchronous Big Balls & Mirror Ball Explosion Animation!
         if (m_discoTimer <= 0.0f)
         {
             m_discoTimer = 0.0f;
@@ -5501,7 +5492,10 @@ void GameScene::UpdateUltimateAbilities(float dt)
                 m_discoExplosionAnims.push_back(mAnim);
 
                 SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 255, 255, 255}, 60);
+                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 80, 220, 255}, 40);
+                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{80, 240, 255, 255}, 40);
                 SpawnLightFlash(m_discoMirrorBall.Position, 750.0f, Color{255, 250, 255, 255}, 3.2f, 0.85f);
+                TriggerPostProcessFlash(0.06f, 0.85f, Color{255, 255, 255, 255}, 0.5f, Color{255, 40, 200, 255});
                 if (mp_context && m_audioEnabled)
                 {
                     mp_context->Audio.TriggerDucking(0.20f, 1.6f);

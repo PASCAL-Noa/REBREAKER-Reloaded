@@ -193,7 +193,7 @@ struct ExtraLifeConfig
     int Level = 1;
     int MaxLevel = 5;
     int LivesGranted = 1;
-    int MaxLivesCap = 6;
+    int MaxLivesCap = 9;
 
     int GetUpgradeCost() const {
         return 200 * Level;
