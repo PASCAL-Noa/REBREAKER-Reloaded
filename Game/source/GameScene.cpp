@@ -2513,6 +2513,10 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
             m_scoreManager.AddScore(nBrick.ScoreValue);
             m_brickCount--;
 
+            uint32_t bCombo = m_scoreManager.GetComboMultiplier();
+            float bComboBonus = 1.0f + (bCombo > 1 ? static_cast<float>(std::min(bCombo, 10u) - 1) * 0.25f : 0.0f);
+            AddUltimateCharge(1.5f * bComboBonus);
+
             mp_context->Events.Publish(BrickHitEvent(neighbor, true, nBrick.IsSpecial, m_scoreManager.GetComboMultiplier(), nPos));
 
             m_registry.DestroyEntityDeferred(neighbor);
@@ -2673,9 +2677,15 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
     bool isDestroyed = (brick.HitPoints == 0);
 
-    // Charge Ultimate Meter with controlled progression & combo bonus
-    float chargeGain = isDestroyed ? 1.25f : 0.45f;
-    chargeGain *= (1.0f + static_cast<float>(std::min(m_scoreManager.GetComboMultiplier(), 8u) - 1) * 0.15f);
+    // Charge Ultimate Meter with dynamic progression based on brick destruction and combo scaling
+    uint32_t combo = m_scoreManager.GetComboMultiplier();
+    float comboBonus = 1.0f;
+    if (combo > 1)
+    {
+        comboBonus += static_cast<float>(std::min(combo, 10u) - 1) * 0.25f;
+    }
+    float baseGain = isDestroyed ? 2.0f : 0.6f;
+    float chargeGain = baseGain * comboBonus;
     AddUltimateCharge(chargeGain);
 
     if (isDestroyed)
@@ -5687,7 +5697,7 @@ void GameScene::RenderUltimateMeterHUD(GameContext& context)
 {
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
     const float centerX = viewSize.X * 0.5f;
-    const float centerY = 65.0f;
+    const float centerY = 130.0f;
     const float barWidth = 360.0f;
     const float barHeight = 22.0f;
 

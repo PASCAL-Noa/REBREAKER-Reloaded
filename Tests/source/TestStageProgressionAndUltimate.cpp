@@ -185,20 +185,36 @@ TEST_SUITE("Stage Progression and Ultimate Abilities Tests")
             }
         };
 
-        // Standard hit without combo (multiplier = 1) -> slowed charge rate (0.45f)
-        uint32_t comboMultiplier = 1;
-        float hitCharge = 0.45f * (1.0f + static_cast<float>(comboMultiplier - 1) * 0.15f);
-        addCharge(hitCharge);
-        CHECK(ultimateCharge == doctest::Approx(0.45f));
+        auto calcGain = [](bool destroyed, uint32_t combo)
+        {
+            float comboBonus = 1.0f;
+            if (combo > 1)
+            {
+                comboBonus += static_cast<float>(std::min(combo, 10u) - 1) * 0.25f;
+            }
+            float baseGain = destroyed ? 2.0f : 0.6f;
+            return baseGain * comboBonus;
+        };
+
+        // First hit before any combo is established (multiplier = 0): no underflow!
+        float firstHitCharge = calcGain(false, 0);
+        CHECK(firstHitCharge == doctest::Approx(0.6f));
+        addCharge(firstHitCharge);
+        CHECK(ultimateCharge == doctest::Approx(0.6f));
         CHECK(ultimateReady == false);
 
-        // Brick destroyed with 4x combo -> slowed charge rate (1.25f)
-        comboMultiplier = 4;
-        float destroyCharge = 1.25f * (1.0f + static_cast<float>(comboMultiplier - 1) * 0.15f);
-        // 1.25 * (1.0 + 3 * 0.15) = 1.25 * 1.45 = 1.8125f
-        CHECK(destroyCharge == doctest::Approx(1.8125f));
-        addCharge(destroyCharge);
-        CHECK(ultimateCharge == doctest::Approx(0.45f + 1.8125f));
+        // First brick destroyed without combo chain (multiplier = 1) -> 2.0f
+        float firstDestroyCharge = calcGain(true, 1);
+        CHECK(firstDestroyCharge == doctest::Approx(2.0f));
+        addCharge(firstDestroyCharge);
+        CHECK(ultimateCharge == doctest::Approx(2.6f));
+        CHECK(ultimateReady == false);
+
+        // Brick destroyed with 4x combo -> 2.0f * (1.0 + 3 * 0.25) = 2.0 * 1.75 = 3.5f
+        float combo4Charge = calcGain(true, 4);
+        CHECK(combo4Charge == doctest::Approx(3.5f));
+        addCharge(combo4Charge);
+        CHECK(ultimateCharge == doctest::Approx(6.1f));
         CHECK(ultimateReady == false);
 
         // Fills to 100%
