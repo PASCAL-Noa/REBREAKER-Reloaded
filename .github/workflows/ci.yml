@@ -46,6 +46,15 @@ jobs:
             libvorbis-dev \
             libopenal-dev
 
+      - name: Configure OpenAL for headless testing
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p ~/.config
+          cat << 'EOF' > ~/.config/alsoft.conf
+          [general]
+          drivers = null
+          EOF
+
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
@@ -63,5 +72,8 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: Run Tests
+        env:
+          ALSOFT_DRIVERS: "null"
         run: ctest --test-dir build --output-on-failure -C Release
+
 
