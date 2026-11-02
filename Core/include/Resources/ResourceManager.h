@@ -97,8 +97,9 @@ private:
     std::unordered_map<uint32_t, std::vector<std::function<void(uint32_t)>>>            m_inFlightCallbacks;
     std::unordered_map<uint32_t, std::vector<std::shared_ptr<std::promise<uint32_t>>>> m_inFlightPromises;
 
-    std::unique_ptr<sf::Texture>                    m_fallbackTexture;
+    mutable std::unique_ptr<sf::Texture>            m_fallbackTexture;
     std::unique_ptr<sf::SoundBuffer>                m_fallbackSoundBuffer;
+
 };
 
 #include "ResourceManager.inl"

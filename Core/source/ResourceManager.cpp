@@ -33,21 +33,6 @@ ThreadPool& ResourceManager::GetThreadPool() noexcept
 
 void ResourceManager::InitFallbacks()
 {
-    // 2x2 magenta/black checkerboard
-    // Row 0: Magenta, Black
-    // Row 1: Black, Magenta
-    const std::uint8_t checkerboardPixels[16] = {
-        255,   0, 255, 255,      0,   0,   0, 255,
-          0,   0,   0, 255,    255,   0, 255, 255
-    };
-    sf::Image checkerImage(sf::Vector2u(2, 2), checkerboardPixels);
-    m_fallbackTexture = std::make_unique<sf::Texture>();
-    if (m_fallbackTexture->loadFromImage(checkerImage))
-    {
-        m_fallbackTexture->setRepeated(true);
-        m_fallbackTexture->setSmooth(false);
-    }
-
     // Silent audio buffer (mono, 44100Hz, 64 silent samples)
     const std::int16_t silentSamples[64] = {0};
     const std::vector<sf::SoundChannel> channelMap = { sf::SoundChannel::Mono };
@@ -57,8 +42,27 @@ void ResourceManager::InitFallbacks()
 
 sf::Texture* ResourceManager::GetFallbackTexture() const
 {
+    if (!m_fallbackTexture)
+    {
+        // 2x2 magenta/black checkerboard
+        // Row 0: Magenta, Black
+        // Row 1: Black, Magenta
+        const std::uint8_t checkerboardPixels[16] = {
+            255,   0, 255, 255,      0,   0,   0, 255,
+              0,   0,   0, 255,    255,   0, 255, 255
+        };
+        sf::Image checkerImage(sf::Vector2u(2, 2), checkerboardPixels);
+        auto texture = std::make_unique<sf::Texture>();
+        if (texture->loadFromImage(checkerImage))
+        {
+            texture->setRepeated(true);
+            texture->setSmooth(false);
+            m_fallbackTexture = std::move(texture);
+        }
+    }
     return m_fallbackTexture ? m_fallbackTexture.get() : nullptr;
 }
+
 
 sf::SoundBuffer* ResourceManager::GetFallbackSoundBuffer() const
 {
