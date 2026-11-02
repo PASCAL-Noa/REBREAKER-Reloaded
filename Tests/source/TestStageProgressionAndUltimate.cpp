@@ -232,6 +232,25 @@ TEST_SUITE("Stage Progression and Ultimate Abilities Tests")
         ultimateReady = false;
         CHECK(ultimateCharge == doctest::Approx(0.0f));
         CHECK(ultimateReady == false);
+
+        // While Ultimate is actively running, no charge can be accumulated
+        bool isUltimateActive = true;
+        auto addChargeWithActiveCheck = [&](float amount)
+        {
+            if (ultimateReady || isUltimateActive) return;
+            ultimateCharge = std::min(ultimateCharge + amount, maxCharge);
+        };
+
+        addChargeWithActiveCheck(calcGain(true, 5));
+        addChargeWithActiveCheck(calcGain(true, 8));
+        CHECK(ultimateCharge == doctest::Approx(0.0f));
+        CHECK(ultimateReady == false);
+
+        // Once the ultimate effect concludes, meter resumes filling normally
+        isUltimateActive = false;
+        addChargeWithActiveCheck(calcGain(true, 1));
+        CHECK(ultimateCharge == doctest::Approx(2.0f));
+        CHECK(ultimateReady == false);
     }
 
     TEST_CASE("Ultimate clear on level change and plasma trail lifecycle")

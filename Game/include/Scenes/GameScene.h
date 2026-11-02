@@ -122,6 +122,7 @@ public:
     // Stage Progression / Ultimate Ability
     [[nodiscard]] float GetUltimateCharge() const { return m_ultimateCharge; }
     [[nodiscard]] bool  IsUltimateReady() const { return m_ultimateReady; }
+    [[nodiscard]] bool  IsUltimateActive() const;
     void  AddUltimateCharge(float amount);
     void  SetUltimateCharge(float charge);
     virtual void TryTriggerUltimate();

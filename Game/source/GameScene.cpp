@@ -4218,9 +4218,18 @@ void GameScene::SpawnLightFlash(const Vector2f& position, float radius, const Co
     m_lightFlashes.push_back(flash);
 }
 
+bool GameScene::IsUltimateActive() const
+{
+    const bool plasmaActive = !m_plasmaOrbs.empty() || (m_plasmaActiveTimer > 0.0f);
+    const bool discoActive = (m_discoTimer > 0.0f) || m_discoMirrorBall.IsActive || !m_discoBigBalls.empty() || !m_soundWaves.empty();
+    const bool rainActive = (m_powerUpRainActiveTimer > 0.0f) || !m_powerUpRainQueue.empty();
+    return plasmaActive || discoActive || rainActive;
+}
+
 void GameScene::AddUltimateCharge(float amount)
 {
     if (m_ultimateReady) return;
+    if (IsUltimateActive()) return;
 
     m_ultimateCharge = std::min(m_ultimateCharge + amount, m_ultimateMaxCharge);
     if (m_ultimateCharge >= m_ultimateMaxCharge)
@@ -5704,13 +5713,19 @@ void GameScene::RenderUltimateMeterHUD(GameContext& context)
     Transform2D bgTrans{Vector2f{centerX, centerY}};
     context.Render.DrawRectangle(barWidth + 8.0f, barHeight + 8.0f, bgTrans, Color{10, 15, 25, 210});
 
+    bool ultActive = IsUltimateActive();
     Color borderColor{40, 75, 120, 220};
     if (m_ultimateReady)
     {
         float pulse = (std::sin(m_ultimateReadyPulseTime * 8.0f) + 1.0f) * 0.5f;
         borderColor = Color{255, static_cast<uint8_t>(200 + 55 * pulse), static_cast<uint8_t>(50 * pulse), 255};
     }
-    context.Render.DrawRectangleOutline(barWidth + 8.0f, barHeight + 8.0f, bgTrans, borderColor, m_ultimateReady ? -2.5f : -1.5f);
+    else if (ultActive)
+    {
+        float pulse = (std::sin(m_gameplayTime * 8.0f) + 1.0f) * 0.5f;
+        borderColor = Color{0, static_cast<uint8_t>(180 + 75 * pulse), 255, 255};
+    }
+    context.Render.DrawRectangleOutline(barWidth + 8.0f, barHeight + 8.0f, bgTrans, borderColor, (m_ultimateReady || ultActive) ? -2.5f : -1.5f);
 
     float fillRatio = std::clamp(m_ultimateCharge / m_ultimateMaxCharge, 0.0f, 1.0f);
     if (fillRatio > 0.0f)
@@ -5738,6 +5753,13 @@ void GameScene::RenderUltimateMeterHUD(GameContext& context)
         float pulse = (std::sin(m_ultimateReadyPulseTime * 10.0f) + 1.0f) * 0.5f;
         Color textColor{255, static_cast<uint8_t>(220 + 35 * pulse), static_cast<uint8_t>(80 * pulse), 255};
         context.Render.DrawTextCentered(ultLabel, m_fontId, 28.0f, Transform2D{Vector2f{centerX, centerY + 28.0f}}, textColor);
+    }
+    else if (ultActive)
+    {
+        ultLabel = ultName + " : [ ACTIVE ]";
+        float pulse = (std::sin(m_gameplayTime * 8.0f) + 1.0f) * 0.5f;
+        Color textColor{0, static_cast<uint8_t>(210 + 45 * pulse), 255, 255};
+        context.Render.DrawTextCentered(ultLabel, m_fontId, 24.0f, Transform2D{Vector2f{centerX, centerY + 28.0f}}, textColor);
     }
     else
     {
