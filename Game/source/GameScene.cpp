@@ -1687,11 +1687,11 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
     {
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_fireballExplosionSfxId != 0)
-            mp_context->Audio.PlaySfx(m_fireballExplosionSfxId, 100.0f);
+            PlaySfx(m_fireballExplosionSfxId, 85.0f);
         else if (m_explosionSfxId != 0)
-            mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
+            PlaySfx(m_explosionSfxId, 85.0f);
         else if (m_despawnSfxId != 0)
-            mp_context->Audio.PlaySfx(m_despawnSfxId, 90.0f);
+            PlaySfx(m_despawnSfxId, 80.0f);
     }
 
     TweenEffects::Shake(m_registry, m_camera, 0.3f, 16.0f);
@@ -4704,9 +4704,9 @@ void GameScene::ExecutePowerUpRain(int level)
 
     if (mp_context)
     {
-        if (m_audioEnabled && m_ultimateReadySfxId != 0)
+        if (m_ultimateReadySfxId != 0)
         {
-            mp_context->Audio.PlaySfx(m_ultimateReadySfxId, 100.0f, 1.25f);
+            PlaySfx(m_ultimateReadySfxId, 85.0f, 1.25f);
         }
 
         std::string cur = mp_context->Audio.GetCurrentMusicPath();
@@ -4719,7 +4719,7 @@ void GameScene::ExecutePowerUpRain(int level)
         }
         if (m_musicEnabled)
         {
-            mp_context->Audio.PlayMusic("Resources/audio/music/lucky_drop_ultimate.wav", 100.0f, true);
+            mp_context->Audio.PlayMusic("Resources/audio/music/lucky_drop_ultimate.wav", 80.0f, true);
         }
     }
 

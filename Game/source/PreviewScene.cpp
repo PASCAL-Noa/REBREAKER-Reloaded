@@ -16,6 +16,7 @@
 #include "ECS/Components/UI/CanvasComponent.h"
 #include "ECS/Components/TweenComponent.h"
 #include "ECS/Systems/ParticleSystem.h"
+#include "ECS/Systems/GameFeelSystem.h"
 #include "Generators/FileLevelGenerator.h"
 #include "Graphics/Renderer.h"
 #include "PowerUps/PowerUpConfig.h"
@@ -98,10 +99,21 @@ void PreviewScene::SetEmbeddedMode(bool embedded)
 void PreviewScene::SetAudioEnabled(bool enabled)
 {
     GameScene::SetAudioEnabled(enabled);
+    if (m_isEmbeddedMode && mp_gameFeelSystem)
+    {
+        mp_gameFeelSystem->SetVolumeMultiplier(0.55f);
+    }
     if (!enabled && mp_context && m_fireballBurnSfxId != 0)
     {
         mp_context->Audio.StopLoopingSfx(m_fireballBurnSfxId);
     }
+}
+
+void PreviewScene::PlaySfx(uint32_t id, float volume, float pitch, float pan) const
+{
+    if (!m_audioEnabled) return;
+    float mult = m_isEmbeddedMode ? 0.55f : 1.0f;
+    GameScene::PlaySfx(id, volume * mult, pitch, pan);
 }
 
 void PreviewScene::SetMusicEnabled(bool enabled)
@@ -317,6 +329,10 @@ void PreviewScene::OnInit(GameContext& context)
     {
         m_musicEnabled = true;
         m_audioEnabled = true;
+    }
+    else if (mp_gameFeelSystem)
+    {
+        mp_gameFeelSystem->SetVolumeMultiplier(0.55f);
     }
 
     // Safe preview lives (isolated to PreviewScene)

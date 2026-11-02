@@ -171,17 +171,22 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
         }
     }
 
-    // 2. Voice limiter: Count concurrent playing instances of this soundId
+    // 2. Voice limiter: Count concurrent playing instances of this soundId and total active voices
     size_t count = 0;
+    size_t totalActive = 0;
     for (const auto& item : mp_impl->sfxPool)
     {
-        if (item.soundId == soundId && item.sound.getStatus() == sf::SoundSource::Status::Playing)
+        if (item.sound.getStatus() == sf::SoundSource::Status::Playing)
         {
-            count++;
+            totalActive++;
+            if (item.soundId == soundId)
+            {
+                count++;
+            }
         }
     }
 
-    // If max concurrent voices reached, steal the oldest playing voice of this soundId
+    // If max concurrent voices reached for this sound, steal the oldest playing voice
     if (count >= Impl::kMaxConcurrentVoicesPerSound)
     {
         for (auto it = mp_impl->sfxPool.begin(); it != mp_impl->sfxPool.end(); ++it)
@@ -190,12 +195,31 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
             {
                 it->sound.stop();
                 mp_impl->sfxPool.erase(it);
+                if (totalActive > 0) --totalActive;
                 break;
             }
         }
     }
 
-    if (mp_impl->sfxPool.size() > 64) return;
+    // Global voice limiter: keep max active voices <= 12 to eliminate audio device buffer saturation / crackling
+    while (totalActive >= 12 && !mp_impl->sfxPool.empty())
+    {
+        bool erased = false;
+        for (auto it = mp_impl->sfxPool.begin(); it != mp_impl->sfxPool.end(); ++it)
+        {
+            if (it->sound.getStatus() == sf::SoundSource::Status::Playing)
+            {
+                it->sound.stop();
+                mp_impl->sfxPool.erase(it);
+                if (totalActive > 0) --totalActive;
+                erased = true;
+                break;
+            }
+        }
+        if (!erased) break;
+    }
+
+    if (mp_impl->sfxPool.size() > 32) return;
 
     mp_impl->lastTriggerTime[soundId] = now;
 
@@ -209,14 +233,16 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
         }
         mp_impl->recentSfxTriggers.push_back(now);
 
-        // Streak trigger: >= 2 triggers in streak window, or loud sound with multiple active voices
-        if (mp_impl->recentSfxTriggers.size() >= 2 || (volume >= 85.0f && mp_impl->sfxPool.size() >= 2))
+        // Streak trigger: >= 4 triggers in streak window, or very loud blast with multiple active voices
+        if (mp_impl->recentSfxTriggers.size() >= 4 || (volume >= 90.0f && totalActive >= 2))
         {
-            TriggerDucking(0.4f, 0.5f);
+            TriggerDucking(0.35f, 0.6f);
         }
     }
 
-    float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
+    // Dynamic inverse-power headroom scaling prevents multi-voice clipping distortion
+    float headroom = (totalActive > 1) ? (1.0f / std::sqrt(1.0f + static_cast<float>(totalActive - 1) * 0.35f)) : 1.0f;
+    float finalVolume = volume * headroom * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
     float clampedPan = std::clamp(pan, -1.0f, 1.0f);
 
     mp_impl->sfxPool.emplace_back(SoundInstance{soundId, sf::Sound(*buffer)});
@@ -595,6 +621,10 @@ void AudioMixer::SetSfxVolume(float volume) const
 {
     if (!mp_impl) return;
     mp_impl->sfxVolume = volume;
+    for (auto& item : mp_impl->sfxPool)
+    {
+        item.sound.setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
+    }
     for (auto& [id, sound] : mp_impl->loopingSfx)
     {
         sound.setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));

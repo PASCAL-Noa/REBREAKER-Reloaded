@@ -129,7 +129,7 @@ public:
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
-    void    PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
+    virtual void PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
 
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY, bool isLaser = false, bool isExplosion = false, int damage = 1);
@@ -460,7 +460,7 @@ protected:
 
     void    ExecutePlasmaOrb(int level);
     void    ExecuteDiscoBall(int level);
-    void    ExecutePowerUpRain(int level);
+    virtual void ExecutePowerUpRain(int level);
     void    TriggerSoundWave(float targetHeightRatio, int damage, float delay = 0.0f);
     void    SpawnDiscoMusicNote(bool randomSpread = false);
     void    SpawnLuckyQuestionMark(const Vector2f& pos, bool popUp = false);

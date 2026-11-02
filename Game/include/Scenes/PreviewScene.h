@@ -65,6 +65,7 @@ public:
 protected:
     void SpawnPowerUp(const Vector2f& position) override;
     void ApplyPowerUp(PowerUpType type) override;
+    void PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const override;
 
 private:
     void SpawnPreviewCapsule();
