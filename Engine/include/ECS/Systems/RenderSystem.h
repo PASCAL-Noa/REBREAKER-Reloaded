@@ -2,9 +2,9 @@
 #include "ECS/System.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Entity.h"
+#include "Graphics/Renderer.h"
 #include <vector>
 
-class Renderer;
 struct SpriteComponent;
 
 class RenderSystem : public System
@@ -24,6 +24,7 @@ private:
 
     Renderer& m_renderer;
     std::vector<RenderItem> m_renderQueue;
+    std::vector<Vertex> m_trailVerticesScratch;
 
     void RenderTrails();
 };

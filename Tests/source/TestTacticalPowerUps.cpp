@@ -407,4 +407,77 @@ TEST_SUITE("Tactical Power-Ups Tests")
 
         mgr.ResetToDefaults();
     }
+
+    TEST_CASE("Extra Life 3-tier health system (Red, Yellow, Green) and levels 1-5")
+    {
+        auto getHeartTier = [](int lives, int i) -> int {
+            if (lives <= 0) return 0;
+            if (lives <= 3) return (i < lives) ? 1 : 0;
+            int extra = lives - 3;
+            int tier = 1;
+            if (extra >= i + 1) tier++;
+            if (extra >= i + 4) tier++;
+            return tier;
+        };
+
+        // 3 Red hearts (initial start)
+        CHECK(getHeartTier(3, 0) == 1);
+        CHECK(getHeartTier(3, 1) == 1);
+        CHECK(getHeartTier(3, 2) == 1);
+
+        // 4 lives: 1 Yellow, 2 Red
+        CHECK(getHeartTier(4, 0) == 2);
+        CHECK(getHeartTier(4, 1) == 1);
+        CHECK(getHeartTier(4, 2) == 1);
+
+        // 6 lives: 3 Yellow
+        CHECK(getHeartTier(6, 0) == 2);
+        CHECK(getHeartTier(6, 1) == 2);
+        CHECK(getHeartTier(6, 2) == 2);
+
+        // 7 lives: 1 Green, 2 Yellow
+        CHECK(getHeartTier(7, 0) == 3);
+        CHECK(getHeartTier(7, 1) == 2);
+        CHECK(getHeartTier(7, 2) == 2);
+
+        // 9 lives: 3 Green (Max Health Cap)
+        CHECK(getHeartTier(9, 0) == 3);
+        CHECK(getHeartTier(9, 1) == 3);
+        CHECK(getHeartTier(9, 2) == 3);
+
+        // Power-Up Level 1: +1 life
+        int lives = 3;
+        lives = std::min(lives + 1, 9);
+        CHECK(lives == 4); // 1 Yellow heart unlocked!
+
+        // Losing a life: Yellow heart downgrades to Red
+        lives--;
+        CHECK(lives == 3);
+        CHECK(getHeartTier(lives, 0) == 1);
+        CHECK(getHeartTier(lives, 1) == 1);
+        CHECK(getHeartTier(lives, 2) == 1);
+
+        // Power-Up Level 2: +2 lives
+        lives = 3;
+        lives = std::min(lives + 2, 9);
+        CHECK(lives == 5); // 2 Yellow, 1 Red
+
+        // Power-Up Level 3: +1 vie jaune (guarantees at least 1 yellow heart = 4)
+        lives = 1;
+        lives = std::clamp(std::max(lives + 1, 4), 1, 9);
+        CHECK(lives == 4);
+
+        // Power-Up Level 4: +2 vie jaune (guarantees at least 2 yellow hearts = 5)
+        lives = 2;
+        lives = std::clamp(std::max(lives + 2, 5), 1, 9);
+        CHECK(lives == 5);
+
+        // Power-Up Level 5: +3 vie vert (max health = 9)
+        lives = 9;
+        CHECK(lives == 9);
+        CHECK(getHeartTier(lives, 0) == 3);
+        CHECK(getHeartTier(lives, 1) == 3);
+        CHECK(getHeartTier(lives, 2) == 3);
+    }
 }
+

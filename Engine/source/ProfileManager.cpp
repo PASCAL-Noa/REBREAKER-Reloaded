@@ -169,14 +169,14 @@ std::string ProfileManager::GetUltimateName(UltimateAbilityType type)
 {
     switch (type)
     {
-        case UltimateAbilityType::NovaShockwave:
-            return "NOVA SHOCKWAVE";
-        case UltimateAbilityType::ThunderTempest:
-            return "THUNDER TEMPEST";
-        case UltimateAbilityType::TimeStasis:
-            return "TIME STASIS";
+        case UltimateAbilityType::PlasmaOrb:
+            return "PLASMA ORB";
+        case UltimateAbilityType::DiscoBall:
+            return "DISCO BALL";
+        case UltimateAbilityType::PowerUpRain:
+            return "POWER-UP RAIN";
         default:
-            return "NOVA SHOCKWAVE";
+            return "PLASMA ORB";
     }
 }
 
@@ -184,14 +184,14 @@ std::string ProfileManager::GetUltimateCategory(UltimateAbilityType type)
 {
     switch (type)
     {
-        case UltimateAbilityType::NovaShockwave:
-            return "[ASSAUT THERMIQUE RADIAL]";
-        case UltimateAbilityType::ThunderTempest:
-            return "[SURCHARGE ELECTRIQUE]";
-        case UltimateAbilityType::TimeStasis:
-            return "[DISTORSION TACTIQUE]";
+        case UltimateAbilityType::PlasmaOrb:
+            return "[DESTRUCTION / CHAIN REACTION]";
+        case UltimateAbilityType::DiscoBall:
+            return "[ACOUSTIC SHOCKWAVE / LIGHT SHOW]";
+        case UltimateAbilityType::PowerUpRain:
+            return "[SUPPORT / ORBITAL DROP]";
         default:
-            return "[CAPACITE ULTIME]";
+            return "[ULTIMATE ABILITY]";
     }
 }
 
@@ -199,12 +199,12 @@ std::string ProfileManager::GetUltimateDescription(UltimateAbilityType type)
 {
     switch (type)
     {
-        case UltimateAbilityType::NovaShockwave:
-            return "Impulsion d'energie thermique radiale balayant les projectiles ennemis et fracturant les briques a 360 degres.";
-        case UltimateAbilityType::ThunderTempest:
-            return "Surcharge l'atmosphere et declenche un deluge d'eclairs cibles se propageant a travers les circuits conducteurs.";
-        case UltimateAbilityType::TimeStasis:
-            return "Manipule la gravite locale et ralentit le flux temporel pour un controle chirurgical des trajectoires.";
+        case UltimateAbilityType::PlasmaOrb:
+            return "Launches high-energy blue-violet plasma orbs that vaporize bricks on contact and split into cascading clusters of explosive child orbs upon detonation.";
+        case UltimateAbilityType::DiscoBall:
+            return "Ignites disco fever: devastating acoustic shockwaves from paddle, cycling spotlights, dancing rainbow big balls and a spinning mirror ball climax.";
+        case UltimateAbilityType::PowerUpRain:
+            return "Summons a torrential orbital drop of upgraded power-up capsules raining down across the entire playfield.";
         default:
             return "";
     }
@@ -215,43 +215,43 @@ std::string ProfileManager::GetUltimateTierInfo(UltimateAbilityType type, int le
     int safeLvl = std::clamp(level, 1, 5);
     switch (type)
     {
-        case UltimateAbilityType::NovaShockwave:
+        case UltimateAbilityType::PlasmaOrb:
             switch (safeLvl)
             {
-                case 1: return "Rayon: 400px, 1 dmg, repousse les projectiles ennemis";
-                case 2: return "Rayon: 480px, 1 dmg, propagation de l'onde +25% vitesse";
-                case 3: return "Rayon: 560px, 2 dmg au coeur de l'impact thermique";
-                case 4: return "Rayon: 640px, 2 dmg, incinere instantanement tous les tirs";
-                case 5: return "Supernova: Rayon 720px, 3 dmg, jauge de recharge +20%";
+                case 1: return "1 plasma orb (2 dmg), splits into 2 small explosive orbs";
+                case 2: return "2 plasma orbs (2 dmg), each splits into 2 small explosive orbs";
+                case 3: return "2 enlarged plasma orbs (3 dmg), splits into 4 then 2 orbs";
+                case 4: return "3 enlarged plasma orbs (3 dmg), splits into 4 then 2 orbs";
+                case 5: return "3 mega plasma orbs (4 dmg), splits into 8 then 4 then 2";
                 default: break;
             }
             break;
-        case UltimateAbilityType::ThunderTempest:
+        case UltimateAbilityType::DiscoBall:
             switch (safeLvl)
             {
-                case 1: return "4 eclairs cibles, 2 dmg/eclair, conduction metallique";
-                case 2: return "6 eclairs cibles, 2 dmg, arc electrique de rebond";
-                case 3: return "8 eclairs cibles, 3 dmg, foudroie les briques d'acier";
-                case 4: return "10 eclairs cibles, 3 dmg, surtension ionique de zone";
-                case 5: return "Tempete Cataclysmique: 12 eclairs cibles, 4 dmg/eclair";
+                case 1: return "Shockwave 30% height (1 dmg), 2 dancing rainbow big balls & funk beat";
+                case 2: return "Shockwave 40% height (1 dmg), 3 dancing rainbow big balls";
+                case 3: return "Shockwave 50% height (2 dmg), 4 dancing rainbow big balls";
+                case 4: return "Shockwave 60% height (2 dmg), 5 dancing rainbow big balls";
+                case 5: return "2 shockwaves up to 70% height (2 dmg), 6 big balls & Mirror Ball unleash (5s)";
                 default: break;
             }
             break;
-        case UltimateAbilityType::TimeStasis:
+        case UltimateAbilityType::PowerUpRain:
             switch (safeLvl)
             {
-                case 1: return "Ralentissement 65% pendant 5.0s, stabilite de raquette";
-                case 2: return "Ralentissement 70% pendant 6.0s, guide de visee etendu";
-                case 3: return "Ralentissement 75% pendant 7.0s, impulsion balle boostee";
-                case 4: return "Ralentissement 80% pendant 8.0s, cadence de tir acceleree";
-                case 5: return "Arret Temporel: 85% distorsion pendant 9.0s chirurgicales";
+                case 1: return "Cascade of 5 to 12 power-ups (levels 1 to 3)";
+                case 2: return "Cascade of 10 to 24 power-ups (levels 1 to 3)";
+                case 3: return "Cascade of 15 to 36 power-ups (levels 1 to 4)";
+                case 4: return "Cascade of 20 to 48 power-ups (levels 2 to 5)";
+                case 5: return "Cascade of 25 to 60 power-ups (levels 2 to 5)";
                 default: break;
             }
             break;
         default:
             break;
     }
-    return "Palier standard";
+    return "Standard Tier";
 }
 
 const std::vector<CosmeticItem>& ProfileManager::GetAvailableCosmetics()

@@ -12,28 +12,30 @@ void TweenSystem::OnUpdate(float dt)
     {
         if (tweenComp.ActiveTweens.empty()) return;
 
-        auto tweensCopy = tweenComp.ActiveTweens;
-
-        for (int i = static_cast<int>(tweensCopy.size()) - 1; i >= 0; --i)
+        // Iterate over existing tweens without heap allocating a full vector copy
+        const size_t initialSize = tweenComp.ActiveTweens.size();
+        for (size_t i = 0; i < initialSize; ++i)
         {
             if (!m_registry.HasComponent<TweenComponent>(entity)) {
                 break;
             }
-
-            tweensCopy[i]->Update(dt);
-            
-            if (!m_registry.HasComponent<TweenComponent>(entity)) {
+            if (i >= tweenComp.ActiveTweens.size()) {
                 break;
             }
 
-            if (tweensCopy[i]->IsFinished())
+            auto tween = tweenComp.ActiveTweens[i];
+            if (tween)
             {
-                auto& realComp = m_registry.GetComponent<TweenComponent>(entity);
-                auto it = std::find(realComp.ActiveTweens.begin(), realComp.ActiveTweens.end(), tweensCopy[i]);
-                if (it != realComp.ActiveTweens.end()) {
-                    realComp.ActiveTweens.erase(it);
-                }
+                tween->Update(dt);
             }
+        }
+
+        if (m_registry.HasComponent<TweenComponent>(entity))
+        {
+            auto& realComp = m_registry.GetComponent<TweenComponent>(entity);
+            std::erase_if(realComp.ActiveTweens, [](const auto& tw) {
+                return !tw || tw->IsFinished();
+            });
         }
     });
 }

@@ -9,7 +9,7 @@ inline sf::Texture* ResourceManager::Get<sf::Texture>(uint32_t id) const
     auto it = m_textures.find(id);
     if (it != m_textures.end() && it->second != nullptr)
         return it->second.get();
-    return m_fallbackTexture ? m_fallbackTexture.get() : nullptr;
+    return GetFallbackTexture();
 }
 
 template <>

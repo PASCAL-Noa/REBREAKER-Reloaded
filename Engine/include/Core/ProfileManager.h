@@ -6,10 +6,15 @@
 
 enum class UltimateAbilityType : int
 {
+    PlasmaOrb = 0,
+    DiscoBall = 1,
+    PowerUpRain = 2,
+    Count = 3,
+
+    // Aliases for compatibility
     NovaShockwave = 0,
     ThunderTempest = 1,
-    TimeStasis = 2,
-    Count = 3
+    TimeStasis = 2
 };
 
 enum class CosmeticSlot : int

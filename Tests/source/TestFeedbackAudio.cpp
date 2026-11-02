@@ -1,3 +1,5 @@
+#include "AudioMixer.h"
+#include "Resources/ResourceManager.h"
 #include <doctest/doctest.h>
 #include <string>
 #include <fstream>
@@ -127,5 +129,26 @@ TEST_SUITE("UI Feedback & Audio Tests")
 
         CHECK(fileExists("Resources/audio/sfx/lightning.wav"));
         CHECK(fileExists("Resources/audio/sfx/conduction.wav"));
+    }
+    TEST_CASE("AudioMixer ducking and volume controls")
+    {
+        ResourceManager rm;
+        AudioMixer mixer(rm);
+
+        CHECK(mixer.IsDuckingEnabled());
+        CHECK(mixer.GetDuckingMultiplier() == doctest::Approx(1.0f));
+
+        mixer.TriggerDucking(0.35f, 0.6f);
+        CHECK(mixer.GetDuckingMultiplier() <= 0.65f);
+
+        mixer.SetDuckingEnabled(false);
+        CHECK_FALSE(mixer.IsDuckingEnabled());
+        CHECK(mixer.GetDuckingMultiplier() == doctest::Approx(1.0f));
+
+        mixer.SetSfxVolume(80.0f);
+        CHECK(mixer.GetSfxVolume() == doctest::Approx(80.0f));
+
+        mixer.SetMusicVolume(70.0f);
+        CHECK(mixer.GetMusicVolume() == doctest::Approx(70.0f));
     }
 }

@@ -30,19 +30,25 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
 
     m_brickHitSub = m_context.Events.SubscribeScoped<BrickHitEvent>([this](const BrickHitEvent& e)
     {
+        if (!m_audioEnabled) return;
+        if (!m_registry.IsAlive(e.BrickEntity)) return;
+
         float pitch = 1.0f + (e.Combo * 0.05f);
         constexpr float kHalfPlayfieldWidth = 800.0f;
         float pan = std::clamp(e.ContactPoint.X / kHalfPlayfieldWidth, -1.0f, 1.0f);
 
-        m_context.Audio.PlaySfx(m_sfxBrickHit, 85.0f, pitch, pan);
-
         if (e.IsDestroyed)
         {
-            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 100.0f, pitch, pan);
-            m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch - 0.5f, pan);
+            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 90.0f * m_volumeMultiplier, pitch, pan);
+            if (e.Combo > 1)
+            {
+                m_context.Audio.PlaySfx(m_sfxCombo, 85.0f * m_volumeMultiplier, pitch - 0.5f, pan);
+            }
         }
         else
         {
+            m_context.Audio.PlaySfx(m_sfxBrickHit, 80.0f * m_volumeMultiplier, pitch, pan);
+
             if (m_registry.HasComponent<TweenComponent>(e.BrickEntity) &&
                 m_registry.HasComponent<Transform2D>(e.BrickEntity))
             {
@@ -52,21 +58,27 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
 
             if (e.Combo > 1)
             {
-                m_context.Audio.PlaySfx(m_sfxCombo, 100.0f, pitch - 0.5f, pan);
+                m_context.Audio.PlaySfx(m_sfxCombo, 85.0f * m_volumeMultiplier, pitch - 0.5f, pan);
             }
         }
     });
 
     m_paddleHitSub = m_context.Events.SubscribeScoped<PaddleHitEvent>([this](const PaddleHitEvent& e)
     {
+        if (!m_audioEnabled) return;
+        if (!m_registry.IsAlive(e.PaddleEntity)) return;
+
         constexpr float kHalfPlayfieldWidth = 800.0f;
         float pan = std::clamp(e.ContactPoint.X / kHalfPlayfieldWidth, -1.0f, 1.0f);
-        m_context.Audio.PlaySfx(m_sfxPaddleHit, 100.0f, 1.0f, pan);
+        m_context.Audio.PlaySfx(m_sfxPaddleHit, 90.0f * m_volumeMultiplier, 1.0f, pan);
     });
 
-    m_ballDeathSub = m_context.Events.SubscribeScoped<BallDeathEvent>([this](const BallDeathEvent& /*e*/)
+    m_ballDeathSub = m_context.Events.SubscribeScoped<BallDeathEvent>([this](const BallDeathEvent& e)
     {
-        m_context.Audio.PlaySfx(m_sfxBallDeath, 100.0f);
+        if (!m_audioEnabled) return;
+        if (!m_registry.IsAlive(e.BallEntity)) return;
+
+        m_context.Audio.PlaySfx(m_sfxBallDeath, 95.0f * m_volumeMultiplier);
         m_registry.View<Camera2D, TweenComponent>([&](Entity entity, Camera2D&, TweenComponent& tween) {
             TweenEffects::Shake(tween, m_registry, entity, 0.4f, 15.0f);
         });
@@ -74,9 +86,20 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
 
     m_powerUpSub = m_context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
     {
+        if (!m_audioEnabled) return;
+        if (e.PowerUpEntity != NULL_ENTITY && !m_registry.IsAlive(e.PowerUpEntity)) return;
+
+        // Rate limit rapid consecutive pickups to prevent audio saturation
+        const auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastPowerUpSfxTime).count() < 80)
+        {
+            return;
+        }
+        m_lastPowerUpSfxTime = now;
+
         uint32_t sfx = (m_sfxPowerUpBuff != 0) ? m_sfxPowerUpBuff : m_sfxPowerUp;
         float pitch = 1.0f;
-        float volume = 100.0f;
+        float volume = 100.0f * m_volumeMultiplier;
 
         switch (e.Type)
         {

@@ -44,7 +44,17 @@ jobs:
             libflac-dev \
             libogg-dev \
             libvorbis-dev \
-            libopenal-dev
+            libopenal-dev \
+            xvfb
+
+      - name: Configure OpenAL for headless testing
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p ~/.config
+          cat << 'EOF' > ~/.config/alsoft.conf
+          [general]
+          drivers = null
+          EOF
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -62,6 +72,16 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Run Tests
+      - name: Run Tests (Linux)
+        if: runner.os == 'Linux'
+        env:
+          ALSOFT_DRIVERS: "null"
+        run: xvfb-run -a ctest --test-dir build --output-on-failure -C Release
+
+      - name: Run Tests (Windows)
+        if: runner.os != 'Linux'
         run: ctest --test-dir build --output-on-failure -C Release
+
+
+
 

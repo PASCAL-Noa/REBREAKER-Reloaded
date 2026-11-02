@@ -58,9 +58,103 @@
 #include "ECS/Components/UI/PanelComponent.h"
 #include "ECS/Components/UI/TextComponent.h"
 #include "ECS/Systems/UISystem.h"
+
+namespace
+{
+    Color DiscoRainbowColor(float hue, uint8_t alpha = 255)
+    {
+        float h = std::fmod(hue, 1.0f);
+        if (h < 0.0f) h += 1.0f;
+        float r = std::clamp((std::abs(h * 6.0f - 3.0f) - 1.0f), 0.0f, 1.0f);
+        float g = std::clamp((2.0f - std::abs(h * 6.0f - 2.0f)), 0.0f, 1.0f);
+        float b = std::clamp((2.0f - std::abs(h * 6.0f - 4.0f)), 0.0f, 1.0f);
+        return Color{
+            static_cast<uint8_t>(r * 255.0f),
+            static_cast<uint8_t>(g * 255.0f),
+            static_cast<uint8_t>(b * 255.0f),
+            alpha
+        };
+    }
+
+    void DrawMusicNote(GameContext& context, const Vector2f& pos, float scale, float rotAngle, const Color& color, bool doubleNote)
+    {
+        float r = 5.0f * scale;
+        float stemH = 20.0f * scale;
+        float lineThick = std::max(1.5f, 2.0f * scale);
+
+        auto rotateVec = [rotAngle](const Vector2f& v) -> Vector2f {
+            float cosA = std::cos(rotAngle);
+            float sinA = std::sin(rotAngle);
+            return Vector2f{v.X * cosA - v.Y * sinA, v.X * sinA + v.Y * cosA};
+        };
+
+        if (!doubleNote)
+        {
+            // Single note (eighth note ♪)
+            Vector2f headCenter = pos;
+            Transform2D headTrans{headCenter, rotAngle - 0.35f, Vector2f{1.35f * scale, 0.95f * scale}};
+            context.Render.DrawCircle(r, headTrans, color);
+
+            Vector2f stemBottom = headCenter + rotateVec(Vector2f{r * 0.85f * scale, 0.0f});
+            Vector2f stemTop = headCenter + rotateVec(Vector2f{r * 0.85f * scale, -stemH});
+            context.Render.DrawLine(stemBottom, stemTop, color, lineThick);
+
+            Vector2f flagMid = stemTop + rotateVec(Vector2f{6.0f * scale, 5.0f * scale});
+            Vector2f flagTip = stemTop + rotateVec(Vector2f{4.0f * scale, 12.0f * scale});
+            context.Render.DrawLine(stemTop, flagMid, color, lineThick);
+            context.Render.DrawLine(flagMid, flagTip, color, lineThick * 0.85f);
+        }
+        else
+        {
+            // Double note (beamed pair ♫)
+            float noteDist = 16.0f * scale;
+            Vector2f head1 = pos + rotateVec(Vector2f{-noteDist * 0.5f, 2.0f * scale});
+            Vector2f head2 = pos + rotateVec(Vector2f{noteDist * 0.5f, -2.0f * scale});
+
+            Transform2D t1{head1, rotAngle - 0.35f, Vector2f{1.3f * scale, 0.9f * scale}};
+            Transform2D t2{head2, rotAngle - 0.35f, Vector2f{1.3f * scale, 0.9f * scale}};
+            context.Render.DrawCircle(r, t1, color);
+            context.Render.DrawCircle(r, t2, color);
+
+            Vector2f stem1Bottom = head1 + rotateVec(Vector2f{r * 0.85f * scale, 0.0f});
+            Vector2f stem1Top = head1 + rotateVec(Vector2f{r * 0.85f * scale, -stemH});
+            Vector2f stem2Bottom = head2 + rotateVec(Vector2f{r * 0.85f * scale, 0.0f});
+            Vector2f stem2Top = head2 + rotateVec(Vector2f{r * 0.85f * scale, -stemH});
+
+            context.Render.DrawLine(stem1Bottom, stem1Top, color, lineThick);
+            context.Render.DrawLine(stem2Bottom, stem2Top, color, lineThick);
+
+            // Cross beam
+            context.Render.DrawLine(stem1Top, stem2Top, color, lineThick * 1.8f);
+        }
+    }
+}
 #include "Generators/FileLevelGenerator.h"
 #include "Scenes/MenuScene.h"
 #include "TweenEffects/TweenEffects.h"
+
+void GameScene::PlaySfx(uint32_t id, float volume, float pitch, float pan) const
+{
+    if (m_audioEnabled && mp_context)
+    {
+        mp_context->Audio.PlaySfx(id, volume, pitch, pan);
+    }
+}
+
+void GameScene::SetAudioEnabled(bool enabled)
+{
+    m_audioEnabled = enabled;
+    if (mp_gameFeelSystem)
+    {
+        mp_gameFeelSystem->SetAudioEnabled(enabled);
+    }
+}
+
+void GameScene::RestorePostUltimateMusic()
+{
+    if (!mp_context || !m_musicEnabled) return;
+    m_playlist.PlayNext(*mp_context, 1.2f);
+}
 
 void GameScene::OnInit(GameContext& context)
 {
@@ -77,6 +171,7 @@ void GameScene::OnInit(GameContext& context)
     m_fontId = context.Resources.LoadResource("Resources/font/vt323.ttf");
     m_shaderId = context.Resources.LoadResource("Resources/shaders/fx.frag");
     m_crackShaderId = context.Resources.LoadResource("Resources/shaders/crack.frag");
+    m_powerUpRainShaderId = context.Resources.LoadResource("Resources/shaders/lucky.frag");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
     m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_brickTexId = context.Resources.LoadResource("Resources/sprite/brick.png");
@@ -100,6 +195,20 @@ void GameScene::OnInit(GameContext& context)
     m_scoreRecordedSfxId = context.Resources.LoadResource("Resources/audio/sfx/combo.wav");
     m_lightningSfxId = context.Resources.LoadResource("Resources/audio/sfx/lightning.wav");
     m_conductionSfxId = context.Resources.LoadResource("Resources/audio/sfx/conduction.wav");
+    m_ultimateReadySfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup_buff.wav");
+    m_plasmaLaunchSfxId = context.Resources.LoadResource("Resources/audio/sfx/plasma_launch.wav");
+    m_plasmaExplodeSfxId = context.Resources.LoadResource("Resources/audio/sfx/plasma_explode.wav");
+    m_discoShockwaveSfxId = context.Resources.LoadResource("Resources/audio/sfx/disco_shockwave.wav");
+    m_discoVoiceoverSfxId = context.Resources.LoadResource("Resources/audio/sfx/disco_voiceover.wav");
+    m_discoHitSfxIds[0] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_bass.wav");
+    m_discoHitSfxIds[1] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_brass.wav");
+    m_discoHitSfxIds[2] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_guitar.wav");
+    m_discoHitSfxIds[3] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_synth.wav");
+    m_discoHitSfxIds[4] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_cowbell.wav");
+    m_discoHitSfxIds[5] = context.Resources.LoadResource("Resources/audio/sfx/disco_hit_strings.wav");
+    m_itemRegenRestoreSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup_buff.wav");
+    m_plasmaShaderId = context.Resources.LoadResource("Resources/shaders/plasma.frag");
+    m_discoShaderId = context.Resources.LoadResource("Resources/shaders/disco_ball.frag");
 
     mp_paddleSystem = m_systemManager.AddSystem<PaddleSystem>(m_registry, context);
     mp_ballSystem = m_systemManager.AddSystem<BallSystem>(m_registry, context);
@@ -112,7 +221,11 @@ void GameScene::OnInit(GameContext& context)
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
     m_systemManager.AddSystem<AnimatorSystem>(m_registry);
     m_particleSystem = m_systemManager.AddSystem<ParticleSystem>(m_registry, context.Render, 20000);
-    m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
+    mp_gameFeelSystem = m_systemManager.AddSystem<GameFeelSystem>(m_registry, context);
+    if (mp_gameFeelSystem)
+    {
+        mp_gameFeelSystem->SetAudioEnabled(m_audioEnabled);
+    }
     m_systemManager.AddSystem<TweenSystem>(m_registry);
     m_systemManager.AddSystem<PowerUpSystem>(m_registry, context.Events);
 
@@ -252,7 +365,10 @@ void GameScene::OnInit(GameContext& context)
                 constexpr float kHalfPlayfieldWidth = 800.0f;
                 bouncePan = std::clamp(m_registry.GetComponent<Transform2D>(ballEntity).Position.X / kHalfPlayfieldWidth, -1.0f, 1.0f);
             }
-            context.Audio.PlaySfx(m_bounceSfxId, 50.0f, 1.0f, bouncePan);
+            if (m_audioEnabled)
+            {
+                context.Audio.PlaySfx(m_bounceSfxId, 50.0f, 1.0f, bouncePan);
+            }
         }
 
         if (isPaddle || (!isBrick && !isPaddle && !isBottomWall))
@@ -527,6 +643,16 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         }
         HandleInput(dt, context);
         UpdatePowerUpTimers(dt);
+        UpdateRegeneratingItemBricks(dt);
+        UpdateUltimateAbilities(dt);
+
+        bool canSpaceTrigger = m_stuckBalls.empty();
+        if ((canSpaceTrigger && context.Input.IsKeyPress(KeyCode::Space)) ||
+            context.Input.IsJoystickButtonPress(0, 2) ||
+            context.Input.IsJoystickButtonPress(0, 5))
+        {
+            TryTriggerUltimate();
+        }
 
         // Sticky / Catch Paddle: Update caught balls and process release on input or timeout
         if (!m_stuckBalls.empty() && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
@@ -603,7 +729,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
                     ballRb.IsKinematic = false;
                     ballComp.IsStuck = false;
 
-                    if (m_bounceSfxId != 0)
+                    if (m_bounceSfxId != 0 && m_audioEnabled)
                     {
                         context.Audio.PlaySfx(m_bounceSfxId, sweetSpotHit ? 100.0f : 90.0f);
                     }
@@ -767,8 +893,28 @@ void GameScene::OnRender(GameContext& context)
         paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
     }
 
+    // Smoothly calculate disco blackout / club darkness factor (lights turned off)
+    float discoDarkFactor = 0.0f;
+    if (m_discoTimer > 0.0f)
+    {
+        float entry = std::clamp((m_discoDuration - m_discoTimer) / 0.45f, 0.0f, 1.0f);
+        float exit = std::clamp(m_discoTimer / 0.75f, 0.0f, 1.0f);
+        discoDarkFactor = std::min(entry, exit);
+    }
+
+    Color effectiveBgColor = m_bgColor;
+    if (discoDarkFactor > 0.0f)
+    {
+        effectiveBgColor.r = static_cast<uint8_t>(m_bgColor.r * (1.0f - discoDarkFactor * 0.85f));
+        effectiveBgColor.g = static_cast<uint8_t>(m_bgColor.g * (1.0f - discoDarkFactor * 0.85f));
+        effectiveBgColor.b = static_cast<uint8_t>(m_bgColor.b * (1.0f - discoDarkFactor * 0.85f));
+    }
+
     // Render ambient background layer (behind gameplay entities)
-    m_ambientBackground.OnRender(context.Render, m_bgColor, cameraComp.Position, paddlePos);
+    m_ambientBackground.OnRender(context.Render, effectiveBgColor, cameraComp.Position, paddlePos);
+
+    // Wandering yellow musical note particles in the background
+    RenderDiscoBackgroundMusicNotes(context);
 
     m_systemManager.OnRender();
 
@@ -867,6 +1013,25 @@ void GameScene::OnRender(GameContext& context)
         }
     });
 
+    // Disco Fever illuminated dancefloor tile frames around bricks
+    if (m_discoTimer > 0.0f)
+    {
+        float pulse = 0.5f + 0.5f * std::sin(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 20.0f : 12.0f));
+        m_registry.View<Transform2D, BoxCollider, BrickComponent>([&](Entity, const Transform2D& t, const BoxCollider& b, const BrickComponent& brick)
+        {
+            if (brick.IsRegenerating) return;
+            float colIdx = std::floor((t.Position.X + 800.0f) / 70.0f);
+            float rowIdx = std::floor((t.Position.Y + 450.0f) / 30.0f);
+            float discoHue = std::fmod(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 2.5f : 1.2f) + (colIdx * 0.08f) + (rowIdx * 0.12f), 1.0f);
+            Color discoOutline = DiscoRainbowColor(discoHue + 0.5f, static_cast<uint8_t>(180 + 75 * pulse));
+
+            // Disco dancefloor illuminated tile frame
+            context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, discoOutline, -2.0f);
+            // Inner neon facet reflection
+            context.Render.DrawRectangleOutline(b.Size.X - 8.0f, b.Size.Y - 6.0f, t, Color{255, 255, 255, static_cast<uint8_t>(120 + 80 * pulse)}, -1.0f);
+        });
+    }
+
     const bool showDebug = context.Rules.GetRule(Rule::Debug::ShowCollider);
     if (showDebug)
     {
@@ -950,9 +1115,18 @@ void GameScene::OnRender(GameContext& context)
     }
 
     // 2D Dynamic Lighting Pass
-    if (m_currentTheme.HasLighting())
+    const bool isDiscoDarkActive = (discoDarkFactor > 0.0f);
+    if (m_currentTheme.HasLighting() || isDiscoDarkActive)
     {
-        context.Render.BeginLightingPass(m_currentTheme.AmbientLight);
+        Color baseAmbient = m_currentTheme.AmbientLight;
+        Color clubDark{10, 8, 18, 255}; // Extinguished room lights -> Authentic Disco Club!
+        Color ambient{
+            static_cast<uint8_t>(baseAmbient.r * (1.0f - discoDarkFactor) + clubDark.r * discoDarkFactor),
+            static_cast<uint8_t>(baseAmbient.g * (1.0f - discoDarkFactor) + clubDark.g * discoDarkFactor),
+            static_cast<uint8_t>(baseAmbient.b * (1.0f - discoDarkFactor) + clubDark.b * discoDarkFactor),
+            255
+        };
+        context.Render.BeginLightingPass(ambient);
 
         // 1. Dynamic light sources (point and cone) from ECS entities (lanterns, standard balls, etc.)
         m_registry.View<Transform2D, LightSourceComponent>([&](Entity e, const Transform2D& t, const LightSourceComponent& light)
@@ -1053,8 +1227,91 @@ void GameScene::OnRender(GameContext& context)
             context.Render.DrawCapsuleLight(Vector2f{-780.0f, 442.0f}, Vector2f{780.0f, 442.0f}, 75.0f, Color{0, 210, 255, 255}, 1.3f, BlendMode::Add);
         }
 
+        // 6. Active Plasma Orbs illumination in dark levels (capped at 12 to preserve GPU fillrate)
+        size_t plasmaLightCount = 0;
+        for (const auto& orb : m_plasmaOrbs)
+        {
+            if (++plasmaLightCount > 12) break;
+            float lightRadius = 160.0f * orb.Scale;
+            float pulse = 1.0f + 0.2f * std::sin(orb.AnimTime * 15.0f);
+            Color orbCol = (orb.Generation > 1) ? Color{160, 60, 255, 255} : Color{90, 210, 255, 255};
+            context.Render.DrawPointLight(orb.Position, lightRadius * 1.3f, orbCol, 1.6f * pulse, BlendMode::Add);
+        }
+
+        // 7. Disco Fever dynamic illumination in club darkness
+        if (m_discoTimer > 0.0f)
+        {
+            // A. Sweeping ceiling spotlights illuminating the dancefloor
+            const Vector2f spotOrigins[4] = {
+                {-650.0f, -440.0f},
+                {-220.0f, -440.0f},
+                {220.0f, -440.0f},
+                {650.0f, -440.0f}
+            };
+            const Color spotColors[4] = {
+                Color{255, 40, 140, 255},  // Neon Magenta
+                Color{40, 220, 255, 255},  // Electric Cyan
+                Color{255, 220, 40, 255},  // Golden Sun
+                Color{170, 50, 255, 255}   // Ultraviolet
+            };
+            for (int sp = 0; sp < 4; ++sp)
+            {
+                float sweep = std::sin(m_gameplayTime * 2.2f + static_cast<float>(sp) * 1.57f);
+                Vector2f targetFloor{
+                    spotOrigins[sp].X * 0.4f + sweep * 440.0f,
+                    380.0f
+                };
+                Vector2f toFloor = targetFloor - spotOrigins[sp];
+                float spotAngleDeg = std::atan2(toFloor.Y, toFloor.X) * 180.0f / 3.14159265f;
+                float spotDist = toFloor.Length() + 60.0f;
+                context.Render.DrawConeLight(spotOrigins[sp], spotDist, spotAngleDeg, 38.0f, spotColors[sp], 2.4f * discoDarkFactor, BlendMode::Add);
+                context.Render.DrawPointLight(targetFloor, 140.0f, spotColors[sp], 1.9f * discoDarkFactor, BlendMode::Add);
+            }
+
+            // B. Glowing Disco Bricks illumination in the darkened club
+            m_registry.View<Transform2D, BoxCollider, BrickComponent>([&](Entity, const Transform2D& t, const BoxCollider&, const BrickComponent& brick)
+            {
+                if (brick.IsRegenerating) return;
+                float colIdx = std::floor((t.Position.X + 800.0f) / 70.0f);
+                float rowIdx = std::floor((t.Position.Y + 450.0f) / 30.0f);
+                float discoHue = std::fmod(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 2.5f : 1.2f) + (colIdx * 0.08f) + (rowIdx * 0.12f), 1.0f);
+                Color discoCol = DiscoRainbowColor(discoHue, 255);
+                context.Render.DrawPointLight(t.Position, 72.0f, discoCol, 1.25f * discoDarkFactor, BlendMode::Add);
+            });
+
+            // C. Dancing Rainbow Big Balls & Trails
+            for (const auto& db : m_discoBigBalls)
+            {
+                context.Render.DrawPointLight(db.Position, 220.0f, db.BaseColor, 1.8f, BlendMode::Add);
+                for (size_t ti = 0; ti < db.Trail.size(); ti += 2)
+                {
+                    float tRatio = db.Trail[ti].Lifetime / db.Trail[ti].MaxLifetime;
+                    context.Render.DrawPointLight(db.Trail[ti].Position, 90.0f * tRatio, db.BaseColor, 0.75f * tRatio, BlendMode::Add);
+                }
+            }
+
+            // B. Boule a Facettes (Level 5 Mirror Ball)
+            if (m_discoMirrorBall.IsActive)
+            {
+                float mLightR = m_discoMirrorBall.IsFrenzy ? 780.0f : 460.0f;
+                float mLightInt = m_discoMirrorBall.IsFrenzy ? 3.6f : 2.6f;
+                Color mLightCol = m_discoMirrorBall.IsFrenzy ? Color{255, 245, 210, 255} : Color{245, 250, 255, 255};
+                context.Render.DrawPointLight(m_discoMirrorBall.Position, mLightR, mLightCol, mLightInt, BlendMode::Add);
+            }
+
+            // C. Wandering yellow musical notes illumination
+            for (const auto& note : m_discoMusicNotes)
+            {
+                float nRatio = std::clamp(note.Lifetime / note.MaxLifetime, 0.0f, 1.0f);
+                context.Render.DrawPointLight(note.Position, 75.0f * note.Scale, Color{255, 235, 60, 255}, 0.55f * nRatio, BlendMode::Add);
+            }
+        }
+
         context.Render.EndLightingPass(BlendMode::Multiply);
     }
+
+    RenderRegeneratingBricks(context);
+    RenderActiveUltimateVisuals(context);
 
     context.Render.ResetCamera();
 
@@ -1122,6 +1379,8 @@ void GameScene::OnRender(GameContext& context)
         {
             m_uiController->OnRender(context);
         }
+
+        RenderUltimateMeterHUD(context);
     }
 }
 
@@ -1329,7 +1588,8 @@ void GameScene::SpawnFireExplosionParticles(const Vector2f& position, float radi
     std::uniform_real_distribution<float> speedDist(150.0f, 550.0f);
     std::uniform_real_distribution<float> lifeDist(0.35f, 0.75f);
     std::uniform_real_distribution<float> sizeDist(8.0f, 22.0f);
-    std::uniform_real_distribution<float> offsetDist(0.0f, radius * 0.25f);
+    const float safeMaxOffsetFire = std::max(0.0f, radius * 0.25f);
+    std::uniform_real_distribution<float> offsetDist(0.0f, safeMaxOffsetFire);
     std::uniform_int_distribution<int> colorPick(0, 3);
 
     for (int i = 0; i < count; ++i)
@@ -1349,6 +1609,46 @@ void GameScene::SpawnFireExplosionParticles(const Vector2f& position, float radi
         else if (cp == 1) c = Color{255, 180, 30, 255};
         else if (cp == 2) c = Color{240, 50, 20, 255};
         else              c = Color{120, 30, 10, 220};
+
+        Vector2f vel{std::cos(angle) * speed, std::sin(angle) * speed};
+        m_particleSystem->Spawn(spawnPos, vel, lifeDist(rng), sizeDist(rng), c);
+    }
+}
+
+void GameScene::SpawnPlasmaExplosionParticles(const Vector2f& position, float radius, int count)
+{
+    if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
+        return;
+    }
+    if (!m_particleSystem) return;
+
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
+    std::uniform_real_distribution<float> speedDist(140.0f, 540.0f);
+    std::uniform_real_distribution<float> lifeDist(0.35f, 0.75f);
+    std::uniform_real_distribution<float> sizeDist(7.0f, 22.0f);
+    const float safeMaxOffsetPlasma = std::max(0.0f, radius * 0.25f);
+    std::uniform_real_distribution<float> offsetDist(0.0f, safeMaxOffsetPlasma);
+    std::uniform_int_distribution<int> colorPick(0, 4);
+
+    for (int i = 0; i < count; ++i)
+    {
+        float angle = angleDist(rng);
+        float speed = speedDist(rng);
+        float offset = offsetDist(rng);
+
+        Vector2f spawnPos{
+            position.X + std::cos(angle) * offset,
+            position.Y + std::sin(angle) * offset
+        };
+
+        Color c;
+        int cp = colorPick(rng);
+        if (cp == 0)      c = Color{235, 250, 255, 255}; // Radiant white-cyan
+        else if (cp == 1) c = Color{80, 220, 255, 255};  // Electric cyan
+        else if (cp == 2) c = Color{40, 140, 255, 255};  // Deep plasma blue
+        else if (cp == 3) c = Color{150, 70, 255, 240};  // Plasma violet-purple
+        else              c = Color{90, 30, 220, 210};   // Deep indigo
 
         Vector2f vel{std::cos(angle) * speed, std::sin(angle) * speed};
         m_particleSystem->Spawn(spawnPos, vel, lifeDist(rng), sizeDist(rng), c);
@@ -1383,15 +1683,15 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
     SpawnFireExplosionParticles(explosionCenter, aoeRadius, 45);
     SpawnLightFlash(explosionCenter, 500.0f, Color{255, 170, 60, 255}, 2.2f, 0.45f);
 
-    if (mp_context)
+    if (mp_context && m_audioEnabled)
     {
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_fireballExplosionSfxId != 0)
-            mp_context->Audio.PlaySfx(m_fireballExplosionSfxId, 100.0f);
+            PlaySfx(m_fireballExplosionSfxId, 85.0f);
         else if (m_explosionSfxId != 0)
-            mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
+            PlaySfx(m_explosionSfxId, 85.0f);
         else if (m_despawnSfxId != 0)
-            mp_context->Audio.PlaySfx(m_despawnSfxId, 90.0f);
+            PlaySfx(m_despawnSfxId, 80.0f);
     }
 
     TweenEffects::Shake(m_registry, m_camera, 0.3f, 16.0f);
@@ -1434,6 +1734,7 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
 
 void GameScene::OnDestroy(GameContext& context)
 {
+    ClearActiveUltimates();
     if (m_fireballBurnSfxId != 0)
     {
         context.Audio.StopLoopingSfx(m_fireballBurnSfxId);
@@ -1465,6 +1766,7 @@ bool GameScene::HasNextLevel() const
 
 void GameScene::LoadLevel(int levelIndex, bool preserveStats)
 {
+    ClearActiveUltimates();
     m_levelManager.SetLevel(levelIndex);
     ApplyLevelTheme(m_levelManager.GetCurrentLevelNumber());
 
@@ -1473,6 +1775,7 @@ void GameScene::LoadLevel(int levelIndex, bool preserveStats)
         m_scoreManager.Reset();
         m_lives = PlayerPrefs::GetInt("Lives", 3);
         m_levelStartScore = 0;
+        SetUltimateCharge(0.0f);
     }
     else
     {
@@ -1506,6 +1809,7 @@ void GameScene::LoadLevel(int levelIndex, bool preserveStats)
 
 void GameScene::AdvanceToNextLevel()
 {
+    ClearActiveUltimates();
     m_scoreManager.BreakCombo();
 
     int curLevel = m_levelManager.GetCurrentLevelNumber();
@@ -1523,10 +1827,11 @@ void GameScene::AdvanceToNextLevel()
 
 void GameScene::StartLevelTransition()
 {
+    ClearActiveUltimates();
     if (mp_context)
     {
-        mp_context->Audio.FadeOutMusic(0.8f);
-        if (m_levelClearSfxId != 0)
+        if (m_musicEnabled) mp_context->Audio.FadeOutMusic(0.8f);
+        if (m_audioEnabled && m_levelClearSfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_levelClearSfxId, 100.0f);
         }
@@ -1543,7 +1848,7 @@ void GameScene::UpdateLevelTransition()
 void GameScene::CompleteLevelTransition()
 {
     m_levelTransitionTimer = 0.0f;
-    if (mp_context)
+    if (mp_context && m_musicEnabled)
     {
         m_playlist.PlayNext(*mp_context, 1.5f);
     }
@@ -1572,7 +1877,7 @@ void GameScene::StartCountdown()
     if (m_renderGameUI && mp_context)
     {
         mp_context->Events.Publish(GameStateChangedEvent(GameUIState::Countdown));
-        if (m_countdownReadySfxId != 0)
+        if (m_audioEnabled && m_countdownReadySfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_countdownReadySfxId, 100.0f);
         }
@@ -1586,13 +1891,14 @@ bool GameScene::IsLevelTransitionComplete() const
 
 void GameScene::OnGameOverEnter()
 {
+    ClearActiveUltimates();
     m_scoreManager.BreakCombo();
 
     if (mp_context)
     {
         // Smoothly fade out stage music and fade in game-over stinger
-        mp_context->Audio.FadeToMusic("Resources/audio/music/Game-death.ogg", 0.6f, 50.0f, false);
-        if (m_gameOverSfxId != 0)
+        if (m_musicEnabled) mp_context->Audio.FadeToMusic("Resources/audio/music/Game-death.ogg", 0.6f, 50.0f, false);
+        if (m_audioEnabled && m_gameOverSfxId != 0)
         {
             mp_context->Audio.PlaySfx(m_gameOverSfxId, 100.0f);
         }
@@ -1626,6 +1932,7 @@ void GameScene::OnGameOverExit()
 
 void GameScene::OnVictoryEnter()
 {
+    ClearActiveUltimates();
     m_scoreManager.BreakCombo();
 
     int curLevel = m_levelManager.GetCurrentLevelNumber();
@@ -2052,7 +2359,7 @@ void GameScene::HandleDeath()
         {
             if (m_uiController)
             {
-                m_uiController->TriggerLifeLostAnimation(m_lives - 1);
+                m_uiController->TriggerLifeLostAnimation(m_lives);
             }
             m_lives--;
             if (mp_context)
@@ -2081,7 +2388,7 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
     bombQueue.push(initialBomb);
     processedBombs.insert(initialBomb);
 
-    if (mp_context)
+    if (mp_context && m_audioEnabled)
     {
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_explosionSfxId != 0)
@@ -2170,6 +2477,8 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
             }
 
             // Destructible neighbor brick
+            if (nBrick.IsRegenerating) continue;
+
             Vector2f nPos{0.0f, 0.0f};
             Color nColor = Colors::White;
             if (m_registry.HasComponent<Transform2D>(neighbor))
@@ -2183,15 +2492,32 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
 
             SpawnExplosionParticles(nPos, nColor, 15);
 
-            m_scoreManager.AddScore(nBrick.ScoreValue);
-            m_brickCount--;
-
-            mp_context->Events.Publish(BrickHitEvent(neighbor, true, nBrick.IsSpecial, m_scoreManager.GetComboMultiplier(), nPos));
-
             if (nBrick.IsSpecial)
             {
                 SpawnPowerUp(nPos);
+                nBrick.IsRegenerating = true;
+                nBrick.RegenCooldown = PowerUpManager::Get().ItemRegen().GetEffectiveCooldown();
+                nBrick.RegenTimer = nBrick.RegenCooldown;
+                if (m_registry.HasComponent<SpriteComponent>(neighbor))
+                {
+                    m_registry.GetComponent<SpriteComponent>(neighbor).Tint.a = 0;
+                }
+                if (m_registry.HasComponent<BoxCollider>(neighbor))
+                {
+                    m_registry.GetComponent<BoxCollider>(neighbor).IsTrigger = true;
+                }
+                mp_context->Events.Publish(BrickHitEvent(neighbor, true, true, m_scoreManager.GetComboMultiplier(), nPos));
+                continue;
             }
+
+            m_scoreManager.AddScore(nBrick.ScoreValue);
+            m_brickCount--;
+
+            uint32_t bCombo = m_scoreManager.GetComboMultiplier();
+            float bComboBonus = 1.0f + (bCombo > 1 ? static_cast<float>(std::min(bCombo, 10u) - 1) * 0.25f : 0.0f);
+            AddUltimateCharge(1.5f * bComboBonus);
+
+            mp_context->Events.Publish(BrickHitEvent(neighbor, true, nBrick.IsSpecial, m_scoreManager.GetComboMultiplier(), nPos));
 
             m_registry.DestroyEntityDeferred(neighbor);
         }
@@ -2204,6 +2530,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
     if (!m_registry.HasComponent<BrickComponent>(entity)) return;
 
     auto& brick = m_registry.GetComponent<BrickComponent>(entity);
+    if (brick.IsRegenerating) return;
 
     // 1. Bomb Bricks: Detonates on any strike (ball, laser, or explosion) and triggers chain reaction
     if (brick.IsBomb)
@@ -2246,7 +2573,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
                 SpawnExplosionParticles(contactPos, Color{130, 220, 255, 255}, 10);
                 TweenEffects::Shake(m_registry, entity, 0.12f, 4.0f);
             }
-            if (mp_context && m_bounceSfxId != 0)
+            if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 90.0f, 1.4f);
             }
@@ -2267,7 +2594,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
             mp_context->Events.Publish(BrickHitEvent(entity, true, false, m_scoreManager.GetComboMultiplier(), contactPos));
 
-            if (mp_context && m_explosionSfxId != 0)
+            if (mp_context && m_audioEnabled && m_explosionSfxId != 0)
             {
                 mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
             }
@@ -2299,7 +2626,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
                 TweenEffects::Shake(m_registry, entity, 0.1f, 3.0f);
             }
 
-            if (mp_context && m_bounceSfxId != 0)
+            if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f, 1.25f);
             }
@@ -2350,8 +2677,54 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
     bool isDestroyed = (brick.HitPoints == 0);
 
+    // Charge Ultimate Meter with dynamic progression based on brick destruction and combo scaling
+    uint32_t combo = m_scoreManager.GetComboMultiplier();
+    float comboBonus = 1.0f;
+    if (combo > 1)
+    {
+        comboBonus += static_cast<float>(std::min(combo, 10u) - 1) * 0.25f;
+    }
+    float baseGain = isDestroyed ? 2.0f : 0.6f;
+    float chargeGain = baseGain * comboBonus;
+    AddUltimateCharge(chargeGain);
+
     if (isDestroyed)
     {
+        if (brick.IsSpecial)
+        {
+            if (m_registry.HasComponent<Transform2D>(entity) && m_registry.HasComponent<SpriteComponent>(entity))
+            {
+                const auto& transform = m_registry.GetComponent<Transform2D>(entity);
+                auto& sprite = m_registry.GetComponent<SpriteComponent>(entity);
+
+                SpawnExplosionParticles(transform.Position, sprite.Tint);
+                SpawnPowerUp(transform.Position);
+
+                brick.IsRegenerating = true;
+                brick.RegenCooldown = PowerUpManager::Get().ItemRegen().GetEffectiveCooldown();
+                brick.RegenTimer = brick.RegenCooldown;
+
+                sprite.Tint.a = 0;
+                if (m_registry.HasComponent<BoxCollider>(entity))
+                {
+                    m_registry.GetComponent<BoxCollider>(entity).IsTrigger = true;
+                }
+            }
+
+            Vector2f contactPos{0.0f, 0.0f};
+            if (ballEntity != NULL_ENTITY && m_registry.HasComponent<Transform2D>(ballEntity))
+            {
+                contactPos = m_registry.GetComponent<Transform2D>(ballEntity).Position;
+            }
+            else if (m_registry.HasComponent<Transform2D>(entity))
+            {
+                contactPos = m_registry.GetComponent<Transform2D>(entity).Position;
+            }
+
+            mp_context->Events.Publish(BrickHitEvent(entity, true, true, m_scoreManager.GetComboMultiplier(), contactPos));
+            return;
+        }
+
         m_scoreManager.AddScore(brick.ScoreValue);
         m_brickCount--;
     }
@@ -2485,7 +2858,7 @@ void GameScene::HandlePaddleCollision(Entity ballEntity)
 
         m_stuckBalls.push_back(StuckBall{ballEntity, ballComp.StuckOffsetX, 0.0f});
 
-        if (m_bounceSfxId != 0 && mp_context)
+        if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
         {
             mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
         }
@@ -2540,7 +2913,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
             SpawnExplosionParticles(trans.Position, Color{160, 240, 255, 255}, 20);
             TriggerPostProcessFlash(0.015f, 0.35f, Color{160, 240, 255, 255});
 
-            if (m_bounceSfxId != 0 && mp_context)
+            if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
             {
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f, 1.35f);
             }
@@ -2568,7 +2941,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
             SpawnExplosionParticles(trans.Position, Color{0, 240, 255, 255}, 25);
             TriggerPostProcessFlash(0.018f, 0.45f, Color{0, 220, 255, 255});
 
-            if (m_bounceSfxId != 0 && mp_context)
+            if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
             {
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f);
             }
@@ -2596,7 +2969,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
             const auto& sprite = m_registry.GetComponent<SpriteComponent>(ballEntity);
             SpawnExplosionParticles(transform.Position, sprite.Tint, 15);
         }
-        if (mp_context) mp_context->Audio.PlaySfx(m_despawnSfxId, 80.0f);
+        if (mp_context && m_audioEnabled) mp_context->Audio.PlaySfx(m_despawnSfxId, 80.0f);
 
         if (ballEntity == m_ball)
         {
@@ -2897,7 +3270,7 @@ void GameScene::TriggerStormStrike()
         }
 
         // High-voltage electrical conduction SFX
-        if (mp_context && m_conductionSfxId != 0)
+        if (mp_context && m_audioEnabled && m_conductionSfxId != 0)
         {
             float zapPitch = 0.95f + static_cast<float>(rand() % 15) * 0.01f;
             mp_context->Audio.PlaySfx(m_conductionSfxId, 100.0f, zapPitch);
@@ -2925,7 +3298,7 @@ void GameScene::TriggerStormStrike()
     }
 
     // Audio & Game Feel
-    if (mp_context)
+    if (mp_context && m_audioEnabled)
     {
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_lightningSfxId != 0)
@@ -3186,12 +3559,32 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             bool infiniteLives = mp_context ? mp_context->Rules.GetRule(Rule::Gameplay::InfiniteLives) : false;
             if (!infiniteLives)
             {
-                for (int i = 0; i < cfg.LivesGranted; ++i)
+                int lvl = std::clamp(cfg.Level, 1, 5);
+                switch (lvl)
                 {
-                    if (m_lives < cfg.MaxLivesCap)
-                    {
-                        m_lives++;
-                    }
+                    case 1:
+                        // Niv 1 : +1 vie (plafonné à 9 / 3 coeurs verts)
+                        m_lives = std::min(m_lives + 1, 9);
+                        break;
+                    case 2:
+                        // Niv 2 : +2 vies
+                        m_lives = std::min(m_lives + 2, 9);
+                        break;
+                    case 3:
+                        // Niv 3 : +1 vie jaune (garantit au moins 1 coeur jaune = santé 4, ou +1 si déjà supérieur)
+                        m_lives = std::clamp(std::max(m_lives + 1, 4), 1, 9);
+                        break;
+                    case 4:
+                        // Niv 4 : +2 vies jaunes (garantit au moins 2 coeurs jaunes = santé 5, ou +2 si déjà supérieur)
+                        m_lives = std::clamp(std::max(m_lives + 2, 5), 1, 9);
+                        break;
+                    case 5:
+                        // Niv 5 : +3 vies vertes (bouclier max : 3 coeurs verts = 9)
+                        m_lives = 9;
+                        break;
+                    default:
+                        m_lives = std::min(m_lives + 1, 9);
+                        break;
                 }
                 if (mp_context)
                 {
@@ -3798,6 +4191,7 @@ void GameScene::SpawnAllPowerUps()
 
 void GameScene::RespawnBricks()
 {
+    m_preDiscoBrickTints.clear();
     m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
         m_registry.DestroyEntityDeferred(e);
     });
@@ -3824,6 +4218,2003 @@ void GameScene::SpawnLightFlash(const Vector2f& position, float radius, const Co
     m_lightFlashes.push_back(flash);
 }
 
+bool GameScene::IsUltimateActive() const
+{
+    const bool plasmaActive = !m_plasmaOrbs.empty() || (m_plasmaActiveTimer > 0.0f);
+    const bool discoActive = (m_discoTimer > 0.0f) || m_discoMirrorBall.IsActive || !m_discoBigBalls.empty() || !m_soundWaves.empty();
+    const bool rainActive = (m_powerUpRainActiveTimer > 0.0f) || !m_powerUpRainQueue.empty();
+    return plasmaActive || discoActive || rainActive;
+}
 
+void GameScene::AddUltimateCharge(float amount)
+{
+    if (m_ultimateReady) return;
+    if (IsUltimateActive()) return;
 
+    m_ultimateCharge = std::min(m_ultimateCharge + amount, m_ultimateMaxCharge);
+    if (m_ultimateCharge >= m_ultimateMaxCharge)
+    {
+        m_ultimateCharge = m_ultimateMaxCharge;
+        m_ultimateReady = true;
+        if (mp_context && m_audioEnabled && m_ultimateReadySfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_ultimateReadySfxId, 95.0f);
+        }
+        TriggerPostProcessFlash(0.015f, 0.4f, Color{0, 220, 255, 255}, 0.2f, Color{255, 240, 150, 255});
+    }
+}
 
+void GameScene::SetUltimateCharge(float charge)
+{
+    m_ultimateCharge = std::clamp(charge, 0.0f, m_ultimateMaxCharge);
+    m_ultimateReady = (m_ultimateCharge >= m_ultimateMaxCharge);
+}
+
+void GameScene::TryTriggerUltimate()
+{
+    if (!m_ultimateReady) return;
+
+    UltimateAbilityType equipped = ProfileManager::Get().GetEquippedUltimate();
+    int level = ProfileManager::Get().GetUltimateLevel(equipped);
+
+    switch (equipped)
+    {
+        case UltimateAbilityType::PlasmaOrb:
+            ExecutePlasmaOrb(level);
+            break;
+        case UltimateAbilityType::DiscoBall:
+            ExecuteDiscoBall(level);
+            break;
+        case UltimateAbilityType::PowerUpRain:
+            ExecutePowerUpRain(level);
+            break;
+        default:
+            break;
+    }
+
+    if (mp_context && mp_context->Rules.GetRule(Rule::Gameplay::InfiniteUltimate))
+    {
+        m_ultimateCharge = m_ultimateMaxCharge;
+        m_ultimateReady = true;
+    }
+    else
+    {
+        m_ultimateCharge = 0.0f;
+        m_ultimateReady = false;
+        m_ultimateReadyPulseTime = 0.0f;
+    }
+}
+
+void GameScene::ClearActiveUltimates()
+{
+    m_plasmaOrbs.clear();
+    m_soundWaves.clear();
+    m_powerUpRainQueue.clear();
+
+    if (m_plasmaActiveTimer > 0.0f || !m_prePlasmaMusicPath.empty())
+    {
+        m_plasmaActiveTimer = 0.0f;
+        m_plasmaAnimTime = 0.0f;
+        if (mp_context)
+        {
+            if (m_musicEnabled)
+            {
+                if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic(m_prePlasmaMusicPath, 80.0f, true);
+                }
+                else
+                {
+                    RestorePostUltimateMusic();
+                }
+            }
+            else
+            {
+                std::string cur = mp_context->Audio.GetCurrentMusicPath();
+                if (cur.find("plasma_ultimate") != std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                }
+            }
+            m_prePlasmaMusicPath.clear();
+        }
+    }
+
+    if (m_discoTimer > 0.0f || !m_preDiscoMusicPath.empty() || !m_preDiscoBrickTints.empty())
+    {
+        m_discoTimer = 0.0f;
+        RestoreDiscoBricks();
+        m_discoBigBalls.clear();
+        m_discoMirrorBall.IsActive = false;
+        m_discoMirrorBall.IsFrenzy = false;
+        m_discoMirrorBall.Scale = 1.35f;
+        m_discoMirrorBall.TargetScale = 1.35f;
+
+        if (mp_context)
+        {
+            if (m_musicEnabled)
+            {
+                if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic(m_preDiscoMusicPath, 80.0f, true);
+                }
+                else
+                {
+                    RestorePostUltimateMusic();
+                }
+            }
+            else
+            {
+                std::string cur = mp_context->Audio.GetCurrentMusicPath();
+                if (cur.find("disco_ultimate") != std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                }
+            }
+            m_preDiscoMusicPath.clear();
+        }
+    }
+    m_discoRainbowHue = 0.0f;
+    m_discoGrandFinaleBannerTimer = 0.0f;
+    m_discoExplosionAnims.clear();
+    m_discoMusicNotes.clear();
+    m_discoNoteSpawnTimer = 0.0f;
+
+    if (m_powerUpRainActiveTimer > 0.0f || !m_prePowerUpRainMusicPath.empty())
+    {
+        m_powerUpRainActiveTimer = 0.0f;
+        m_luckyQuestionMarks.clear();
+        m_luckyQuestionMarkSpawnTimer = 0.0f;
+
+        if (mp_context)
+        {
+            if (m_musicEnabled)
+            {
+                if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic(m_prePowerUpRainMusicPath, 80.0f, true);
+                }
+                else
+                {
+                    RestorePostUltimateMusic();
+                }
+            }
+            else
+            {
+                std::string cur = mp_context->Audio.GetCurrentMusicPath();
+                if (cur.find("lucky_drop_ultimate") != std::string::npos)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                }
+            }
+            m_prePowerUpRainMusicPath.clear();
+        }
+    }
+}
+
+void GameScene::ExecutePlasmaOrb(int level)
+{
+    int safeLvl = std::clamp(level, 1, 5);
+
+    Vector2f paddlePos{0.0f, 350.0f};
+    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+    {
+        paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
+    }
+
+    int orbCount = 1;
+    float scale = 1.0f;
+    int gen = 1;
+    int childCount = 2;
+    int damage = 2;
+
+    switch (safeLvl)
+    {
+        case 1:
+            orbCount = 1;
+            scale = 1.0f;
+            gen = 1;
+            childCount = 2;
+            damage = 2;
+            break;
+        case 2:
+            orbCount = 2;
+            scale = 1.0f;
+            gen = 1;
+            childCount = 2;
+            damage = 2;
+            break;
+        case 3:
+            orbCount = 2;
+            scale = 1.5f;
+            gen = 2;
+            childCount = 2; // 2 orbs split into 4 total
+            damage = 3;
+            break;
+        case 4:
+            orbCount = 3;
+            scale = 1.5f;
+            gen = 2;
+            childCount = 2; // 3 orbs split into 4 total
+            damage = 3;
+            break;
+        case 5:
+            orbCount = 3;
+            scale = 2.0f;
+            gen = 3;
+            childCount = 4; // 3 mega orbs split into 12, then 48, then 96 total
+            damage = 4;
+            break;
+        default:
+            break;
+    }
+
+    constexpr float speed = 640.0f;
+
+    for (int i = 0; i < orbCount; ++i)
+    {
+        float angleDeg = -90.0f;
+        if (orbCount == 2)
+        {
+            angleDeg = (i == 0) ? -102.0f : -78.0f;
+        }
+        else if (orbCount == 3)
+        {
+            angleDeg = (i == 0) ? -110.0f : ((i == 1) ? -90.0f : -70.0f);
+        }
+
+        float rad = angleDeg * 3.14159265f / 180.0f;
+        Vector2f vel{std::cos(rad) * speed, std::sin(rad) * speed};
+
+        PlasmaOrbInstance orb;
+        orb.Position = Vector2f{paddlePos.X + static_cast<float>(i - (orbCount - 1) / 2) * 25.0f, paddlePos.Y - 35.0f};
+        orb.Velocity = vel;
+        orb.Scale = scale;
+        orb.Radius = 18.0f * scale;
+        orb.Lifetime = 1.35f;
+        orb.Generation = gen;
+        orb.ChildCount = childCount;
+        orb.Damage = damage;
+        orb.AnimTime = 0.0f;
+
+        m_plasmaOrbs.push_back(orb);
+    }
+
+    m_plasmaAnimTime = 0.0f;
+    m_plasmaActiveTimer = 5.0f + static_cast<float>(gen) * 1.5f;
+
+    if (mp_context)
+    {
+        if (m_plasmaLaunchSfxId != 0 && m_audioEnabled)
+        {
+            mp_context->Audio.PlaySfx(m_plasmaLaunchSfxId, 100.0f);
+        }
+
+        std::string cur = mp_context->Audio.GetCurrentMusicPath();
+        if (m_prePlasmaMusicPath.empty() || m_prePlasmaMusicPath.find("plasma_ultimate") != std::string::npos)
+        {
+            if (cur.find("plasma_ultimate") == std::string::npos && !cur.empty())
+            {
+                m_prePlasmaMusicPath = cur;
+            }
+        }
+        if (m_musicEnabled)
+        {
+            mp_context->Audio.PlayMusic("Resources/audio/music/plasma_ultimate.wav", 100.0f, true);
+        }
+    }
+    TriggerPostProcessFlash(0.04f, 0.65f, Color{150, 40, 255, 255}, 0.35f, Color{0, 220, 255, 255});
+    TweenEffects::Shake(m_registry, m_camera, 0.28f, 11.0f);
+}
+
+void GameScene::TriggerSoundWave(float targetHeightRatio, int damage, float delay)
+{
+    Vector2f paddlePos{0.0f, 350.0f};
+    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+    {
+        paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
+    }
+
+    float startY = paddlePos.Y - 20.0f;
+    float totalPlayHeight = 820.0f;
+    float targetY = startY - totalPlayHeight * targetHeightRatio;
+
+    SoundWaveInstance wave;
+    wave.StartY = startY;
+    wave.CurrentY = startY;
+    wave.TargetY = targetY;
+    wave.Lifetime = 0.85f;
+    wave.MaxLifetime = 0.85f;
+    wave.Damage = damage;
+    wave.ArcWidth = 1450.0f;
+    wave.Delay = delay;
+
+    m_soundWaves.push_back(wave);
+
+    if (delay <= 0.0f)
+    {
+        if (mp_context && m_audioEnabled && m_discoShockwaveSfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f);
+        }
+        TweenEffects::Shake(m_registry, m_camera, 0.22f, 8.0f);
+    }
+}
+
+void GameScene::ExecuteDiscoBall(int level)
+{
+    m_discoLevel = std::clamp(level, 1, 5);
+    m_discoDuration = 9.0f;
+    m_discoTimer = m_discoDuration;
+    m_discoRainbowHue = 0.0f;
+    m_discoGrandFinaleBannerTimer = 0.0f;
+
+    // Snapshot original tints of all alive bricks before applying disco theme
+    m_preDiscoBrickTints.clear();
+    m_registry.View<SpriteComponent, BrickComponent>([&](Entity e, const SpriteComponent& sc, const BrickComponent&)
+    {
+        m_preDiscoBrickTints[e] = sc.Tint;
+    });
+
+    // Switch music to the groovy layered disco stem for this level
+    if (mp_context)
+    {
+        std::string cur = mp_context->Audio.GetCurrentMusicPath();
+        if (m_preDiscoMusicPath.empty() || m_preDiscoMusicPath.find("disco_ultimate") != std::string::npos)
+        {
+            if (cur.find("disco_ultimate") == std::string::npos && !cur.empty())
+            {
+                m_preDiscoMusicPath = cur;
+            }
+        }
+        std::string musicPath = "Resources/audio/music/disco_ultimate_lvl" + std::to_string(m_discoLevel) + ".wav";
+        if (m_musicEnabled)
+        {
+            mp_context->Audio.PlayMusic(musicPath, 100.0f, true);
+        }
+    }
+
+    // Soundwaves from paddle (scaling reach from 30% to 70% height smoothly across 5 levels)
+    float heightRatio = 0.30f + static_cast<float>(m_discoLevel - 1) * 0.10f; // 30%, 40%, 50%, 60%, 70%
+    int waveDmg = (m_discoLevel >= 3) ? 2 : 1;
+
+    TriggerSoundWave(heightRatio, waveDmg, 0.0f);
+    if (m_discoLevel >= 5)
+    {
+        // Max level fires 2 shockwaves reaching up to 70% of the playfield height
+        TriggerSoundWave(heightRatio, waveDmg, 0.20f);
+    }
+
+    // Rainbow Big Balls dancing in the playfield
+    int ballCount = 2 + (m_discoLevel - 1); // 2 to 6
+    const Color rainbowColors[6] = {
+        Color{255, 45, 120, 255},  // Hot Pink / Red
+        Color{255, 140, 30, 255},  // Electric Orange
+        Color{255, 230, 40, 255},  // Bright Gold
+        Color{50, 255, 100, 255},  // Neon Lime
+        Color{40, 220, 255, 255},  // Cyan Spark
+        Color{190, 70, 255, 255}   // Ultraviolet
+    };
+
+    // If already active, keep existing dancing/independent balls and only append any missing ones
+    size_t startIdx = 0;
+    if (m_discoBigBalls.size() >= static_cast<size_t>(ballCount))
+    {
+        startIdx = static_cast<size_t>(ballCount);
+    }
+    else
+    {
+        startIdx = m_discoBigBalls.size();
+    }
+
+    for (int i = static_cast<int>(startIdx); i < ballCount; ++i)
+    {
+        DiscoBigBall db;
+        db.InstrumentIndex = i % 6;
+        db.DanceCenter = Vector2f{
+            -420.0f + static_cast<float>(i) * (840.0f / static_cast<float>(std::max(1, ballCount - 1))),
+            -100.0f + static_cast<float>((i % 2) * 120 - 60)
+        };
+        db.DanceVelocity = Vector2f{
+            65.0f + static_cast<float>((i * 29) % 35) * ((i % 2 == 0) ? 1.0f : -1.0f),
+            45.0f + static_cast<float>((i * 19) % 30) * ((i % 3 == 0) ? 1.0f : -1.0f)
+        };
+        db.DancePhaseX = static_cast<float>(i) * 1.047f;
+        db.DancePhaseY = static_cast<float>(i) * 1.57f;
+        db.DanceFreqX = 1.8f + static_cast<float>(i % 3) * 0.35f;
+        db.DanceFreqY = 2.4f + static_cast<float>((i + 1) % 3) * 0.45f;
+        db.DanceAmpX = 135.0f + static_cast<float>((i % 2) * 35);
+        db.DanceAmpY = 80.0f + static_cast<float>((i % 3) * 25);
+        db.Position = db.DanceCenter + Vector2f{std::cos(db.DancePhaseX) * db.DanceAmpX, std::sin(db.DancePhaseY) * db.DanceAmpY};
+        db.Velocity = Vector2f{0.0f, 0.0f};
+        db.Radius = 20.0f;
+        db.Scale = 1.35f;
+        db.IsIndependent = false;
+        db.SparkleTimer = 0.0f;
+        db.BaseColor = rainbowColors[i % 6];
+        db.Trail.clear();
+        db.DamagedBricks.clear();
+
+        m_discoBigBalls.push_back(db);
+    }
+
+    // Level 5: Boule à Facettes (Sleek mirror disco ball)
+    if (m_discoLevel >= 5)
+    {
+        m_discoMirrorBall.IsActive = true;
+        m_discoMirrorBall.Lifetime = m_discoDuration;
+        m_discoMirrorBall.Position = Vector2f{0.0f, -140.0f};
+        m_discoMirrorBall.Velocity = Vector2f{350.0f, -260.0f};
+        m_discoMirrorBall.Radius = 26.0f;
+        m_discoMirrorBall.Scale = 1.35f;
+        m_discoMirrorBall.TargetScale = 1.35f;
+        m_discoMirrorBall.IsFrenzy = false;
+        m_discoMirrorBall.FrenzyPulseTime = 0.0f;
+    }
+    else
+    {
+        m_discoMirrorBall.IsActive = false;
+        m_discoMirrorBall.IsFrenzy = false;
+        m_discoMirrorBall.Scale = 1.35f;
+        m_discoMirrorBall.TargetScale = 1.35f;
+    }
+
+    // Pre-populate wandering yellow music note particles across background
+    while (m_discoMusicNotes.size() < 36)
+    {
+        SpawnDiscoMusicNote(true);
+    }
+
+    TriggerPostProcessFlash(0.04f, 0.70f, Color{255, 60, 200, 255}, 0.35f, Color{255, 230, 80, 255});
+}
+
+void GameScene::ExecutePowerUpRain(int level)
+{
+    int safeLvl = std::clamp(level, 1, 5);
+
+    int minCount = 5;
+    int maxCount = 12;
+    int minTier = 1;
+    int maxTier = 3;
+
+    switch (safeLvl)
+    {
+        case 1: minCount = 5;  maxCount = 12; minTier = 1; maxTier = 3; break;
+        case 2: minCount = 10; maxCount = 24; minTier = 1; maxTier = 3; break;
+        case 3: minCount = 15; maxCount = 36; minTier = 1; maxTier = 4; break;
+        case 4: minCount = 20; maxCount = 48; minTier = 2; maxTier = 5; break;
+        case 5: minCount = 25; maxCount = 60; minTier = 2; maxTier = 5; break;
+        default: break;
+    }
+
+    int range = std::max(1, maxCount - minCount + 1);
+    int count = minCount + (rand() % range);
+
+    m_powerUpRainQueue.clear();
+
+    const PowerUpType availableTypes[] = {
+        PowerUpType::MultiBall,
+        PowerUpType::BigBall,
+        PowerUpType::FireBall,
+        PowerUpType::LaserPaddle,
+        PowerUpType::StickyPaddle,
+        PowerUpType::BottomBarrier,
+        PowerUpType::MagnetPaddle,
+        PowerUpType::GhostBall,
+        PowerUpType::TempoBall,
+        PowerUpType::ExtraLife
+    };
+    constexpr size_t numAvailableTypes = sizeof(availableTypes) / sizeof(availableTypes[0]);
+
+    for (int i = 0; i < count; ++i)
+    {
+        PowerUpRainDrop drop;
+        drop.DelayTimer = (static_cast<float>(i) / static_cast<float>(count)) * 2.8f + (static_cast<float>(rand() % 100) / 1000.0f);
+        drop.SpawnX = -650.0f + static_cast<float>(rand() % 1300);
+        drop.Type = availableTypes[rand() % numAvailableTypes];
+        drop.Tier = minTier + (rand() % (std::max(1, maxTier - minTier + 1)));
+
+        m_powerUpRainQueue.push_back(drop);
+    }
+
+    m_powerUpRainActiveTimer = 7.2f;
+    m_powerUpRainAnimTime = 0.0f;
+    m_luckyQuestionMarkSpawnTimer = 0.0f;
+
+    if (mp_context)
+    {
+        if (m_ultimateReadySfxId != 0)
+        {
+            PlaySfx(m_ultimateReadySfxId, 85.0f, 1.25f);
+        }
+
+        std::string cur = mp_context->Audio.GetCurrentMusicPath();
+        if (m_prePowerUpRainMusicPath.empty() || m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") != std::string::npos)
+        {
+            if (cur.find("lucky_drop_ultimate") == std::string::npos && !cur.empty())
+            {
+                m_prePowerUpRainMusicPath = cur;
+            }
+        }
+        if (m_musicEnabled)
+        {
+            mp_context->Audio.PlayMusic("Resources/audio/music/lucky_drop_ultimate.wav", 80.0f, true);
+        }
+    }
+
+    // Spawn an initial cyber burst of Lucky Question Mark particles
+    for (int q = 0; q < 16; ++q)
+    {
+        Vector2f burstPos{-600.0f + static_cast<float>(rand() % 1200), -380.0f + static_cast<float>(rand() % 450)};
+        SpawnLuckyQuestionMark(burstPos, true);
+    }
+
+    TriggerPostProcessFlash(0.045f, 0.75f, Color{0, 240, 255, 255}, 0.45f, Color{255, 20, 147, 255});
+    TweenEffects::Shake(m_registry, m_camera, 0.25f, 7.0f);
+}
+
+void GameScene::UpdateUltimateAbilities(float dt)
+{
+    if (mp_context && mp_context->Rules.GetRule(Rule::Gameplay::InfiniteUltimate))
+    {
+        m_ultimateCharge = m_ultimateMaxCharge;
+        m_ultimateReady = true;
+    }
+
+    if (m_ultimateReady)
+    {
+        m_ultimateReadyPulseTime += dt;
+    }
+
+    // 1. Plasma Orbs update
+    struct ActiveBrickCache
+    {
+        Entity entity;
+        Vector2f pos;
+    };
+    static thread_local std::vector<ActiveBrickCache> s_activeBricks;
+    s_activeBricks.clear();
+    m_registry.View<Transform2D, BrickComponent>([&](Entity e, const Transform2D& t, const BrickComponent& b)
+    {
+        if (!b.IsRegenerating)
+        {
+            s_activeBricks.push_back({e, t.Position});
+        }
+    });
+
+    constexpr size_t kMaxPlasmaOrbs = 120;
+    std::vector<PlasmaOrbInstance> newChildren;
+    for (auto it = m_plasmaOrbs.begin(); it != m_plasmaOrbs.end(); )
+    {
+        it->Position += it->Velocity * dt;
+        it->AnimTime += dt;
+        it->Lifetime -= dt;
+
+        // Update trail history
+        for (auto& pt : it->Trail)
+        {
+            pt.Lifetime -= dt;
+        }
+        std::erase_if(it->Trail, [](const PlasmaTrailPoint& pt) {
+            return pt.Lifetime <= 0.0f;
+        });
+
+        PlasmaTrailPoint newPt;
+        newPt.Position = it->Position;
+        newPt.Lifetime = 0.22f;
+        newPt.MaxLifetime = 0.22f;
+        it->Trail.push_back(newPt);
+
+        // Spawn trailing plasma spark particles (throttled when many orbs are active)
+        if (m_particleSystem && mp_context && mp_context->Rules.GetRule(Rule::Graphics::EnableParticles))
+        {
+            static uint32_t s_trailFrameCounter = 0;
+            s_trailFrameCounter++;
+            if (m_plasmaOrbs.size() <= 6 || (s_trailFrameCounter % 2 == 0))
+            {
+                static std::mt19937 trailRng(1337);
+                std::uniform_real_distribution<float> jitterDist(-6.0f, 6.0f);
+                std::uniform_real_distribution<float> velJitter(-25.0f, 25.0f);
+                Vector2f spawnPos{it->Position.X + jitterDist(trailRng), it->Position.Y + jitterDist(trailRng)};
+                Vector2f pVel{-it->Velocity.X * 0.12f + velJitter(trailRng), -it->Velocity.Y * 0.12f + velJitter(trailRng)};
+                Color pCol = (trailRng() % 2 == 0) ? Color{160, 60, 255, 220} : Color{80, 210, 255, 230};
+                m_particleSystem->Spawn(spawnPos, pVel, 0.20f, 8.0f * it->Scale, pCol);
+            }
+        }
+
+        // Damage bricks on contact using cached active bricks and squared distance (zero per-orb allocation)
+        const float hitRadius = it->Radius + 22.0f;
+        const float hitRadiusSq = hitRadius * hitRadius;
+        for (const auto& brick : s_activeBricks)
+        {
+            if (!m_registry.IsAlive(brick.entity) || m_registry.IsPendingDestroy(brick.entity)) continue;
+            const float dx = brick.pos.X - it->Position.X;
+            const float dy = brick.pos.Y - it->Position.Y;
+            if (dx * dx + dy * dy <= hitRadiusSq)
+            {
+                HandleBrickCollision(brick.entity, NULL_ENTITY, /*isLaser=*/false, /*isExplosion=*/true, it->Damage);
+                SpawnExplosionParticles(it->Position, Color{80, 200, 255, 230}, 4);
+            }
+        }
+
+        // Wall collisions (same rules as ball: playfield bounds are [-800, 800] in X, [-450, 450] in Y)
+        const float minX = -800.0f + it->Radius;
+        const float maxX = 800.0f - it->Radius;
+        const float minY = -450.0f + it->Radius;
+        const float maxY = 450.0f - it->Radius;
+
+        bool bounced = false;
+        if (it->Position.X < minX)
+        {
+            it->Position.X = minX;
+            if (it->Velocity.X < 0.0f)
+            {
+                it->Velocity.X = std::abs(it->Velocity.X);
+                bounced = true;
+            }
+        }
+        else if (it->Position.X > maxX)
+        {
+            it->Position.X = maxX;
+            if (it->Velocity.X > 0.0f)
+            {
+                it->Velocity.X = -std::abs(it->Velocity.X);
+                bounced = true;
+            }
+        }
+
+        if (it->Position.Y < minY)
+        {
+            it->Position.Y = minY;
+            if (it->Velocity.Y < 0.0f)
+            {
+                it->Velocity.Y = std::abs(it->Velocity.Y);
+                bounced = true;
+            }
+        }
+        else if (it->Position.Y > maxY)
+        {
+            it->Position.Y = maxY;
+            if (it->Velocity.Y > 0.0f)
+            {
+                it->Velocity.Y = -std::abs(it->Velocity.Y);
+                bounced = true;
+            }
+        }
+
+        // Paddle collision (bounces upward off paddle when falling)
+        if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+        {
+            const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+            const float halfWidth = 65.0f * pTrans.Scale.X + it->Radius;
+            if (it->Velocity.Y > 0.0f &&
+                it->Position.Y >= pTrans.Position.Y - 26.0f &&
+                it->Position.Y <= pTrans.Position.Y + 26.0f &&
+                std::abs(it->Position.X - pTrans.Position.X) <= halfWidth)
+            {
+                it->Position.Y = pTrans.Position.Y - 26.0f;
+                float hitOffset = (it->Position.X - pTrans.Position.X) / halfWidth;
+                float speed = it->Velocity.Length();
+                float bounceAngle = -1.5707963f + hitOffset * 0.95f;
+                it->Velocity = Vector2f{std::cos(bounceAngle) * speed, std::sin(bounceAngle) * speed};
+                bounced = true;
+            }
+        }
+
+        if (bounced)
+        {
+            SpawnPlasmaExplosionParticles(it->Position, it->Radius * 1.5f, 8);
+            if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
+            {
+                float pan = std::clamp(it->Position.X / 800.0f, -1.0f, 1.0f);
+                mp_context->Audio.PlaySfx(m_bounceSfxId, 45.0f, 1.35f, pan);
+            }
+        }
+
+        bool shouldExpire = (it->Lifetime <= 0.0f);
+
+        if (shouldExpire)
+        {
+            bool canDivide = (it->Generation > 0 && it->ChildCount > 0 &&
+                             (m_plasmaOrbs.size() + newChildren.size() < kMaxPlasmaOrbs));
+
+            if (canDivide)
+            {
+                // Divide into ChildCount smaller plasma orbs
+                int nextGen = it->Generation - 1;
+                int nextChildCount = (nextGen == 2) ? 4 : ((nextGen == 1) ? 2 : 0);
+                float nextScale = it->Scale * 0.72f;
+                float nextRadius = std::max(9.0f, it->Radius * 0.72f);
+                int nextDmg = std::max(1, it->Damage - 1);
+
+                float stepAngle = (2.0f * 3.14159265f) / static_cast<float>(it->ChildCount);
+                float baseSpeed = 520.0f;
+
+                Vector2f spawnPos = it->Position;
+                spawnPos.X = std::clamp(spawnPos.X, minX + 10.0f, maxX - 10.0f);
+                spawnPos.Y = std::clamp(spawnPos.Y, minY + 10.0f, maxY - 10.0f);
+
+                for (int c = 0; c < it->ChildCount; ++c)
+                {
+                    float a = stepAngle * static_cast<float>(c) + 0.35f;
+                    Vector2f cVel{std::cos(a) * baseSpeed, std::sin(a) * baseSpeed};
+
+                    // Deflect inward if near boundaries
+                    if (spawnPos.X <= minX + 30.0f && cVel.X < 0.0f) cVel.X = std::abs(cVel.X);
+                    if (spawnPos.X >= maxX - 30.0f && cVel.X > 0.0f) cVel.X = -std::abs(cVel.X);
+                    if (spawnPos.Y <= minY + 30.0f && cVel.Y < 0.0f) cVel.Y = std::abs(cVel.Y);
+                    if (spawnPos.Y >= maxY - 30.0f && cVel.Y > 0.0f) cVel.Y = -std::abs(cVel.Y);
+
+                    PlasmaOrbInstance child;
+                    child.Position = spawnPos;
+                    child.Velocity = cVel;
+                    child.Scale = nextScale;
+                    child.Radius = nextRadius;
+                    child.Lifetime = 1.1f;
+                    child.Generation = nextGen;
+                    child.ChildCount = nextChildCount;
+                    child.Damage = nextDmg;
+                    child.AnimTime = 0.0f;
+
+                    newChildren.push_back(child);
+                }
+
+                SpawnPlasmaExplosionParticles(spawnPos, 40.0f, 10);
+                if (mp_context && m_audioEnabled && m_plasmaLaunchSfxId != 0)
+                {
+                    mp_context->Audio.PlaySfx(m_plasmaLaunchSfxId, 80.0f, 1.35f);
+                }
+            }
+            else
+            {
+                // Final detonation
+                static float s_lastDetonationSfx = -1.0f;
+                if (mp_context && m_audioEnabled && m_plasmaExplodeSfxId != 0)
+                {
+                    if (m_gameplayTime - s_lastDetonationSfx >= 0.05f)
+                    {
+                        s_lastDetonationSfx = m_gameplayTime;
+                        mp_context->Audio.PlaySfx(m_plasmaExplodeSfxId, 85.0f);
+                    }
+                }
+                SpawnPlasmaExplosionParticles(it->Position, 75.0f, 18);
+                SpawnLightFlash(it->Position, 320.0f, Color{80, 180, 255, 255}, 1.9f, 0.35f);
+
+                // Area damage on explosion using cached bricks and squared distance
+                constexpr float explRadiusSq = 95.0f * 95.0f;
+                for (const auto& brick : s_activeBricks)
+                {
+                    if (!m_registry.IsAlive(brick.entity) || m_registry.IsPendingDestroy(brick.entity)) continue;
+                    const float dx = brick.pos.X - it->Position.X;
+                    const float dy = brick.pos.Y - it->Position.Y;
+                    if (dx * dx + dy * dy <= explRadiusSq)
+                    {
+                        HandleBrickCollision(brick.entity, NULL_ENTITY, false, true, it->Damage);
+                    }
+                }
+            }
+
+            it = m_plasmaOrbs.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    m_plasmaOrbs.insert(m_plasmaOrbs.end(), newChildren.begin(), newChildren.end());
+
+    // Plasma Ultimate duration, shader animation & music loop update
+    if (m_plasmaActiveTimer > 0.0f)
+    {
+        m_plasmaActiveTimer -= dt;
+        m_plasmaAnimTime += dt;
+
+        if (m_plasmaOrbs.empty())
+        {
+            // Allow 0.85s of residual electric storm dissipation once all orbs have detonated
+            m_plasmaActiveTimer = std::min(m_plasmaActiveTimer, 0.85f);
+        }
+
+        // When plasma ultimate ends, smoothly restore stage music
+        if (m_plasmaActiveTimer <= 0.0f)
+        {
+            m_plasmaActiveTimer = 0.0f;
+            if (mp_context && m_musicEnabled)
+            {
+                if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f);
+                }
+                else
+                {
+                    m_playlist.PlayNext(*mp_context, 1.2f);
+                }
+                m_prePlasmaMusicPath.clear();
+            }
+        }
+    }
+
+    // 2. Disco Soundwaves update
+    for (auto it = m_soundWaves.begin(); it != m_soundWaves.end(); )
+    {
+        if (it->Delay > 0.0f)
+        {
+            it->Delay -= dt;
+            if (it->Delay <= 0.0f)
+            {
+                it->Delay = 0.0f;
+                if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+                {
+                    const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+                    it->StartY = pTrans.Position.Y - 20.0f;
+                    it->CurrentY = it->StartY;
+                    float totalPlayHeight = 820.0f;
+                    float heightRatio = 0.30f + static_cast<float>(m_discoLevel - 1) * 0.10f;
+                    it->TargetY = it->StartY - totalPlayHeight * heightRatio;
+                }
+                if (mp_context && m_audioEnabled && m_discoShockwaveSfxId != 0)
+                {
+                    mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f);
+                }
+                TweenEffects::Shake(m_registry, m_camera, 0.22f, 8.0f);
+            }
+            else
+            {
+                ++it;
+                continue;
+            }
+        }
+
+        it->Lifetime -= dt;
+        float progress = 1.0f - (it->Lifetime / it->MaxLifetime);
+        it->CurrentY = it->StartY + (it->TargetY - it->StartY) * progress;
+
+        // Repel downward balls
+        if (mp_ballSystem)
+        {
+            for (Entity b : mp_ballSystem->GetBalls())
+            {
+                if (!m_registry.IsAlive(b) || !m_registry.HasComponent<Transform2D>(b) || !m_registry.HasComponent<RigidBody>(b))
+                    continue;
+
+                auto& bTrans = m_registry.GetComponent<Transform2D>(b);
+                auto& bRb = m_registry.GetComponent<RigidBody>(b);
+
+                if (std::abs(bTrans.Position.Y - it->CurrentY) <= 45.0f && bRb.Velocity.Y > 0.0f)
+                {
+                    bRb.Velocity.Y = -std::abs(bRb.Velocity.Y) * 1.25f;
+                    SpawnExplosionParticles(bTrans.Position, Color{255, 230, 80, 255}, 8);
+                }
+            }
+        }
+
+        // Damage bricks reached by wave
+        std::vector<Entity> waveHits;
+        m_registry.View<Transform2D, BrickComponent>([&](Entity e, const Transform2D& t, const BrickComponent& b)
+        {
+            if (b.IsRegenerating) return;
+            if (std::abs(t.Position.Y - it->CurrentY) <= 30.0f)
+            {
+                waveHits.push_back(e);
+            }
+        });
+        for (Entity be : waveHits)
+        {
+            if (m_registry.IsAlive(be) && !m_registry.IsPendingDestroy(be))
+            {
+                HandleBrickCollision(be, NULL_ENTITY, false, true, it->Damage);
+            }
+        }
+
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_soundWaves.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    // 3. Disco Fever active state update
+    // 3. Disco Fever active state update
+    if (m_discoGrandFinaleBannerTimer > 0.0f)
+    {
+        m_discoGrandFinaleBannerTimer -= dt;
+        if (m_discoGrandFinaleBannerTimer < 0.0f) m_discoGrandFinaleBannerTimer = 0.0f;
+    }
+
+    // Update animated expanding explosions
+    for (auto it = m_discoExplosionAnims.begin(); it != m_discoExplosionAnims.end(); )
+    {
+        it->Lifetime -= dt;
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_discoExplosionAnims.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    // Update wandering yellow musical note particles in background
+    if (m_discoTimer > 0.0f)
+    {
+        m_discoNoteSpawnTimer += dt;
+        if (m_discoNoteSpawnTimer >= 0.16f && m_discoMusicNotes.size() < 42)
+        {
+            m_discoNoteSpawnTimer = 0.0f;
+            SpawnDiscoMusicNote(false);
+        }
+    }
+
+    for (auto it = m_discoMusicNotes.begin(); it != m_discoMusicNotes.end(); )
+    {
+        it->Lifetime -= (m_discoTimer > 0.0f) ? dt : (dt * 2.2f);
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_discoMusicNotes.erase(it);
+            continue;
+        }
+
+        it->WobblePhase += dt * it->WobbleFreq;
+        it->Rotation += it->RotSpeed * dt;
+
+        Vector2f wanderDrift{
+            std::sin(it->WobblePhase) * 32.0f,
+            std::cos(it->WobblePhase * 0.8f) * 18.0f
+        };
+        it->Position += (it->Velocity + wanderDrift) * dt;
+
+        // Soft wrap around stage boundaries so notes wander continuously
+        if (it->Position.X < -780.0f) it->Position.X = 780.0f;
+        else if (it->Position.X > 780.0f) it->Position.X = -780.0f;
+        if (it->Position.Y < -440.0f) it->Position.Y = 440.0f;
+        else if (it->Position.Y > 440.0f) it->Position.Y = -440.0f;
+
+        ++it;
+    }
+
+    if (m_discoTimer > 0.0f)
+    {
+        m_discoTimer -= dt;
+        m_discoRainbowHue += dt * 2.8f;
+
+        // Animate bricks with a groovy, dynamic disco dancefloor theme without altering characteristics
+        m_registry.View<Transform2D, SpriteComponent, BrickComponent>([&](Entity e, const Transform2D& t, SpriteComponent& sc, const BrickComponent& brick)
+        {
+            if (brick.IsRegenerating) return;
+            if (m_preDiscoBrickTints.find(e) == m_preDiscoBrickTints.end())
+            {
+                m_preDiscoBrickTints[e] = sc.Tint;
+            }
+            float colIdx = std::floor((t.Position.X + 800.0f) / 70.0f);
+            float rowIdx = std::floor((t.Position.Y + 450.0f) / 30.0f);
+            float discoHue = std::fmod(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 2.5f : 1.2f) + (colIdx * 0.08f) + (rowIdx * 0.12f), 1.0f);
+            sc.Tint = DiscoRainbowColor(discoHue, 255);
+        });
+
+        // A. Update Dancing & Independent Big Balls
+        for (auto& db : m_discoBigBalls)
+        {
+            // 1. Ball intersection check to grant independence
+            if (!db.IsIndependent)
+            {
+                m_registry.View<BallComponent, Transform2D>([&](Entity, const BallComponent&, const Transform2D& bt)
+                {
+                    float dist = (bt.Position - db.Position).Length();
+                    if (dist <= (db.Radius * db.Scale + 20.0f))
+                    {
+                        db.IsIndependent = true;
+                        Vector2f launchDir = db.Position - bt.Position;
+                        if (launchDir.Length() < 1.0f)
+                        {
+                            float a = (static_cast<float>(rand() % 360) / 180.0f) * 3.14159265f;
+                            launchDir = Vector2f{std::cos(a), std::sin(a)};
+                        }
+                        else
+                        {
+                            launchDir = launchDir.Normalized();
+                        }
+                        float speed = 500.0f + static_cast<float>(rand() % 120);
+                        db.Velocity = launchDir * speed;
+
+                        SpawnExplosionParticles(db.Position, db.BaseColor, 20);
+                        SpawnLightFlash(db.Position, 320.0f, db.BaseColor, 2.0f, 0.35f);
+
+                        // Unique disco instrument SFX for this specific ball
+                        uint32_t hitSfx = (db.InstrumentIndex >= 0 && db.InstrumentIndex < 6) ? m_discoHitSfxIds[db.InstrumentIndex] : 0;
+                        if (hitSfx != 0 && mp_context && m_audioEnabled)
+                        {
+                            mp_context->Audio.PlaySfx(hitSfx, 100.0f);
+                        }
+                        else if (m_conductionSfxId != 0 && mp_context && m_audioEnabled)
+                        {
+                            mp_context->Audio.PlaySfx(m_conductionSfxId, 85.0f);
+                        }
+                    }
+                });
+            }
+
+            // 2. Motion
+            if (!db.IsIndependent)
+            {
+                db.DancePhaseX += dt * db.DanceFreqX;
+                db.DancePhaseY += dt * db.DanceFreqY;
+                db.DanceCenter += db.DanceVelocity * dt;
+
+                // Soft bounce dance center within stage boundaries
+                if (db.DanceCenter.X < -500.0f) { db.DanceCenter.X = -500.0f; db.DanceVelocity.X = std::abs(db.DanceVelocity.X); }
+                else if (db.DanceCenter.X > 500.0f) { db.DanceCenter.X = 500.0f; db.DanceVelocity.X = -std::abs(db.DanceVelocity.X); }
+                if (db.DanceCenter.Y < -300.0f) { db.DanceCenter.Y = -300.0f; db.DanceVelocity.Y = std::abs(db.DanceVelocity.Y); }
+                else if (db.DanceCenter.Y > 200.0f) { db.DanceCenter.Y = 200.0f; db.DanceVelocity.Y = -std::abs(db.DanceVelocity.Y); }
+
+                db.Position = db.DanceCenter + Vector2f{std::cos(db.DancePhaseX) * db.DanceAmpX, std::sin(db.DancePhaseY) * db.DanceAmpY};
+            }
+            else
+            {
+                db.Position += db.Velocity * dt;
+
+                // Autonomous bounce physics on stage walls and paddle zone
+                if (db.Position.X < -740.0f) { db.Position.X = -740.0f; db.Velocity.X = std::abs(db.Velocity.X); }
+                else if (db.Position.X > 740.0f) { db.Position.X = 740.0f; db.Velocity.X = -std::abs(db.Velocity.X); }
+                if (db.Position.Y < -420.0f) { db.Position.Y = -420.0f; db.Velocity.Y = std::abs(db.Velocity.Y); }
+                else if (db.Position.Y > 380.0f) { db.Position.Y = 380.0f; db.Velocity.Y = -std::abs(db.Velocity.Y); }
+            }
+
+            // 3. Piercing through bricks (damages each brick once while traversing without bouncing)
+            float colRadius = db.Radius * db.Scale + 8.0f;
+            float colRadiusSq = colRadius * colRadius;
+            std::vector<Entity> currentlyOverlapping;
+            m_registry.View<Transform2D, BrickComponent>([&](Entity e, const Transform2D& t, const BrickComponent& b)
+            {
+                if (b.IsRegenerating) return;
+                float halfW = 50.0f;
+                float halfH = 15.0f;
+                if (m_registry.HasComponent<BoxCollider>(e))
+                {
+                    const auto& col = m_registry.GetComponent<BoxCollider>(e);
+                    halfW = col.Size.X * 0.5f;
+                    halfH = col.Size.Y * 0.5f;
+                }
+                float dx = std::max(0.0f, std::abs(db.Position.X - t.Position.X) - halfW);
+                float dy = std::max(0.0f, std::abs(db.Position.Y - t.Position.Y) - halfH);
+                if (dx * dx + dy * dy <= colRadiusSq)
+                {
+                    currentlyOverlapping.push_back(e);
+                }
+            });
+
+            for (Entity be : currentlyOverlapping)
+            {
+                auto itDamaged = std::find(db.DamagedBricks.begin(), db.DamagedBricks.end(), be);
+                if (itDamaged == db.DamagedBricks.end())
+                {
+                    db.DamagedBricks.push_back(be);
+                    if (m_registry.IsAlive(be) && !m_registry.IsPendingDestroy(be))
+                    {
+                        HandleBrickCollision(be, NULL_ENTITY, false, true, 1);
+                        SpawnExplosionParticles(db.Position, db.BaseColor, 12);
+                        SpawnLightFlash(db.Position, 240.0f, db.BaseColor, 1.4f, 0.22f);
+                    }
+                }
+            }
+
+            for (auto itD = db.DamagedBricks.begin(); itD != db.DamagedBricks.end(); )
+            {
+                auto itStill = std::find(currentlyOverlapping.begin(), currentlyOverlapping.end(), *itD);
+                if (itStill == currentlyOverlapping.end())
+                {
+                    itD = db.DamagedBricks.erase(itD);
+                }
+                else
+                {
+                    ++itD;
+                }
+            }
+
+            // 4. Ribbon Trail update
+            db.Trail.push_back(DiscoTrailPoint{db.Position, 0.28f, 0.28f});
+            for (auto itT = db.Trail.begin(); itT != db.Trail.end(); )
+            {
+                itT->Lifetime -= dt;
+                if (itT->Lifetime <= 0.0f)
+                {
+                    itT = db.Trail.erase(itT);
+                }
+                else
+                {
+                    ++itT;
+                }
+            }
+
+            // 5. Sparkle particles behind ball
+            db.SparkleTimer += dt;
+            if (db.SparkleTimer >= 0.045f)
+            {
+                db.SparkleTimer = 0.0f;
+                if (m_particleSystem)
+                {
+                    Vector2f pVel{
+                        static_cast<float>((rand() % 80) - 40),
+                        static_cast<float>((rand() % 80) - 40)
+                    };
+                    m_particleSystem->Spawn(db.Position, pVel, 0.40f, 4.0f, db.BaseColor);
+                }
+            }
+        }
+
+        // Check if all big balls are unlocked -> Mirror Ball goes crazy and grows!
+        bool allBigBallsUnlocked = !m_discoBigBalls.empty();
+        for (const auto& db : m_discoBigBalls)
+        {
+            if (!db.IsIndependent)
+            {
+                allBigBallsUnlocked = false;
+                break;
+            }
+        }
+
+        if (allBigBallsUnlocked && !m_discoMirrorBall.IsFrenzy)
+        {
+            m_discoMirrorBall.IsFrenzy = true;
+            m_discoMirrorBall.TargetScale = 2.40f; // Grossis !
+            m_discoTimer = std::max(m_discoTimer, 5.5f);
+            m_discoMirrorBall.Lifetime = m_discoTimer;
+
+            if (!m_discoMirrorBall.IsActive)
+            {
+                m_discoMirrorBall.IsActive = true;
+                m_discoMirrorBall.Position = Vector2f{0.0f, -100.0f};
+                m_discoMirrorBall.Velocity = Vector2f{480.0f, -320.0f};
+                m_discoMirrorBall.Radius = 26.0f;
+                m_discoMirrorBall.Scale = 1.35f;
+            }
+
+            // Speed boost to frenzy velocity
+            float curSpeed = m_discoMirrorBall.Velocity.Length();
+            if (curSpeed < 1.0f)
+            {
+                m_discoMirrorBall.Velocity = Vector2f{520.0f, -380.0f};
+            }
+            else
+            {
+                m_discoMirrorBall.Velocity = m_discoMirrorBall.Velocity.Normalized() * 750.0f;
+            }
+
+            TweenEffects::Shake(m_registry, m_camera, 0.40f, 14.0f);
+            SpawnLightFlash(m_discoMirrorBall.Position, 850.0f, Color{255, 240, 100, 255}, 3.5f, 0.75f);
+            SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 235, 80, 255}, 45);
+            SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 60, 200, 255}, 35);
+            TriggerPostProcessFlash(0.08f, 0.95f, Color{255, 255, 255, 255}, 0.6f, Color{255, 230, 40, 255});
+
+            if (mp_context)
+            {
+                if (m_discoShockwaveSfxId != 0 && m_audioEnabled)
+                {
+                    mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f, 1.3f);
+                }
+                if (m_musicEnabled)
+                {
+                    mp_context->Audio.PlayMusic("Resources/audio/music/disco_ultimate_crazy.wav", 100.0f, true);
+                }
+            }
+        }
+
+        // B. Boule à Facettes (Level 5 Mirror Ball)
+        if (m_discoMirrorBall.IsActive)
+        {
+            if (m_discoMirrorBall.Scale < m_discoMirrorBall.TargetScale)
+            {
+                m_discoMirrorBall.Scale += (m_discoMirrorBall.TargetScale - m_discoMirrorBall.Scale) * std::min(1.0f, dt * 5.0f);
+            }
+
+            if (m_discoMirrorBall.IsFrenzy)
+            {
+                m_discoMirrorBall.FrenzyPulseTime += dt * 22.0f;
+                Vector2f perp{-m_discoMirrorBall.Velocity.Y, m_discoMirrorBall.Velocity.X};
+                if (perp.Length() > 0.1f)
+                {
+                    m_discoMirrorBall.Position += perp.Normalized() * (std::sin(m_discoMirrorBall.FrenzyPulseTime) * 75.0f * dt);
+                }
+
+                if (m_particleSystem && (rand() % 3 == 0))
+                {
+                    Vector2f pVel{
+                        static_cast<float>((rand() % 160) - 80),
+                        static_cast<float>((rand() % 160) - 80)
+                    };
+                    Color pCol = DiscoRainbowColor(m_gameplayTime * 3.0f, 255);
+                    m_particleSystem->Spawn(m_discoMirrorBall.Position, pVel, 0.35f, 5.0f * m_discoMirrorBall.Scale, pCol);
+                }
+            }
+
+            m_discoMirrorBall.Position += m_discoMirrorBall.Velocity * dt;
+            m_discoMirrorBall.Lifetime -= dt;
+
+            // Bounces
+            if (m_discoMirrorBall.Position.X < -740.0f) { m_discoMirrorBall.Position.X = -740.0f; m_discoMirrorBall.Velocity.X = std::abs(m_discoMirrorBall.Velocity.X); }
+            else if (m_discoMirrorBall.Position.X > 740.0f) { m_discoMirrorBall.Position.X = 740.0f; m_discoMirrorBall.Velocity.X = -std::abs(m_discoMirrorBall.Velocity.X); }
+            if (m_discoMirrorBall.Position.Y < -420.0f) { m_discoMirrorBall.Position.Y = -420.0f; m_discoMirrorBall.Velocity.Y = std::abs(m_discoMirrorBall.Velocity.Y); }
+            else if (m_discoMirrorBall.Position.Y > 380.0f) { m_discoMirrorBall.Position.Y = 380.0f; m_discoMirrorBall.Velocity.Y = -std::abs(m_discoMirrorBall.Velocity.Y); }
+
+            // Destroys all bricks in its path
+            float mirrorRadius = m_discoMirrorBall.Radius * m_discoMirrorBall.Scale + 8.0f;
+            float mRadiusSq = mirrorRadius * mirrorRadius;
+            std::vector<Entity> crushed;
+            m_registry.View<Transform2D, BrickComponent>([&](Entity e, const Transform2D& t, const BrickComponent& b)
+            {
+                if (b.IsRegenerating) return;
+                float halfW = 50.0f;
+                float halfH = 15.0f;
+                if (m_registry.HasComponent<BoxCollider>(e))
+                {
+                    const auto& col = m_registry.GetComponent<BoxCollider>(e);
+                    halfW = col.Size.X * 0.5f;
+                    halfH = col.Size.Y * 0.5f;
+                }
+                float dx = std::max(0.0f, std::abs(m_discoMirrorBall.Position.X - t.Position.X) - halfW);
+                float dy = std::max(0.0f, std::abs(m_discoMirrorBall.Position.Y - t.Position.Y) - halfH);
+                if (dx * dx + dy * dy <= mRadiusSq)
+                {
+                    crushed.push_back(e);
+                }
+            });
+            for (Entity be : crushed)
+            {
+                if (m_registry.IsAlive(be) && !m_registry.IsPendingDestroy(be))
+                {
+                    HandleBrickCollision(be, NULL_ENTITY, false, true, 99);
+                    SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 230, 255, 255}, 16);
+                }
+            }
+
+        }
+ 
+        // C. End of Disco Fever: Synchronous Big Balls & Mirror Ball Explosion Animation!
+        if (m_discoTimer <= 0.0f)
+        {
+            m_discoTimer = 0.0f;
+            RestoreDiscoBricks();
+
+            for (const auto& db : m_discoBigBalls)
+            {
+                DiscoExplosionAnim anim;
+                anim.Position = db.Position;
+                anim.BallColor = db.BaseColor;
+                anim.Lifetime = 0.65f;
+                anim.MaxLifetime = 0.65f;
+                anim.Radius = db.Radius * db.Scale;
+                anim.MaxRadius = 160.0f;
+                m_discoExplosionAnims.push_back(anim);
+
+                SpawnExplosionParticles(db.Position, db.BaseColor, 32);
+                SpawnLightFlash(db.Position, 420.0f, db.BaseColor, 2.2f, 0.45f);
+            }
+            if (m_plasmaExplodeSfxId != 0 && mp_context && m_audioEnabled)
+            {
+                mp_context->Audio.PlaySfx(m_plasmaExplodeSfxId, 90.0f);
+            }
+            m_discoBigBalls.clear();
+
+            if (m_discoMirrorBall.IsActive)
+            {
+                m_discoMirrorBall.IsActive = false;
+                DiscoExplosionAnim mAnim;
+                mAnim.Position = m_discoMirrorBall.Position;
+                mAnim.BallColor = Color{255, 245, 255, 255};
+                mAnim.Lifetime = 0.85f;
+                mAnim.MaxLifetime = 0.85f;
+                mAnim.Radius = m_discoMirrorBall.Radius * m_discoMirrorBall.Scale;
+                mAnim.MaxRadius = 280.0f;
+                m_discoExplosionAnims.push_back(mAnim);
+
+                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 255, 255, 255}, 60);
+                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{255, 80, 220, 255}, 40);
+                SpawnExplosionParticles(m_discoMirrorBall.Position, Color{80, 240, 255, 255}, 40);
+                SpawnLightFlash(m_discoMirrorBall.Position, 750.0f, Color{255, 250, 255, 255}, 3.2f, 0.85f);
+                TriggerPostProcessFlash(0.06f, 0.85f, Color{255, 255, 255, 255}, 0.5f, Color{255, 40, 200, 255});
+                if (mp_context && m_audioEnabled)
+                {
+                    mp_context->Audio.TriggerDucking(0.20f, 1.6f);
+                    if (m_discoVoiceoverSfxId != 0)
+                    {
+                        mp_context->Audio.PlaySfx(m_discoVoiceoverSfxId, 100.0f);
+                    }
+                }
+                m_discoGrandFinaleBannerTimer = 2.4f;
+            }
+
+            // Restore stage music
+            if (mp_context)
+            {
+                if (m_musicEnabled)
+                {
+                    if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
+                    {
+                        mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f);
+                    }
+                    else
+                    {
+                        RestorePostUltimateMusic();
+                    }
+                }
+                else
+                {
+                    std::string cur = mp_context->Audio.GetCurrentMusicPath();
+                    if (cur.find("disco_ultimate") != std::string::npos)
+                    {
+                        mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                    }
+                }
+                m_preDiscoMusicPath.clear();
+            }
+        }
+    }
+
+    // 4. Power-Up Rain drops queue update
+    for (auto it = m_powerUpRainQueue.begin(); it != m_powerUpRainQueue.end(); )
+    {
+        it->DelayTimer -= dt;
+        if (it->DelayTimer <= 0.0f)
+        {
+            Entity capsule = m_registry.CreateEntity();
+            m_registry.AddComponent<Transform2D>(capsule, Transform2D{Vector2f{it->SpawnX, -420.0f}, 0.0f, Vector2f{0.5f, 0.7f}});
+            m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
+            m_registry.AddComponent<PowerUpComponent>(capsule, PowerUpComponent{it->Type, 210.0f, false});
+            Color color = GetPowerUpColor(it->Type);
+            m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
+
+            SpawnExplosionParticles(Vector2f{it->SpawnX, -420.0f}, Color{255, 235, 120, 255}, 8);
+            SpawnLuckyQuestionMark(Vector2f{it->SpawnX, -420.0f}, true);
+            it = m_powerUpRainQueue.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    // 5. Lucky Drop active duration, music loop & question marks update
+    if (m_powerUpRainActiveTimer > 0.0f)
+    {
+        m_powerUpRainActiveTimer -= dt;
+        m_powerUpRainAnimTime += dt;
+
+        // Periodic ambient floating question marks
+        m_luckyQuestionMarkSpawnTimer += dt;
+        if (m_luckyQuestionMarkSpawnTimer >= 0.16f)
+        {
+            m_luckyQuestionMarkSpawnTimer = 0.0f;
+            Vector2f spawnPos{-720.0f + static_cast<float>(rand() % 1440), 380.0f + static_cast<float>(rand() % 70)};
+            SpawnLuckyQuestionMark(spawnPos, false);
+        }
+
+        // When lucky drop duration ends, smoothly restore stage music
+        if (m_powerUpRainActiveTimer <= 0.0f)
+        {
+            m_powerUpRainActiveTimer = 0.0f;
+            if (mp_context && m_musicEnabled)
+            {
+                if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
+                {
+                    mp_context->Audio.FadeToMusic(m_prePowerUpRainMusicPath, 1.2f);
+                }
+                else
+                {
+                    m_playlist.PlayNext(*mp_context, 1.2f);
+                }
+                m_prePowerUpRainMusicPath.clear();
+            }
+        }
+    }
+
+    // Update floating question mark particles
+    for (auto it = m_luckyQuestionMarks.begin(); it != m_luckyQuestionMarks.end(); )
+    {
+        it->Lifetime -= dt;
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_luckyQuestionMarks.erase(it);
+        }
+        else
+        {
+            it->Position += it->Velocity * dt;
+            it->Rotation += it->RotSpeed * dt;
+            it->WobblePhase += it->WobbleFreq * dt;
+            it->Position.X += std::sin(it->WobblePhase) * (20.0f * dt);
+            ++it;
+        }
+    }
+}
+
+void GameScene::UpdateRegeneratingItemBricks(float dt)
+{
+    m_registry.View<Transform2D, SpriteComponent, BrickComponent>([&](Entity e, const Transform2D& t, SpriteComponent& sprite, BrickComponent& brick)
+    {
+        if (!brick.IsRegenerating) return;
+
+        brick.RegenTimer -= dt;
+        if (brick.RegenTimer <= 0.0f)
+        {
+            brick.RegenTimer = 0.0f;
+            brick.IsRegenerating = false;
+            brick.HitPoints = brick.MaxHitPoints;
+
+            sprite.Tint.a = 255;
+            if (m_registry.HasComponent<BoxCollider>(e))
+            {
+                m_registry.GetComponent<BoxCollider>(e).IsTrigger = false;
+            }
+
+            SpawnExplosionParticles(t.Position, Color{255, 235, 100, 255}, 20);
+            SpawnLightFlash(t.Position, 420.0f, Color{255, 240, 140, 255}, 1.9f, 0.45f);
+
+            if (mp_context && m_audioEnabled && m_itemRegenRestoreSfxId != 0)
+            {
+                mp_context->Audio.PlaySfx(m_itemRegenRestoreSfxId, 85.0f);
+            }
+        }
+    });
+}
+
+void GameScene::RenderRegeneratingBricks(GameContext& context)
+{
+    m_registry.View<Transform2D, BoxCollider, BrickComponent>([&](Entity, const Transform2D& t, const BoxCollider& box, const BrickComponent& brick)
+    {
+        if (!brick.IsRegenerating) return;
+
+        float progress = 1.0f - (brick.RegenTimer / std::max(0.01f, brick.RegenCooldown));
+        progress = std::clamp(progress, 0.0f, 1.0f);
+
+        float pulse = (std::sin(m_gameplayTime * 4.0f) + 1.0f) * 0.5f;
+        Color ghostColor{100, 200, 255, static_cast<uint8_t>(70 + 50 * pulse)};
+        context.Render.DrawRectangleOutline(box.Size.X, box.Size.Y, t, ghostColor, -1.5f);
+
+        float cw = 12.0f;
+        float ch = 8.0f;
+        float hx = box.Size.X * 0.5f;
+        float hy = box.Size.Y * 0.5f;
+        context.Render.DrawLine(t.Position + Vector2f{-hx, -hy}, t.Position + Vector2f{-hx + cw, -hy}, ghostColor, 2.0f);
+        context.Render.DrawLine(t.Position + Vector2f{-hx, -hy}, t.Position + Vector2f{-hx, -hy + ch}, ghostColor, 2.0f);
+        context.Render.DrawLine(t.Position + Vector2f{hx, -hy}, t.Position + Vector2f{hx - cw, -hy}, ghostColor, 2.0f);
+        context.Render.DrawLine(t.Position + Vector2f{hx, -hy}, t.Position + Vector2f{hx, -hy + ch}, ghostColor, 2.0f);
+        context.Render.DrawLine(t.Position + Vector2f{-hx, hy}, t.Position + Vector2f{-hx + cw, hy}, ghostColor, 2.0f);
+        context.Render.DrawLine(t.Position + Vector2f{-hx, hy}, t.Position + Vector2f{-hx, hy - ch}, ghostColor, 2.0f);
+        context.Render.DrawLine(t.Position + Vector2f{hx, hy}, t.Position + Vector2f{hx - cw, hy}, ghostColor, 2.0f);
+        context.Render.DrawLine(t.Position + Vector2f{hx, hy}, t.Position + Vector2f{hx, hy - ch}, ghostColor, 2.0f);
+
+        float barMaxW = box.Size.X - 16.0f;
+        float barH = 5.0f;
+        Vector2f barCenter{t.Position.X, t.Position.Y + box.Size.Y * 0.25f};
+        context.Render.DrawRectangle(barMaxW, barH, Transform2D{barCenter}, Color{20, 35, 55, 180});
+
+        float currentBarW = barMaxW * progress;
+        if (currentBarW > 1.0f)
+        {
+            Vector2f fillCenter{t.Position.X - (barMaxW - currentBarW) * 0.5f, barCenter.Y};
+            Color fillColor{0, 220, 255, static_cast<uint8_t>(180 + 75 * pulse)};
+            context.Render.DrawRectangle(currentBarW, barH, Transform2D{fillCenter}, fillColor);
+        }
+
+        context.Render.DrawCircle(3.0f + 2.0f * progress, t, Color{0, 240, 255, static_cast<uint8_t>(150 + 100 * pulse)});
+    });
+}
+
+void GameScene::RenderUltimateMeterHUD(GameContext& context)
+{
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+    const float centerX = viewSize.X * 0.5f;
+    const float centerY = 130.0f;
+    const float barWidth = 360.0f;
+    const float barHeight = 22.0f;
+
+    Transform2D bgTrans{Vector2f{centerX, centerY}};
+    context.Render.DrawRectangle(barWidth + 8.0f, barHeight + 8.0f, bgTrans, Color{10, 15, 25, 210});
+
+    bool ultActive = IsUltimateActive();
+    Color borderColor{40, 75, 120, 220};
+    if (m_ultimateReady)
+    {
+        float pulse = (std::sin(m_ultimateReadyPulseTime * 8.0f) + 1.0f) * 0.5f;
+        borderColor = Color{255, static_cast<uint8_t>(200 + 55 * pulse), static_cast<uint8_t>(50 * pulse), 255};
+    }
+    else if (ultActive)
+    {
+        float pulse = (std::sin(m_gameplayTime * 8.0f) + 1.0f) * 0.5f;
+        borderColor = Color{0, static_cast<uint8_t>(180 + 75 * pulse), 255, 255};
+    }
+    context.Render.DrawRectangleOutline(barWidth + 8.0f, barHeight + 8.0f, bgTrans, borderColor, (m_ultimateReady || ultActive) ? -2.5f : -1.5f);
+
+    float fillRatio = std::clamp(m_ultimateCharge / m_ultimateMaxCharge, 0.0f, 1.0f);
+    if (fillRatio > 0.0f)
+    {
+        float filledW = barWidth * fillRatio;
+        float filledCenterX = centerX - (barWidth - filledW) * 0.5f;
+        Color barColor = m_ultimateReady 
+            ? Color{255, 225, 50, 255} 
+            : Color{0, 210, 255, 230};
+        context.Render.DrawRectangle(filledW, barHeight, Transform2D{Vector2f{filledCenterX, centerY}}, barColor);
+    }
+
+    for (int i = 1; i <= 3; ++i)
+    {
+        float tickX = centerX - barWidth * 0.5f + (barWidth * 0.25f * static_cast<float>(i));
+        context.Render.DrawLine(Vector2f{tickX, centerY - barHeight * 0.5f}, Vector2f{tickX, centerY + barHeight * 0.5f}, Color{15, 25, 40, 180}, 2.0f);
+    }
+
+    std::string ultLabel;
+    UltimateAbilityType ultType = ProfileManager::Get().GetEquippedUltimate();
+    std::string ultName = ProfileManager::Get().GetUltimateName(ultType);
+    if (m_ultimateReady)
+    {
+        ultLabel = "[ ULTIMATE READY : PRESS SPACE ]";
+        float pulse = (std::sin(m_ultimateReadyPulseTime * 10.0f) + 1.0f) * 0.5f;
+        Color textColor{255, static_cast<uint8_t>(220 + 35 * pulse), static_cast<uint8_t>(80 * pulse), 255};
+        context.Render.DrawTextCentered(ultLabel, m_fontId, 28.0f, Transform2D{Vector2f{centerX, centerY + 28.0f}}, textColor);
+    }
+    else if (ultActive)
+    {
+        ultLabel = ultName + " : [ ACTIVE ]";
+        float pulse = (std::sin(m_gameplayTime * 8.0f) + 1.0f) * 0.5f;
+        Color textColor{0, static_cast<uint8_t>(210 + 45 * pulse), 255, 255};
+        context.Render.DrawTextCentered(ultLabel, m_fontId, 24.0f, Transform2D{Vector2f{centerX, centerY + 28.0f}}, textColor);
+    }
+    else
+    {
+        ultLabel = ultName + " : " + std::to_string(static_cast<int>(fillRatio * 100.0f)) + "%";
+        context.Render.DrawTextCentered(ultLabel, m_fontId, 22.0f, Transform2D{Vector2f{centerX, centerY + 26.0f}}, Color{180, 220, 255, 210});
+    }
+}
+
+void GameScene::RenderActiveUltimateVisuals(GameContext& context)
+{
+    // 0. Fullscreen High-Voltage Plasma Storm Shader Overlay & HUD Banner
+    if (m_plasmaActiveTimer > 0.0f)
+    {
+        if (m_plasmaShaderId != 0 && context.Rules.GetRule(Rule::Graphics::EnableShader))
+        {
+            Vector2f viewSize = context.Render.GetLogicalViewSize();
+            Color plasmaColor{190, 90, 255, static_cast<uint8_t>(std::clamp(m_plasmaActiveTimer * 50.0f, 0.0f, 215.0f))};
+            context.Render.DrawScannerEffect(viewSize.X, viewSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, plasmaColor, m_plasmaAnimTime, m_plasmaShaderId);
+        }
+
+        // Plasma High-Voltage Banner
+        float bannerPulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 16.0f);
+        Color bannerGlow = (bannerPulse > 0.5f) ? Color{180, 80, 255, 245} : Color{0, 220, 255, 245};
+        context.Render.DrawTextCentered("[ * HIGH-VOLTAGE PLASMA ANNIHILATION * ]", m_fontId, 28.0f, Transform2D{Vector2f{0.0f, -220.0f}}, bannerGlow);
+    }
+
+    // 1. Plasma Orbs Rendering
+    for (const auto& orb : m_plasmaOrbs)
+    {
+        // Trailing plasma ribbon / nodes (optimized connection lines & sampled glow nodes)
+        for (size_t ti = 0; ti < orb.Trail.size(); ++ti)
+        {
+            const auto& pt = orb.Trail[ti];
+            float ratio = std::clamp(pt.Lifetime / pt.MaxLifetime, 0.0f, 1.0f);
+            float trailR = (orb.Radius * 0.65f) * ratio;
+            uint8_t trailAlpha = static_cast<uint8_t>(ratio * 160.0f);
+
+            Transform2D tt{pt.Position};
+            if (ti % 2 == 0)
+            {
+                context.Render.DrawCircle(trailR, tt, Color{40, 180, 255, trailAlpha});
+                context.Render.DrawCircle(trailR * 0.4f, tt, Color{220, 245, 255, trailAlpha});
+            }
+
+            if (ti + 1 < orb.Trail.size())
+            {
+                const auto& nextPt = orb.Trail[ti + 1];
+                context.Render.DrawLine(pt.Position, nextPt.Position, Color{110, 140, 255, trailAlpha}, 3.0f * ratio);
+            }
+        }
+
+        Transform2D ot{orb.Position};
+        float wPulse = std::sin(orb.AnimTime * 14.0f) * 3.0f;
+
+        // Outer Violet / Indigo Plasma Aura
+        Color auraColor{130, 40, 255, 175};
+        context.Render.DrawCircleOutline(orb.Radius + 6.0f + wPulse, ot, auraColor, -4.0f);
+
+        // Electric Blue Swirling Ring
+        Color blueRing{0, 220, 255, 230};
+        context.Render.DrawCircleOutline(orb.Radius + wPulse * 0.5f, ot, blueRing, -3.0f);
+
+        // Core White-Cyan Energy Sphere
+        Color coreColor{225, 245, 255, 255};
+        context.Render.DrawCircle(std::max(4.0f, orb.Radius * 0.55f), ot, coreColor);
+    }
+
+    // 2. Disco Soundwaves & Dancefloor Show
+    for (const auto& wave : m_soundWaves)
+    {
+        if (wave.Delay > 0.0f) continue;
+
+        float ratio = std::clamp(wave.Lifetime / wave.MaxLifetime, 0.0f, 1.0f);
+        uint8_t a = static_cast<uint8_t>(255.0f * ratio);
+
+        // Concentric speaker acoustic wave arc
+        Color waveGlow{0, 240, 255, static_cast<uint8_t>(a * 0.65f)};
+        Color waveCore{255, 255, 255, a};
+
+        Vector2f p1{-wave.ArcWidth * 0.5f, wave.CurrentY};
+        Vector2f p2{wave.ArcWidth * 0.5f, wave.CurrentY};
+
+        context.Render.DrawLine(p1, p2, waveGlow, 8.0f);
+        context.Render.DrawLine(p1, p2, waveCore, 3.0f);
+    }
+
+    if (m_discoTimer > 0.0f)
+    {
+        // A. Sweeping Disco Spotlights from ceiling
+        const Vector2f spotOrigins[4] = {
+            {-650.0f, -440.0f},
+            {-220.0f, -440.0f},
+            {220.0f, -440.0f},
+            {650.0f, -440.0f}
+        };
+        const Color spotColors[4] = {
+            Color{255, 40, 140, 65},  // Neon Magenta
+            Color{40, 220, 255, 65},  // Electric Cyan
+            Color{255, 220, 40, 65},  // Golden Sun
+            Color{170, 50, 255, 65}   // Ultraviolet
+        };
+
+        for (int sp = 0; sp < 4; ++sp)
+        {
+            float sweep = std::sin(m_gameplayTime * 2.2f + static_cast<float>(sp) * 1.57f);
+            Vector2f targetFloor{
+                spotOrigins[sp].X * 0.4f + sweep * 440.0f,
+                380.0f
+            };
+
+            // Translucent spotlight cone beams
+            Vector2f leftCone{targetFloor.X - 100.0f, targetFloor.Y};
+            Vector2f rightCone{targetFloor.X + 100.0f, targetFloor.Y};
+
+            context.Render.DrawLine(spotOrigins[sp], leftCone, spotColors[sp], 2.0f);
+            context.Render.DrawLine(spotOrigins[sp], rightCone, spotColors[sp], 2.0f);
+            context.Render.DrawLine(spotOrigins[sp], targetFloor, Color{255, 255, 255, 50}, 3.0f);
+
+            // Glowing floor pool
+            Transform2D fSpot{targetFloor, 0.0f, Vector2f{1.6f, 0.5f}};
+            context.Render.DrawCircle(65.0f, fSpot, Color{spotColors[sp].r, spotColors[sp].g, spotColors[sp].b, 45});
+            context.Render.DrawCircle(32.0f, fSpot, Color{255, 255, 255, 75});
+        }
+
+        // B. Pulsating Neon Strobe Bars at stage borders
+        float strobeAlpha = (0.5f + 0.5f * std::sin(m_gameplayTime * 14.0f)) * 140.0f;
+        Color strobeCol{255, 230, 80, static_cast<uint8_t>(strobeAlpha)};
+        context.Render.DrawLine(Vector2f{-760.0f, -435.0f}, Vector2f{760.0f, -435.0f}, strobeCol, 2.0f);
+        context.Render.DrawLine(Vector2f{-760.0f, 395.0f}, Vector2f{760.0f, 395.0f}, strobeCol, 2.0f);
+
+        // C. Big Balls Glowing Ribbon Trails
+        for (const auto& db : m_discoBigBalls)
+        {
+            for (size_t ti = 0; ti < db.Trail.size(); ++ti)
+            {
+                float tRatio = db.Trail[ti].Lifetime / db.Trail[ti].MaxLifetime;
+                uint8_t a = static_cast<uint8_t>(170.0f * tRatio);
+                Color tCol{db.BaseColor.r, db.BaseColor.g, db.BaseColor.b, a};
+                float r = db.Radius * db.Scale * (0.35f + 0.65f * tRatio);
+                context.Render.DrawCircle(r, Transform2D{db.Trail[ti].Position}, tCol);
+            }
+        }
+
+        // D. Dancing Rainbow Big Balls
+        for (const auto& db : m_discoBigBalls)
+        {
+            Transform2D bt{db.Position, 0.0f, Vector2f{db.Scale, db.Scale}};
+
+            // Cycling vibrant halo ring
+            float rPulse = std::sin(m_gameplayTime * 12.0f + db.DancePhaseX) * 3.5f;
+            Color haloCol{db.BaseColor.r, db.BaseColor.g, db.BaseColor.b, 160};
+            context.Render.DrawCircleOutline(db.Radius * db.Scale + 6.0f + rPulse, bt, haloCol, -2.5f);
+            context.Render.DrawCircle(db.Radius * db.Scale, bt, db.BaseColor);
+            context.Render.DrawCircle(db.Radius * db.Scale * 0.45f, bt, Colors::White);
+        }
+
+        // E. Disco Mirror Ball (Level 5 Boule à Facettes)
+        if (m_discoMirrorBall.IsActive)
+        {
+            Vector2f mirrorPos = m_discoMirrorBall.Position;
+            float mirrorR = m_discoMirrorBall.Radius * m_discoMirrorBall.Scale;
+
+            int rayCount = m_discoMirrorBall.IsFrenzy ? 24 : 12;
+            float rayLength = m_discoMirrorBall.IsFrenzy ? 800.0f : 450.0f;
+            float raySpeed = m_discoMirrorBall.IsFrenzy ? 4.0f : 1.5f;
+
+            // Rotating prismatic mirror facet reflection beams
+            for (int ray = 0; ray < rayCount; ++ray)
+            {
+                float rAng = static_cast<float>(ray) * (6.2831853f / static_cast<float>(rayCount)) + m_gameplayTime * raySpeed;
+                Vector2f rayEnd = mirrorPos + Vector2f{std::cos(rAng) * rayLength, std::sin(rAng) * (rayLength * 0.7f)};
+                Color rayCol = DiscoRainbowColor(std::fmod(static_cast<float>(ray) / static_cast<float>(rayCount) + m_gameplayTime * 0.6f, 1.0f), m_discoMirrorBall.IsFrenzy ? 140 : 85);
+                context.Render.DrawLine(mirrorPos, rayEnd, rayCol, m_discoMirrorBall.IsFrenzy ? 3.5f : 2.5f);
+            }
+
+            // Sphere base & white boundary outline
+            context.Render.DrawCircle(mirrorR, Transform2D{mirrorPos}, Color{210, 220, 240, 240});
+            context.Render.DrawCircleOutline(mirrorR, Transform2D{mirrorPos}, Colors::White, m_discoMirrorBall.IsFrenzy ? 3.0f : 2.0f);
+
+            // Pulsing iridescent halo ring
+            float pulse = (std::sin(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 26.0f : 14.0f)) + 1.0f) * 0.5f;
+            Color facetBorder{255, static_cast<uint8_t>(210 + 45 * pulse), 255, static_cast<uint8_t>(180 + 75 * pulse)};
+            context.Render.DrawCircleOutline(mirrorR + (m_discoMirrorBall.IsFrenzy ? 8.0f : 4.0f), Transform2D{mirrorPos}, facetBorder, -3.0f);
+
+            // Mirror tile facet grid matching workshop preview
+            for (int fx = -2; fx <= 2; ++fx)
+            {
+                for (int fy = -2; fy <= 2; ++fy)
+                {
+                    if (fx * fx + fy * fy <= 4)
+                    {
+                        Vector2f tilePos = mirrorPos + Vector2f{static_cast<float>(fx) * 8.0f * m_discoMirrorBall.Scale, static_cast<float>(fy) * 8.0f * m_discoMirrorBall.Scale};
+                        float tileHue = std::fmod(m_gameplayTime * (m_discoMirrorBall.IsFrenzy ? 4.0f : 2.0f) + static_cast<float>(fx + fy) * 0.15f, 1.0f);
+                        Color tileCol = DiscoRainbowColor(tileHue, 220);
+                        context.Render.DrawRectangle(6.0f * m_discoMirrorBall.Scale, 6.0f * m_discoMirrorBall.Scale, Transform2D{tilePos}, tileCol);
+                        context.Render.DrawRectangleOutline(6.0f * m_discoMirrorBall.Scale, 6.0f * m_discoMirrorBall.Scale, Transform2D{tilePos}, Colors::White, 1.0f);
+                    }
+                }
+            }
+        }
+    }
+
+    if (m_discoMirrorBall.IsActive && m_discoMirrorBall.IsFrenzy)
+    {
+        float frenzyPulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 18.0f);
+        Color fColor = (frenzyPulse > 0.5f) ? Color{255, 230, 40, 240} : Color{255, 50, 200, 240};
+        context.Render.DrawTextCentered("* CRAZY MIRROR BALL UNLEASHED! *", m_fontId, 26.0f, Transform2D{Vector2f{0.0f, -220.0f}}, fColor);
+    }
+
+    // 3. Disco Explosions Visuals (Expanding shockwave rings, flash center, and star burst rays)
+    for (const auto& anim : m_discoExplosionAnims)
+    {
+        float progress = 1.0f - std::clamp(anim.Lifetime / anim.MaxLifetime, 0.0f, 1.0f);
+        float currentRadius = anim.Radius + (anim.MaxRadius - anim.Radius) * progress;
+        uint8_t alpha = static_cast<uint8_t>((1.0f - progress) * 255.0f);
+
+        Transform2D expTrans{anim.Position};
+
+        // Outer expanding colored shockwave ring
+        Color ringColor{anim.BallColor.r, anim.BallColor.g, anim.BallColor.b, static_cast<uint8_t>(alpha * 0.85f)};
+        context.Render.DrawCircleOutline(currentRadius, expTrans, ringColor, -3.5f * (1.0f - progress * 0.5f));
+
+        // Inner white-hot pulse ring
+        Color innerRing{255, 255, 255, static_cast<uint8_t>(alpha * 0.9f)};
+        context.Render.DrawCircleOutline(currentRadius * 0.65f, expTrans, innerRing, -2.0f);
+
+        // Core flash (quick fade)
+        if (progress < 0.45f)
+        {
+            float coreProgress = progress / 0.45f;
+            uint8_t coreAlpha = static_cast<uint8_t>((1.0f - coreProgress) * 240.0f);
+            Color coreCol{255, 255, 255, coreAlpha};
+            context.Render.DrawCircle(anim.Radius * (1.0f - coreProgress * 0.5f), expTrans, coreCol);
+        }
+
+        // Radiating star burst rays
+        constexpr int kRays = 8;
+        for (int r = 0; r < kRays; ++r)
+        {
+            float angle = static_cast<float>(r) * (6.2831853f / static_cast<float>(kRays)) + progress * 0.8f;
+            float rayLen = currentRadius * 1.25f;
+            Vector2f rayEnd = anim.Position + Vector2f{std::cos(angle) * rayLen, std::sin(angle) * rayLen};
+            Color rayCol{anim.BallColor.r, anim.BallColor.g, anim.BallColor.b, static_cast<uint8_t>(alpha * 0.7f)};
+            context.Render.DrawLine(anim.Position, rayEnd, rayCol, 2.0f * (1.0f - progress));
+        }
+    }
+
+    // 4. Grand Finale Banner ("DISCO !")
+    if (m_discoGrandFinaleBannerTimer > 0.0f)
+    {
+        float flashPulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 28.0f);
+        Color bannerGlow = (flashPulse > 0.5f) ? Color{255, 40, 200, 255} : Color{255, 230, 40, 255};
+        Color bannerCore = Colors::White;
+
+        Vector2f bannerPos{0.0f, -80.0f + std::sin(m_gameplayTime * 8.0f) * 10.0f};
+
+        context.Render.DrawTextCentered("*   D  I  S  C  O  !   *", m_fontId, 68.0f, Transform2D{Vector2f{bannerPos.X - 3.0f, bannerPos.Y - 3.0f}}, bannerGlow);
+        context.Render.DrawTextCentered("*   D  I  S  C  O  !   *", m_fontId, 68.0f, Transform2D{Vector2f{bannerPos.X + 3.0f, bannerPos.Y + 3.0f}}, Color{0, 240, 255, 255});
+        context.Render.DrawTextCentered("*   D  I  S  C  O  !   *", m_fontId, 68.0f, Transform2D{bannerPos}, bannerCore);
+
+        context.Render.DrawTextCentered("[ GRAND CLIMAX GROOVE ]", m_fontId, 28.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y + 65.0f}}, Colors::Gold);
+    }
+
+    // 5. Power-Up Rain / Lucky Fortune Visuals & Question Marks
+    if (m_powerUpRainActiveTimer > 0.0f)
+    {
+        // Fullscreen Cyber Cascade Shader Overlay
+        if (m_powerUpRainShaderId != 0 && context.Rules.GetRule(Rule::Graphics::EnableShader))
+        {
+            Vector2f viewSize = context.Render.GetLogicalViewSize();
+            Color luckyColor{0, 240, 255, static_cast<uint8_t>(std::clamp(m_powerUpRainActiveTimer * 45.0f, 0.0f, 215.0f))};
+            context.Render.DrawScannerEffect(viewSize.X, viewSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, luckyColor, m_powerUpRainAnimTime, m_powerUpRainShaderId);
+        }
+
+        // Cyber Matrix Overdrive Banner
+        float bannerPulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 14.0f);
+        Color bannerGlow = (bannerPulse > 0.5f) ? Color{0, 245, 255, 245} : Color{255, 30, 160, 245};
+        context.Render.DrawTextCentered("[ * CYBER CASCADE // MATRIX OVERDRIVE * ]", m_fontId, 28.0f, Transform2D{Vector2f{0.0f, -220.0f}}, bannerGlow);
+    }
+
+    // Always render active question mark particles
+    RenderLuckyQuestionMarks(context);
+}
+
+void GameScene::SpawnDiscoMusicNote(bool randomSpread)
+{
+    DiscoMusicNoteParticle note;
+    if (randomSpread)
+    {
+        note.Position = Vector2f{
+            static_cast<float>((rand() % 1480) - 740),
+            static_cast<float>((rand() % 800) - 400)
+        };
+    }
+    else
+    {
+        int edge = rand() % 3;
+        if (edge == 0) // Bottom
+        {
+            note.Position = Vector2f{static_cast<float>((rand() % 1480) - 740), 430.0f};
+        }
+        else if (edge == 1) // Left
+        {
+            note.Position = Vector2f{-760.0f, static_cast<float>((rand() % 800) - 400)};
+        }
+        else // Right
+        {
+            note.Position = Vector2f{760.0f, static_cast<float>((rand() % 800) - 400)};
+        }
+    }
+
+    float vx = static_cast<float>((rand() % 90) - 45);
+    float vy = -30.0f - static_cast<float>(rand() % 45); // Gentle upward musical breeze
+    note.Velocity = Vector2f{vx, vy};
+
+    note.Scale = 0.75f + static_cast<float>(rand() % 50) * 0.01f;
+    note.Rotation = static_cast<float>((rand() % 628) - 314) * 0.01f;
+    note.RotSpeed = static_cast<float>((rand() % 140) - 70) * 0.01f;
+    note.WobblePhase = static_cast<float>(rand() % 628) * 0.01f;
+    note.WobbleFreq = 1.6f + static_cast<float>(rand() % 20) * 0.1f;
+    note.Lifetime = 4.5f + static_cast<float>(rand() % 30) * 0.1f;
+    note.MaxLifetime = note.Lifetime;
+    note.BaseAlpha = static_cast<uint8_t>(170 + (rand() % 70));
+    note.IsDoubleNote = (rand() % 2 == 0);
+
+    m_discoMusicNotes.push_back(note);
+}
+
+void GameScene::RenderDiscoBackgroundMusicNotes(GameContext& context)
+{
+    if (m_discoMusicNotes.empty()) return;
+
+    for (const auto& note : m_discoMusicNotes)
+    {
+        float ratio = std::clamp(note.Lifetime / note.MaxLifetime, 0.0f, 1.0f);
+        float alphaFactor = 1.0f;
+        if (ratio > 0.85f)
+        {
+            alphaFactor = (1.0f - ratio) / 0.15f;
+        }
+        else if (ratio < 0.25f)
+        {
+            alphaFactor = ratio / 0.25f;
+        }
+
+        uint8_t a = static_cast<uint8_t>(static_cast<float>(note.BaseAlpha) * alphaFactor);
+        if (a < 5) continue;
+
+        // Warm golden yellow glow aura
+        Color haloCol{255, 205, 30, static_cast<uint8_t>(a * 0.45f)};
+        DrawMusicNote(context, note.Position, note.Scale * 1.35f, note.Rotation, haloCol, note.IsDoubleNote);
+
+        // Vibrant yellow main body
+        Color mainCol{255, 240, 50, a};
+        DrawMusicNote(context, note.Position, note.Scale, note.Rotation, mainCol, note.IsDoubleNote);
+
+        // Core light yellow highlight
+        Color coreCol{255, 255, 180, static_cast<uint8_t>(a * 0.85f)};
+        DrawMusicNote(context, note.Position, note.Scale * 0.75f, note.Rotation, coreCol, note.IsDoubleNote);
+    }
+}
+
+void GameScene::SpawnLuckyQuestionMark(const Vector2f& pos, bool popUp)
+{
+    LuckyQuestionMarkParticle qm;
+    qm.Position = pos;
+    if (popUp)
+    {
+        float angle = static_cast<float>(rand() % 628) * 0.01f;
+        float spd = 70.0f + static_cast<float>(rand() % 160);
+        qm.Velocity = Vector2f{std::cos(angle) * spd, std::sin(angle) * spd - 75.0f};
+    }
+    else
+    {
+        qm.Velocity = Vector2f{static_cast<float>((rand() % 90) - 45), -45.0f - static_cast<float>(rand() % 70)};
+    }
+    qm.Scale = 0.85f + static_cast<float>(rand() % 55) * 0.01f;
+    qm.Rotation = static_cast<float>((rand() % 80) - 40) * 0.01f;
+    qm.RotSpeed = static_cast<float>((rand() % 140) - 70) * 0.01f;
+    qm.WobblePhase = static_cast<float>(rand() % 628) * 0.01f;
+    qm.WobbleFreq = 1.8f + static_cast<float>(rand() % 25) * 0.1f;
+    qm.Lifetime = 3.2f + static_cast<float>(rand() % 25) * 0.1f;
+    qm.MaxLifetime = qm.Lifetime;
+    qm.BaseAlpha = static_cast<uint8_t>(190 + (rand() % 65));
+
+    int pick = rand() % 3;
+    if (pick == 0) qm.Tint = Color{0, 240, 255, 255};      // Electric Cyan
+    else if (pick == 1) qm.Tint = Color{255, 20, 147, 255}; // Hot Neon Magenta
+    else qm.Tint = Color{255, 200, 30, 255};                // Cyber Gold
+
+    m_luckyQuestionMarks.push_back(qm);
+}
+
+void GameScene::RenderLuckyQuestionMarks(GameContext& context)
+{
+    if (m_luckyQuestionMarks.empty()) return;
+
+    for (const auto& qm : m_luckyQuestionMarks)
+    {
+        float ratio = std::clamp(qm.Lifetime / qm.MaxLifetime, 0.0f, 1.0f);
+        float alphaFactor = 1.0f;
+        if (ratio > 0.80f)
+        {
+            alphaFactor = (1.0f - ratio) / 0.20f;
+        }
+        else if (ratio < 0.25f)
+        {
+            alphaFactor = ratio / 0.25f;
+        }
+
+        uint8_t a = static_cast<uint8_t>(static_cast<float>(qm.BaseAlpha) * alphaFactor);
+        if (a < 5) continue;
+
+        float fontSize = 36.0f * qm.Scale;
+        Transform2D trans{qm.Position, qm.Rotation, Vector2f{qm.Scale, qm.Scale}};
+
+        // Chromatic Glitch Aura Shadow (Magenta on Cyan, or Cyan on Magenta/Gold)
+        Color glowCol = (qm.Tint.r > 200 && qm.Tint.g < 100)
+            ? Color{0, 240, 255, static_cast<uint8_t>(a * 0.50f)}
+            : Color{255, 20, 147, static_cast<uint8_t>(a * 0.50f)};
+        Transform2D glowTrans{qm.Position + Vector2f{2.0f, 1.5f}, qm.Rotation, Vector2f{qm.Scale * 1.15f, qm.Scale * 1.15f}};
+        context.Render.DrawTextCentered("?", m_fontId, fontSize * 1.15f, glowTrans, glowCol);
+
+        // Cyberpunk neon main body
+        Color mainCol{qm.Tint.r, qm.Tint.g, qm.Tint.b, a};
+        context.Render.DrawTextCentered("?", m_fontId, fontSize, trans, mainCol);
+
+        // Core bright white-cyan highlight
+        Color coreCol{230, 255, 255, static_cast<uint8_t>(a * 0.90f)};
+        Transform2D coreTrans{qm.Position - Vector2f{1.0f, 1.0f}, qm.Rotation, Vector2f{qm.Scale * 0.85f, qm.Scale * 0.85f}};
+        context.Render.DrawTextCentered("?", m_fontId, fontSize * 0.85f, coreTrans, coreCol);
+    }
+}
+
+void GameScene::RestoreDiscoBricks()
+{
+    for (const auto& [entity, originalTint] : m_preDiscoBrickTints)
+    {
+        if (m_registry.IsAlive(entity) && !m_registry.IsPendingDestroy(entity))
+        {
+            if (m_registry.HasComponent<SpriteComponent>(entity))
+            {
+                auto& sc = m_registry.GetComponent<SpriteComponent>(entity);
+                Color restored = originalTint;
+                if (m_registry.HasComponent<BrickComponent>(entity))
+                {
+                    const auto& brick = m_registry.GetComponent<BrickComponent>(entity);
+                    if (brick.IsRegenerating)
+                    {
+                        restored.a = 0;
+                    }
+                }
+                sc.Tint = restored;
+            }
+        }
+    }
+    m_preDiscoBrickTints.clear();
+}

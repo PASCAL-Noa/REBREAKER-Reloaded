@@ -160,6 +160,24 @@ void LevelManager::SetHighestClearedLevel(int levelNumber)
     }
 }
 
+void LevelManager::ResetProgression()
+{
+    m_currentLevelIndex = 0;
+    m_unlockedLevel = 1;
+    PlayerPrefs::SetInt("UnlockedLevel", 1);
+    PlayerPrefs::SetInt("HighestClearedLevel", 0);
+    PlayerPrefs::SetInt("CurrentLevelIndex", 0);
+    for (int lvl = 1; lvl <= 100; ++lvl)
+    {
+        std::string key1 = "HighScore_Level_" + std::to_string(lvl);
+        std::ostringstream oss;
+        oss << "HighScore_Level_" << std::setw(2) << std::setfill('0') << lvl;
+        PlayerPrefs::SetInt(key1, 0);
+        PlayerPrefs::SetInt(oss.str(), 0);
+    }
+    PlayerPrefs::Save();
+}
+
 uint32_t LevelManager::GetHighScoreForLevel(int levelNumber) const
 {
     std::string key1 = "HighScore_Level_" + std::to_string(levelNumber);

@@ -39,7 +39,7 @@ void main()
         vec2 edge = smoothstep(0.0, BLUR, crtUV) * (1.0 - smoothstep(1.0 - BLUR, 1.0, crtUV));
 
         // Authentic dynamic chromatic aberration mapped back to screen space
-        float caAmt = 0.004;
+        float caAmt = 0.004 * (1.0 + max(0.0, u_ca_intensity) * 8.0);
         vec3 color = vec3(
             texture2D(screen_texture, boxMin + ((crtUV - 0.5) * (1.0 + caAmt) + 0.5) * boxSize).r,
             texture2D(screen_texture, boxMin + crtUV * boxSize).g,
@@ -74,6 +74,9 @@ void main()
     {
         color += u_flashColor * clamp(u_flashIntensity, 0.0, 1.0);
     }
+
+    // Retain u_ca_intensity uniform across driver shader optimization passes
+    color += vec3(u_ca_intensity * 0.00000001);
 
     gl_FragColor = vec4(color, 1.0);
 }

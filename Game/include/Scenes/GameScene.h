@@ -20,8 +20,10 @@
 #include "ECS/Components/LightSourceComponent.h"
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 struct Color;
+class GameFeelSystem;
 
 enum class SceneState : int
 {
@@ -66,7 +68,7 @@ public:
     [[nodiscard]] const LevelManager& GetLevelManager() const { return m_levelManager; }
     [[nodiscard]] int                 GetCurrentLevel() const;
     [[nodiscard]] int                 GetLevelCount() const;
-    [[nodiscard]] bool                HasNextLevel() const;
+    [[nodiscard]] virtual bool        HasNextLevel() const;
     void    AdvanceToNextLevel();
     void    LoadLevel(int levelIndex, bool preserveStats = false);
     void    StartLevelTransition();
@@ -75,6 +77,13 @@ public:
     [[nodiscard]] bool                IsLevelTransitionComplete() const;
     [[nodiscard]] float               GetTransitionTimer() const { return m_levelTransitionTimer; }
     void    SetTransitionTimer(float timer) { m_levelTransitionTimer = timer; }
+
+    virtual void SetMusicEnabled(bool enabled) { m_musicEnabled = enabled; }
+    [[nodiscard]] bool IsMusicEnabled() const { return m_musicEnabled; }
+    virtual void SetAudioEnabled(bool enabled);
+    [[nodiscard]] bool IsAudioEnabled() const { return m_audioEnabled; }
+    virtual void RestorePostUltimateMusic();
+    void ClearActiveUltimates();
 
     // Countdown & Ready Sequence
     virtual void StartCountdown();
@@ -88,9 +97,9 @@ public:
     void    OnGameOverEnter();
     void    OnGameOverUpdate();
     void    OnGameOverExit();
-    void    OnVictoryEnter();
-    void    OnVictoryUpdate();
-    void    OnVictoryExit();
+    virtual void    OnVictoryEnter();
+    virtual void    OnVictoryUpdate();
+    virtual void    OnVictoryExit();
 
     // Leaderboard & UI Interaction
     [[nodiscard]] LeaderboardManager&       GetLeaderboard() { return m_leaderboard; }
@@ -110,9 +119,18 @@ public:
     void    RespawnBricks();
     void    ResetBallAndPaddle(bool smooth = false);
 
+    // Stage Progression / Ultimate Ability
+    [[nodiscard]] float GetUltimateCharge() const { return m_ultimateCharge; }
+    [[nodiscard]] bool  IsUltimateReady() const { return m_ultimateReady; }
+    [[nodiscard]] bool  IsUltimateActive() const;
+    void  AddUltimateCharge(float amount);
+    void  SetUltimateCharge(float charge);
+    virtual void TryTriggerUltimate();
+
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
+    virtual void PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
 
     void    HandleDeath();
     void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY, bool isLaser = false, bool isExplosion = false, int damage = 1);
@@ -123,6 +141,7 @@ protected:
     void    ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCenter);
     void    SpawnFireTrailParticle(const Vector2f& position, const Vector2f& ballVelocity, bool isFuseActive);
     void    SpawnFireExplosionParticles(const Vector2f& position, float radius, int count = 45);
+    void    SpawnPlasmaExplosionParticles(const Vector2f& position, float radius, int count = 35);
 
     Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
     virtual void SpawnPowerUp(const Vector2f& position);
@@ -244,10 +263,12 @@ protected:
     std::vector<StuckBall> m_stuckBalls;
 
     ParticleSystem* m_particleSystem = nullptr;
+    GameFeelSystem* mp_gameFeelSystem = nullptr;
 
     // Dedicated UI Controller
     std::unique_ptr<GameUIController> m_uiController;
     bool                m_musicEnabled = true;
+    bool                m_audioEnabled = true;
     bool                m_renderGameUI = true;
 
     // Ambient background & dynamic shader effects
@@ -271,4 +292,185 @@ protected:
     };
     std::vector<LightFlash> m_lightFlashes;
     void SpawnLightFlash(const Vector2f& position, float radius = 550.0f, const Color& color = Color{255, 210, 120, 255}, float intensity = 2.0f, float duration = 0.45f);
+
+    // Stage Progression / Ultimate Ability System
+    float       m_ultimateCharge = 0.0f;
+    float       m_ultimateMaxCharge = 100.0f;
+    bool        m_ultimateReady = false;
+    float       m_ultimateReadyPulseTime = 0.0f;
+    uint32_t    m_ultimateReadySfxId = 0;
+    uint32_t    m_plasmaLaunchSfxId = 0;
+    uint32_t    m_plasmaExplodeSfxId = 0;
+    uint32_t    m_discoShockwaveSfxId = 0;
+    uint32_t    m_discoVoiceoverSfxId = 0;
+    std::array<uint32_t, 6> m_discoHitSfxIds{};
+    uint32_t    m_itemRegenRestoreSfxId = 0;
+    uint32_t    m_plasmaShaderId = 0;
+    uint32_t    m_discoShaderId = 0;
+
+    struct PlasmaTrailPoint
+    {
+        Vector2f Position;
+        float    Lifetime = 0.22f;
+        float    MaxLifetime = 0.22f;
+    };
+
+    // Active Ultimate 1: Boule de Plasma (Plasma Orb)
+    struct PlasmaOrbInstance
+    {
+        Vector2f Position;
+        Vector2f Velocity;
+        float    Radius = 18.0f;
+        float    Scale = 1.0f;
+        float    Lifetime = 1.4f;
+        int      Generation = 0; // 0 = smallest, explodes on impact/expiration; > 0 splits
+        int      ChildCount = 2;
+        int      Damage = 2;
+        float    AnimTime = 0.0f;
+        std::vector<PlasmaTrailPoint> Trail;
+    };
+    std::vector<PlasmaOrbInstance> m_plasmaOrbs;
+    float       m_plasmaActiveTimer = 0.0f;
+    float       m_plasmaAnimTime = 0.0f;
+    std::string m_prePlasmaMusicPath;
+
+    // Active Ultimate 2: Ball Disco (Disco Fever)
+    float       m_discoTimer = 0.0f;
+    float       m_discoDuration = 7.0f;
+    float       m_discoRainbowHue = 0.0f;
+    int         m_discoLevel = 1;
+    std::string m_preDiscoMusicPath;
+    std::unordered_map<Entity, Color> m_preDiscoBrickTints;
+
+    struct SoundWaveInstance
+    {
+        float CurrentY = 0.0f;
+        float TargetY = 0.0f;
+        float StartY = 0.0f;
+        float Lifetime = 0.75f;
+        float MaxLifetime = 0.75f;
+        int   Damage = 1;
+        float ArcWidth = 1400.0f;
+        float Delay = 0.0f;
+    };
+    std::vector<SoundWaveInstance> m_soundWaves;
+
+    struct DiscoTrailPoint
+    {
+        Vector2f Position;
+        float    Lifetime = 0.28f;
+        float    MaxLifetime = 0.28f;
+    };
+
+    struct DiscoBigBall
+    {
+        int      InstrumentIndex = 0;
+        Vector2f Position{0.0f, 0.0f};
+        Vector2f Velocity{0.0f, 0.0f};
+        Vector2f DanceCenter{0.0f, 0.0f};
+        Vector2f DanceVelocity{70.0f, 50.0f};
+        float    DancePhaseX = 0.0f;
+        float    DancePhaseY = 0.0f;
+        float    DanceFreqX = 2.0f;
+        float    DanceFreqY = 2.6f;
+        float    DanceAmpX = 140.0f;
+        float    DanceAmpY = 85.0f;
+        Color    BaseColor{255, 255, 255, 255};
+        float    Radius = 20.0f;
+        float    Scale = 1.35f;
+        bool     IsIndependent = false;
+        float    SparkleTimer = 0.0f;
+        std::vector<DiscoTrailPoint> Trail;
+        std::vector<Entity> DamagedBricks;
+    };
+    std::vector<DiscoBigBall> m_discoBigBalls;
+
+    struct DiscoMirrorBall
+    {
+        Vector2f Position{0.0f, -120.0f};
+        Vector2f Velocity{340.0f, -250.0f};
+        float    Radius = 26.0f;
+        float    Scale = 1.35f;
+        float    TargetScale = 1.35f;
+        float    Lifetime = 5.0f;
+        bool     IsActive = false;
+        bool     IsFrenzy = false;
+        float    FrenzyPulseTime = 0.0f;
+    } m_discoMirrorBall;
+
+    struct DiscoExplosionAnim
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Color    BallColor{255, 255, 255, 255};
+        float    Lifetime = 0.60f;
+        float    MaxLifetime = 0.60f;
+        float    Radius = 25.0f;
+        float    MaxRadius = 150.0f;
+    };
+    std::vector<DiscoExplosionAnim> m_discoExplosionAnims;
+
+    struct DiscoMusicNoteParticle
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Vector2f Velocity{0.0f, 0.0f};
+        float    Scale = 1.0f;
+        float    Rotation = 0.0f;
+        float    RotSpeed = 0.5f;
+        float    WobblePhase = 0.0f;
+        float    WobbleFreq = 2.0f;
+        float    Lifetime = 5.0f;
+        float    MaxLifetime = 5.0f;
+        uint8_t  BaseAlpha = 220;
+        bool     IsDoubleNote = false;
+    };
+    std::vector<DiscoMusicNoteParticle> m_discoMusicNotes;
+    float m_discoNoteSpawnTimer = 0.0f;
+
+    float m_discoGrandFinaleBannerTimer = 0.0f;
+
+    // Active Ultimate 3: Pluie de Power-Up (Power-Up Rain)
+    struct PowerUpRainDrop
+    {
+        float       DelayTimer = 0.0f;
+        float       SpawnX = 0.0f;
+        PowerUpType Type = PowerUpType::MultiBall;
+        int         Tier = 1;
+    };
+    std::vector<PowerUpRainDrop> m_powerUpRainQueue;
+
+    struct LuckyQuestionMarkParticle
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Vector2f Velocity{0.0f, 0.0f};
+        float    Scale = 1.0f;
+        float    Rotation = 0.0f;
+        float    RotSpeed = 0.0f;
+        float    WobblePhase = 0.0f;
+        float    WobbleFreq = 2.0f;
+        float    Lifetime = 3.5f;
+        float    MaxLifetime = 3.5f;
+        uint8_t  BaseAlpha = 220;
+        Color    Tint{255, 235, 60, 255};
+    };
+    std::vector<LuckyQuestionMarkParticle> m_luckyQuestionMarks;
+    float       m_luckyQuestionMarkSpawnTimer = 0.0f;
+    float       m_powerUpRainActiveTimer = 0.0f;
+    float       m_powerUpRainAnimTime = 0.0f;
+    uint32_t    m_powerUpRainShaderId = 0;
+    std::string m_prePowerUpRainMusicPath;
+
+    void    ExecutePlasmaOrb(int level);
+    void    ExecuteDiscoBall(int level);
+    virtual void ExecutePowerUpRain(int level);
+    void    TriggerSoundWave(float targetHeightRatio, int damage, float delay = 0.0f);
+    void    SpawnDiscoMusicNote(bool randomSpread = false);
+    void    SpawnLuckyQuestionMark(const Vector2f& pos, bool popUp = false);
+    void    UpdateUltimateAbilities(float dt);
+    void    UpdateRegeneratingItemBricks(float dt);
+    void    RenderRegeneratingBricks(GameContext& context);
+    void    RenderUltimateMeterHUD(GameContext& context);
+    void    RenderDiscoBackgroundMusicNotes(GameContext& context);
+    void    RenderLuckyQuestionMarks(GameContext& context);
+    void    RenderActiveUltimateVisuals(GameContext& context);
+    void    RestoreDiscoBricks();
 };

@@ -8,6 +8,8 @@
 #include "Events/EventDispatcher.h"
 #include "Math/EasingFunctions.h"
 #include "ECS/Components/Transform2D.h"
+#include "PowerUps/PowerUpConfig.h"
+#include "Core/ProfileManager.h"
 #include <optional>
 
 CheatManager::CheatManager(GameContext& context)
@@ -219,6 +221,42 @@ bool CheatManager::TryCheat(const std::string& code, const GameContext& context)
     {
         context.Events.Publish(NextLevelEvent());
         m_activeCheatName = "NEXT LEVEL";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "CREDITS" || upperCode == "MONEY" || upperCode == "CASH" || upperCode == "RICH")
+    {
+        PowerUpManager::Get().AddCoins(50000);
+        m_activeCheatName = "+50000 CREDITS";
+        m_cheatWasActivated = true;
+        success = true;
+    }
+    else if (upperCode == "ULTIMATE" || upperCode == "ULT" || upperCode == "FULLULTIMATE" || upperCode == "INFULTIMATE")
+    {
+        const bool infUlt = context.Rules.GetRule(Rule::Gameplay::InfiniteUltimate);
+        context.Rules.SetRule(Rule::Gameplay::InfiniteUltimate, !infUlt);
+        m_activeCheatName = infUlt ? "INFINITE ULTIMATE OFF" : "INFINITE ULTIMATE ON";
+        m_cheatWasActivated = !infUlt;
+        success = true;
+    }
+    else if (upperCode == "MAXALL" || upperCode == "MAXITEMS" || upperCode == "MAX" || upperCode == "ALLMAX" || upperCode == "UNLOCKALL")
+    {
+        const PowerUpType allTypes[] = {
+            PowerUpType::MultiBall, PowerUpType::ExpandPaddle, PowerUpType::ShrinkPaddle,
+            PowerUpType::Storm, PowerUpType::TempoBall, PowerUpType::ExtraLife,
+            PowerUpType::BigBall, PowerUpType::FireBall, PowerUpType::StickyPaddle,
+            PowerUpType::BottomBarrier, PowerUpType::MagnetPaddle, PowerUpType::GhostBall,
+            PowerUpType::ItemRegen
+        };
+        for (PowerUpType pt : allTypes)
+        {
+            PowerUpManager::Get().SetLevel(pt, 5);
+        }
+        for (int i = 0; i < static_cast<int>(UltimateAbilityType::Count); ++i)
+        {
+            ProfileManager::Get().SetUltimateLevel(static_cast<UltimateAbilityType>(i), 5);
+        }
+        m_activeCheatName = "ALL ITEMS MAXED OUT";
         m_cheatWasActivated = true;
         success = true;
     }

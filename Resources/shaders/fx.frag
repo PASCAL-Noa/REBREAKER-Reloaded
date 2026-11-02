@@ -5,6 +5,7 @@ uniform float u_vignetteIntensity;
 uniform vec3 u_vignetteColor;
 uniform float u_flashIntensity;
 uniform vec3 u_flashColor;
+uniform vec4 u_previewRect;
 
 const float CURVATURE = 4.2;
 const float BLUR = 0.031;
@@ -45,6 +46,9 @@ void main()
     {
         color += u_flashColor * clamp(u_flashIntensity, 0.0, 1.0);
     }
+
+    // Retain u_previewRect uniform across driver shader optimization passes
+    color += u_previewRect.xyz * 0.00000001;
 
     gl_FragColor = vec4(color, 1.0);
 }

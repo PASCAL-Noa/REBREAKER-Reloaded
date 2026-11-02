@@ -47,6 +47,7 @@ struct UltimateCardWidgets
     Entity CostText = NULL_ENTITY;
     Entity UpgradeBtn = NULL_ENTITY;
     Entity EquipBtn = NULL_ENTITY;
+    Entity DescStatsBtn = NULL_ENTITY;
     std::array<Entity, 5> LevelPipButtons{};
     UltimateAbilityType Type = UltimateAbilityType::NovaShockwave;
     int InspectedLevel = 1;
@@ -90,12 +91,13 @@ private:
     void    CreateWorkshopModal(const GameContext& context);
     void    OpenWorkshopTab(Entity targetCanvas);
     void    RefreshWorkshopUI();
+    void    ResetSaveData();
     void    RenderWorkshopCustomVisuals(GameContext& context);
     void    RenderPowerUpSimulation(GameContext& context, PowerUpType type, const Vector2f& center, const Vector2f& size);
     void    RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, int level, const Vector2f& center, const Vector2f& size, float switchTimer);
-    void    RenderNovaShockwavePreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
-    void    RenderThunderTempestPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
-    void    RenderTimeStasisPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderPlasmaOrbPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderDiscoBallPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
+    void    RenderPowerUpRainPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
     void    TriggerSimSfx(GameContext& context, uint32_t sfxId, int eventId, float volume = 65.0f);
     void    TriggerPreviewChannelSwitch();
 
@@ -129,6 +131,7 @@ private:
     Entity  m_workshopPageText = NULL_ENTITY;
     Entity  m_workshopProfileNameText = NULL_ENTITY;
     Entity  m_workshopProfileStatsText = NULL_ENTITY;
+    Entity  m_resetSaveBtn = NULL_ENTITY;
     Entity  m_activeModal = NULL_ENTITY;
 
     // Workshop Inspector Entities (Right Column)
@@ -162,6 +165,8 @@ private:
     int     m_inspectedLevel = 1;
     int     m_workshopPreviewLevel = 1;
     bool    m_showDescriptionModal = false;
+    bool    m_descModalForUltimate = false;
+    UltimateAbilityType m_descModalUltimate = UltimateAbilityType::PlasmaOrb;
     float   m_previewAnimTime = 0.0f;
     std::vector<Entity> m_levelPipButtons;
     Entity  m_workshopScrollUpBtn = NULL_ENTITY;
@@ -217,10 +222,16 @@ private:
     std::unique_ptr<PreviewScene> m_previewScene;
     std::unique_ptr<sf::RenderTexture> m_previewTexture;
     std::unique_ptr<sf::RenderTexture> m_ultimatePreviewTexture;
+    std::unique_ptr<PreviewScene> m_ultimatePreviewScenes[3];
+    std::unique_ptr<sf::RenderTexture> m_ultimateCardTextures[3];
     PowerUpType         m_lastPreviewPowerUp = PowerUpType::MultiBall;
+    UltimateAbilityType m_lastInspectedUltimate = UltimateAbilityType::PlasmaOrb;
+    UltimateAbilityType m_lastEquippedUltimate = UltimateAbilityType::PlasmaOrb;
     int                 m_lastPreviewLevel = 0;
     float               m_previewSwitchTimer = 0.0f;
     uint32_t            m_previewShaderId = 0;
+    uint32_t            m_luckyShaderId = 0;
+    uint32_t            m_plasmaShaderId = 0;
     uint32_t            m_channelSwitchSfxId = 0;
 
     std::vector<StarParticle> m_stars;

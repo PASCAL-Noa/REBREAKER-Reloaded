@@ -20,7 +20,7 @@ void AmbientBackground::OnInit(size_t particleCount)
     std::uniform_real_distribution<float> posX(kPlayfieldLeft - 50.0f, kPlayfieldRight + 50.0f);
     std::uniform_real_distribution<float> posY(kPlayfieldTop - 50.0f, kPlayfieldBottom + 50.0f);
     std::uniform_real_distribution<float> velX(-12.0f, 12.0f);
-    std::uniform_real_distribution<float> velY(-8.0f, -22.0f);
+    std::uniform_real_distribution<float> velY(-22.0f, -8.0f);
     std::uniform_real_distribution<float> sizeDist(1.5f, 3.2f);
     std::uniform_real_distribution<float> alphaDist(22.0f, 50.0f);
     std::uniform_real_distribution<float> pulseSpeedDist(1.2f, 3.0f);

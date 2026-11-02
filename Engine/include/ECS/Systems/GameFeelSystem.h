@@ -3,6 +3,8 @@
 #include "Core/GameContext.h"
 #include "Events/EventDispatcher.h"
 #include <cstdint>
+#include <chrono>
+#include <algorithm>
 
 #include "ECS/Components/Transform2D.h"
 
@@ -13,8 +15,16 @@ public:
     ~GameFeelSystem() override = default;
     void OnUpdate(float dt) override;
 
+    void SetAudioEnabled(bool enabled) { m_audioEnabled = enabled; }
+    [[nodiscard]] bool IsAudioEnabled() const { return m_audioEnabled; }
+    void SetVolumeMultiplier(float mult) { m_volumeMultiplier = std::clamp(mult, 0.0f, 1.0f); }
+    [[nodiscard]] float GetVolumeMultiplier() const { return m_volumeMultiplier; }
+
 private:
     GameContext&    m_context;
+    bool            m_audioEnabled = true;
+    float           m_volumeMultiplier = 1.0f;
+    std::chrono::steady_clock::time_point m_lastPowerUpSfxTime{};
 
     ScopedSubscription m_brickHitSub;
     ScopedSubscription m_paddleHitSub;

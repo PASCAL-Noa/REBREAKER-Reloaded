@@ -403,7 +403,7 @@ std::string PowerUpManager::GetDescription(PowerUpType type) const
         case PowerUpType::TempoBall:
             return "Dynamic pacing: accelerates ball and paddle, with smooth slowdown near the paddle.";
         case PowerUpType::ExtraLife:
-            return "Instantly grants one reserve heart to the paddle (cap 6).";
+            return "Restaure et renforce les coeurs : Vert (Niv. 3 max), Jaune (Niv. 2) et Rouge (Base).";
         case PowerUpType::BigBall:
             return "Massive kinetic sphere piercing and shattering regular bricks on contact.";
         case PowerUpType::FireBall:
@@ -482,7 +482,15 @@ std::string PowerUpManager::GetTierInfoForLevel(PowerUpType type, int level) con
             return "Ball: +" + std::to_string(static_cast<int>(ballBonus)) + "% (" + std::to_string(static_cast<int>(fastSpeed)) + " px/s), Paddle: +" + std::to_string(static_cast<int>(paddleBonus)) + "%, Duration: " + std::to_string(static_cast<int>(duration)) + "s";
         }
         case PowerUpType::ExtraLife:
-            return "+1 Heart per pickup (Capacity: " + std::to_string(m_life.MaxLivesCap) + ")";
+            switch (level)
+            {
+                case 1: return "+1 Vie (Restaure 1 coeur / Sur-vie Jaune si plein)";
+                case 2: return "+2 Vies (Restaure 2 coeurs / Sur-vie Jaune)";
+                case 3: return "+1 Vie Jaune (Garantit au moins 1 coeur Jaune renforce)";
+                case 4: return "+2 Vies Jaunes (Garantit au moins 2 coeurs Jaunes renforces)";
+                case 5: return "+3 Vies Vertes (Bouclier Max : 3 coeurs Verts ultimes)";
+                default: return "+1 Vie";
+            }
         case PowerUpType::BigBall:
         {
             float scale = (m_big.BaseScale + (level - 1) * m_big.ScaleBonusPerLevel) * 100.0f;
@@ -512,7 +520,7 @@ std::string PowerUpManager::GetTierInfoForLevel(PowerUpType type, int level) con
             float duration = m_magnet.BaseDuration + (level - 1) * m_magnet.DurationPerLevel;
             float ballPull = m_magnet.BaseBallPullForce + (level - 1) * m_magnet.BallPullForcePerLevel;
             float capsulePull = m_magnet.BasePullSpeed + (level - 1) * m_magnet.PullSpeedPerLevel;
-            return "Duration: " + std::to_string(static_cast<int>(duration)) + "s, Ball Pull: " + std::to_string(static_cast<int>(ballPull)) + " px/s², Capsule: " + std::to_string(static_cast<int>(capsulePull)) + " px/s";
+            return "Duration: " + std::to_string(static_cast<int>(duration)) + "s, Ball Pull: " + std::to_string(static_cast<int>(ballPull)) + " px/s^2, Capsule: " + std::to_string(static_cast<int>(capsulePull)) + " px/s";
         }
         case PowerUpType::GhostBall:
         {
@@ -568,7 +576,10 @@ std::string PowerUpManager::GetNextTierInfo(PowerUpType type) const
         case PowerUpType::TempoBall:
             return "Next: +" + std::to_string(static_cast<int>(m_tempo.SpeedMultiplierPerLevel * 100.0f)) + "% ball speed, +" + std::to_string(static_cast<int>(m_tempo.PaddleSpeedBonusPerLevel * 100.0f)) + "% paddle speed, +" + std::to_string(static_cast<int>(m_tempo.DurationPerLevel)) + "s duration";
         case PowerUpType::ExtraLife:
-            return "Next: Increases recovery reliability";
+            if (lvl == 1) return "Next: +2 vies par capsule";
+            if (lvl == 2) return "Next: +1 coeur Jaune renforce garanti";
+            if (lvl == 3) return "Next: +2 coeurs Jaunes renforces garantis";
+            return "Next: +3 coeurs Verts (Bouclier Max absolu)";
         case PowerUpType::BigBall:
             return "Next: +" + std::to_string(static_cast<int>(m_big.DurationPerLevel)) + "s duration, +" + std::to_string(static_cast<int>(m_big.ScaleBonusPerLevel * 100.0f)) + "% size";
         case PowerUpType::FireBall:
@@ -578,7 +589,7 @@ std::string PowerUpManager::GetNextTierInfo(PowerUpType type) const
         case PowerUpType::BottomBarrier:
             return "Next: +1 charge save, +" + std::to_string(static_cast<int>(m_barrier.DurationPerLevel)) + "s duration";
         case PowerUpType::MagnetPaddle:
-            return "Next: +80 px/s² ball pull force, +70 px/s capsule pull, +2.5s duration";
+            return "Next: +80 px/s^2 ball pull force, +70 px/s capsule pull, +2.5s duration";
         case PowerUpType::GhostBall:
             if (lvl == 2) return "Next: +1 damage (2 dmg total), +1s duration";
             if (lvl == 4) return "Next: +1 damage (3 dmg total), +1s duration";

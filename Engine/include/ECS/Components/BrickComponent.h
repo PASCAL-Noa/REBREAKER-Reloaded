@@ -22,4 +22,7 @@ struct BrickComponent
     bool        IsUnbreakable = false;
     bool        IsBomb = false;
     bool        IsLantern = false;
+    bool        IsRegenerating = false;
+    float       RegenTimer = 0.0f;
+    float       RegenCooldown = 30.0f;
 };
