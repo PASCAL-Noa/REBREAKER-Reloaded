@@ -6,6 +6,9 @@ uniform vec3 u_vignetteColor;
 uniform float u_flashIntensity;
 uniform vec3 u_flashColor;
 uniform vec4 u_previewRect;
+uniform float u_glitchIntensity;
+uniform float u_scanlineFlicker;
+uniform float u_time;
 
 const float CURVATURE = 4.2;
 const float BLUR = 0.031;

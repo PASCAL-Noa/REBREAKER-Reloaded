@@ -73,6 +73,14 @@ public:
     void FireSelectedUltimate();
     void ClearActiveUltimatesDebug();
 
+    // Malus & Screen Disruption Module (#83)
+    void NextMalus();
+    void PreviousMalus();
+    void TriggerSelectedMalus();
+    void SpawnSelectedHazardZone();
+    void ClearActiveMaluses();
+    [[nodiscard]] int GetSelectedMalusIndex() const noexcept { return m_selectedMalusIdx; }
+
     // UI Stream Deck Toggle
     void TogglePalette();
     [[nodiscard]] bool IsPaletteVisible() const noexcept { return m_paletteVisible; }
@@ -91,6 +99,7 @@ private:
 
     int              m_selectedPowerUpIdx = 0;
     int              m_selectedUltimateIdx = 0;
+    int              m_selectedMalusIdx = 0;
 
     Entity           m_sandboxCanvas = NULL_ENTITY;
     Entity           m_miniToggleCanvas = NULL_ENTITY;
@@ -99,6 +108,7 @@ private:
     Entity           m_btnPowerUpLCD = NULL_ENTITY;
     Entity           m_btnSpawnMode = NULL_ENTITY;
     Entity           m_btnUltimateLCD = NULL_ENTITY;
+    Entity           m_btnMalusLCD = NULL_ENTITY;
     Entity           m_btnLayoutLCD = NULL_ENTITY;
     Entity           m_btnLightingLCD = NULL_ENTITY;
     Entity           m_btnBarrierPad = NULL_ENTITY;

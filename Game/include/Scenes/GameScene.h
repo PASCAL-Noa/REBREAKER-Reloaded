@@ -18,6 +18,7 @@
 #include "AmbientBackground.h"
 #include "Data/PostProcessParams.h"
 #include "ECS/Components/LightSourceComponent.h"
+#include "ECS/Components/HazardZoneComponent.h"
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -128,6 +129,27 @@ public:
     void  SetUltimateCharge(float charge);
     virtual void TryTriggerUltimate();
 
+    // Visual Malus & Screen Disruption API (#83)
+    void    TriggerVisualMalus(float duration = 1.2f, bool zoomPulse = true, bool cameraTilt = true, bool screenGlitch = true);
+    void    TriggerCameraZoomPulse(float duration = 1.2f, float frequency = 2.5f, float amplitude = 0.05f);
+    void    TriggerCameraTilt(float duration = 1.2f, float maxAngle = 2.5f, float frequency = 2.2f);
+    void    TriggerScreenGlitch(float duration = 1.2f, float intensity = 0.85f);
+    void    ClearVisualMalus();
+    [[nodiscard]] bool IsVisualMalusActive() const noexcept;
+    [[nodiscard]] float GetCameraZoomPulseRemaining() const noexcept { return m_cameraZoomPulseDuration; }
+    [[nodiscard]] float GetCameraTiltRemaining() const noexcept { return m_cameraTiltDuration; }
+    [[nodiscard]] float GetScreenGlitchRemaining() const noexcept { return m_screenGlitchDuration; }
+
+    // Temporal Audio Distortion API (#83)
+    void    TriggerTemporalAudioDistortion(float pitchTarget = 1.15f, float transitionDuration = 0.15f, float duration = 0.0f);
+    void    RestoreTemporalAudio(float restoreDuration = 0.12f);
+    [[nodiscard]] bool IsTemporalAudioDistortionActive() const noexcept { return m_tempoAudioDistortionActive; }
+    [[nodiscard]] float GetTempoAudioDistortionRemaining() const noexcept { return m_tempoAudioDistortionDuration; }
+
+    // Hazard Zones & Debuff Spawner (#83)
+    Entity  SpawnHazardZone(const Vector2f& position, const Vector2f& size = {180.0f, 60.0f}, HazardEffectType effect = HazardEffectType::AllMaluses, float duration = 1.4f);
+    Entity  SpawnDebuffCapsule(const Vector2f& position, PowerUpType type = PowerUpType::GlitchMalus);
+
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
@@ -154,6 +176,8 @@ protected:
     void    SpawnBleedParticles(const Vector2f& position);
     void    UpdatePowerUpTimers(float dt);
     void    UpdatePaddleSpeed();
+    void    UpdateVisualMalus(float dt);
+    void    UpdateHazardZones(float dt);
 
     std::unique_ptr<StateMachine<GameScene>> mp_state_machine;
     Entity  m_ball{};
@@ -293,6 +317,26 @@ protected:
     };
     std::vector<LightFlash> m_lightFlashes;
     void SpawnLightFlash(const Vector2f& position, float radius = 550.0f, const Color& color = Color{255, 210, 120, 255}, float intensity = 2.0f, float duration = 0.45f);
+
+    // Visual Malus & Screen Disruption state (#83)
+    float       m_cameraZoomPulseDuration = 0.0f;
+    float       m_cameraZoomPulseTimer = 0.0f;
+    float       m_cameraZoomPulseFrequency = 5.0f;
+    float       m_cameraZoomPulseAmplitude = 0.08f;
+
+    float       m_cameraTiltDuration = 0.0f;
+    float       m_cameraTiltTimer = 0.0f;
+    float       m_cameraTiltAngle = 3.5f;
+    float       m_cameraTiltFrequency = 3.2f;
+
+    float       m_screenGlitchDuration = 0.0f;
+    float       m_screenGlitchTimer = 0.0f;
+    float       m_screenGlitchIntensity = 0.0f;
+
+    // Temporal Audio Distortion state (#83)
+    bool        m_tempoAudioDistortionActive = false;
+    float       m_tempoAudioTargetPitch = 1.0f;
+    float       m_tempoAudioDistortionDuration = 0.0f;
 
     // Stage Progression / Ultimate Ability System
     float       m_ultimateCharge = 0.0f;

@@ -44,7 +44,8 @@ static const PreviewItemInfo kPreviewItems[] = {
     { PowerUpType::TempoBall,     "TEMPO BALL",         "TMP", Color{180, 70, 255, 255} },
     { PowerUpType::ExpandPaddle,  "EXPAND PADDLE",      "EXP", Color{50, 255, 80, 255} },
     { PowerUpType::ShrinkPaddle,  "SHRINK PADDLE",      "SHR", Color{255, 60, 60, 255} },
-    { PowerUpType::ExtraLife,     "EXTRA LIFE",         "LIF", Color{255, 100, 180, 255} }
+    { PowerUpType::ExtraLife,     "EXTRA LIFE",         "LIF", Color{255, 100, 180, 255} },
+    { PowerUpType::GlitchMalus,   "GLITCH MALUS",       "GLT", Color{255, 30, 90, 255} }
 };
 static constexpr size_t kPreviewItemCount = sizeof(kPreviewItems) / sizeof(kPreviewItems[0]);
 
@@ -828,6 +829,9 @@ bool PreviewScene::IsPowerUpEffectActive()
 
         case PowerUpType::ExtraLife:
             return m_extraLifeTimer > 0.0f;
+
+        case PowerUpType::GlitchMalus:
+            return IsVisualMalusActive();
 
         default:
             return false;

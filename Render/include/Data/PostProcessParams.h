@@ -9,4 +9,7 @@ struct PostProcessParams
     float FlashIntensity = 0.0f;
     Color FlashColor{255, 255, 255, 255};
     float PreviewRect[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float GlitchIntensity = 0.0f;
+    float ScanlineFlicker = 0.0f;
+    float Time = 0.0f;
 };
