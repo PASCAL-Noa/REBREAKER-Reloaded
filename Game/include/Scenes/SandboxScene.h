@@ -87,7 +87,7 @@ private:
     LightingMode     m_lightingMode = LightingMode::Lit;
     bool             m_safetyBarrierEnabled = true;
     bool             m_spawnCapsuleMode = false;
-    bool             m_paletteVisible = true;
+    bool             m_paletteVisible = false;
 
     int              m_selectedPowerUpIdx = 0;
     int              m_selectedUltimateIdx = 0;

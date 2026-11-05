@@ -612,28 +612,28 @@ void SandboxScene::HandleSandboxInput(const GameContext& context)
 
 void SandboxScene::CreateStreamDeckUI(const GameContext& context)
 {
-    // 1. Mini Top-Right Toggle Button (shown when Stream Deck is minimized)
+    // 1. Mini Bottom-Right Toggle Button (shown by default in bottom-right corner)
     m_miniToggleCanvas = m_registry.CreateEntity();
-    m_registry.AddComponent<CanvasComponent>(m_miniToggleCanvas, CanvasComponent{.IsEnabled = false});
+    m_registry.AddComponent<CanvasComponent>(m_miniToggleCanvas, CanvasComponent{.IsEnabled = !m_paletteVisible});
 
     UIFactory::CreateButton(m_registry, m_miniToggleCanvas, ButtonDescriptor{
-        .Text = "STREAM DECK",
+        .Text = "DEBUG",
         .OnClick = [this]() { TogglePalette(); },
-        .Position = {-90.0f, 32.0f},
-        .Size = {150.0f, 36.0f},
+        .Position = {-75.0f, -32.0f},
+        .Size = {120.0f, 38.0f},
         .DefaultColor = Color{25, 40, 65, 230},
         .HoverColor = Color{40, 70, 115, 255},
         .PressedColor = Color{15, 25, 45, 255},
         .TextColor = Colors::Gold,
         .FontId = m_fontId,
         .FontSize = 18.0f,
-        .AnchorPoint = Anchor::TopRight,
+        .AnchorPoint = Anchor::BottomRight,
         .IgnoreMenuNavigation = true
     });
 
     // 2. Main Stream Deck Controller Console
     m_sandboxCanvas = m_registry.CreateEntity();
-    m_registry.AddComponent<CanvasComponent>(m_sandboxCanvas, CanvasComponent{.IsEnabled = true});
+    m_registry.AddComponent<CanvasComponent>(m_sandboxCanvas, CanvasComponent{.IsEnabled = m_paletteVisible});
 
     constexpr float deckW = 840.0f;
     constexpr float deckH = 430.0f;
