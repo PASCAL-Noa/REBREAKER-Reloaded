@@ -4,6 +4,7 @@
 #include <SFML/Graphics/RenderTexture.hpp>
 #include "Scenes/LevelSelectScene.h"
 #include "Scenes/Sandbox.h"
+#include "Scenes/SandboxScene.h"
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleAudio.h"
 #include "Scenes/SampleStateMachine.h"
@@ -391,6 +392,13 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
             OpenModal(m_workshopCanvas);
             return;
         }
+        if (context.Input.IsKeyPress(KeyCode::P) || context.Input.IsKeyPress(KeyCode::T))
+        {
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+            context.Scenes.LoadScene<SandboxScene>();
+            return;
+        }
+
         if (context.Input.IsKeyPress(KeyCode::C) || context.Input.IsKeyPress(KeyCode::H))
         {
             OpenModal(m_leaderboardCanvas);
@@ -931,9 +939,9 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
 
     // Primary Menu Buttons
     constexpr float btnWidth = 360.0f;
-    constexpr float btnHeight = 46.0f;
-    constexpr float startY = -115.0f;
-    constexpr float stepY = 54.0f;
+    constexpr float btnHeight = 42.0f;
+    constexpr float startY = -120.0f;
+    constexpr float stepY = 48.0f;
 
     // 1. Play
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
@@ -965,13 +973,28 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .FontSize = 32.0f
     });
 
-    // 3. Workshop & Upgrades
+    // 3. Training Room / Playground
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "WORKSHOP [W]",
+        .Text = "TRAINING ROOM",
+        .OnClick = [&context]() {
+            context.Scenes.LoadScene<SandboxScene>();
+        },
+        .Position = {0.0f, startY + stepY * 2.0f},
+        .Size = {btnWidth, btnHeight},
+        .DefaultColor = Color{20, 75, 80, 255},
+        .HoverColor = Color{30, 115, 125, 255},
+        .PressedColor = Color{15, 50, 55, 255},
+        .FontId = m_fontId,
+        .FontSize = 32.0f
+    });
+
+    // 4. Workshop & Upgrades
+    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
+        .Text = "WORKSHOP",
         .OnClick = [this]() {
             OpenModal(m_workshopCanvas);
         },
-        .Position = {0.0f, startY + stepY * 2.0f},
+        .Position = {0.0f, startY + stepY * 3.0f},
         .Size = {btnWidth, btnHeight},
         .DefaultColor = Color{75, 60, 20, 255},
         .HoverColor = Color{110, 90, 30, 255},
@@ -980,27 +1003,11 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .FontSize = 32.0f
     });
 
-    // 4. Leaderboard
+    // 5. Leaderboard
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "LEADERBOARD",
         .OnClick = [this]() {
             OpenModal(m_leaderboardCanvas);
-        },
-        .Position = {0.0f, startY + stepY * 3.0f},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{40, 45, 65, 255},
-        .HoverColor = Color{60, 65, 95, 255},
-        .PressedColor = Color{28, 32, 48, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f
-    });
-
-    // 5. Settings
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "SETTINGS",
-        .OnClick = [this]() {
-            OpenModal(m_settingsCanvas);
-            OpenSettingsTab(m_audioCanvas);
         },
         .Position = {0.0f, startY + stepY * 4.0f},
         .Size = {btnWidth, btnHeight},
@@ -1011,13 +1018,29 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .FontSize = 32.0f
     });
 
-    // 6. Debug / Samples
+    // 6. Settings
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "SAMPLES & TESTS [TAB]",
+        .Text = "SETTINGS",
+        .OnClick = [this]() {
+            OpenModal(m_settingsCanvas);
+            OpenSettingsTab(m_audioCanvas);
+        },
+        .Position = {0.0f, startY + stepY * 5.0f},
+        .Size = {btnWidth, btnHeight},
+        .DefaultColor = Color{40, 45, 65, 255},
+        .HoverColor = Color{60, 65, 95, 255},
+        .PressedColor = Color{28, 32, 48, 255},
+        .FontId = m_fontId,
+        .FontSize = 32.0f
+    });
+
+    // 7. Debug / Samples
+    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
+        .Text = "SAMPLES & TESTS",
         .OnClick = [this]() {
             OpenModal(m_debugCanvas);
         },
-        .Position = {0.0f, startY + stepY * 5.0f},
+        .Position = {0.0f, startY + stepY * 6.0f},
         .Size = {btnWidth, btnHeight},
         .DefaultColor = Color{50, 45, 75, 255},
         .HoverColor = Color{75, 65, 110, 255},
@@ -1026,13 +1049,13 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .FontSize = 30.0f
     });
 
-    // 7. Quit
+    // 8. Quit
     UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
         .Text = "QUIT",
         .OnClick = [&context]() {
             context.Render.GetWindow().Close();
         },
-        .Position = {0.0f, startY + stepY * 6.0f},
+        .Position = {0.0f, startY + stepY * 7.0f},
         .Size = {btnWidth, btnHeight},
         .DefaultColor = Color{90, 30, 35, 255},
         .HoverColor = Color{130, 45, 50, 255},
@@ -1041,6 +1064,7 @@ void MenuScene::CreateMainMenuUI(const GameContext& context)
         .FontSize = 32.0f
     });
 }
+
 
 void MenuScene::CreateSettingsLayout(const GameContext& context)
 {
@@ -1844,8 +1868,8 @@ void MenuScene::CreateDebugModal(const GameContext& context)
 
     // Column 1
     UIFactory::CreateButton(m_registry, m_debugCanvas, ButtonDescriptor{
-        .Text = "1. SandBox [F1]",
-        .OnClick = [&context]() { context.Scenes.LoadScene<SandBox>(); },
+        .Text = "Playground",
+        .OnClick = [&context]() { context.Scenes.LoadScene<SandboxScene>(); },
         .Position = {col1X, -160.0f},
         .Size = {btnW, btnH},
         .FontId = m_fontId,
@@ -1853,7 +1877,7 @@ void MenuScene::CreateDebugModal(const GameContext& context)
     });
 
     UIFactory::CreateButton(m_registry, m_debugCanvas, ButtonDescriptor{
-        .Text = "2. Physics [F2]",
+        .Text = "Physics",
         .OnClick = [&context]() { context.Scenes.LoadScene<SamplePhysics>(); },
         .Position = {col1X, -95.0f},
         .Size = {btnW, btnH},
@@ -1862,7 +1886,7 @@ void MenuScene::CreateDebugModal(const GameContext& context)
     });
 
     UIFactory::CreateButton(m_registry, m_debugCanvas, ButtonDescriptor{
-        .Text = "3. Audio & Music [F3]",
+        .Text = "Audio & Music",
         .OnClick = [&context]() { context.Scenes.LoadScene<SampleAudio>(); },
         .Position = {col1X, -30.0f},
         .Size = {btnW, btnH},
@@ -1871,7 +1895,7 @@ void MenuScene::CreateDebugModal(const GameContext& context)
     });
 
     UIFactory::CreateButton(m_registry, m_debugCanvas, ButtonDescriptor{
-        .Text = "4. State Machine [F5]",
+        .Text = "State Machine",
         .OnClick = [&context]() { context.Scenes.LoadScene<SampleStateMachine>(); },
         .Position = {col1X, 35.0f},
         .Size = {btnW, btnH},
@@ -1881,7 +1905,7 @@ void MenuScene::CreateDebugModal(const GameContext& context)
 
     // Column 2
     UIFactory::CreateButton(m_registry, m_debugCanvas, ButtonDescriptor{
-        .Text = "5. Tween Effects [F6]",
+        .Text = "Tween Effects",
         .OnClick = [&context]() { context.Scenes.LoadScene<SampleTween>(); },
         .Position = {col2X, -160.0f},
         .Size = {btnW, btnH},
@@ -1890,7 +1914,7 @@ void MenuScene::CreateDebugModal(const GameContext& context)
     });
 
     UIFactory::CreateButton(m_registry, m_debugCanvas, ButtonDescriptor{
-        .Text = "6. UI Showcase [F7]",
+        .Text = "UI Showcase",
         .OnClick = [&context]() { context.Scenes.LoadScene<SampleUI>(); },
         .Position = {col2X, -95.0f},
         .Size = {btnW, btnH},
@@ -1899,7 +1923,7 @@ void MenuScene::CreateDebugModal(const GameContext& context)
     });
 
     UIFactory::CreateButton(m_registry, m_debugCanvas, ButtonDescriptor{
-        .Text = "7. Render Layer [F8]",
+        .Text = "Render Layer",
         .OnClick = [&context]() { context.Scenes.LoadScene<SampleRenderLayer>(); },
         .Position = {col2X, -30.0f},
         .Size = {btnW, btnH},
@@ -1908,7 +1932,7 @@ void MenuScene::CreateDebugModal(const GameContext& context)
     });
 
     UIFactory::CreateButton(m_registry, m_debugCanvas, ButtonDescriptor{
-        .Text = "8. Game Direct [F4]",
+        .Text = "Game Direct",
         .OnClick = [&context]() { context.Scenes.LoadScene<GameScene>(); },
         .Position = {col2X, 35.0f},
         .Size = {btnW, btnH},
