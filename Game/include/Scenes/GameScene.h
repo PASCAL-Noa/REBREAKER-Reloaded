@@ -94,12 +94,13 @@ public:
     [[nodiscard]] int   GetCountdownSecond() const noexcept { return m_countdownLastSecond; }
 
     // State Machine Lifecycle Hooks
-    void    OnGameOverEnter();
-    void    OnGameOverUpdate();
-    void    OnGameOverExit();
+    virtual void    OnGameOverEnter();
+    virtual void    OnGameOverUpdate();
+    virtual void    OnGameOverExit();
     virtual void    OnVictoryEnter();
     virtual void    OnVictoryUpdate();
     virtual void    OnVictoryExit();
+
 
     // Leaderboard & UI Interaction
     [[nodiscard]] LeaderboardManager&       GetLeaderboard() { return m_leaderboard; }
