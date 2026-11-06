@@ -210,6 +210,27 @@ void GameScene::OnInit(GameContext& context)
     m_plasmaShaderId = context.Resources.LoadResource("Resources/shaders/plasma.frag");
     m_discoShaderId = context.Resources.LoadResource("Resources/shaders/disco_ball.frag");
 
+    // 2D Sprite Asset Pipeline: Spherical Power-Up Orbs (#88)
+    m_orbTexIds[static_cast<size_t>(PowerUpType::MultiBall)]    = context.Resources.LoadResource("Resources/sprite/orbs/orb_multiball.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::ExpandPaddle)] = context.Resources.LoadResource("Resources/sprite/orbs/orb_expand.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::ShrinkPaddle)] = context.Resources.LoadResource("Resources/sprite/orbs/orb_shrink.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::Storm)]        = context.Resources.LoadResource("Resources/sprite/orbs/orb_storm.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::TempoBall)]    = context.Resources.LoadResource("Resources/sprite/orbs/orb_tempo.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::ExtraLife)]    = context.Resources.LoadResource("Resources/sprite/orbs/orb_extralife.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::BigBall)]      = context.Resources.LoadResource("Resources/sprite/orbs/orb_bigball.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::FireBall)]     = context.Resources.LoadResource("Resources/sprite/orbs/orb_fireball.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::StickyPaddle)] = context.Resources.LoadResource("Resources/sprite/orbs/orb_sticky.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::BottomBarrier)]= context.Resources.LoadResource("Resources/sprite/orbs/orb_barrier.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::MagnetPaddle)] = context.Resources.LoadResource("Resources/sprite/orbs/orb_magnet.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::GhostBall)]    = context.Resources.LoadResource("Resources/sprite/orbs/orb_ghost.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::ItemRegen)]    = context.Resources.LoadResource("Resources/sprite/orbs/orb_regen.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::GlitchMalus)]  = context.Resources.LoadResource("Resources/sprite/orbs/orb_glitch.png");
+
+    // 2D Sprite Asset Pipeline: Stage Hazards (#88)
+    m_hazardPatternTexId  = context.Resources.LoadResource("Resources/sprite/hazards/hazard_zone_pattern.png");
+    m_hazardElectricTexId = context.Resources.LoadResource("Resources/sprite/hazards/hazard_electric.png");
+    m_hazardGravityTexId  = context.Resources.LoadResource("Resources/sprite/hazards/hazard_gravity.png");
+
     mp_paddleSystem = m_systemManager.AddSystem<PaddleSystem>(m_registry, context);
     mp_ballSystem = m_systemManager.AddSystem<BallSystem>(m_registry, context);
     int savedTrail = PlayerPrefs::GetInt("SelectedBallTrail", static_cast<int>(TrailCosmeticId::DefaultNeon));
@@ -645,6 +666,34 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         UpdatePowerUpTimers(dt);
         UpdateRegeneratingItemBricks(dt);
         UpdateUltimateAbilities(dt);
+
+        // Sparkling particle trail behind falling power-up orbs (#88)
+        if (m_particleSystem && context.Rules.GetRule(Rule::Graphics::EnableParticles))
+        {
+            m_registry.View<Transform2D, PowerUpComponent>([this](Entity, const Transform2D& trans, const PowerUpComponent& pwr) {
+                if (pwr.IsCollected) return;
+
+                float offsetX = static_cast<float>(rand() % 14) - 7.0f;
+                float offsetY = -10.0f + static_cast<float>(rand() % 6) - 3.0f;
+                Vector2f pPos{ trans.Position.X + offsetX, trans.Position.Y + offsetY };
+                Vector2f pVel{ static_cast<float>(rand() % 30) - 15.0f, -(static_cast<float>(rand() % 35) + 15.0f) };
+                float pLife = 0.25f + static_cast<float>(rand() % 15) * 0.01f;
+                float pSize = 3.5f + static_cast<float>(rand() % 3);
+
+                Color pColor = pwr.IsDebuff ? Color{255, 60, 110, 230} : Color{255, 240, 140, 230};
+                if (!pwr.IsDebuff && rand() % 2 == 0)
+                {
+                    Color baseCol = GetPowerUpColor(pwr.Type);
+                    pColor = Color{
+                        static_cast<uint8_t>(std::min(255, baseCol.r + 60)),
+                        static_cast<uint8_t>(std::min(255, baseCol.g + 60)),
+                        static_cast<uint8_t>(std::min(255, baseCol.b + 60)),
+                        220
+                    };
+                }
+                m_particleSystem->Spawn(pPos, pVel, pLife, pSize, pColor);
+            });
+        }
 
         bool canSpaceTrigger = m_stuckBalls.empty();
         if ((canSpaceTrigger && context.Input.IsKeyPress(KeyCode::Space)) ||
@@ -3056,6 +3105,23 @@ Color GameScene::GetPowerUpColor(PowerUpType type)
     }
 }
 
+uint32_t GameScene::GetPowerUpOrbTexture(PowerUpType type) const
+{
+    const auto idx = static_cast<size_t>(type);
+    if (idx < sizeof(m_orbTexIds) / sizeof(m_orbTexIds[0]) && m_orbTexIds[idx] != 0)
+    {
+        return m_orbTexIds[idx];
+    }
+    return m_brickTexId;
+}
+
+uint32_t GameScene::GetHazardTexture(HazardEffectType effect) const
+{
+    if (effect == HazardEffectType::CameraTilt) return m_hazardGravityTexId;
+    if (effect == HazardEffectType::TemporalAudioWarp) return m_hazardElectricTexId;
+    return m_hazardPatternTexId;
+}
+
 void GameScene::SpawnPowerUp(const Vector2f& position)
 {
     struct LootEntry {
@@ -3099,12 +3165,13 @@ void GameScene::SpawnPowerUp(const Vector2f& position)
     }
 
     Entity capsule = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(capsule, Transform2D{position, 0.0f, Vector2f{0.5f, 0.7f}});
-    m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
+    m_registry.AddComponent<Transform2D>(capsule, Transform2D{position, 0.0f, Vector2f{1.0f, 1.0f}});
+    m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{36.0f, 36.0f}, Vector2f{0.0f, 0.0f}, false, true});
     m_registry.AddComponent<PowerUpComponent>(capsule, PowerUpComponent{type, 220.0f, false});
 
-    Color color = GetPowerUpColor(type);
-    m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
+    uint32_t orbTex = GetPowerUpOrbTexture(type);
+    Color color = (orbTex != m_brickTexId) ? Colors::White : GetPowerUpColor(type);
+    m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{orbTex, color});
 }
 
 void GameScene::TriggerStormStrike()
@@ -4219,11 +4286,12 @@ void GameScene::SpawnAllPowerUps()
         float x = -660.0f + i * (1320.0f / 11.0f);
         PowerUpType type = static_cast<PowerUpType>(i);
         Entity capsule = m_registry.CreateEntity();
-        m_registry.AddComponent<Transform2D>(capsule, Transform2D{Vector2f{x, -350.0f}, 0.0f, Vector2f{0.5f, 0.7f}});
-        m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
+        m_registry.AddComponent<Transform2D>(capsule, Transform2D{Vector2f{x, -350.0f}, 0.0f, Vector2f{1.0f, 1.0f}});
+        m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{36.0f, 36.0f}, Vector2f{0.0f, 0.0f}, false, true});
         m_registry.AddComponent<PowerUpComponent>(capsule, PowerUpComponent{type, 220.0f, false});
-        Color color = GetPowerUpColor(type);
-        m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
+        uint32_t orbTex = GetPowerUpOrbTexture(type);
+        Color color = (orbTex != m_brickTexId) ? Colors::White : GetPowerUpColor(type);
+        m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{orbTex, color});
     }
 }
 
@@ -5598,11 +5666,12 @@ void GameScene::UpdateUltimateAbilities(float dt)
         if (it->DelayTimer <= 0.0f)
         {
             Entity capsule = m_registry.CreateEntity();
-            m_registry.AddComponent<Transform2D>(capsule, Transform2D{Vector2f{it->SpawnX, -420.0f}, 0.0f, Vector2f{0.5f, 0.7f}});
-            m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
+            m_registry.AddComponent<Transform2D>(capsule, Transform2D{Vector2f{it->SpawnX, -420.0f}, 0.0f, Vector2f{1.0f, 1.0f}});
+            m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{36.0f, 36.0f}, Vector2f{0.0f, 0.0f}, false, true});
             m_registry.AddComponent<PowerUpComponent>(capsule, PowerUpComponent{it->Type, 210.0f, false});
-            Color color = GetPowerUpColor(it->Type);
-            m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
+            uint32_t orbTex = GetPowerUpOrbTexture(it->Type);
+            Color color = (orbTex != m_brickTexId) ? Colors::White : GetPowerUpColor(it->Type);
+            m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{orbTex, color});
 
             SpawnExplosionParticles(Vector2f{it->SpawnX, -420.0f}, Color{255, 235, 120, 255}, 8);
             SpawnLuckyQuestionMark(Vector2f{it->SpawnX, -420.0f}, true);
@@ -6362,18 +6431,25 @@ Entity GameScene::SpawnHazardZone(const Vector2f& position, const Vector2f& size
         .CooldownTimer = 0.0f,
         .IsActive = true
     });
+
+    uint32_t hazardTex = GetHazardTexture(effect);
+    if (hazardTex != 0)
+    {
+        m_registry.AddComponent<SpriteComponent>(zone, SpriteComponent{hazardTex, Color{255, 255, 255, 175}, -1});
+    }
     return zone;
 }
 
 Entity GameScene::SpawnDebuffCapsule(const Vector2f& position, PowerUpType type)
 {
     Entity capsule = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(capsule, Transform2D{position, 0.0f, Vector2f{0.5f, 0.7f}});
-    m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
+    m_registry.AddComponent<Transform2D>(capsule, Transform2D{position, 0.0f, Vector2f{1.0f, 1.0f}});
+    m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{36.0f, 36.0f}, Vector2f{0.0f, 0.0f}, false, true});
     m_registry.AddComponent<PowerUpComponent>(capsule, PowerUpComponent{type, 240.0f, /*isDebuff=*/true});
 
-    Color color = GetPowerUpColor(type);
-    m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
+    uint32_t orbTex = GetPowerUpOrbTexture(type);
+    Color color = (orbTex != m_brickTexId) ? Colors::White : GetPowerUpColor(type);
+    m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{orbTex, color});
     return capsule;
 }
 

@@ -150,6 +150,10 @@ public:
     Entity  SpawnHazardZone(const Vector2f& position, const Vector2f& size = {180.0f, 60.0f}, HazardEffectType effect = HazardEffectType::AllMaluses, float duration = 1.4f);
     Entity  SpawnDebuffCapsule(const Vector2f& position, PowerUpType type = PowerUpType::GlitchMalus);
 
+    // 2D Sprite Asset Pipeline (#88)
+    [[nodiscard]] uint32_t GetPowerUpOrbTexture(PowerUpType type) const;
+    [[nodiscard]] uint32_t GetHazardTexture(HazardEffectType effect) const;
+
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
@@ -210,6 +214,12 @@ protected:
     uint32_t    m_countdown1SfxId = 0;
     uint32_t    m_countdownGoSfxId = 0;
     uint32_t    m_countdownWhooshSfxId = 0;
+
+    // 2D Sprite Asset Pipeline: Spherical Power-Up Orbs & Hazards (#88)
+    uint32_t    m_orbTexIds[16] = {0};
+    uint32_t    m_hazardPatternTexId = 0;
+    uint32_t    m_hazardElectricTexId = 0;
+    uint32_t    m_hazardGravityTexId = 0;
 
     float       m_countdownTimer = 0.0f;
     float       m_countdownGoTimer = 0.0f;

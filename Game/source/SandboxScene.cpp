@@ -501,11 +501,12 @@ void SandboxScene::TriggerSelectedPowerUp()
 void SandboxScene::SpawnPowerUpCapsule(PowerUpType type, const Vector2f& position)
 {
     Entity capsule = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(capsule, Transform2D{position, 0.0f, Vector2f{0.5f, 0.7f}});
-    m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
+    m_registry.AddComponent<Transform2D>(capsule, Transform2D{position, 0.0f, Vector2f{1.0f, 1.0f}});
+    m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{36.0f, 36.0f}, Vector2f{0.0f, 0.0f}, false, true});
     m_registry.AddComponent<PowerUpComponent>(capsule, PowerUpComponent{type, 220.0f, false});
-    Color color = GetPowerUpColor(type);
-    m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
+    uint32_t orbTex = GetPowerUpOrbTexture(type);
+    Color color = (orbTex != m_brickTexId) ? Colors::White : GetPowerUpColor(type);
+    m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{orbTex, color});
 }
 
 void SandboxScene::ClearAllPowerUpEffects()

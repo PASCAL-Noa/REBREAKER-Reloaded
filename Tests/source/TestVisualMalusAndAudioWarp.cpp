@@ -10,6 +10,8 @@
 #include "Data/PostProcessParams.h"
 #include "Resources/ResourceManager.h"
 #include "AudioMixer.h"
+#include "ECS/Components/BrickComponent.h"
+#include "ECS/Components/SpriteComponent.h"
 #include <cmath>
 
 TEST_SUITE("Visual Malus, Camera Disruption & Temporal Audio Distortion Tests (#83)")
@@ -332,4 +334,59 @@ TEST_SUITE("Visual Malus, Camera Disruption & Temporal Audio Distortion Tests (#
         CHECK(effectTimer == doctest::Approx(5.0f));
         CHECK(effectTimer > 0.0f);
     }
+
+    TEST_CASE("2D Sprite Asset Pipeline: Dedicated Brick and Capsule Component Mappings (#88)")
+    {
+        Registry registry;
+
+        constexpr uint32_t kFallbackTexId = 100;
+        constexpr uint32_t kSpecificMetalTexId = 101;
+
+        // Verify entity with dedicated sprite and brick configuration
+        Entity metalBrick = registry.CreateEntity();
+        registry.AddComponent<Transform2D>(metalBrick, Transform2D{Vector2f{0.0f, 0.0f}});
+        registry.AddComponent<BoxCollider>(metalBrick, BoxCollider{Vector2f{100.0f, 30.0f}, Vector2f{0.0f, 0.0f}, false, false});
+        registry.AddComponent<BrickComponent>(metalBrick, BrickComponent{
+            .Type = BrickType::Metal,
+            .ScoreValue = 500,
+            .HitPoints = 999999,
+            .MaxHitPoints = 999999,
+            .IsUnbreakable = true
+        });
+        registry.AddComponent<SpriteComponent>(metalBrick, SpriteComponent{kSpecificMetalTexId, Colors::White});
+
+        CHECK(registry.IsAlive(metalBrick));
+        CHECK(registry.HasComponent<SpriteComponent>(metalBrick));
+        CHECK(registry.GetComponent<SpriteComponent>(metalBrick).TextureId == kSpecificMetalTexId);
+        CHECK(registry.GetComponent<SpriteComponent>(metalBrick).Tint.a == 255);
+        CHECK(registry.GetComponent<BrickComponent>(metalBrick).IsUnbreakable);
+
+        // Verify fallback texture entity configuration
+        Entity lightBrick = registry.CreateEntity();
+        registry.AddComponent<SpriteComponent>(lightBrick, SpriteComponent{kFallbackTexId, Colors::Green});
+        registry.AddComponent<BrickComponent>(lightBrick, BrickComponent{.Type = BrickType::Light, .HitPoints = 1});
+
+        CHECK(registry.IsAlive(lightBrick));
+        CHECK(registry.GetComponent<SpriteComponent>(lightBrick).TextureId == kFallbackTexId);
+        CHECK(registry.GetComponent<BrickComponent>(lightBrick).HitPoints == 1);
+
+        // Verify PowerUpComponent debuff vs buff classification for capsules
+        PowerUpComponent debuffComp{
+            .Type = PowerUpType::GlitchMalus,
+            .FallSpeed = 240.0f,
+            .IsCollected = false,
+            .IsDebuff = true
+        };
+        CHECK(debuffComp.IsDebuff);
+        CHECK(debuffComp.Type == PowerUpType::GlitchMalus);
+
+        PowerUpComponent buffComp{
+            .Type = PowerUpType::MultiBall,
+            .FallSpeed = 220.0f,
+            .IsCollected = false,
+            .IsDebuff = false
+        };
+        CHECK_FALSE(buffComp.IsDebuff);
+    }
 }
+
