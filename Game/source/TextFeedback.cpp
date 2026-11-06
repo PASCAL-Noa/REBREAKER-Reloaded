@@ -195,6 +195,9 @@ void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& /*world
         case PowerUpType::ItemRegen:
             text = "+ITEM REGEN";
             break;
+        case PowerUpType::GlitchMalus:
+            text = "!SYSTEM GLITCH!";
+            break;
         default:
             text = "+POWER-UP";
             break;

@@ -49,6 +49,12 @@ struct AudioMixer::Impl
     float sfxVolume = 100.0f;
     float musicVolume = 100.0f;
 
+    // Temporal pitch distortion / time-warp (Tempo Ball & tape stop)
+    float currentMusicPitch = 1.0f;
+    float targetMusicPitch = 1.0f;
+    float pitchGlideSpeed = 2.0f;
+    float temporalSfxMultiplier = 1.0f;
+
     static constexpr size_t kMaxConcurrentVoicesPerSound = 3;
     static constexpr std::chrono::milliseconds kMinTriggerCooldown{30};
 
@@ -93,6 +99,27 @@ void AudioMixer::Update(float dt) const
     {
         float speed = 1.0f / (mp_impl->duckingRestoreDuration > 0.0f ? mp_impl->duckingRestoreDuration : 0.5f);
         mp_impl->duckingMultiplier = std::min(1.0f, mp_impl->duckingMultiplier + speed * dt);
+    }
+
+    // 0.1 Temporal pitch distortion / time-warp glide
+    if (std::abs(mp_impl->currentMusicPitch - mp_impl->targetMusicPitch) > 0.0005f)
+    {
+        float dir = (mp_impl->targetMusicPitch > mp_impl->currentMusicPitch) ? 1.0f : -1.0f;
+        mp_impl->currentMusicPitch += dir * mp_impl->pitchGlideSpeed * dt;
+        if ((dir > 0.0f && mp_impl->currentMusicPitch > mp_impl->targetMusicPitch) ||
+            (dir < 0.0f && mp_impl->currentMusicPitch < mp_impl->targetMusicPitch))
+        {
+            mp_impl->currentMusicPitch = mp_impl->targetMusicPitch;
+        }
+
+        if (mp_impl->activeTrack.music)
+        {
+            mp_impl->activeTrack.music->setPitch(mp_impl->currentMusicPitch);
+        }
+        if (mp_impl->fadingTrack.music)
+        {
+            mp_impl->fadingTrack.music->setPitch(mp_impl->currentMusicPitch);
+        }
     }
 
     // 1. Active track tween update
@@ -249,7 +276,7 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
 
     sf::Sound& newSound = mp_impl->sfxPool.back().sound;
     newSound.setVolume(finalVolume);
-    newSound.setPitch(pitch);
+    newSound.setPitch(pitch * mp_impl->temporalSfxMultiplier);
     newSound.setPan(clampedPan);
     newSound.play();
 }
@@ -282,7 +309,7 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
     {
         float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
         it->second.setVolume(finalVolume);
-        it->second.setPitch(pitch);
+        it->second.setPitch(pitch * mp_impl->temporalSfxMultiplier);
         if (it->second.getStatus() != sf::SoundSource::Status::Playing)
         {
             it->second.play();
@@ -299,7 +326,7 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
         float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
         emplacedIt->second.setLooping(true);
         emplacedIt->second.setVolume(finalVolume);
-        emplacedIt->second.setPitch(pitch);
+        emplacedIt->second.setPitch(pitch * mp_impl->temporalSfxMultiplier);
         emplacedIt->second.play();
     }
 }
@@ -353,6 +380,7 @@ void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop)
         mp_impl->activeTrack.isLooping = loop;
         mp_impl->activeTrack.music->setLooping(loop);
         mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(volume));
+        mp_impl->activeTrack.music->setPitch(mp_impl->currentMusicPitch);
         mp_impl->activeTrack.music->play();
     }
     else
@@ -453,6 +481,7 @@ void AudioMixer::FadeToMusic(const std::string& filepath, const TweenConfig<floa
         mp_impl->activeTrack.isLooping = loop;
         mp_impl->activeTrack.music->setLooping(loop);
         mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(inConfig.Start));
+        mp_impl->activeTrack.music->setPitch(mp_impl->currentMusicPitch);
         mp_impl->activeTrack.music->play();
 
         TweenConfig<float> activeConfig = inConfig;
@@ -710,4 +739,60 @@ bool AudioMixer::SetAudioDevice(const std::string& name) const
         return true;
     }
     return sf::PlaybackDevice::setDevice(name);
+}
+
+void AudioMixer::SetMusicPitch(float pitch) const
+{
+    if (!mp_impl) return;
+    mp_impl->targetMusicPitch = std::clamp(pitch, 0.1f, 3.0f);
+    mp_impl->currentMusicPitch = mp_impl->targetMusicPitch;
+    if (mp_impl->activeTrack.music)
+    {
+        mp_impl->activeTrack.music->setPitch(mp_impl->currentMusicPitch);
+    }
+    if (mp_impl->fadingTrack.music)
+    {
+        mp_impl->fadingTrack.music->setPitch(mp_impl->currentMusicPitch);
+    }
+}
+
+void AudioMixer::FadeMusicPitch(float targetPitch, float duration) const
+{
+    if (!mp_impl) return;
+    mp_impl->targetMusicPitch = std::clamp(targetPitch, 0.1f, 3.0f);
+    if (duration <= 0.01f)
+    {
+        SetMusicPitch(targetPitch);
+        return;
+    }
+    float delta = std::abs(mp_impl->targetMusicPitch - mp_impl->currentMusicPitch);
+    mp_impl->pitchGlideSpeed = (delta > 0.0001f) ? (delta / duration) : 2.0f;
+}
+
+void AudioMixer::ResetMusicPitch(float duration) const
+{
+    FadeMusicPitch(1.0f, duration);
+}
+
+float AudioMixer::GetMusicPitch() const
+{
+    return mp_impl ? mp_impl->currentMusicPitch : 1.0f;
+}
+
+float AudioMixer::GetTargetMusicPitch() const
+{
+    return mp_impl ? mp_impl->targetMusicPitch : 1.0f;
+}
+
+void AudioMixer::SetTemporalSfxPitchMultiplier(float multiplier) const
+{
+    if (mp_impl)
+    {
+        mp_impl->temporalSfxMultiplier = std::clamp(multiplier, 0.1f, 3.0f);
+    }
+}
+
+float AudioMixer::GetTemporalSfxPitchMultiplier() const
+{
+    return mp_impl ? mp_impl->temporalSfxMultiplier : 1.0f;
 }

@@ -41,6 +41,15 @@ public:
     [[nodiscard]] bool  IsDuckingEnabled() const;
     [[nodiscard]] float GetDuckingMultiplier() const;
 
+    // Temporal Pitch Distortion & Time-Warp (Tempo Ball / Tape Stop)
+    void    SetMusicPitch(float pitch) const;
+    void    FadeMusicPitch(float targetPitch, float duration = 0.5f) const;
+    void    ResetMusicPitch(float duration = 0.5f) const;
+    [[nodiscard]] float GetMusicPitch() const;
+    [[nodiscard]] float GetTargetMusicPitch() const;
+    void    SetTemporalSfxPitchMultiplier(float multiplier) const;
+    [[nodiscard]] float GetTemporalSfxPitchMultiplier() const;
+
     void    SetMasterVolume(float volume) const;
     void    SetSfxVolume(float volume) const;
     void    SetMusicVolume(float volume) const;

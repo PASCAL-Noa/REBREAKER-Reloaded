@@ -868,6 +868,13 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     m_postProcessParams.VignetteColor.g = static_cast<uint8_t>(m_postProcessParams.VignetteColor.g + (kBaseVigColor.g - m_postProcessParams.VignetteColor.g) * decayAlpha);
     m_postProcessParams.VignetteColor.b = static_cast<uint8_t>(m_postProcessParams.VignetteColor.b + (kBaseVigColor.b - m_postProcessParams.VignetteColor.b) * decayAlpha);
 
+    // Update screen disruption and stage hazard zones (#83)
+    UpdateVisualMalus(dt);
+    if (currentState == static_cast<int>(SceneState::Playing))
+    {
+        UpdateHazardZones(dt);
+    }
+
     const bool canControlPaddle = (currentState == static_cast<int>(SceneState::Playing) || currentState == static_cast<int>(SceneState::LevelTransition)) && !m_countdownActive;
     if (mp_paddleSystem)
     {
@@ -934,6 +941,18 @@ void GameScene::OnRender(GameContext& context)
         context.Render.DrawCircle(7.0f, Transform2D{Vector2f{-798.0f, 442.0f}}, coreColor);
         context.Render.DrawCircle(7.0f, Transform2D{Vector2f{798.0f, 442.0f}}, coreColor);
     }
+
+    // Stage Hazard Zones (#83)
+    m_registry.View<Transform2D, BoxCollider, HazardZoneComponent>([&](Entity, const Transform2D& zTrans, const BoxCollider& zBox, const HazardZoneComponent& hz)
+    {
+        if (!hz.IsActive) return;
+        Vector2f effectiveSize = zBox.GetEffectiveSize(zTrans.Scale);
+        float pulse = (std::sin(m_gameplayTime * 6.0f) + 1.0f) * 0.5f;
+        Color zoneFill{255, 30, 80, static_cast<uint8_t>(25 + 20 * pulse)};
+        Color zoneBorder{255, 50, 100, static_cast<uint8_t>(120 + 80 * pulse)};
+        context.Render.DrawRectangle(effectiveSize.X, effectiveSize.Y, zTrans, zoneFill);
+        context.Render.DrawRectangleOutline(effectiveSize.X, effectiveSize.Y, zTrans, zoneBorder, 2.0f);
+    });
 
     // Sticky Paddle rhythm indicator for caught balls
     if (!m_stuckBalls.empty())
@@ -1735,6 +1754,8 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
 void GameScene::OnDestroy(GameContext& context)
 {
     ClearActiveUltimates();
+    ClearVisualMalus();
+    RestoreTemporalAudio(0.05f);
     if (m_fireballBurnSfxId != 0)
     {
         context.Audio.StopLoopingSfx(m_fireballBurnSfxId);
@@ -1892,6 +1913,8 @@ bool GameScene::IsLevelTransitionComplete() const
 void GameScene::OnGameOverEnter()
 {
     ClearActiveUltimates();
+    ClearVisualMalus();
+    RestoreTemporalAudio(0.05f);
     m_scoreManager.BreakCombo();
 
     if (mp_context)
@@ -1933,6 +1956,8 @@ void GameScene::OnGameOverExit()
 void GameScene::OnVictoryEnter()
 {
     ClearActiveUltimates();
+    ClearVisualMalus();
+    RestoreTemporalAudio(0.05f);
     m_scoreManager.BreakCombo();
 
     int curLevel = m_levelManager.GetCurrentLevelNumber();
@@ -2028,6 +2053,8 @@ void GameScene::OnReplayRequested()
 
 void GameScene::FullReset()
 {
+    ClearVisualMalus();
+    RestoreTemporalAudio(0.1f);
     if (mp_context)
     {
         m_playlist.PlayNext(*mp_context, 1.0f);
@@ -2111,6 +2138,8 @@ void GameScene::HandleInput(const float /*dt*/, const GameContext& context)
     if (testerActive && context.Input.IsKeyPress(KeyCode::Num0)) ApplyPowerUp(PowerUpType::BottomBarrier);
     if (testerActive && context.Input.IsKeyPress(KeyCode::M)) ApplyPowerUp(PowerUpType::MagnetPaddle);
     if (testerActive && context.Input.IsKeyPress(KeyCode::H)) ApplyPowerUp(PowerUpType::GhostBall);
+    if (testerActive && context.Input.IsKeyPress(KeyCode::K)) ApplyPowerUp(PowerUpType::GlitchMalus);
+    if (testerActive && context.Input.IsKeyPress(KeyCode::J)) SpawnHazardZone(Vector2f{0.0f, -100.0f}, Vector2f{240.0f, 70.0f}, HazardEffectType::AllMaluses, 4.0f);
     if ((testerActive && context.Input.IsKeyPress(KeyCode::P)))
     {
         SpawnPowerUpAtPaddle();
@@ -3022,6 +3051,7 @@ Color GameScene::GetPowerUpColor(PowerUpType type)
         case PowerUpType::BottomBarrier: return Color{0, 240, 255, 255};
         case PowerUpType::MagnetPaddle: return Color{220, 60, 255, 255};
         case PowerUpType::GhostBall:    return Color{160, 240, 255, 255};
+        case PowerUpType::GlitchMalus:  return Color{255, 30, 90, 255};
         default:                        return Colors::White;
     }
 }
@@ -3535,6 +3565,7 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             if (mp_ballSystem) mp_ballSystem->SetTempoBallActive(true);
             if (mp_paddleSystem) mp_paddleSystem->SetLaunchSpeed(fastSpeed);
             UpdatePaddleSpeed();
+
             const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
             for (Entity b : balls)
             {
@@ -3700,6 +3731,12 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             }
             break;
         }
+        case PowerUpType::GlitchMalus:
+        {
+            TriggerVisualMalus(1.3f, true, true, true);
+            TriggerTemporalAudioDistortion(0.88f, 0.15f, 1.3f);
+            break;
+        }
         case PowerUpType::ItemRegen:
         default:
             break;
@@ -3861,6 +3898,7 @@ void GameScene::UpdatePowerUpTimers(float dt)
             const float botY = tempoCfg.SlowZoneBottomY;
 
             const auto& balls = mp_ballSystem ? mp_ballSystem->GetBalls() : std::vector<Entity>{};
+
             for (Entity b : balls)
             {
                 if (!m_registry.IsAlive(b) || !m_registry.HasComponent<RigidBody>(b) || !m_registry.HasComponent<Transform2D>(b))
@@ -6218,3 +6256,279 @@ void GameScene::RestoreDiscoBricks()
     }
     m_preDiscoBrickTints.clear();
 }
+
+void GameScene::TriggerVisualMalus(float duration, bool zoomPulse, bool cameraTilt, bool screenGlitch)
+{
+    if (zoomPulse)
+    {
+        TriggerCameraZoomPulse(duration);
+    }
+    if (cameraTilt)
+    {
+        TriggerCameraTilt(duration);
+    }
+    if (screenGlitch)
+    {
+        TriggerScreenGlitch(duration);
+    }
+}
+
+void GameScene::TriggerCameraZoomPulse(float duration, float frequency, float amplitude)
+{
+    m_cameraZoomPulseDuration = std::max(m_cameraZoomPulseDuration, duration);
+    m_cameraZoomPulseFrequency = frequency;
+    m_cameraZoomPulseAmplitude = amplitude;
+}
+
+void GameScene::TriggerCameraTilt(float duration, float maxAngle, float frequency)
+{
+    m_cameraTiltDuration = std::max(m_cameraTiltDuration, duration);
+    m_cameraTiltAngle = maxAngle;
+    m_cameraTiltFrequency = frequency;
+}
+
+void GameScene::TriggerScreenGlitch(float duration, float intensity)
+{
+    m_screenGlitchDuration = std::max(m_screenGlitchDuration, duration);
+    m_screenGlitchIntensity = intensity;
+}
+
+void GameScene::ClearVisualMalus()
+{
+    m_cameraZoomPulseDuration = 0.0f;
+    m_cameraZoomPulseTimer = 0.0f;
+    m_cameraTiltDuration = 0.0f;
+    m_cameraTiltTimer = 0.0f;
+    m_screenGlitchDuration = 0.0f;
+    m_screenGlitchTimer = 0.0f;
+    m_screenGlitchIntensity = 0.0f;
+
+    m_postProcessParams.GlitchIntensity = 0.0f;
+    m_postProcessParams.ScanlineFlicker = 0.0f;
+
+    if (m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
+    {
+        auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
+        cam.Zoom = 0.75f;
+        cam.Rotation = 0.0f;
+    }
+}
+
+bool GameScene::IsVisualMalusActive() const noexcept
+{
+    return (m_cameraZoomPulseDuration > 0.0f) || (m_cameraTiltDuration > 0.0f) || (m_screenGlitchDuration > 0.0f);
+}
+
+void GameScene::TriggerTemporalAudioDistortion(float pitchTarget, float transitionDuration, float duration)
+{
+    m_tempoAudioDistortionActive = true;
+    m_tempoAudioTargetPitch = pitchTarget;
+    if (duration > 0.0f)
+    {
+        m_tempoAudioDistortionDuration = std::max(m_tempoAudioDistortionDuration, duration);
+    }
+    if (mp_context)
+    {
+        mp_context->Audio.FadeMusicPitch(pitchTarget, transitionDuration);
+        mp_context->Audio.SetTemporalSfxPitchMultiplier(pitchTarget);
+    }
+}
+
+void GameScene::RestoreTemporalAudio(float restoreDuration)
+{
+    m_tempoAudioDistortionActive = false;
+    m_tempoAudioTargetPitch = 1.0f;
+    m_tempoAudioDistortionDuration = 0.0f;
+    if (mp_context)
+    {
+        mp_context->Audio.ResetMusicPitch(restoreDuration);
+        mp_context->Audio.SetTemporalSfxPitchMultiplier(1.0f);
+    }
+}
+
+Entity GameScene::SpawnHazardZone(const Vector2f& position, const Vector2f& size, HazardEffectType effect, float duration)
+{
+    Entity zone = m_registry.CreateEntity();
+    m_registry.AddComponent<Transform2D>(zone, Transform2D{position, 0.0f, Vector2f{1.0f, 1.0f}});
+    m_registry.AddComponent<BoxCollider>(zone, BoxCollider{size, Vector2f{0.0f, 0.0f}, false, true});
+    m_registry.AddComponent<HazardZoneComponent>(zone, HazardZoneComponent{
+        .Size = size,
+        .AffectsBall = true,
+        .AffectsPaddle = true,
+        .Effect = effect,
+        .Duration = duration,
+        .Intensity = 1.0f,
+        .Cooldown = 1.0f,
+        .CooldownTimer = 0.0f,
+        .IsActive = true
+    });
+    return zone;
+}
+
+Entity GameScene::SpawnDebuffCapsule(const Vector2f& position, PowerUpType type)
+{
+    Entity capsule = m_registry.CreateEntity();
+    m_registry.AddComponent<Transform2D>(capsule, Transform2D{position, 0.0f, Vector2f{0.5f, 0.7f}});
+    m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
+    m_registry.AddComponent<PowerUpComponent>(capsule, PowerUpComponent{type, 240.0f, /*isDebuff=*/true});
+
+    Color color = GetPowerUpColor(type);
+    m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
+    return capsule;
+}
+
+void GameScene::UpdateVisualMalus(const float dt)
+{
+    constexpr float kBaseCameraZoom = 0.75f;
+    float currentZoom = kBaseCameraZoom;
+    float currentRotation = 0.0f;
+
+    // 1. Camera Zoom Pulse (#83)
+    if (m_cameraZoomPulseDuration > 0.0f)
+    {
+        m_cameraZoomPulseTimer += dt;
+        m_cameraZoomPulseDuration -= dt;
+        if (m_cameraZoomPulseDuration < 0.0f) m_cameraZoomPulseDuration = 0.0f;
+
+        const float decay = std::clamp(m_cameraZoomPulseDuration / 0.35f, 0.0f, 1.0f);
+        const float pulse = std::sin(m_cameraZoomPulseTimer * m_cameraZoomPulseFrequency * 6.2831853f) * m_cameraZoomPulseAmplitude;
+        currentZoom = kBaseCameraZoom * (1.0f + pulse * decay);
+    }
+    else
+    {
+        m_cameraZoomPulseTimer = 0.0f;
+    }
+
+    // 2. Camera Tilt / Rotation (#83)
+    if (m_cameraTiltDuration > 0.0f)
+    {
+        m_cameraTiltTimer += dt;
+        m_cameraTiltDuration -= dt;
+        if (m_cameraTiltDuration < 0.0f) m_cameraTiltDuration = 0.0f;
+
+        const float decay = std::clamp(m_cameraTiltDuration / 0.35f, 0.0f, 1.0f);
+        const float tilt = std::sin(m_cameraTiltTimer * m_cameraTiltFrequency * 6.2831853f) * m_cameraTiltAngle;
+        currentRotation = tilt * decay;
+    }
+    else
+    {
+        m_cameraTiltTimer = 0.0f;
+    }
+
+    // Cleanly restore camera transformations to default identity (Zoom=0.75f, Rotation=0.0f)
+    if (m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
+    {
+        auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
+        cam.Zoom = currentZoom;
+        cam.Rotation = currentRotation;
+    }
+
+    // 3. Screen Glitch Post-Processing Effect (#83)
+    // Short, punchy kick that bites initially ("pique un peu les yeux") then decays quickly
+    m_postProcessParams.Time += dt;
+    if (m_screenGlitchDuration > 0.0f)
+    {
+        m_screenGlitchDuration -= dt;
+        if (m_screenGlitchDuration < 0.0f) m_screenGlitchDuration = 0.0f;
+
+        const float linearRatio = std::clamp(m_screenGlitchDuration / 0.40f, 0.0f, 1.0f);
+        const float decay = linearRatio * linearRatio; // Punchy peak then rapid falloff
+        m_postProcessParams.GlitchIntensity = m_screenGlitchIntensity * decay;
+        m_postProcessParams.ScanlineFlicker = 0.60f * decay;
+    }
+    else
+    {
+        m_postProcessParams.GlitchIntensity = 0.0f;
+        m_postProcessParams.ScanlineFlicker = 0.0f;
+    }
+
+    // 4. Temporal Audio Distortion duration decay (#83)
+    if (m_tempoAudioDistortionDuration > 0.0f)
+    {
+        m_tempoAudioDistortionDuration -= dt;
+        if (m_tempoAudioDistortionDuration <= 0.0f)
+        {
+            m_tempoAudioDistortionDuration = 0.0f;
+            if (m_tempoBallDuration <= 0.0f)
+            {
+                RestoreTemporalAudio(0.12f);
+            }
+        }
+    }
+}
+
+void GameScene::UpdateHazardZones(const float dt)
+{
+    m_registry.View<Transform2D, BoxCollider, HazardZoneComponent>([&](Entity, const Transform2D& zoneTrans, const BoxCollider& zoneCol, HazardZoneComponent& hz)
+    {
+        if (!hz.IsActive) return;
+
+        if (hz.CooldownTimer > 0.0f)
+        {
+            hz.CooldownTimer -= dt;
+            if (hz.CooldownTimer < 0.0f) hz.CooldownTimer = 0.0f;
+        }
+
+        if (hz.CooldownTimer > 0.0f) return;
+
+        bool triggered = false;
+
+        // Check intersection with paddle
+        if (hz.AffectsPaddle && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle) && m_registry.HasComponent<BoxCollider>(m_paddle))
+        {
+            const auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
+            const auto& paddleCol = m_registry.GetComponent<BoxCollider>(m_paddle);
+            if (Physics::IntersectAABB(paddleCol, paddleTrans, zoneCol, zoneTrans).IsColliding)
+            {
+                triggered = true;
+            }
+        }
+
+        // Check intersection with active balls
+        if (!triggered && hz.AffectsBall && mp_ballSystem)
+        {
+            for (Entity b : mp_ballSystem->GetBalls())
+            {
+                if (!m_registry.IsAlive(b) || !m_registry.HasComponent<Transform2D>(b) || !m_registry.HasComponent<CircleCollider>(b))
+                    continue;
+
+                const auto& bTrans = m_registry.GetComponent<Transform2D>(b);
+                const auto& bCol = m_registry.GetComponent<CircleCollider>(b);
+                if (Physics::IntersectCircleAABB(bCol, bTrans, zoneCol, zoneTrans).IsColliding)
+                {
+                    triggered = true;
+                    break;
+                }
+            }
+        }
+
+        if (triggered)
+        {
+            hz.CooldownTimer = hz.Cooldown;
+
+            switch (hz.Effect)
+            {
+                case HazardEffectType::ScreenGlitch:
+                    TriggerScreenGlitch(hz.Duration, 0.85f);
+                    break;
+                case HazardEffectType::CameraTilt:
+                    TriggerCameraTilt(hz.Duration, 2.5f, 2.2f);
+                    break;
+                case HazardEffectType::CameraZoomPulse:
+                    TriggerCameraZoomPulse(hz.Duration, 2.5f, 0.05f);
+                    break;
+                case HazardEffectType::TemporalAudioWarp:
+                    TriggerTemporalAudioDistortion(0.88f, 0.15f, hz.Duration);
+                    break;
+                case HazardEffectType::AllMaluses:
+                default:
+                    TriggerVisualMalus(hz.Duration, true, true, true);
+                    TriggerTemporalAudioDistortion(0.88f, 0.15f, hz.Duration);
+                    break;
+            }
+
+            TriggerPostProcessFlash(0.015f, 0.35f, Color{80, 20, 45, 255}, 0.15f);
+        }
+    });
+}
+

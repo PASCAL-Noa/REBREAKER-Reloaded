@@ -16,7 +16,8 @@ enum class PowerUpType : uint8_t
     MagnetPaddle,
     GhostBall,
     ItemRegen,
-    LaserPaddle = Storm
+    LaserPaddle = Storm,
+    GlitchMalus = 14
 };
 
 struct PowerUpComponent
@@ -24,4 +25,5 @@ struct PowerUpComponent
     PowerUpType Type = PowerUpType::MultiBall;
     float       FallSpeed = 200.0f;
     bool        IsCollected = false;
+    bool        IsDebuff = false;
 };

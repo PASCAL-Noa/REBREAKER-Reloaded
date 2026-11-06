@@ -37,7 +37,8 @@ namespace
         PowerUpType::StickyPaddle,
         PowerUpType::BottomBarrier,
         PowerUpType::MagnetPaddle,
-        PowerUpType::GhostBall
+        PowerUpType::GhostBall,
+        PowerUpType::GlitchMalus
     };
     constexpr int kPowerUpCount = sizeof(kAllPowerUps) / sizeof(kAllPowerUps[0]);
 
@@ -55,6 +56,15 @@ namespace
         PlaygroundLayout::RegeneratingItemLab
     };
     constexpr int kLayoutCount = sizeof(kAllLayouts) / sizeof(kAllLayouts[0]);
+
+    constexpr HazardEffectType kAllMaluses[] = {
+        HazardEffectType::AllMaluses,
+        HazardEffectType::ScreenGlitch,
+        HazardEffectType::CameraTilt,
+        HazardEffectType::CameraZoomPulse,
+        HazardEffectType::TemporalAudioWarp
+    };
+    constexpr int kMalusCount = sizeof(kAllMaluses) / sizeof(kAllMaluses[0]);
 
     constexpr LightingMode kAllLightingModes[] = {
         LightingMode::Lit,
@@ -79,6 +89,7 @@ namespace
             case PowerUpType::BottomBarrier: return "LASER BARRIER";
             case PowerUpType::MagnetPaddle:  return "MAGNET PADDLE";
             case PowerUpType::GhostBall:     return "GHOST BALL";
+            case PowerUpType::GlitchMalus:   return "GLITCH MALUS";
             default:                         return "POWER-UP";
         }
     }
@@ -99,6 +110,7 @@ namespace
             case PowerUpType::BottomBarrier: return Color{0, 165, 210, 255};
             case PowerUpType::MagnetPaddle:  return Color{165, 45, 195, 255};
             case PowerUpType::GhostBall:     return Color{75, 155, 195, 255};
+            case PowerUpType::GlitchMalus:   return Color{255, 40, 100, 255};
             default:                         return Color{50, 60, 80, 255};
         }
     }
@@ -122,6 +134,32 @@ namespace
             case LightingMode::Atmospheric: return "LIGHT: DIM";
             case LightingMode::PitchBlack:  return "LIGHT: DARK";
             default:                        return "LIGHT";
+        }
+    }
+
+    const char* GetMalusDisplayName(HazardEffectType type)
+    {
+        switch (type)
+        {
+            case HazardEffectType::AllMaluses:        return "MALUS: ALL COMBINED";
+            case HazardEffectType::ScreenGlitch:      return "MALUS: SCREEN GLITCH";
+            case HazardEffectType::CameraTilt:        return "MALUS: CAMERA TILT";
+            case HazardEffectType::CameraZoomPulse:   return "MALUS: ZOOM PULSE";
+            case HazardEffectType::TemporalAudioWarp: return "MALUS: AUDIO WARP";
+            default:                                  return "MALUS";
+        }
+    }
+
+    Color GetMalusDisplayColor(HazardEffectType type)
+    {
+        switch (type)
+        {
+            case HazardEffectType::AllMaluses:        return Color{220, 35, 75, 255};
+            case HazardEffectType::ScreenGlitch:      return Color{195, 30, 115, 255};
+            case HazardEffectType::CameraTilt:        return Color{165, 45, 155, 255};
+            case HazardEffectType::CameraZoomPulse:   return Color{135, 45, 185, 255};
+            case HazardEffectType::TemporalAudioWarp: return Color{95, 55, 185, 255};
+            default:                                  return Color{200, 40, 80, 255};
         }
     }
 }
@@ -284,6 +322,9 @@ void SandboxScene::ClearAllBricks()
 {
     m_preDiscoBrickTints.clear();
     m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
+        m_registry.DestroyEntityDeferred(e);
+    });
+    m_registry.View<HazardZoneComponent>([this](const Entity e, HazardZoneComponent&) {
         m_registry.DestroyEntityDeferred(e);
     });
     m_registry.ProcessDeferredCommands();
@@ -476,6 +517,8 @@ void SandboxScene::ClearAllPowerUpEffects()
     m_isShrinkPaddle = false;
     m_tempoBallDuration = 0.0f;
     m_tempoBallStacks = 0;
+    m_tempoAudioDistortionDuration = 0.0f;
+    RestoreTemporalAudio(0.05f);
     m_bigBallDuration = 0.0f;
     m_stickyPaddleDuration = 0.0f;
     m_magnetDuration = 0.0f;
@@ -567,6 +610,67 @@ void SandboxScene::ClearActiveUltimatesDebug()
     m_ultimateReadyPulseTime = 0.0f;
 }
 
+void SandboxScene::NextMalus()
+{
+    m_selectedMalusIdx = (m_selectedMalusIdx + 1) % kMalusCount;
+    UpdateSandboxUIDisplay();
+}
+
+void SandboxScene::PreviousMalus()
+{
+    m_selectedMalusIdx = (m_selectedMalusIdx - 1 + kMalusCount) % kMalusCount;
+    UpdateSandboxUIDisplay();
+}
+
+void SandboxScene::TriggerSelectedMalus()
+{
+    HazardEffectType effect = kAllMaluses[m_selectedMalusIdx];
+    switch (effect)
+    {
+        case HazardEffectType::ScreenGlitch:
+            TriggerScreenGlitch(1.2f, 0.85f);
+            break;
+        case HazardEffectType::CameraTilt:
+            TriggerCameraTilt(1.2f, 2.5f, 2.2f);
+            break;
+        case HazardEffectType::CameraZoomPulse:
+            TriggerCameraZoomPulse(1.2f, 2.5f, 0.05f);
+            break;
+        case HazardEffectType::TemporalAudioWarp:
+            TriggerTemporalAudioDistortion(0.88f, 0.15f, 1.2f);
+            break;
+        case HazardEffectType::AllMaluses:
+        default:
+            TriggerVisualMalus(1.2f, true, true, true);
+            TriggerTemporalAudioDistortion(0.88f, 0.15f, 1.2f);
+            break;
+    }
+}
+
+void SandboxScene::SpawnSelectedHazardZone()
+{
+    HazardEffectType effect = kAllMaluses[m_selectedMalusIdx];
+    SpawnHazardZone(Vector2f{0.0f, -100.0f}, Vector2f{240.0f, 70.0f}, effect, 1.4f);
+}
+
+void SandboxScene::ClearActiveMaluses()
+{
+    ClearVisualMalus();
+    RestoreTemporalAudio(0.05f);
+
+    // Destroy all active hazard zones in the sandbox
+    m_registry.View<HazardZoneComponent>([this](const Entity e, HazardZoneComponent&) {
+        m_registry.DestroyEntityDeferred(e);
+    });
+
+    // Destroy any falling debuff capsules in the sandbox
+    m_registry.View<PowerUpComponent>([this](const Entity e, const PowerUpComponent& p) {
+        if (p.IsDebuff) m_registry.DestroyEntityDeferred(e);
+    });
+
+    m_registry.ProcessDeferredCommands();
+}
+
 void SandboxScene::TogglePalette()
 {
     m_paletteVisible = !m_paletteVisible;
@@ -603,6 +707,11 @@ void SandboxScene::HandleSandboxInput(const GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::B)) RespawnCurrentLayout();
     if (context.Input.IsKeyPress(KeyCode::C)) ClearAllBricks();
     if (context.Input.IsKeyPress(KeyCode::U)) FireSelectedUltimate();
+    if (context.Input.IsKeyPress(KeyCode::G)) TriggerSelectedMalus();
+    if (context.Input.IsKeyPress(KeyCode::H)) SpawnSelectedHazardZone();
+    if (context.Input.IsKeyPress(KeyCode::M)) NextMalus();
+    if (context.Input.IsKeyPress(KeyCode::N)) PreviousMalus();
+    if (context.Input.IsKeyPress(KeyCode::X)) ClearActiveMaluses();
 
     // Arrows to cycle power-ups / layouts
     if (context.Input.IsKeyPress(KeyCode::Left))  PreviousPowerUp();
@@ -635,9 +744,9 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_sandboxCanvas = m_registry.CreateEntity();
     m_registry.AddComponent<CanvasComponent>(m_sandboxCanvas, CanvasComponent{.IsEnabled = m_paletteVisible});
 
-    constexpr float deckW = 840.0f;
-    constexpr float deckH = 430.0f;
-    constexpr float deckY = 25.0f;
+    constexpr float deckW = 860.0f;
+    constexpr float deckH = 500.0f;
+    constexpr float deckY = 15.0f;
 
     // Dark sleek console body
     UIFactory::CreatePanel(m_registry, m_sandboxCanvas, PanelDescriptor{
@@ -672,7 +781,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "CLOSE",
         .OnClick = [this]() { TogglePalette(); },
-        .Position = {365.0f, deckY - deckH * 0.5f + 21.0f},
+        .Position = {375.0f, deckY - deckH * 0.5f + 21.0f},
         .Size = {80.0f, 30.0f},
         .DefaultColor = Color{85, 30, 35, 255},
         .HoverColor = Color{125, 45, 50, 255},
@@ -685,17 +794,18 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
         .ZOrder = 12
     });
 
+    constexpr float padH = 42.0f;
+
     // ==========================================
     // CHANNEL 1: POWER-UP SPINNER & TRIGGER
     // ==========================================
-    constexpr float row1Y = deckY - 120.0f;
-    constexpr float padH = 44.0f;
+    constexpr float row1Y = deckY - 165.0f;
 
     // Previous Power-Up Arrow
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "<",
         .OnClick = [this]() { PreviousPowerUp(); },
-        .Position = {-365.0f, row1Y},
+        .Position = {-375.0f, row1Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -712,8 +822,8 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_btnPowerUpLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "MULTI-BALL (LV.1)",
         .OnClick = [this]() { TriggerSelectedPowerUp(); },
-        .Position = {-180.0f, row1Y},
-        .Size = {300.0f, padH},
+        .Position = {-185.0f, row1Y},
+        .Size = {310.0f, padH},
         .DefaultColor = Color{0, 140, 195, 255},
         .HoverColor = Color{0, 180, 245, 255},
         .PressedColor = Color{0, 95, 135, 255},
@@ -819,13 +929,13 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     // ==========================================
     // CHANNEL 2: ULTIMATE ABILITIES MODULE
     // ==========================================
-    constexpr float row2Y = deckY - 52.0f;
+    constexpr float row2Y = deckY - 100.0f;
 
     // Previous Ultimate Arrow
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "<",
         .OnClick = [this]() { PreviousUltimate(); },
-        .Position = {-365.0f, row2Y},
+        .Position = {-375.0f, row2Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -842,8 +952,8 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_btnUltimateLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "ULT: PLASMA ORB",
         .OnClick = [this]() { FireSelectedUltimate(); },
-        .Position = {-180.0f, row2Y},
-        .Size = {300.0f, padH},
+        .Position = {-185.0f, row2Y},
+        .Size = {310.0f, padH},
         .DefaultColor = Color{95, 45, 145, 255},
         .HoverColor = Color{135, 65, 195, 255},
         .PressedColor = Color{60, 25, 95, 255},
@@ -927,15 +1037,122 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     });
 
     // ==========================================
-    // CHANNEL 3: PLAYGROUND LAYOUTS & BRICKS
+    // CHANNEL 3: MALUS & SCREEN DISRUPTION MODULE
     // ==========================================
-    constexpr float row3Y = deckY + 16.0f;
+    constexpr float row3Y = deckY - 35.0f;
+
+    // Previous Malus Arrow
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "<",
+        .OnClick = [this]() { PreviousMalus(); },
+        .Position = {-375.0f, row3Y},
+        .Size = {44.0f, padH},
+        .DefaultColor = Color{35, 42, 60, 255},
+        .HoverColor = Color{55, 68, 95, 255},
+        .PressedColor = Color{20, 25, 35, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 22.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Malus LCD Display & Direct Trigger
+    m_btnMalusLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "MALUS: ALL COMBINED",
+        .OnClick = [this]() { TriggerSelectedMalus(); },
+        .Position = {-185.0f, row3Y},
+        .Size = {310.0f, padH},
+        .DefaultColor = Color{220, 35, 75, 255},
+        .HoverColor = Color{255, 55, 95, 255},
+        .PressedColor = Color{160, 25, 55, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 17.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Next Malus Arrow
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = ">",
+        .OnClick = [this]() { NextMalus(); },
+        .Position = {5.0f, row3Y},
+        .Size = {44.0f, padH},
+        .DefaultColor = Color{35, 42, 60, 255},
+        .HoverColor = Color{55, 68, 95, 255},
+        .PressedColor = Color{20, 25, 35, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 22.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Trigger Malus Pad
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "TRIGGER",
+        .OnClick = [this]() { TriggerSelectedMalus(); },
+        .Position = {90.0f, row3Y},
+        .Size = {100.0f, padH},
+        .DefaultColor = Color{180, 35, 75, 255},
+        .HoverColor = Color{225, 50, 95, 255},
+        .PressedColor = Color{130, 25, 50, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 16.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Spawn Hazard Zone Pad
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "HAZARD ZONE",
+        .OnClick = [this]() { SpawnSelectedHazardZone(); },
+        .Position = {215.0f, row3Y},
+        .Size = {130.0f, padH},
+        .DefaultColor = Color{140, 30, 90, 255},
+        .HoverColor = Color{185, 45, 120, 255},
+        .PressedColor = Color{95, 20, 60, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 14.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Clear Malus Pad
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "CLEAR",
+        .OnClick = [this]() { ClearActiveMaluses(); },
+        .Position = {365.0f, row3Y},
+        .Size = {68.0f, padH},
+        .DefaultColor = Color{65, 65, 75, 255},
+        .HoverColor = Color{90, 90, 105, 255},
+        .PressedColor = Color{40, 40, 50, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 14.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // ==========================================
+    // CHANNEL 4: PLAYGROUND LAYOUTS & BRICKS
+    // ==========================================
+    constexpr float row4Y = deckY + 30.0f;
 
     // Previous Layout Arrow
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "<",
         .OnClick = [this]() { PreviousPlaygroundLayout(); },
-        .Position = {-365.0f, row3Y},
+        .Position = {-375.0f, row4Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -952,8 +1169,8 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_btnLayoutLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "LAYOUT: TACTICAL MIX",
         .OnClick = [this]() { NextPlaygroundLayout(); },
-        .Position = {-180.0f, row3Y},
-        .Size = {300.0f, padH},
+        .Position = {-185.0f, row4Y},
+        .Size = {310.0f, padH},
         .DefaultColor = Color{40, 75, 115, 255},
         .HoverColor = Color{60, 105, 165, 255},
         .PressedColor = Color{25, 50, 80, 255},
@@ -969,7 +1186,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = ">",
         .OnClick = [this]() { NextPlaygroundLayout(); },
-        .Position = {5.0f, row3Y},
+        .Position = {5.0f, row4Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -986,7 +1203,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "REFILL BRICKS",
         .OnClick = [this]() { RespawnCurrentLayout(); },
-        .Position = {110.0f, row3Y},
+        .Position = {110.0f, row4Y},
         .Size = {140.0f, padH},
         .DefaultColor = Color{40, 95, 55, 255},
         .HoverColor = Color{55, 135, 75, 255},
@@ -1003,7 +1220,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "CLEAR",
         .OnClick = [this]() { ClearAllBricks(); },
-        .Position = {230.0f, row3Y},
+        .Position = {230.0f, row4Y},
         .Size = {84.0f, padH},
         .DefaultColor = Color{110, 40, 40, 255},
         .HoverColor = Color{150, 55, 55, 255},
@@ -1017,15 +1234,15 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     });
 
     // ==========================================
-    // CHANNEL 4: ENVIRONMENT & SAFETY & TOOLS
+    // CHANNEL 5: ENVIRONMENT & SAFETY & TOOLS
     // ==========================================
-    constexpr float row4Y = deckY + 84.0f;
+    constexpr float row5Y = deckY + 95.0f;
 
     // Previous Light Arrow
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "<",
         .OnClick = [this]() { PreviousLightingMode(); },
-        .Position = {-365.0f, row4Y},
+        .Position = {-375.0f, row5Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -1042,7 +1259,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_btnLightingLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "LIGHT: LIT",
         .OnClick = [this]() { NextLightingMode(); },
-        .Position = {-225.0f, row4Y},
+        .Position = {-235.0f, row5Y},
         .Size = {210.0f, padH},
         .DefaultColor = Color{45, 55, 75, 255},
         .HoverColor = Color{65, 80, 110, 255},
@@ -1059,7 +1276,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = ">",
         .OnClick = [this]() { NextLightingMode(); },
-        .Position = {-90.0f, row4Y},
+        .Position = {-100.0f, row5Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -1076,7 +1293,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_btnBarrierPad = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "LASER FLOOR: ACTIVE",
         .OnClick = [this]() { ToggleSafetyBarrier(); },
-        .Position = {45.0f, row4Y},
+        .Position = {45.0f, row5Y},
         .Size = {195.0f, padH},
         .DefaultColor = Color{0, 140, 185, 255},
         .HoverColor = Color{0, 185, 245, 255},
@@ -1093,7 +1310,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "BALL RESPAWN",
         .OnClick = [this]() { RespawnBall(); },
-        .Position = {210.0f, row4Y},
+        .Position = {210.0f, row5Y},
         .Size = {120.0f, padH},
         .DefaultColor = Color{35, 90, 110, 255},
         .HoverColor = Color{50, 125, 155, 255},
@@ -1110,7 +1327,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "MENU",
         .OnClick = [&context]() { context.Scenes.LoadScene<MenuScene>(); },
-        .Position = {330.0f, row4Y},
+        .Position = {330.0f, row5Y},
         .Size = {100.0f, padH},
         .DefaultColor = Color{110, 35, 40, 255},
         .HoverColor = Color{150, 50, 55, 255},
@@ -1126,7 +1343,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     // Bottom ergonomic hint line
     UIFactory::CreateText(m_registry, m_sandboxCanvas, TextDescriptor{
         .Text = "STREAM DECK CONTROLLER  |  TOGGLE [TAB]  |  CLICK PADS TO INTERACT",
-        .Position = {0.0f, deckY + 160.0f},
+        .Position = {0.0f, deckY + 165.0f},
         .FontId = m_fontId,
         .FontSize = 16.0f,
         .Tint = Color{170, 195, 230, 190},
@@ -1192,6 +1409,32 @@ void SandboxScene::UpdateSandboxUIDisplay()
         int ultLvl = ProfileManager::Get().GetUltimateLevel(ut);
         std::string ultLabel = std::string("ULT: ") + GetUltimateDisplayName(ut) + " (MK-" + std::to_string(ultLvl) + ")";
         m_registry.GetComponent<TextComponent>(m_btnUltimateLCD).Text = ultLabel;
+    }
+
+    // Update Malus LCD Pad
+    if (m_btnMalusLCD != NULL_ENTITY)
+    {
+        HazardEffectType mt = kAllMaluses[m_selectedMalusIdx];
+        if (m_registry.HasComponent<TextComponent>(m_btnMalusLCD))
+        {
+            m_registry.GetComponent<TextComponent>(m_btnMalusLCD).Text = GetMalusDisplayName(mt);
+        }
+        Color mCol = GetMalusDisplayColor(mt);
+        if (m_registry.HasComponent<ButtonComponent>(m_btnMalusLCD))
+        {
+            auto& btn = m_registry.GetComponent<ButtonComponent>(m_btnMalusLCD);
+            btn.DefaultColor = mCol;
+            btn.HoverColor = Color{
+                static_cast<uint8_t>(std::min(255, mCol.r + 35)),
+                static_cast<uint8_t>(std::min(255, mCol.g + 35)),
+                static_cast<uint8_t>(std::min(255, mCol.b + 35)),
+                255
+            };
+        }
+        if (m_registry.HasComponent<PanelComponent>(m_btnMalusLCD))
+        {
+            m_registry.GetComponent<PanelComponent>(m_btnMalusLCD).Tint = mCol;
+        }
     }
 
     // Update Layout LCD Pad

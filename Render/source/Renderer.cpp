@@ -114,6 +114,9 @@ void Renderer::EndDraw(uint32_t postProcessShaderId, const PostProcessParams& pa
             params.PreviewRect[2],
             params.PreviewRect[3]
         ));
+        shader->setUniform("u_glitchIntensity", params.GlitchIntensity);
+        shader->setUniform("u_scanlineFlicker", params.ScanlineFlicker);
+        shader->setUniform("u_time", params.Time);
 
         sf::RenderStates states;
         states.shader = shader;
