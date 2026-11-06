@@ -70,6 +70,21 @@ void MenuScene::OnInit(GameContext& context)
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
     m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
 
+    // 2D Sprite Asset Pipeline: Workshop Power-Up Badges (#88)
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::MultiBall)]    = context.Resources.LoadResource("Resources/sprite/workshop/badge_multiball.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::ExpandPaddle)] = context.Resources.LoadResource("Resources/sprite/workshop/badge_expand.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::ShrinkPaddle)] = context.Resources.LoadResource("Resources/sprite/workshop/badge_shrink.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::Storm)]        = context.Resources.LoadResource("Resources/sprite/workshop/badge_storm.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::TempoBall)]    = context.Resources.LoadResource("Resources/sprite/workshop/badge_tempo.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::ExtraLife)]    = context.Resources.LoadResource("Resources/sprite/workshop/badge_extralife.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::BigBall)]      = context.Resources.LoadResource("Resources/sprite/workshop/badge_bigball.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::FireBall)]     = context.Resources.LoadResource("Resources/sprite/workshop/badge_fireball.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::StickyPaddle)] = context.Resources.LoadResource("Resources/sprite/workshop/badge_sticky.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::BottomBarrier)]= context.Resources.LoadResource("Resources/sprite/workshop/badge_barrier.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::MagnetPaddle)] = context.Resources.LoadResource("Resources/sprite/workshop/badge_magnet.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::GhostBall)]    = context.Resources.LoadResource("Resources/sprite/workshop/badge_ghost.png");
+    m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::ItemRegen)]    = context.Resources.LoadResource("Resources/sprite/workshop/badge_regen.png");
+
     // Initialize persisted audio & render preferences
     float sfxVol = PlayerPrefs::GetFloat("SfxVolume", 100.0f);
     float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
@@ -560,10 +575,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
                     bool isActive = (i == activeIdx);
                     m_ultimatePreviewScenes[i]->SetAudioEnabled(isActive);
                     m_ultimatePreviewScenes[i]->SetMusicEnabled(isActive);
-                    if (isActive)
-                    {
-                        m_ultimatePreviewScenes[i]->OnUpdate(dt, context);
-                    }
+                    m_ultimatePreviewScenes[i]->OnUpdate(dt, context);
                 }
             }
 
@@ -649,11 +661,17 @@ void MenuScene::OnRender(GameContext& context)
     DefaultScene::OnRender(context);
     RenderRetroBackground(context);
     context.Render.ResetCamera();
+
+    if (m_activeModal == m_workshopCanvas)
+    {
+        RenderWorkshopBackgroundVisuals(context);
+    }
+
     UISystem::OnRender(m_registry, context);
 
     if (m_activeModal == m_workshopCanvas)
     {
-        RenderWorkshopCustomVisuals(context);
+        RenderWorkshopForegroundVisuals(context);
     }
 }
 
@@ -1991,6 +2009,27 @@ static constexpr float kWorkshopUltPipW = 98.0f;
 static constexpr float kWorkshopUltPipH = 38.0f;
 static constexpr float kWorkshopUltPipGap = 12.0f;
 
+static Color GetPowerUpThemeColor(PowerUpType type)
+{
+    switch (type)
+    {
+    case PowerUpType::Storm:        return Color{255, 235, 40, 255}; // Electric Yellow
+    case PowerUpType::FireBall:     return Color{255, 70, 20, 255};  // Inferno Red
+    case PowerUpType::BigBall:      return Color{255, 120, 20, 255}; // Magma Orange
+    case PowerUpType::MultiBall:    return Color{0, 220, 255, 255};  // Cyan Plasma
+    case PowerUpType::StickyPaddle: return Color{245, 175, 40, 255}; // Honey Amber
+    case PowerUpType::BottomBarrier:return Color{0, 240, 255, 255};  // Forcefield Cyan
+    case PowerUpType::MagnetPaddle: return Color{220, 60, 255, 255}; // Polarized Violet
+    case PowerUpType::GhostBall:    return Color{160, 240, 255, 255};// Spectral Ice
+    case PowerUpType::TempoBall:    return Color{180, 70, 255, 255}; // Chrono Purple
+    case PowerUpType::ExpandPaddle: return Color{50, 255, 80, 255};  // Emerald Green
+    case PowerUpType::ShrinkPaddle: return Color{255, 60, 60, 255};  // Kinetic Red
+    case PowerUpType::ExtraLife:    return Color{255, 100, 180, 255};// Cyber Pink
+    case PowerUpType::ItemRegen:    return Color{32, 255, 176, 255}; // Biotech Mint
+    default:                        return Color{0, 200, 255, 255};
+    }
+}
+
 void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
 {
     m_workshopCanvas = m_registry.CreateEntity();
@@ -2000,7 +2039,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     UIFactory::CreatePanel(m_registry, m_workshopCanvas, PanelDescriptor{
         .Position = {0.0f, 0.0f},
         .Size = {2400.0f, 1400.0f},
-        .Tint = Color{14, 18, 30, 252},
+        .Tint = Color{0, 0, 0, 0},
         .ZOrder = 0
     });
 
@@ -2133,26 +2172,42 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             },
             .Position = {x, y},
             .Size = {240.0f, 280.0f},
-            .DefaultColor = Color{24, 30, 48, 250},
-            .HoverColor = Color{35, 48, 78, 255},
-            .PressedColor = Color{18, 22, 36, 255},
+            .DefaultColor = Color{0, 0, 0, 0},
+            .HoverColor = Color{255, 255, 255, 14},
+            .PressedColor = Color{0, 0, 0, 35},
             .FontId = m_fontId,
             .FontSize = 20.0f,
             .ZOrder = 2
         });
 
         card.LevelText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
-            .Text = "NIV. 1",
-            .Position = {x, y + 84.0f},
+            .Text = "",
+            .Position = {x, y + 108.0f},
             .FontId = m_fontId,
             .FontSize = 18.0f,
             .Tint = Colors::Gold,
             .ZOrder = 3
         });
 
-        card.TitleText = NULL_ENTITY;
+        card.TitleText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+            .Text = "STORM",
+            .Position = {x, y - 105.0f},
+            .FontId = m_fontId,
+            .FontSize = 20.0f,
+            .Tint = Colors::White,
+            .ZOrder = 3
+        });
+
         card.CategoryText = NULL_ENTITY;
-        card.CostText = NULL_ENTITY;
+
+        card.CostText = UIFactory::CreateText(m_registry, m_workshopUpgradesCanvas, TextDescriptor{
+            .Text = "150 CR",
+            .Position = {x, y + 66.0f},
+            .FontId = m_fontId,
+            .FontSize = 20.0f,
+            .Tint = Colors::White,
+            .ZOrder = 3
+        });
 
         m_upgradeCards.push_back(card);
     }
@@ -2221,7 +2276,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     UIFactory::CreatePanel(m_registry, m_workshopUpgradesCanvas, PanelDescriptor{
         .Position = {600.0f, -35.0f},
         .Size = {1040.0f, 900.0f},
-        .Tint = Color{18, 22, 36, 245},
+        .Tint = Color{0, 0, 0, 0},
         .ZOrder = 1
     });
 
@@ -2304,7 +2359,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     UIFactory::CreatePanel(m_registry, m_workshopUpgradesCanvas, PanelDescriptor{
         .Position = {600.0f, 150.0f},
         .Size = {840.0f, 240.0f},
-        .Tint = Color{24, 30, 48, 240},
+        .Tint = Color{0, 0, 0, 0},
         .ZOrder = 2
     });
 
@@ -2414,7 +2469,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         card.RootPanel = UIFactory::CreatePanel(m_registry, m_workshopUltimatesCanvas, PanelDescriptor{
             .Position = {x, y},
             .Size = {680.0f, 960.0f},
-            .Tint = Color{22, 30, 50, 255},
+            .Tint = Color{0, 0, 0, 0},
             .ZOrder = 1
         });
 
@@ -2940,6 +2995,33 @@ void MenuScene::RefreshWorkshopUI()
                 // Blank out text so the 5 gold squares fill the rectangle with no overlapping text
                 m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].LevelText).Text = "";
             }
+
+            if (m_registry.HasComponent<TextComponent>(m_upgradeCards[slot].TitleText))
+            {
+                m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].TitleText).Text =
+                    PowerUpManager::Get().GetName(type);
+                m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].TitleText).Tint =
+                    (type == m_selectedPowerUp) ? Colors::Gold : Colors::White;
+            }
+
+            if (m_registry.HasComponent<TextComponent>(m_upgradeCards[slot].CostText))
+            {
+                int curL = PowerUpManager::Get().GetLevel(type);
+                int maxL = PowerUpManager::Get().GetMaxLevel(type);
+                if (curL >= maxL)
+                {
+                    m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].CostText).Text = "MAXED";
+                    m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].CostText).Tint = Colors::Gold;
+                }
+                else
+                {
+                    int c = PowerUpManager::Get().GetUpgradeCost(type);
+                    bool canAfford = (PowerUpManager::Get().GetCoins() >= c);
+                    m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].CostText).Text = std::to_string(c) + " CR";
+                    m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].CostText).Tint =
+                        canAfford ? Colors::White : Color{255, 185, 140, 255};
+                }
+            }
         }
         else
         {
@@ -2950,6 +3032,14 @@ void MenuScene::RefreshWorkshopUI()
             if (m_registry.HasComponent<TextComponent>(m_upgradeCards[slot].LevelText))
             {
                 m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].LevelText).Text = "";
+            }
+            if (m_registry.HasComponent<TextComponent>(m_upgradeCards[slot].TitleText))
+            {
+                m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].TitleText).Text = "";
+            }
+            if (m_registry.HasComponent<TextComponent>(m_upgradeCards[slot].CostText))
+            {
+                m_registry.GetComponent<TextComponent>(m_upgradeCards[slot].CostText).Text = "";
             }
         }
     }
@@ -2987,12 +3077,14 @@ void MenuScene::RefreshWorkshopUI()
     {
         m_registry.GetComponent<TextComponent>(m_inspectorDescText).Text =
             PowerUpManager::Get().GetDescription(m_selectedPowerUp);
+        m_registry.GetComponent<TextComponent>(m_inspectorDescText).Tint = Color{235, 245, 255, 255};
     }
 
     if (m_inspectorCurTierText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_inspectorCurTierText))
     {
         m_registry.GetComponent<TextComponent>(m_inspectorCurTierText).Text =
             "CURRENT LEVEL (" + std::to_string(selCurLvl) + "): " + PowerUpManager::Get().GetTierInfoForLevel(m_selectedPowerUp, selCurLvl);
+        m_registry.GetComponent<TextComponent>(m_inspectorCurTierText).Tint = Color{80, 230, 255, 255};
     }
 
     if (m_inspectorNextTierText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_inspectorNextTierText))
@@ -3220,11 +3312,11 @@ void MenuScene::RefreshWorkshopUI()
             }
         }
 
-        // Root card panel tint
+        // Root card panel tint (kept transparent so simulation and custom background plates render)
         if (m_registry.HasComponent<PanelComponent>(card.RootPanel))
         {
             auto& panelComp = m_registry.GetComponent<PanelComponent>(card.RootPanel);
-            panelComp.Tint = (card.Type == equipped) ? Color{28, 38, 65, 255} : Color{22, 30, 50, 255};
+            panelComp.Tint = Color{0, 0, 0, 0};
         }
     }
 
@@ -3341,22 +3433,99 @@ void MenuScene::RefreshWorkshopUI()
     }
 }
 
-void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
+uint32_t MenuScene::GetWorkshopBadgeTexture(PowerUpType type) const
+{
+    const auto idx = static_cast<size_t>(type);
+    if (idx < sizeof(m_workshopBadgeTexIds) / sizeof(m_workshopBadgeTexIds[0]) && m_workshopBadgeTexIds[idx] != 0)
+    {
+        return m_workshopBadgeTexIds[idx];
+    }
+    return 0;
+}
+
+void MenuScene::RenderWorkshopBackgroundVisuals(GameContext& context)
 {
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
     const float screenCenterX = viewSize.X * 0.5f;
     const float screenCenterY = viewSize.Y * 0.5f;
 
-    // 1. Modal Frame Cyber Outline & Accents
-    context.Render.DrawRectangleOutline(2400.0f, 1400.0f,
+    constexpr float modalW = 2400.0f;
+    constexpr float modalH = 1400.0f;
+    const float halfW = modalW * 0.5f;
+    const float halfH = modalH * 0.5f;
+
+    // -------------------------------------------------------------
+    // 1. Sci-Fi Workshop Deck & Holographic Blueprint Backdrop
+    // -------------------------------------------------------------
+    // Deep metallic workshop chassis base
+    context.Render.DrawRectangle(modalW, modalH,
+        Transform2D{Vector2f{screenCenterX, screenCenterY}},
+        Color{12, 17, 28, 248});
+
+    // Soft radial ambient illumination / energy fields
+    // Left Hangar Bay: Soft Cyan illumination
+    context.Render.DrawCircle(480.0f,
+        Transform2D{Vector2f{screenCenterX - 670.0f, screenCenterY - 50.0f}},
+        Color{0, 150, 255, 22});
+    // Right Telemetry Bay: Soft Gold illumination
+    context.Render.DrawCircle(520.0f,
+        Transform2D{Vector2f{screenCenterX + 600.0f, screenCenterY - 35.0f}},
+        Color{255, 185, 45, 18});
+
+    // High-Tech Blueprint Grid inside the workshop modal
+    const float gridMinX = screenCenterX - halfW + 20.0f;
+    const float gridMaxX = screenCenterX + halfW - 20.0f;
+    const float gridMinY = screenCenterY - halfH + 85.0f;
+    const float gridMaxY = screenCenterY + halfH - 20.0f;
+
+    // Fine grid lines (every 80px)
+    for (float gx = gridMinX + 40.0f; gx <= gridMaxX; gx += 80.0f)
+    {
+        context.Render.DrawLine(Vector2f{gx, gridMinY}, Vector2f{gx, gridMaxY}, Color{22, 36, 62, 55}, 1.0f);
+    }
+    for (float gy = gridMinY + 40.0f; gy <= gridMaxY; gy += 80.0f)
+    {
+        context.Render.DrawLine(Vector2f{gridMinX, gy}, Vector2f{gridMaxX, gy}, Color{22, 36, 62, 55}, 1.0f);
+    }
+
+    // Prominent Blueprint Grid lines (every 240px)
+    for (float gx = gridMinX + 120.0f; gx <= gridMaxX; gx += 240.0f)
+    {
+        context.Render.DrawLine(Vector2f{gx, gridMinY}, Vector2f{gx, gridMaxY}, Color{35, 65, 115, 80}, 1.5f);
+    }
+    for (float gy = gridMinY + 120.0f; gy <= gridMaxY; gy += 240.0f)
+    {
+        context.Render.DrawLine(Vector2f{gridMinX, gy}, Vector2f{gridMaxX, gy}, Color{35, 65, 115, 80}, 1.5f);
+    }
+
+    // Precision crosshairs (+) at major grid intersections
+    constexpr float chLen = 6.0f;
+    const Color crosshairCol{0, 220, 255, 75};
+    for (float gx = gridMinX + 120.0f; gx <= gridMaxX; gx += 240.0f)
+    {
+        for (float gy = gridMinY + 120.0f; gy <= gridMaxY; gy += 240.0f)
+        {
+            context.Render.DrawLine(Vector2f{gx - chLen, gy}, Vector2f{gx + chLen, gy}, crosshairCol, 1.0f);
+            context.Render.DrawLine(Vector2f{gx, gy - chLen}, Vector2f{gx, gy + chLen}, crosshairCol, 1.0f);
+        }
+    }
+
+    // Vertical Cyber Spine / Data Conduit between Left Deck and Right Deck
+    const float spineX = screenCenterX - 130.0f;
+    context.Render.DrawLine(Vector2f{spineX, gridMinY + 20.0f}, Vector2f{spineX, gridMaxY - 20.0f}, Color{35, 60, 105, 160}, 2.0f);
+    for (float py = gridMinY + 100.0f; py <= gridMaxY - 60.0f; py += 160.0f)
+    {
+        context.Render.DrawCircle(4.0f, Transform2D{Vector2f{spineX, py}}, Color{0, 220, 255, 180});
+        context.Render.DrawLine(Vector2f{spineX - 12.0f, py}, Vector2f{spineX + 12.0f, py}, Color{0, 200, 255, 120}, 1.5f);
+    }
+
+    // Modal Frame Cyber Outline & Corner Brackets
+    context.Render.DrawRectangleOutline(modalW, modalH,
         Transform2D{Vector2f{screenCenterX, screenCenterY}},
         Color{45, 95, 175, 230}, 3.0f);
 
-    // Corner brackets on modal
     constexpr float cw = 40.0f;
-    constexpr float halfW = 1200.0f;
-    constexpr float halfH = 700.0f;
-    Color bracketCol{255, 215, 60, 220};
+    const Color bracketCol{255, 215, 60, 220};
     // Top-Left
     context.Render.DrawLine(Vector2f{screenCenterX - halfW, screenCenterY - halfH}, Vector2f{screenCenterX - halfW + cw, screenCenterY - halfH}, bracketCol, 3.0f);
     context.Render.DrawLine(Vector2f{screenCenterX - halfW, screenCenterY - halfH}, Vector2f{screenCenterX - halfW, screenCenterY - halfH + cw}, bracketCol, 3.0f);
@@ -3370,9 +3539,17 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
     context.Render.DrawLine(Vector2f{screenCenterX + halfW, screenCenterY + halfH}, Vector2f{screenCenterX + halfW - cw, screenCenterY + halfH}, bracketCol, 3.0f);
     context.Render.DrawLine(Vector2f{screenCenterX + halfW, screenCenterY + halfH}, Vector2f{screenCenterX + halfW, screenCenterY + halfH - cw}, bracketCol, 3.0f);
 
-    // 2. Tab 1 Custom Visuals: Clash Royale Grid Cards, Scrollbar & Compact Simulation Monitor
+    // -------------------------------------------------------------
+    // 2. Tab 1 Backgrounds: Cards Hangar & Inspector Engineering Deck
+    // -------------------------------------------------------------
     if (m_workshopActiveTabCanvas == m_workshopUpgradesCanvas)
     {
+        // Dedicated Hangar Deck Plate for the 9-Card Grid
+        const Vector2f hangarDeckCenter{screenCenterX - 670.0f, screenCenterY - 50.0f};
+        const Vector2f hangarDeckSize{840.0f, 920.0f};
+        context.Render.DrawRectangle(hangarDeckSize.X, hangarDeckSize.Y, Transform2D{hangarDeckCenter}, Color{15, 21, 35, 190});
+        context.Render.DrawRectangleOutline(hangarDeckSize.X, hangarDeckSize.Y, Transform2D{hangarDeckCenter}, Color{36, 58, 96, 180}, 1.5f);
+
         const float cardColX[3] = {-930.0f, -670.0f, -410.0f};
         const float cardRowY[3] = {-350.0f, -50.0f, 250.0f};
 
@@ -3385,110 +3562,94 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
             float x = screenCenterX + cardColX[slot % 3];
             float y = screenCenterY + cardRowY[slot / 3];
             bool isSelected = (type == m_selectedPowerUp);
+            Color elemCol = GetPowerUpThemeColor(type);
 
-            // 1. Clash Royale Card Base Frame (240 x 280 px)
-            if (isSelected)
-            {
-                float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 4.0f);
-                uint8_t alpha = static_cast<uint8_t>(180.0f + pulse * 75.0f);
-                context.Render.DrawRectangleOutline(240.0f, 280.0f,
-                    Transform2D{Vector2f{x, y}},
-                    Color{255, 215, 60, alpha}, 3.5f);
-
-                // Corner glowing pips
-                constexpr float cLen = 14.0f;
-                Color goldColor{255, 215, 60, 255};
-                context.Render.DrawLine(Vector2f{x - 120.0f, y - 140.0f}, Vector2f{x - 120.0f + cLen, y - 140.0f}, goldColor, 2.5f);
-                context.Render.DrawLine(Vector2f{x - 120.0f, y - 140.0f}, Vector2f{x - 120.0f, y - 140.0f + cLen}, goldColor, 2.5f);
-                context.Render.DrawLine(Vector2f{x + 120.0f, y - 140.0f}, Vector2f{x + 120.0f - cLen, y - 140.0f}, goldColor, 2.5f);
-                context.Render.DrawLine(Vector2f{x + 120.0f, y - 140.0f}, Vector2f{x + 120.0f, y - 140.0f + cLen}, goldColor, 2.5f);
-                context.Render.DrawLine(Vector2f{x - 120.0f, y + 140.0f}, Vector2f{x - 120.0f + cLen, y + 140.0f}, goldColor, 2.5f);
-                context.Render.DrawLine(Vector2f{x - 120.0f, y + 140.0f}, Vector2f{x - 120.0f, y + 140.0f - cLen}, goldColor, 2.5f);
-                context.Render.DrawLine(Vector2f{x + 120.0f, y + 140.0f}, Vector2f{x + 120.0f - cLen, y + 140.0f}, goldColor, 2.5f);
-                context.Render.DrawLine(Vector2f{x + 120.0f, y + 140.0f}, Vector2f{x + 120.0f, y + 140.0f - cLen}, goldColor, 2.5f);
-            }
-            else
-            {
-                context.Render.DrawRectangleOutline(240.0f, 280.0f,
-                    Transform2D{Vector2f{x, y}},
-                    Color{50, 75, 120, 200}, 1.5f);
-            }
-
-            // 2. Artwork Placeholder Frame (216 x 190 px) in the upper card area
-            Vector2f artCenter{x, y - 25.0f};
-            Vector2f artSize{216.0f, 190.0f};
-
-            Color artBg = Color{20, 26, 42, 255};
-            if (type == PowerUpType::Storm || type == PowerUpType::FireBall || type == PowerUpType::BigBall || type == PowerUpType::MultiBall)
-                artBg = Color{48, 20, 25, 255};
-            else if (type == PowerUpType::StickyPaddle || type == PowerUpType::BottomBarrier || type == PowerUpType::MagnetPaddle)
-                artBg = Color{18, 38, 55, 255};
-            else if (type == PowerUpType::GhostBall || type == PowerUpType::TempoBall)
-                artBg = Color{38, 22, 50, 255};
-            else
-                artBg = Color{20, 44, 30, 255};
-
-            context.Render.DrawRectangle(artSize.X, artSize.Y, Transform2D{artCenter}, artBg);
-            context.Render.DrawRectangleOutline(artSize.X, artSize.Y, Transform2D{artCenter}, isSelected ? Color{255, 215, 60, 180} : Color{60, 90, 140, 200}, 1.5f);
-
-            // Inner subtle cross guidelines
-            Color guideCol{255, 255, 255, 18};
-            context.Render.DrawLine(Vector2f{artCenter.X - artSize.X * 0.5f, artCenter.Y - artSize.Y * 0.5f}, Vector2f{artCenter.X + artSize.X * 0.5f, artCenter.Y + artSize.Y * 0.5f}, guideCol, 1.0f);
-            context.Render.DrawLine(Vector2f{artCenter.X - artSize.X * 0.5f, artCenter.Y + artSize.Y * 0.5f}, Vector2f{artCenter.X + artSize.X * 0.5f, artCenter.Y - artSize.Y * 0.5f}, guideCol, 1.0f);
-
-            // Center Badge Pill
-            std::string badge = "PWR";
-            if (type == PowerUpType::Storm) badge = "STM";
-            else if (type == PowerUpType::MultiBall) badge = "MLB";
-            else if (type == PowerUpType::FireBall) badge = "FIR";
-            else if (type == PowerUpType::BigBall) badge = "BIG";
-            else if (type == PowerUpType::StickyPaddle) badge = "STK";
-            else if (type == PowerUpType::BottomBarrier) badge = "BAR";
-            else if (type == PowerUpType::MagnetPaddle) badge = "MAG";
-            else if (type == PowerUpType::GhostBall) badge = "GHO";
-            else if (type == PowerUpType::TempoBall) badge = "TMP";
-            else if (type == PowerUpType::ExpandPaddle) badge = "EXP";
-            else if (type == PowerUpType::ShrinkPaddle) badge = "SHR";
-            else if (type == PowerUpType::ExtraLife) badge = "LIF";
-            else if (type == PowerUpType::ItemRegen) badge = "REG";
-
-            context.Render.DrawRectangle(64.0f, 64.0f, Transform2D{Vector2f{artCenter.X, artCenter.Y - 10.0f}}, Color{10, 14, 24, 230});
-            context.Render.DrawRectangleOutline(64.0f, 64.0f, Transform2D{Vector2f{artCenter.X, artCenter.Y - 10.0f}}, isSelected ? Colors::Gold : Colors::White, 2.0f);
-            context.Render.DrawTextCentered(badge, m_fontId, 22.0f, Transform2D{Vector2f{artCenter.X, artCenter.Y - 10.0f}}, Colors::White);
-            context.Render.DrawTextCentered("[ ARTWORK ]", m_fontId, 15.0f, Transform2D{Vector2f{artCenter.X, artCenter.Y + 45.0f}}, Color{150, 175, 215, 180});
-
-            // 3. Level Banner Plate at the bottom
-            Vector2f bannerCenter{x, y + 104.0f};
-            Vector2f bannerSize{216.0f, 48.0f};
-            context.Render.DrawRectangle(bannerSize.X, bannerSize.Y, Transform2D{bannerCenter}, Color{14, 18, 30, 255});
-            context.Render.DrawRectangleOutline(bannerSize.X, bannerSize.Y, Transform2D{bannerCenter}, isSelected ? Colors::Gold : Color{50, 75, 120, 220}, 1.5f);
-
-            // 5 Level Indicator Squares (Gold: unlit base, lit per purchased tier)
-            // Centered and filling the entire banner rectangle
             int curLvl = PowerUpManager::Get().GetLevel(type);
-            constexpr float sqSize = 36.0f;
-            constexpr float sqGap = 6.0f;
-            float sqStartX = x - (5.0f * sqSize + 4.0f * sqGap) * 0.5f + (sqSize * 0.5f);
-            float sqY = y + 104.0f;
+            int maxLvl = PowerUpManager::Get().GetMaxLevel(type);
+            bool isMaxed = (curLvl >= maxLvl);
+            int cost = PowerUpManager::Get().GetUpgradeCost(type);
+            bool canAfford = (!isMaxed && PowerUpManager::Get().GetCoins() >= cost);
+
+            // Card Outer Body Plate (240 x 280 px)
+            Color cardFill = isSelected ? Color{22, 32, 54, 255} : Color{16, 22, 38, 245};
+            context.Render.DrawRectangle(240.0f, 280.0f, Transform2D{Vector2f{x, y}}, cardFill);
+
+            // Card Header Banner Plate (Title backing)
+            context.Render.DrawRectangle(228.0f, 40.0f, Transform2D{Vector2f{x, y - 105.0f}}, Color{24, 32, 52, 255});
+            // Elemental Top Accent Line on the header
+            context.Render.DrawLine(Vector2f{x - 114.0f, y - 125.0f}, Vector2f{x + 114.0f, y - 125.0f}, elemCol, isSelected ? 3.0f : 2.0f);
+
+            // Central Hero Artwork Showcase
+            Vector2f artCenter{x, y - 18.0f};
+            uint32_t badgeTex = GetWorkshopBadgeTexture(type);
+
+            // Radial ambient glow of the elemental color behind the hero badge
+            uint8_t haloAlpha = isSelected ? 65 : 30;
+            context.Render.DrawCircle(56.0f, Transform2D{artCenter}, Color{elemCol.r, elemCol.g, elemCol.b, haloAlpha});
+
+            if (badgeTex != 0)
+            {
+                SpriteComponent badgeSprite{badgeTex, Colors::White};
+                context.Render.DrawSprite(badgeSprite, Transform2D{artCenter, 0.0f, Vector2f{1.15f, 1.15f}});
+            }
+
+            // Card Cost Pill Badge (Centered at y + 66.0f)
+            Vector2f costPillCenter{x, y + 66.0f};
+            Vector2f costPillSize{154.0f, 30.0f};
+            if (isMaxed)
+            {
+                context.Render.DrawRectangle(costPillSize.X, costPillSize.Y, Transform2D{costPillCenter}, Color{170, 135, 25, 220});
+                context.Render.DrawRectangleOutline(costPillSize.X, costPillSize.Y, Transform2D{costPillCenter}, Colors::Gold, 1.5f);
+            }
+            else if (canAfford)
+            {
+                context.Render.DrawRectangle(costPillSize.X, costPillSize.Y, Transform2D{costPillCenter}, Color{22, 130, 58, 235});
+                context.Render.DrawRectangleOutline(costPillSize.X, costPillSize.Y, Transform2D{costPillCenter}, Color{65, 245, 130, 255}, 1.5f);
+            }
+            else
+            {
+                context.Render.DrawRectangle(costPillSize.X, costPillSize.Y, Transform2D{costPillCenter}, Color{28, 34, 48, 220});
+                context.Render.DrawRectangleOutline(costPillSize.X, costPillSize.Y, Transform2D{costPillCenter}, Color{55, 70, 95, 200}, 1.0f);
+            }
+
+            // Card Level Segmented Bar Tray (Centered at y + 108.0f)
+            Vector2f trayCenter{x, y + 108.0f};
+            Vector2f traySize{216.0f, 22.0f};
+            context.Render.DrawRectangle(traySize.X, traySize.Y, Transform2D{trayCenter}, Color{10, 14, 24, 255});
+            context.Render.DrawRectangleOutline(traySize.X, traySize.Y, Transform2D{trayCenter}, isSelected ? Colors::Gold : Color{40, 55, 85, 200}, 1.0f);
+
+            // 5 Segmented Neon Tier Bars
+            constexpr float barW = 36.0f;
+            constexpr float barH = 12.0f;
+            constexpr float barGap = 5.0f;
+            float startBarX = x - (5.0f * barW + 4.0f * barGap) * 0.5f + (barW * 0.5f);
 
             for (int p = 0; p < 5; ++p)
             {
-                Vector2f sqCenter{sqStartX + static_cast<float>(p) * (sqSize + sqGap), sqY};
+                Vector2f barCenter{startBarX + static_cast<float>(p) * (barW + barGap), y + 108.0f};
                 bool isLit = (p < curLvl);
 
                 if (isLit)
                 {
-                    // Radiant lit gold square
-                    context.Render.DrawRectangle(sqSize, sqSize, Transform2D{sqCenter}, Color{255, 215, 60, 255});
-                    context.Render.DrawRectangleOutline(sqSize, sqSize, Transform2D{sqCenter}, Color{255, 250, 205, 255}, 2.0f);
-                    context.Render.DrawLine(Vector2f{sqCenter.X - 14.0f, sqCenter.Y - 14.0f}, Vector2f{sqCenter.X + 14.0f, sqCenter.Y - 14.0f}, Color{255, 255, 230, 255}, 1.5f);
+                    Color litCol = isSelected ? Colors::Gold : elemCol;
+                    context.Render.DrawRectangle(barW, barH, Transform2D{barCenter}, litCol);
+                    context.Render.DrawLine(Vector2f{barCenter.X - barW * 0.5f, barCenter.Y - barH * 0.5f},
+                                            Vector2f{barCenter.X + barW * 0.5f, barCenter.Y - barH * 0.5f},
+                                            Colors::White, 1.5f);
                 }
                 else
                 {
-                    // Base unlit square: dark interior filling the socket with dim gold/amber border
-                    context.Render.DrawRectangle(sqSize, sqSize, Transform2D{sqCenter}, Color{20, 24, 38, 240});
-                    context.Render.DrawRectangleOutline(sqSize, sqSize, Transform2D{sqCenter}, Color{75, 65, 40, 180}, 1.5f);
+                    context.Render.DrawRectangle(barW, barH, Transform2D{barCenter}, Color{18, 24, 38, 220});
+                    context.Render.DrawRectangleOutline(barW, barH, Transform2D{barCenter}, Color{35, 45, 68, 180}, 1.0f);
                 }
+            }
+
+            // Unselected Card Outline
+            if (!isSelected)
+            {
+                context.Render.DrawRectangleOutline(240.0f, 280.0f,
+                    Transform2D{Vector2f{x, y}},
+                    Color{42, 60, 96, 200}, 2.0f);
             }
         }
 
@@ -3509,35 +3670,59 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
         context.Render.DrawRectangle(10.0f, thumbHeight, Transform2D{Vector2f{scrollTrackX, thumbY}}, Color{0, 190, 255, 220});
         context.Render.DrawRectangleOutline(10.0f, thumbHeight, Transform2D{Vector2f{scrollTrackX, thumbY}}, Colors::White, 1.5f);
 
+        // Right Column Inspector Visual Architecture
+        const float inspCenterX = screenCenterX + 600.0f;
+        const Vector2f inspDeckCenter{inspCenterX, screenCenterY - 35.0f};
+        const Vector2f inspDeckSize{1040.0f, 900.0f};
+
+        // Inspector Outer Cyber Frame with Corner Brackets
+        context.Render.DrawRectangle(inspDeckSize.X, inspDeckSize.Y, Transform2D{inspDeckCenter}, Color{15, 21, 35, 190});
+        context.Render.DrawRectangleOutline(inspDeckSize.X, inspDeckSize.Y, Transform2D{inspDeckCenter}, Color{45, 75, 125, 220}, 2.0f);
+
+        constexpr float iLen = 22.0f;
+        Color inspBracketCol{255, 215, 60, 200};
+        context.Render.DrawLine(Vector2f{inspCenterX - 520.0f, screenCenterY - 485.0f}, Vector2f{inspCenterX - 520.0f + iLen, screenCenterY - 485.0f}, inspBracketCol, 2.5f);
+        context.Render.DrawLine(Vector2f{inspCenterX - 520.0f, screenCenterY - 485.0f}, Vector2f{inspCenterX - 520.0f, screenCenterY - 485.0f + iLen}, inspBracketCol, 2.5f);
+        context.Render.DrawLine(Vector2f{inspCenterX + 520.0f, screenCenterY - 485.0f}, Vector2f{inspCenterX + 520.0f - iLen, screenCenterY - 485.0f}, inspBracketCol, 2.5f);
+        context.Render.DrawLine(Vector2f{inspCenterX + 520.0f, screenCenterY - 485.0f}, Vector2f{inspCenterX + 520.0f, screenCenterY - 485.0f + iLen}, inspBracketCol, 2.5f);
+        context.Render.DrawLine(Vector2f{inspCenterX - 520.0f, screenCenterY + 415.0f}, Vector2f{inspCenterX - 520.0f + iLen, screenCenterY + 415.0f}, inspBracketCol, 2.5f);
+        context.Render.DrawLine(Vector2f{inspCenterX - 520.0f, screenCenterY + 415.0f}, Vector2f{inspCenterX - 520.0f, screenCenterY + 415.0f - iLen}, inspBracketCol, 2.5f);
+        context.Render.DrawLine(Vector2f{inspCenterX + 520.0f, screenCenterY + 415.0f}, Vector2f{inspCenterX + 520.0f - iLen, screenCenterY + 415.0f}, inspBracketCol, 2.5f);
+        context.Render.DrawLine(Vector2f{inspCenterX + 520.0f, screenCenterY + 415.0f}, Vector2f{inspCenterX + 520.0f, screenCenterY + 415.0f - iLen}, inspBracketCol, 2.5f);
+
+        // Header Plate behind Inspector Title
+        Color selTheme = GetPowerUpThemeColor(m_selectedPowerUp);
+        context.Render.DrawRectangle(980.0f, 54.0f, Transform2D{Vector2f{inspCenterX, screenCenterY - 440.0f}}, Color{20, 26, 44, 255});
+        context.Render.DrawLine(Vector2f{inspCenterX - 490.0f, screenCenterY - 413.0f}, Vector2f{inspCenterX + 490.0f, screenCenterY - 413.0f}, selTheme, 2.0f);
+
         // Preview Window in Right Column (Enhanced 640x300 Widescreen CRT Monitor)
-        const Vector2f monitorCenter{screenCenterX + 600.0f, screenCenterY - 260.0f};
+        const Vector2f monitorCenter{inspCenterX, screenCenterY - 260.0f};
         const Vector2f monitorSize{640.0f, 300.0f};
         RenderPowerUpSimulation(context, m_selectedPowerUp, monitorCenter, monitorSize);
 
-        // Reticle on Inspected Level Button
-        constexpr float pipW = kWorkshopPipW;
-        constexpr float pipH = kWorkshopPipH;
-        constexpr float pipGap = kWorkshopPipGap;
-        float startX = screenCenterX + 600.0f - (5.0f * (pipW + pipGap) - pipGap) * 0.5f + (pipW * 0.5f);
-        float barY = screenCenterY - 65.0f;
-        float activeBx = startX + static_cast<float>(m_inspectedLevel - 1) * (pipW + pipGap);
+        // Description Card Panel (Glass background with Cyan left accent bar)
+        context.Render.DrawRectangle(840.0f, 65.0f, Transform2D{Vector2f{inspCenterX, screenCenterY + 65.0f}}, Color{20, 26, 42, 240});
+        context.Render.DrawRectangleOutline(840.0f, 65.0f, Transform2D{Vector2f{inspCenterX, screenCenterY + 65.0f}}, Color{40, 58, 92, 180}, 1.0f);
+        context.Render.DrawLine(Vector2f{inspCenterX - 420.0f, screenCenterY + 33.0f}, Vector2f{inspCenterX - 420.0f, screenCenterY + 97.0f}, Color{0, 220, 255, 255}, 4.0f);
 
-        float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 5.0f);
-        uint8_t glowAlpha = static_cast<uint8_t>(180.0f + pulse * 75.0f);
-        context.Render.DrawRectangleOutline(pipW, pipH,
-            Transform2D{Vector2f{activeBx, barY}}, Color{255, 215, 60, glowAlpha}, 2.0f);
-
+        // Tier Specs Deck Panel (Glass background with Gold left accent bar and dividers)
+        context.Render.DrawRectangle(840.0f, 150.0f, Transform2D{Vector2f{inspCenterX, screenCenterY + 185.0f}}, Color{18, 22, 36, 240});
+        context.Render.DrawRectangleOutline(840.0f, 150.0f, Transform2D{Vector2f{inspCenterX, screenCenterY + 185.0f}}, Color{40, 58, 92, 180}, 1.0f);
+        context.Render.DrawLine(Vector2f{inspCenterX - 420.0f, screenCenterY + 110.0f}, Vector2f{inspCenterX - 420.0f, screenCenterY + 260.0f}, Colors::Gold, 4.0f);
+        context.Render.DrawLine(Vector2f{inspCenterX - 400.0f, screenCenterY + 155.0f}, Vector2f{inspCenterX + 400.0f, screenCenterY + 155.0f}, Color{35, 48, 75, 180}, 1.0f);
+        context.Render.DrawLine(Vector2f{inspCenterX - 400.0f, screenCenterY + 210.0f}, Vector2f{inspCenterX + 400.0f, screenCenterY + 210.0f}, Color{35, 48, 75, 180}, 1.0f);
     }
 
-    // 3. Tab 2 Custom Visuals: Ultimates Ability Simulation Viewports
+    // -------------------------------------------------------------
+    // 3. Tab 2 Backgrounds: Ultimates Ability Simulation Viewports
+    // -------------------------------------------------------------
+    // -------------------------------------------------------------
+    // 3. Tab 2 Backgrounds: Ultimates Ability Simulation Viewports
+    // -------------------------------------------------------------
     if (m_workshopActiveTabCanvas == m_workshopUltimatesCanvas)
     {
         const float ultColX[3] = {-720.0f, 0.0f, 720.0f};
         UltimateAbilityType equipped = ProfileManager::Get().GetEquippedUltimate();
-
-        constexpr float ultPipW = kWorkshopUltPipW;
-        constexpr float ultPipH = kWorkshopUltPipH;
-        constexpr float ultPipGap = kWorkshopUltPipGap;
 
         for (int i = 0; i < 3; ++i)
         {
@@ -3546,10 +3731,17 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
 
             UltimateAbilityType ultType = m_ultimateCards[i].Type;
             bool isEquipped = (ultType == equipped);
+            bool isInspected = (ultType == m_lastInspectedUltimate);
 
-            // Outer card border
+            // Card background plate
+            Color cardBg = isInspected ? Color{22, 32, 54, 255} : Color{16, 22, 36, 245};
+            context.Render.DrawRectangle(680.0f, 960.0f, Transform2D{Vector2f{x, y}}, cardBg);
             Color borderCol = isEquipped ? Colors::Gold : Color{50, 80, 135, 200};
             context.Render.DrawRectangleOutline(680.0f, 960.0f, Transform2D{Vector2f{x, y}}, borderCol, isEquipped ? 3.5f : 1.5f);
+
+            // Header Banner Plate behind Title
+            context.Render.DrawRectangle(640.0f, 50.0f, Transform2D{Vector2f{x, screenCenterY - 440.0f}}, Color{22, 30, 52, 255});
+            context.Render.DrawLine(Vector2f{x - 320.0f, screenCenterY - 415.0f}, Vector2f{x + 320.0f, screenCenterY - 415.0f}, borderCol, 2.0f);
 
             // Simulation Viewport on the card
             Vector2f simCenter{x, screenCenterY - 265.0f};
@@ -3557,14 +3749,101 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
 
             RenderUltimateSimulation(context, ultType, m_ultimateCards[i].InspectedLevel, simCenter, simSize, m_ultimateCards[i].SwitchTimer);
 
-            bool isInspected = (ultType == m_lastInspectedUltimate);
             if (!isInspected)
             {
-                // Calque semi-transparent noir pour marquer visuellement l'equipement inactif (sans badge superflu)
-                context.Render.DrawRectangle(simSize.X - 4.0f, simSize.Y - 4.0f, Transform2D{simCenter}, Color{0, 0, 0, 160});
+                // Subtle 35 alpha dimming on inactive cards to keep focus on the inspected one while keeping previews vibrant
+                context.Render.DrawRectangle(simSize.X - 4.0f, simSize.Y - 4.0f, Transform2D{simCenter}, Color{0, 0, 0, 35});
             }
+        }
+    }
+}
 
-            // Glowing reticle on currently inspected level pip button
+void MenuScene::RenderWorkshopForegroundVisuals(GameContext& context)
+{
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+    const float screenCenterX = viewSize.X * 0.5f;
+    const float screenCenterY = viewSize.Y * 0.5f;
+
+    // 1. Tab 1 Foreground Reticles, Pulsing Selection Frames & CTA Glows
+    if (m_workshopActiveTabCanvas == m_workshopUpgradesCanvas)
+    {
+        const float cardColX[3] = {-930.0f, -670.0f, -410.0f};
+        const float cardRowY[3] = {-350.0f, -50.0f, 250.0f};
+
+        for (size_t slot = 0; slot < 9; ++slot)
+        {
+            int pwrIdx = m_workshopScrollRow * 3 + static_cast<int>(slot);
+            if (pwrIdx >= 13) continue;
+
+            PowerUpType type = kAllWorkshopPowerUps[pwrIdx];
+            if (type != m_selectedPowerUp) continue;
+
+            float x = screenCenterX + cardColX[slot % 3];
+            float y = screenCenterY + cardRowY[slot / 3];
+
+            // Card Selection Frame with Pulsing Gold & Cyber Corner Brackets
+            float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 4.0f);
+            uint8_t alpha = static_cast<uint8_t>(200.0f + pulse * 55.0f);
+            context.Render.DrawRectangleOutline(240.0f, 280.0f,
+                Transform2D{Vector2f{x, y}},
+                Color{255, 215, 60, alpha}, 3.5f);
+
+            // Corner glowing brackets
+            constexpr float cLen = 16.0f;
+            Color goldColor{255, 215, 60, 255};
+            context.Render.DrawLine(Vector2f{x - 120.0f, y - 140.0f}, Vector2f{x - 120.0f + cLen, y - 140.0f}, goldColor, 3.0f);
+            context.Render.DrawLine(Vector2f{x - 120.0f, y - 140.0f}, Vector2f{x - 120.0f, y - 140.0f + cLen}, goldColor, 3.0f);
+            context.Render.DrawLine(Vector2f{x + 120.0f, y - 140.0f}, Vector2f{x + 120.0f - cLen, y - 140.0f}, goldColor, 3.0f);
+            context.Render.DrawLine(Vector2f{x + 120.0f, y - 140.0f}, Vector2f{x + 120.0f, y - 140.0f + cLen}, goldColor, 3.0f);
+            context.Render.DrawLine(Vector2f{x - 120.0f, y + 140.0f}, Vector2f{x - 120.0f + cLen, y + 140.0f}, goldColor, 3.0f);
+            context.Render.DrawLine(Vector2f{x - 120.0f, y + 140.0f}, Vector2f{x - 120.0f, y + 140.0f - cLen}, goldColor, 3.0f);
+            context.Render.DrawLine(Vector2f{x + 120.0f, y + 140.0f}, Vector2f{x + 120.0f - cLen, y + 140.0f}, goldColor, 3.0f);
+            context.Render.DrawLine(Vector2f{x + 120.0f, y + 140.0f}, Vector2f{x + 120.0f, y + 140.0f - cLen}, goldColor, 3.0f);
+            break;
+        }
+
+        // Reticle on Inspected Level Button
+        const float inspCenterX = screenCenterX + 600.0f;
+        constexpr float pipW = kWorkshopPipW;
+        constexpr float pipH = kWorkshopPipH;
+        constexpr float pipGap = kWorkshopPipGap;
+        float startX = inspCenterX - (5.0f * (pipW + pipGap) - pipGap) * 0.5f + (pipW * 0.5f);
+        float barY = screenCenterY - 65.0f;
+        float activeBx = startX + static_cast<float>(m_inspectedLevel - 1) * (pipW + pipGap);
+
+        float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 5.0f);
+        uint8_t glowAlpha = static_cast<uint8_t>(180.0f + pulse * 75.0f);
+        context.Render.DrawRectangleOutline(pipW, pipH,
+            Transform2D{Vector2f{activeBx, barY}}, Color{255, 215, 60, glowAlpha}, 2.5f);
+
+        // Animated Glowing Pulse Border around Upgrade CTA Button when affordable
+        int curSelLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+        int maxSelLvl = PowerUpManager::Get().GetMaxLevel(m_selectedPowerUp);
+        if (curSelLvl < maxSelLvl)
+        {
+            int costSel = PowerUpManager::Get().GetUpgradeCost(m_selectedPowerUp);
+            if (PowerUpManager::Get().GetCoins() >= costSel)
+            {
+                float upPulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 6.0f);
+                uint8_t upAlpha = static_cast<uint8_t>(180.0f + upPulse * 75.0f);
+                context.Render.DrawRectangleOutline(644.0f, 74.0f,
+                    Transform2D{Vector2f{inspCenterX, screenCenterY + 345.0f}},
+                    Color{80, 255, 140, upAlpha}, 3.0f);
+            }
+        }
+    }
+
+    // 2. Tab 2 Foreground Reticle on Inspected Pip
+    if (m_workshopActiveTabCanvas == m_workshopUltimatesCanvas)
+    {
+        const float ultColX[3] = {-720.0f, 0.0f, 720.0f};
+        constexpr float ultPipW = kWorkshopUltPipW;
+        constexpr float ultPipH = kWorkshopUltPipH;
+        constexpr float ultPipGap = kWorkshopUltPipGap;
+
+        for (int i = 0; i < 3; ++i)
+        {
+            float x = screenCenterX + ultColX[i];
             float startUltPipX = x - (5.0f * (ultPipW + ultPipGap) - ultPipGap) * 0.5f + (ultPipW * 0.5f);
             float activePipX = startUltPipX + static_cast<float>(m_ultimateCards[i].InspectedLevel - 1) * (ultPipW + ultPipGap);
             float pipY = screenCenterY - 95.0f;
@@ -3576,16 +3855,16 @@ void MenuScene::RenderWorkshopCustomVisuals(GameContext& context)
         }
     }
 
-    // 4. Description & Stats Modal Overlay (Universal for PowerUps and Ultimates)
+    // 3. Description & Stats Modal Overlay (Universal for PowerUps and Ultimates)
     if (m_showDescriptionModal)
     {
         Vector2f modalCenter{screenCenterX, screenCenterY};
         Vector2f modalSize{1360.0f, 860.0f};
 
-        // 1. Fullscreen Dark Dimming Backdrop (solid opaque dimming)
+        // Fullscreen Dark Dimming Backdrop
         context.Render.DrawRectangle(viewSize.X * 2.0f, viewSize.Y * 2.0f, Transform2D{modalCenter}, Color{6, 10, 20, 245});
 
-        // 2. Main Dialog Solid Window Panel
+        // Main Dialog Solid Window Panel
         context.Render.DrawRectangle(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{14, 18, 30, 255});
         context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{modalCenter}, Color{45, 75, 130, 255}, 1.5f);
 

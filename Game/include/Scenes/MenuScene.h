@@ -92,7 +92,9 @@ private:
     void    OpenWorkshopTab(Entity targetCanvas);
     void    RefreshWorkshopUI();
     void    ResetSaveData();
-    void    RenderWorkshopCustomVisuals(GameContext& context);
+    void    RenderWorkshopBackgroundVisuals(GameContext& context);
+    void    RenderWorkshopForegroundVisuals(GameContext& context);
+    [[nodiscard]] uint32_t GetWorkshopBadgeTexture(PowerUpType type) const;
     void    RenderPowerUpSimulation(GameContext& context, PowerUpType type, const Vector2f& center, const Vector2f& size);
     void    RenderUltimateSimulation(GameContext& context, UltimateAbilityType type, int level, const Vector2f& center, const Vector2f& size, float switchTimer);
     void    RenderPlasmaOrbPreview(GameContext& context, int level, const Vector2f& center, const Vector2f& size, float animTime);
@@ -215,6 +217,7 @@ private:
     uint32_t            m_brickCrackTexId = 0;
     uint32_t            m_fireTexId = 0;
     uint32_t            m_heartTexId = 0;
+    uint32_t            m_workshopBadgeTexIds[16] = {0};
 
     int                 m_simLastLoop = -1;
     uint32_t            m_simAudioTriggerMask = 0;

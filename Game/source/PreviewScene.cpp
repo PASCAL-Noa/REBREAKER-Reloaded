@@ -1274,10 +1274,12 @@ void PreviewScene::SpawnMagnetDemoCapsule()
     Color color = kPreviewItems[typeIndex].CapsuleColor;
 
     Entity capsule = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(capsule, Transform2D{Vector2f{spawnX, spawnY}, 0.0f, Vector2f{0.5f, 0.7f}});
-    m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
+    m_registry.AddComponent<Transform2D>(capsule, Transform2D{Vector2f{spawnX, spawnY}, 0.0f, Vector2f{1.0f, 1.0f}});
+    m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{36.0f, 36.0f}, Vector2f{0.0f, 0.0f}, false, true});
     m_registry.AddComponent<PowerUpComponent>(capsule, PowerUpComponent{type, 210.0f, false});
-    m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{m_brickTexId, color});
+    uint32_t orbTex = GetPowerUpOrbTexture(type);
+    Color finalColor = (orbTex != m_brickTexId) ? Colors::White : color;
+    m_registry.AddComponent<SpriteComponent>(capsule, SpriteComponent{orbTex, finalColor});
 }
 
 void PreviewScene::SpawnPreviewCapsule()
@@ -1296,11 +1298,12 @@ void PreviewScene::SpawnPreviewCapsule()
     Vector2f pos{ paddleTrans.Position.X, -100.0f };
 
     m_previewCapsule = m_registry.CreateEntity();
-    m_registry.AddComponent<Transform2D>(m_previewCapsule, Transform2D{pos, 0.0f, Vector2f{0.5f, 0.7f}});
-    m_registry.AddComponent<BoxCollider>(m_previewCapsule, BoxCollider{Vector2f{50.0f, 21.0f}, Vector2f{0.0f, 0.0f}, false, true});
+    m_registry.AddComponent<Transform2D>(m_previewCapsule, Transform2D{pos, 0.0f, Vector2f{1.0f, 1.0f}});
+    m_registry.AddComponent<BoxCollider>(m_previewCapsule, BoxCollider{Vector2f{36.0f, 36.0f}, Vector2f{0.0f, 0.0f}, false, true});
     m_registry.AddComponent<PowerUpComponent>(m_previewCapsule, PowerUpComponent{type, 260.0f, false});
-    Color color = kPreviewItems[m_currentItemIndex].CapsuleColor;
-    m_registry.AddComponent<SpriteComponent>(m_previewCapsule, SpriteComponent{m_brickTexId, color});
+    uint32_t previewTex = GetPowerUpOrbTexture(type);
+    Color finalPreviewColor = (previewTex != m_brickTexId) ? Colors::White : kPreviewItems[m_currentItemIndex].CapsuleColor;
+    m_registry.AddComponent<SpriteComponent>(m_previewCapsule, SpriteComponent{previewTex, finalPreviewColor});
 }
 
 void PreviewScene::OnBallLaunched()
