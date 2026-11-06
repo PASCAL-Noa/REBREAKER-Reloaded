@@ -310,26 +310,26 @@ TEST_SUITE("Visual Malus, Camera Disruption & Temporal Audio Distortion Tests (#
         CHECK(pitch1Fast2Slow > pitch3Slow);
     }
 
-    TEST_CASE("ShrinkPaddle visual malus duration is 5.0s and expires before paddle duration ends")
+    TEST_CASE("Bounded malus timers expire cleanly")
     {
-        constexpr float kShrinkPaddleDuration = 10.0f;
-        constexpr float kShrinkMalusDuration = 5.0f;
+        constexpr float kEffectDuration = 10.0f;
+        constexpr float kMalusDuration = 5.0f;
 
-        CHECK(kShrinkMalusDuration < kShrinkPaddleDuration);
+        CHECK(kMalusDuration < kEffectDuration);
 
-        float paddleTimer = kShrinkPaddleDuration;
-        float malusTimer = kShrinkMalusDuration;
+        float effectTimer = kEffectDuration;
+        float malusTimer = kMalusDuration;
 
-        // Advance 5 seconds: malus should expire, paddle should still be shrunk
+        // Advance 5 seconds: malus should expire, parent effect should still remain
         const float dt = 0.5f;
         for (int i = 0; i < 10; ++i)
         {
-            paddleTimer -= dt;
+            effectTimer -= dt;
             malusTimer -= dt;
         }
 
         CHECK(malusTimer == doctest::Approx(0.0f));
-        CHECK(paddleTimer == doctest::Approx(5.0f));
-        CHECK(paddleTimer > 0.0f);
+        CHECK(effectTimer == doctest::Approx(5.0f));
+        CHECK(effectTimer > 0.0f);
     }
 }

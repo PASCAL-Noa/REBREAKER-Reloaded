@@ -3511,11 +3511,6 @@ void GameScene::ApplyPowerUp(PowerUpType type)
 
             m_paddleSizeDuration = cfg.GetEffectiveDuration();
 
-            // Trigger visual malus on shrink debuff (#83) - lasts strictly 5.0s and stops before paddle shrink effect ends
-            constexpr float kShrinkMalusDuration = 5.0f;
-            TriggerVisualMalus(kShrinkMalusDuration, true, true, true);
-            TriggerTemporalAudioDistortion(0.92f, 0.20f, kShrinkMalusDuration);
-
             // Lucky drop: 20% to 50% chance to drop 1 to 3 random power-ups
             const float chance = cfg.GetEffectiveDropChance();
             const float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
