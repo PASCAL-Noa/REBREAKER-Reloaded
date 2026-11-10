@@ -133,6 +133,7 @@ private:
     Entity          m_fsBtn = NULL_ENTITY;
     Entity          m_shaderBtn = NULL_ENTITY;
     Entity          m_particlesBtn = NULL_ENTITY;
+    Entity          m_arenaEventsBtn = NULL_ENTITY;
     Entity          m_cheatsTabBtn = NULL_ENTITY;
     Entity          m_audioDeviceBtn = NULL_ENTITY;
     std::vector<Entity> m_sfxVolumeBars;

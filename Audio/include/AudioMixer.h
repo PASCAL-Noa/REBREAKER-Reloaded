@@ -61,6 +61,8 @@ public:
     [[nodiscard]] bool  IsMusicPlaying() const;
     [[nodiscard]] const std::string& GetCurrentMusicPath() const;
     [[nodiscard]] float GetMusicTimeRemaining() const;
+    void                SetMusicLooping(bool loop) const;
+    [[nodiscard]] bool  IsMusicLooping() const;
 
     [[nodiscard]] std::vector<std::string> GetAvailableAudioDevices() const;
     [[nodiscard]] std::string GetCurrentAudioDevice() const;

@@ -9,6 +9,8 @@ uniform vec4 u_previewRect;
 uniform float u_glitchIntensity;
 uniform float u_scanlineFlicker;
 uniform float u_time;
+uniform float u_alarmIntensity;
+uniform vec3 u_alarmColor;
 
 const float CURVATURE = 4.2;
 const float BLUR = 0.031;
@@ -73,6 +75,28 @@ void main()
     if (u_flashIntensity > 0.001)
     {
         color += u_flashColor * clamp(u_flashIntensity, 0.0, 1.0);
+    }
+
+    // Emergency Red Alarm Light & Strobe Shader
+    if (u_alarmIntensity > 0.001)
+    {
+        // High-frequency buzzer strobe pulse (synchronized with electric door buzzer)
+        float strobeWave = sin(u_time * 18.0) * 0.5 + 0.5;
+        float alarmPulse = 0.70 + 0.30 * strobeWave;
+
+        // Red alarm perimeter vignette glow
+        float alarmBorder = smoothstep(0.38, 0.85, dist) * u_alarmIntensity * alarmPulse;
+
+        // Dynamic horizontal alarm hazard scan-light
+        float hazardScan = sin(crtUV.y * 12.0 - u_time * 7.0) * 0.5 + 0.5;
+        float scanGlow = pow(hazardScan, 5.0) * 0.35 * u_alarmIntensity;
+
+        // Subtle alarmist high-speed micro-flicker
+        float microFlicker = sin(u_time * 50.0) * 0.04 * u_alarmIntensity;
+
+        // Apply emergency red lighting tint to scene
+        vec3 redTint = mix(color, color * vec3(1.35, 0.55, 0.55) + u_alarmColor * (0.20 * alarmPulse + scanGlow), u_alarmIntensity * 0.55);
+        color = redTint + u_alarmColor * (alarmBorder * 0.95 + microFlicker);
     }
 
     // Retain u_previewRect uniform across driver shader optimization passes

@@ -12,4 +12,6 @@ struct PostProcessParams
     float GlitchIntensity = 0.0f;
     float ScanlineFlicker = 0.0f;
     float Time = 0.0f;
+    float AlarmIntensity = 0.0f;
+    Color AlarmColor{255, 25, 25, 255};
 };

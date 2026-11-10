@@ -708,6 +708,22 @@ float AudioMixer::GetMusicTimeRemaining() const
     return std::max(0.0f, dur - offset);
 }
 
+void AudioMixer::SetMusicLooping(bool loop) const
+{
+    if (!mp_impl) return;
+    mp_impl->activeTrack.isLooping = loop;
+    if (mp_impl->activeTrack.music)
+    {
+        mp_impl->activeTrack.music->setLooping(loop);
+    }
+}
+
+bool AudioMixer::IsMusicLooping() const
+{
+    if (!mp_impl) return false;
+    return mp_impl->activeTrack.isLooping;
+}
+
 float AudioMixer::GetSfxVolume() const
 {
     if (!mp_impl) return 0.0f;

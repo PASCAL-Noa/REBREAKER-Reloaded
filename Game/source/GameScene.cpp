@@ -15,6 +15,7 @@
 #include "ECS/Components/BrickComponent.h"
 #include "ECS/Systems/PhysicsSystem.h"
 #include "ECS/Systems/RenderSystem.h"
+#include "ECS/Systems/DynamicEventSystem.h"
 #include "Graphics/Renderer.h"
 #include "LevelTheme.h"
 #include "Events/EventDispatcher.h"
@@ -249,6 +250,19 @@ void GameScene::OnInit(GameContext& context)
     }
     m_systemManager.AddSystem<TweenSystem>(m_registry);
     m_systemManager.AddSystem<PowerUpSystem>(m_registry, context.Events);
+    mp_eventSystem = m_systemManager.AddSystem<DynamicEventSystem>(m_registry, context);
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->SetEnabled(context.Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled));
+        mp_eventSystem->SetBrickCollisionCallback([this](Entity bEntity, Entity /*proj*/)
+        {
+            HandleBrickCollision(bEntity, NULL_ENTITY, false, true, 1);
+        });
+        mp_eventSystem->SetScoreCallback([this](uint32_t s, uint32_t m)
+        {
+            m_scoreManager.AddScore(s * m);
+        });
+    }
 
     mp_paddleSystem->SetOnTriggerStormCallback([this](Entity)
     {
@@ -429,6 +443,11 @@ void GameScene::OnInit(GameContext& context)
     paddleLight.ConeAngleDeg = 80.0f;  // wide coverage beam
     paddleLight.InnerRadius = 30.0f;
     m_registry.AddComponent<LightSourceComponent>(m_paddle, paddleLight);
+
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->SetPaddleEntity(m_paddle);
+    }
 
     m_uiController = std::make_unique<GameUIController>(m_registry, *mp_context, *this);
     m_uiController->OnInit(m_fontId, m_heartTexId, m_fireTexId, m_bounceSfxId, m_scoreRecordedSfxId);
@@ -655,13 +674,16 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         }
     }
 
+    if (m_musicEnabled && currentState != static_cast<int>(SceneState::Paused) &&
+        currentState != static_cast<int>(SceneState::GameOver) &&
+        currentState != static_cast<int>(SceneState::Victory))
+    {
+        m_playlist.Update(context);
+    }
+
     if (currentState == static_cast<int>(SceneState::Playing))
     {
         m_gameplayTime += dt;
-        if (m_musicEnabled)
-        {
-            m_playlist.Update(context);
-        }
         HandleInput(dt, context);
         UpdatePowerUpTimers(dt);
         UpdateRegeneratingItemBricks(dt);
@@ -930,9 +952,33 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         mp_paddleSystem->SetInputEnabled(canControlPaddle);
     }
 
+    // Dynamic arena events lifecycle update (wall-clock time)
+    if (mp_eventSystem)
+    {
+        if (mp_context)
+        {
+            const bool ruleEnabled = mp_context->Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled);
+            if (ruleEnabled != mp_eventSystem->IsEnabled())
+            {
+                mp_eventSystem->SetEnabled(ruleEnabled);
+            }
+        }
+
+        if (currentState == static_cast<int>(SceneState::Playing) && !m_countdownActive)
+        {
+            mp_eventSystem->UpdateLifecycle(dt);
+        }
+        else if (currentState != static_cast<int>(SceneState::Paused))
+        {
+            mp_eventSystem->RestoreStandardPhysics();
+        }
+    }
+
     if (currentState != static_cast<int>(SceneState::Paused))
     {
-        m_systemManager.OnUpdate(dt);
+        const float timeScale = mp_eventSystem ? mp_eventSystem->GetTimeScale() : 1.0f;
+        const float simDt = dt * timeScale;
+        m_systemManager.OnUpdate(simDt);
     }
     m_registry.ProcessDeferredCommands();
 }
@@ -1184,16 +1230,27 @@ void GameScene::OnRender(GameContext& context)
 
     // 2D Dynamic Lighting Pass
     const bool isDiscoDarkActive = (discoDarkFactor > 0.0f);
-    if (m_currentTheme.HasLighting() || isDiscoDarkActive)
+    const float blackoutFactor = mp_eventSystem ? mp_eventSystem->GetBlackoutIntensity() : 0.0f;
+    const bool isBlackoutActive = (blackoutFactor > 0.01f);
+    const float alarmFactor = mp_eventSystem ? mp_eventSystem->GetAlarmIntensity() : 0.0f;
+    const bool isAlarmLightActive = (alarmFactor > 0.01f);
+    if (m_currentTheme.HasLighting() || isDiscoDarkActive || isBlackoutActive || isAlarmLightActive)
     {
         Color baseAmbient = m_currentTheme.AmbientLight;
         Color clubDark{10, 8, 18, 255}; // Extinguished room lights -> Authentic Disco Club!
+        Color deepBlackout{6, 5, 12, 255};
         Color ambient{
             static_cast<uint8_t>(baseAmbient.r * (1.0f - discoDarkFactor) + clubDark.r * discoDarkFactor),
             static_cast<uint8_t>(baseAmbient.g * (1.0f - discoDarkFactor) + clubDark.g * discoDarkFactor),
             static_cast<uint8_t>(baseAmbient.b * (1.0f - discoDarkFactor) + clubDark.b * discoDarkFactor),
             255
         };
+        if (isBlackoutActive)
+        {
+            ambient.r = static_cast<uint8_t>(ambient.r * (1.0f - blackoutFactor) + deepBlackout.r * blackoutFactor);
+            ambient.g = static_cast<uint8_t>(ambient.g * (1.0f - blackoutFactor) + deepBlackout.g * blackoutFactor);
+            ambient.b = static_cast<uint8_t>(ambient.b * (1.0f - blackoutFactor) + deepBlackout.b * blackoutFactor);
+        }
         context.Render.BeginLightingPass(ambient);
 
         // 1. Dynamic light sources (point and cone) from ECS entities (lanterns, standard balls, etc.)
@@ -1375,11 +1432,22 @@ void GameScene::OnRender(GameContext& context)
             }
         }
 
+        if (mp_eventSystem)
+        {
+            mp_eventSystem->RenderSearchlights(context);
+            mp_eventSystem->RenderAlarmLights(context);
+        }
+
         context.Render.EndLightingPass(BlendMode::Multiply);
     }
 
     RenderRegeneratingBricks(context);
     RenderActiveUltimateVisuals(context);
+
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->RenderProjectiles(context);
+    }
 
     context.Render.ResetCamera();
 
@@ -1407,6 +1475,7 @@ void GameScene::OnRender(GameContext& context)
         std::string shaderStr = context.Rules.GetRule(Rule::Graphics::EnableShader) ? "ON" : "OFF";
         std::string invStr = context.Rules.GetRule(Rule::Gameplay::Invincible) ? "ON" : "OFF";
         std::string infLivesStr = context.Rules.GetRule(Rule::Gameplay::InfiniteLives) ? "ON" : "OFF";
+        std::string eventsStr = context.Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled) ? "ON" : "OFF";
 
         std::string stats = "Level: " + std::to_string(m_levelManager.GetCurrentLevelNumber()) + " / " + std::to_string(m_levelManager.GetLevelCount()) +
                             " (Unlocked: " + std::to_string(m_levelManager.GetUnlockedLevel()) + ")" +
@@ -1414,7 +1483,7 @@ void GameScene::OnRender(GameContext& context)
         stats += "\nLevel Best: " + std::to_string(m_levelManager.GetHighScoreForLevel(m_levelManager.GetCurrentLevelNumber())) +
                  " | Global Best: " + std::to_string(m_scoreManager.GetHighScore());
         stats += "\nDebug (G) : " + debugStr + " | Shader (F) : " + shaderStr;
-        stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr;
+        stats += "\nGod mod (I) : " + invStr + " | Infinite lives (L) : " + infLivesStr + " | Arena Events (Y) : " + eventsStr;
         stats += "\nState : " + gameStateStr;
         if (m_uiController && m_uiController->IsPowerUpTesterActive())
         {
@@ -1425,7 +1494,7 @@ void GameScene::OnRender(GameContext& context)
                      " | Balls: " + std::to_string(mp_ballSystem ? mp_ballSystem->GetBallCount() : 0) +
                      " | Paddle: " + std::to_string(static_cast<int>(paddleBox.GetEffectiveSize(paddleTrans.Scale).X)) + "px" +
                      " | Laser: " + (paddleComp.HasLaser ? "ON" : "OFF") +
-                     " | Keys: 1-7, P, O, R, B, U | [TAB] Hide";
+                     " | Keys: 1-7, P, O, R, B, U, E (Event) | [TAB] Hide";
         }
         else
         {
@@ -1449,6 +1518,11 @@ void GameScene::OnRender(GameContext& context)
         }
 
         RenderUltimateMeterHUD(context);
+
+        if (mp_eventSystem && m_renderGameUI)
+        {
+            mp_eventSystem->RenderUI(context, m_fontId);
+        }
     }
 }
 
@@ -1805,6 +1879,10 @@ void GameScene::OnDestroy(GameContext& context)
     ClearActiveUltimates();
     ClearVisualMalus();
     RestoreTemporalAudio(0.05f);
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->RestoreStandardPhysics();
+    }
     if (m_fireballBurnSfxId != 0)
     {
         context.Audio.StopLoopingSfx(m_fireballBurnSfxId);
@@ -1837,6 +1915,15 @@ bool GameScene::HasNextLevel() const
 void GameScene::LoadLevel(int levelIndex, bool preserveStats)
 {
     ClearActiveUltimates();
+    ClearVisualMalus();
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->ResetLifecycle();
+        const int lvl = m_levelManager.GetCurrentLevelNumber();
+        const float minInterval = std::max(14.0f, 30.0f - lvl * 1.5f);
+        const float maxInterval = std::max(minInterval + 5.0f, 45.0f - lvl * 2.0f);
+        mp_eventSystem->SetIntervalRange(minInterval, maxInterval);
+    }
     m_levelManager.SetLevel(levelIndex);
     ApplyLevelTheme(m_levelManager.GetCurrentLevelNumber());
 
@@ -2104,6 +2191,10 @@ void GameScene::FullReset()
 {
     ClearVisualMalus();
     RestoreTemporalAudio(0.1f);
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->ResetLifecycle();
+    }
     if (mp_context)
     {
         m_playlist.PlayNext(*mp_context, 1.0f);
@@ -2225,6 +2316,25 @@ void GameScene::HandleInput(const float /*dt*/, const GameContext& context)
         PowerUpManager::Get().SetLevel(PowerUpType::BottomBarrier, nextLvl);
         PowerUpManager::Get().SetLevel(PowerUpType::MagnetPaddle, nextLvl);
         PowerUpManager::Get().SetLevel(PowerUpType::GhostBall, nextLvl);
+    }
+    if (testerActive && context.Input.IsKeyPress(KeyCode::E))
+    {
+        if (mp_eventSystem)
+        {
+            if (mp_eventSystem->IsEventActive() || mp_eventSystem->IsWarningActive())
+            {
+                mp_eventSystem->StopActiveEvent();
+            }
+            else
+            {
+                mp_eventSystem->TriggerRandomEvent(false);
+            }
+        }
+    }
+    if (context.Input.IsKeyPress(KeyCode::Y))
+    {
+        const bool curEvents = context.Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled);
+        context.Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, !curEvents);
     }
 }
 
@@ -4407,7 +4517,7 @@ void GameScene::ClearActiveUltimates()
             {
                 if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
                 {
-                    mp_context->Audio.PlayMusic(m_prePlasmaMusicPath, 80.0f, true);
+                    mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f, 60.0f, false);
                 }
                 else
                 {
@@ -4419,7 +4529,7 @@ void GameScene::ClearActiveUltimates()
                 std::string cur = mp_context->Audio.GetCurrentMusicPath();
                 if (cur.find("plasma_ultimate") != std::string::npos)
                 {
-                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                    mp_context->Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
                 }
             }
             m_prePlasmaMusicPath.clear();
@@ -4442,7 +4552,7 @@ void GameScene::ClearActiveUltimates()
             {
                 if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
                 {
-                    mp_context->Audio.PlayMusic(m_preDiscoMusicPath, 80.0f, true);
+                    mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f, 60.0f, false);
                 }
                 else
                 {
@@ -4454,7 +4564,7 @@ void GameScene::ClearActiveUltimates()
                 std::string cur = mp_context->Audio.GetCurrentMusicPath();
                 if (cur.find("disco_ultimate") != std::string::npos)
                 {
-                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                    mp_context->Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
                 }
             }
             m_preDiscoMusicPath.clear();
@@ -4478,7 +4588,7 @@ void GameScene::ClearActiveUltimates()
             {
                 if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
                 {
-                    mp_context->Audio.PlayMusic(m_prePowerUpRainMusicPath, 80.0f, true);
+                    mp_context->Audio.FadeToMusic(m_prePowerUpRainMusicPath, 1.2f, 60.0f, false);
                 }
                 else
                 {
@@ -4490,7 +4600,7 @@ void GameScene::ClearActiveUltimates()
                 std::string cur = mp_context->Audio.GetCurrentMusicPath();
                 if (cur.find("lucky_drop_ultimate") != std::string::npos)
                 {
-                    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                    mp_context->Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
                 }
             }
             m_prePowerUpRainMusicPath.clear();
@@ -5129,7 +5239,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
             {
                 if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
                 {
-                    mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f);
+                    mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f, 60.0f, false);
                 }
                 else
                 {
@@ -5639,7 +5749,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                 {
                     if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
                     {
-                        mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f);
+                        mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f, 60.0f, false);
                     }
                     else
                     {
@@ -5706,7 +5816,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
             {
                 if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
                 {
-                    mp_context->Audio.FadeToMusic(m_prePowerUpRainMusicPath, 1.2f);
+                    mp_context->Audio.FadeToMusic(m_prePowerUpRainMusicPath, 1.2f, 60.0f, false);
                 }
                 else
                 {
@@ -6491,12 +6601,17 @@ void GameScene::UpdateVisualMalus(const float dt)
         m_cameraTiltTimer = 0.0f;
     }
 
-    // Cleanly restore camera transformations to default identity (Zoom=0.75f, Rotation=0.0f)
+    // Cleanly restore camera transformations to default identity (Zoom=0.75f, Rotation=0.0f, Position=0,0)
     if (m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
     {
         auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
         cam.Zoom = currentZoom;
-        cam.Rotation = currentRotation;
+        const float eventTilt = mp_eventSystem ? mp_eventSystem->GetArenaTiltAngle() : 0.0f;
+        const float eventShakeAngle = mp_eventSystem ? mp_eventSystem->GetCameraShakeAngle() : 0.0f;
+        cam.Rotation = currentRotation + eventTilt + eventShakeAngle;
+
+        const Vector2f eventShakeOffset = mp_eventSystem ? mp_eventSystem->GetCameraShakeOffset() : Vector2f{0.0f, 0.0f};
+        cam.Position = eventShakeOffset;
     }
 
     // 3. Screen Glitch Post-Processing Effect (#83)
@@ -6516,6 +6631,17 @@ void GameScene::UpdateVisualMalus(const float dt)
     {
         m_postProcessParams.GlitchIntensity = 0.0f;
         m_postProcessParams.ScanlineFlicker = 0.0f;
+    }
+
+    // Emergency Arena Event Alarm Post-Processing Indicator
+    if (mp_eventSystem)
+    {
+        m_postProcessParams.AlarmIntensity = mp_eventSystem->GetAlarmIntensity();
+        m_postProcessParams.AlarmColor = mp_eventSystem->GetAlarmColor();
+    }
+    else
+    {
+        m_postProcessParams.AlarmIntensity = 0.0f;
     }
 
     // 4. Temporal Audio Distortion duration decay (#83)

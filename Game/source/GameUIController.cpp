@@ -1648,6 +1648,20 @@ void GameUIController::CreateGamerulesTab()
         .FontId = m_fontId
     });
 
+    const bool isEvents = m_context.Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled);
+    m_arenaEventsBtn = UIFactory::CreateButton(m_registry, m_gamerulesCanvas, ButtonDescriptor{
+        .Text = isEvents ? "ARENA EVENTS: ON" : "ARENA EVENTS: OFF",
+        .OnClick = [this]() {
+            bool state = m_context.Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled);
+            m_context.Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, !state);
+            if (m_arenaEventsBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_arenaEventsBtn)) {
+                m_registry.GetComponent<TextComponent>(m_arenaEventsBtn).Text = !state ? "ARENA EVENTS: ON" : "ARENA EVENTS: OFF";
+            }
+        },
+        .Position = {rightPanelX, 0.0f},
+        .FontId = m_fontId
+    });
+
     UIFactory::CreatePanel(m_registry, m_gamerulesCanvas, PanelDescriptor{
       .Position = {rightPanelX, 0.0f},
       .Size = {rightPanelWidth, viewY},

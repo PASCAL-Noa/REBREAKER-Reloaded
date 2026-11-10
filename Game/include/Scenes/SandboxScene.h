@@ -1,5 +1,6 @@
 #pragma once
 #include "Scenes/GameScene.h"
+#include "Events/ArenaEvents.h"
 #include <vector>
 #include <string>
 
@@ -81,6 +82,15 @@ public:
     void ClearActiveMaluses();
     [[nodiscard]] int GetSelectedMalusIndex() const noexcept { return m_selectedMalusIdx; }
 
+    // Dynamic Arena Events Module
+    void NextArenaEvent();
+    void PreviousArenaEvent();
+    void TriggerSelectedArenaEvent();
+    void ClearActiveArenaEvent();
+    void ToggleAutoArenaEvents();
+    [[nodiscard]] ArenaEventType GetSelectedArenaEventType() const noexcept { return m_selectedArenaEventType; }
+    [[nodiscard]] const char*    GetSelectedArenaEventName() const noexcept;
+
     // UI Stream Deck Toggle
     void TogglePalette();
     [[nodiscard]] bool IsPaletteVisible() const noexcept { return m_paletteVisible; }
@@ -100,6 +110,7 @@ private:
     int              m_selectedPowerUpIdx = 0;
     int              m_selectedUltimateIdx = 0;
     int              m_selectedMalusIdx = 0;
+    ArenaEventType   m_selectedArenaEventType = ArenaEventType::TemporalFlux;
 
     Entity           m_sandboxCanvas = NULL_ENTITY;
     Entity           m_miniToggleCanvas = NULL_ENTITY;
@@ -109,6 +120,8 @@ private:
     Entity           m_btnSpawnMode = NULL_ENTITY;
     Entity           m_btnUltimateLCD = NULL_ENTITY;
     Entity           m_btnMalusLCD = NULL_ENTITY;
+    Entity           m_btnArenaEventLCD = NULL_ENTITY;
+    Entity           m_btnAutoEventsPad = NULL_ENTITY;
     Entity           m_btnLayoutLCD = NULL_ENTITY;
     Entity           m_btnLightingLCD = NULL_ENTITY;
     Entity           m_btnBarrierPad = NULL_ENTITY;
