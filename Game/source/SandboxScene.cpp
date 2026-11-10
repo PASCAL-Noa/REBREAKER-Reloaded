@@ -21,6 +21,7 @@
 #include "ECS/Components/BrickComponent.h"
 #include "ECS/Components/LightSourceComponent.h"
 #include "ECS/Systems/BallSystem.h"
+#include "ECS/Systems/DynamicEventSystem.h"
 #include <algorithm>
 
 namespace
@@ -211,6 +212,12 @@ void SandboxScene::OnUpdate(float dt, GameContext& context)
         m_bottomBarrierActive = true;
         m_bottomBarrierDuration = 999999.0f;
         m_bottomBarrierCharges = 999999;
+    }
+
+    // Dynamic arena events real-time UI timer update
+    if (mp_eventSystem && (mp_eventSystem->IsEventActive() || mp_eventSystem->IsWarningActive()))
+    {
+        UpdateSandboxUIDisplay();
     }
 
     // Auto-respawn safety: never lock the player if all balls are lost
@@ -672,6 +679,70 @@ void SandboxScene::ClearActiveMaluses()
     m_registry.ProcessDeferredCommands();
 }
 
+static constexpr std::array<ArenaEventType, 7> kAllArenaEvents = {
+    ArenaEventType::TemporalFlux,
+    ArenaEventType::GravityShiftLeft,
+    ArenaEventType::GravityShiftRight,
+    ArenaEventType::GravityShiftDown,
+    ArenaEventType::CameraEarthquake,
+    ArenaEventType::SolarFlareBlackout,
+    ArenaEventType::MeteorShower
+};
+
+void SandboxScene::NextArenaEvent()
+{
+    int idx = 0;
+    for (size_t i = 0; i < kAllArenaEvents.size(); ++i)
+    {
+        if (kAllArenaEvents[i] == m_selectedArenaEventType) { idx = static_cast<int>(i); break; }
+    }
+    m_selectedArenaEventType = kAllArenaEvents[(idx + 1) % kAllArenaEvents.size()];
+    UpdateSandboxUIDisplay();
+}
+
+void SandboxScene::PreviousArenaEvent()
+{
+    int idx = 0;
+    for (size_t i = 0; i < kAllArenaEvents.size(); ++i)
+    {
+        if (kAllArenaEvents[i] == m_selectedArenaEventType) { idx = static_cast<int>(i); break; }
+    }
+    m_selectedArenaEventType = kAllArenaEvents[(idx - 1 + static_cast<int>(kAllArenaEvents.size())) % kAllArenaEvents.size()];
+    UpdateSandboxUIDisplay();
+}
+
+void SandboxScene::TriggerSelectedArenaEvent()
+{
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->TriggerEvent(m_selectedArenaEventType, false);
+    }
+    UpdateSandboxUIDisplay();
+}
+
+void SandboxScene::ClearActiveArenaEvent()
+{
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->StopActiveEvent();
+    }
+    UpdateSandboxUIDisplay();
+}
+
+void SandboxScene::ToggleAutoArenaEvents()
+{
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->SetEnabled(!mp_eventSystem->IsEnabled());
+    }
+    UpdateSandboxUIDisplay();
+}
+
+const char* SandboxScene::GetSelectedArenaEventName() const noexcept
+{
+    return GetArenaEventName(m_selectedArenaEventType);
+}
+
 void SandboxScene::TogglePalette()
 {
     m_paletteVisible = !m_paletteVisible;
@@ -714,6 +785,11 @@ void SandboxScene::HandleSandboxInput(const GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::N)) PreviousMalus();
     if (context.Input.IsKeyPress(KeyCode::X)) ClearActiveMaluses();
 
+    // Arena Events shortcuts
+    if (context.Input.IsKeyPress(KeyCode::E)) TriggerSelectedArenaEvent();
+    if (context.Input.IsKeyPress(KeyCode::T)) NextArenaEvent();
+    if (context.Input.IsKeyPress(KeyCode::Y)) ToggleAutoArenaEvents();
+
     // Arrows to cycle power-ups / layouts
     if (context.Input.IsKeyPress(KeyCode::Left))  PreviousPowerUp();
     if (context.Input.IsKeyPress(KeyCode::Right)) NextPowerUp();
@@ -746,8 +822,8 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_registry.AddComponent<CanvasComponent>(m_sandboxCanvas, CanvasComponent{.IsEnabled = m_paletteVisible});
 
     constexpr float deckW = 860.0f;
-    constexpr float deckH = 500.0f;
-    constexpr float deckY = 15.0f;
+    constexpr float deckH = 550.0f;
+    constexpr float deckY = 5.0f;
 
     // Dark sleek console body
     UIFactory::CreatePanel(m_registry, m_sandboxCanvas, PanelDescriptor{
@@ -795,12 +871,12 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
         .ZOrder = 12
     });
 
-    constexpr float padH = 42.0f;
+    constexpr float padH = 38.0f;
 
     // ==========================================
     // CHANNEL 1: POWER-UP SPINNER & TRIGGER
     // ==========================================
-    constexpr float row1Y = deckY - 165.0f;
+    constexpr float row1Y = deckY - 180.0f;
 
     // Previous Power-Up Arrow
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
@@ -930,7 +1006,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     // ==========================================
     // CHANNEL 2: ULTIMATE ABILITIES MODULE
     // ==========================================
-    constexpr float row2Y = deckY - 100.0f;
+    constexpr float row2Y = deckY - 118.0f;
 
     // Previous Ultimate Arrow
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
@@ -1040,7 +1116,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     // ==========================================
     // CHANNEL 3: MALUS & SCREEN DISRUPTION MODULE
     // ==========================================
-    constexpr float row3Y = deckY - 35.0f;
+    constexpr float row3Y = deckY - 56.0f;
 
     // Previous Malus Arrow
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
@@ -1145,15 +1221,122 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     });
 
     // ==========================================
-    // CHANNEL 4: PLAYGROUND LAYOUTS & BRICKS
+    // CHANNEL 4: DYNAMIC ARENA EVENTS MODULE
     // ==========================================
-    constexpr float row4Y = deckY + 30.0f;
+    constexpr float row4Y = deckY + 6.0f;
+
+    // Previous Event Arrow
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "<",
+        .OnClick = [this]() { PreviousArenaEvent(); },
+        .Position = {-375.0f, row4Y},
+        .Size = {44.0f, padH},
+        .DefaultColor = Color{35, 42, 60, 255},
+        .HoverColor = Color{55, 68, 95, 255},
+        .PressedColor = Color{20, 25, 35, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 22.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Event LCD Display & Direct Trigger
+    m_btnArenaEventLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "EVENT: TEMPORAL FLUX (SLOW)",
+        .OnClick = [this]() { TriggerSelectedArenaEvent(); },
+        .Position = {-185.0f, row4Y},
+        .Size = {310.0f, padH},
+        .DefaultColor = Color{140, 80, 210, 255},
+        .HoverColor = Color{175, 110, 250, 255},
+        .PressedColor = Color{95, 45, 150, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 16.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Next Event Arrow
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = ">",
+        .OnClick = [this]() { NextArenaEvent(); },
+        .Position = {5.0f, row4Y},
+        .Size = {44.0f, padH},
+        .DefaultColor = Color{35, 42, 60, 255},
+        .HoverColor = Color{55, 68, 95, 255},
+        .PressedColor = Color{20, 25, 35, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 22.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Trigger Event Pad
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "TRIGGER",
+        .OnClick = [this]() { TriggerSelectedArenaEvent(); },
+        .Position = {90.0f, row4Y},
+        .Size = {100.0f, padH},
+        .DefaultColor = Color{180, 75, 35, 255},
+        .HoverColor = Color{225, 100, 50, 255},
+        .PressedColor = Color{120, 45, 20, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 16.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Auto Events Toggle Pad
+    m_btnAutoEventsPad = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "AUTO: ON",
+        .OnClick = [this]() { ToggleAutoArenaEvents(); },
+        .Position = {215.0f, row4Y},
+        .Size = {130.0f, padH},
+        .DefaultColor = Color{40, 140, 80, 255},
+        .HoverColor = Color{55, 175, 100, 255},
+        .PressedColor = Color{25, 90, 50, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 15.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Clear Event Pad
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "CLEAR",
+        .OnClick = [this]() { ClearActiveArenaEvent(); },
+        .Position = {365.0f, row4Y},
+        .Size = {68.0f, padH},
+        .DefaultColor = Color{65, 65, 75, 255},
+        .HoverColor = Color{90, 90, 105, 255},
+        .PressedColor = Color{40, 40, 50, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 14.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // ==========================================
+    // CHANNEL 5: PLAYGROUND LAYOUTS & BRICKS
+    // ==========================================
+    constexpr float row5Y = deckY + 68.0f;
 
     // Previous Layout Arrow
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "<",
         .OnClick = [this]() { PreviousPlaygroundLayout(); },
-        .Position = {-375.0f, row4Y},
+        .Position = {-375.0f, row5Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -1170,7 +1353,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_btnLayoutLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "LAYOUT: TACTICAL MIX",
         .OnClick = [this]() { NextPlaygroundLayout(); },
-        .Position = {-185.0f, row4Y},
+        .Position = {-185.0f, row5Y},
         .Size = {310.0f, padH},
         .DefaultColor = Color{40, 75, 115, 255},
         .HoverColor = Color{60, 105, 165, 255},
@@ -1187,7 +1370,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = ">",
         .OnClick = [this]() { NextPlaygroundLayout(); },
-        .Position = {5.0f, row4Y},
+        .Position = {5.0f, row5Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -1204,7 +1387,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "REFILL BRICKS",
         .OnClick = [this]() { RespawnCurrentLayout(); },
-        .Position = {110.0f, row4Y},
+        .Position = {110.0f, row5Y},
         .Size = {140.0f, padH},
         .DefaultColor = Color{40, 95, 55, 255},
         .HoverColor = Color{55, 135, 75, 255},
@@ -1221,7 +1404,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "CLEAR",
         .OnClick = [this]() { ClearAllBricks(); },
-        .Position = {230.0f, row4Y},
+        .Position = {230.0f, row5Y},
         .Size = {84.0f, padH},
         .DefaultColor = Color{110, 40, 40, 255},
         .HoverColor = Color{150, 55, 55, 255},
@@ -1235,15 +1418,15 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     });
 
     // ==========================================
-    // CHANNEL 5: ENVIRONMENT & SAFETY & TOOLS
+    // CHANNEL 6: ENVIRONMENT & SAFETY & TOOLS
     // ==========================================
-    constexpr float row5Y = deckY + 95.0f;
+    constexpr float row6Y = deckY + 130.0f;
 
     // Previous Light Arrow
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "<",
         .OnClick = [this]() { PreviousLightingMode(); },
-        .Position = {-375.0f, row5Y},
+        .Position = {-375.0f, row6Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -1260,7 +1443,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_btnLightingLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "LIGHT: LIT",
         .OnClick = [this]() { NextLightingMode(); },
-        .Position = {-235.0f, row5Y},
+        .Position = {-235.0f, row6Y},
         .Size = {210.0f, padH},
         .DefaultColor = Color{45, 55, 75, 255},
         .HoverColor = Color{65, 80, 110, 255},
@@ -1277,7 +1460,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = ">",
         .OnClick = [this]() { NextLightingMode(); },
-        .Position = {-100.0f, row5Y},
+        .Position = {-100.0f, row6Y},
         .Size = {44.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
@@ -1294,7 +1477,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     m_btnBarrierPad = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "LASER FLOOR: ACTIVE",
         .OnClick = [this]() { ToggleSafetyBarrier(); },
-        .Position = {45.0f, row5Y},
+        .Position = {45.0f, row6Y},
         .Size = {195.0f, padH},
         .DefaultColor = Color{0, 140, 185, 255},
         .HoverColor = Color{0, 185, 245, 255},
@@ -1311,7 +1494,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "BALL RESPAWN",
         .OnClick = [this]() { RespawnBall(); },
-        .Position = {210.0f, row5Y},
+        .Position = {210.0f, row6Y},
         .Size = {120.0f, padH},
         .DefaultColor = Color{35, 90, 110, 255},
         .HoverColor = Color{50, 125, 155, 255},
@@ -1328,7 +1511,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "MENU",
         .OnClick = [&context]() { context.Scenes.LoadScene<MenuScene>(); },
-        .Position = {330.0f, row5Y},
+        .Position = {330.0f, row6Y},
         .Size = {100.0f, padH},
         .DefaultColor = Color{110, 35, 40, 255},
         .HoverColor = Color{150, 50, 55, 255},
@@ -1344,7 +1527,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     // Bottom ergonomic hint line
     UIFactory::CreateText(m_registry, m_sandboxCanvas, TextDescriptor{
         .Text = "STREAM DECK CONTROLLER  |  TOGGLE [TAB]  |  CLICK PADS TO INTERACT",
-        .Position = {0.0f, deckY + 165.0f},
+        .Position = {0.0f, deckY + 195.0f},
         .FontId = m_fontId,
         .FontSize = 16.0f,
         .Tint = Color{170, 195, 230, 190},
@@ -1435,6 +1618,76 @@ void SandboxScene::UpdateSandboxUIDisplay()
         if (m_registry.HasComponent<PanelComponent>(m_btnMalusLCD))
         {
             m_registry.GetComponent<PanelComponent>(m_btnMalusLCD).Tint = mCol;
+        }
+    }
+
+    // Update Arena Event LCD Pad
+    if (m_btnArenaEventLCD != NULL_ENTITY)
+    {
+        std::string status;
+        if (mp_eventSystem)
+        {
+            if (mp_eventSystem->IsEventActive())
+            {
+                std::ostringstream ss;
+                ss << "[ACTIVE] " << GetArenaEventName(mp_eventSystem->GetCurrentEventType()) << " (" << std::fixed << std::setprecision(1) << mp_eventSystem->GetTimeRemaining() << "s)";
+                status = ss.str();
+            }
+            else if (mp_eventSystem->IsWarningActive())
+            {
+                std::ostringstream ss;
+                ss << "[WARN] " << GetArenaEventName(mp_eventSystem->GetCurrentEventType()) << " (" << std::fixed << std::setprecision(1) << mp_eventSystem->GetTimeRemaining() << "s)";
+                status = ss.str();
+            }
+            else
+            {
+                status = std::string("EVENT: ") + GetArenaEventName(m_selectedArenaEventType);
+            }
+        }
+        else
+        {
+            status = std::string("EVENT: ") + GetArenaEventName(m_selectedArenaEventType);
+        }
+
+        if (m_registry.HasComponent<TextComponent>(m_btnArenaEventLCD))
+        {
+            m_registry.GetComponent<TextComponent>(m_btnArenaEventLCD).Text = status;
+        }
+        Color eCol = GetArenaEventColor(m_selectedArenaEventType);
+        if (m_registry.HasComponent<ButtonComponent>(m_btnArenaEventLCD))
+        {
+            auto& btn = m_registry.GetComponent<ButtonComponent>(m_btnArenaEventLCD);
+            btn.DefaultColor = eCol;
+            btn.HoverColor = Color{
+                static_cast<uint8_t>(std::min(255, eCol.r + 35)),
+                static_cast<uint8_t>(std::min(255, eCol.g + 35)),
+                static_cast<uint8_t>(std::min(255, eCol.b + 35)),
+                255
+            };
+        }
+        if (m_registry.HasComponent<PanelComponent>(m_btnArenaEventLCD))
+        {
+            m_registry.GetComponent<PanelComponent>(m_btnArenaEventLCD).Tint = eCol;
+        }
+    }
+
+    // Update Auto Events Toggle Pad
+    if (m_btnAutoEventsPad != NULL_ENTITY)
+    {
+        const bool autoOn = mp_eventSystem ? mp_eventSystem->IsEnabled() : true;
+        if (m_registry.HasComponent<TextComponent>(m_btnAutoEventsPad))
+        {
+            m_registry.GetComponent<TextComponent>(m_btnAutoEventsPad).Text =
+                autoOn ? "AUTO: ON" : "AUTO: OFF";
+        }
+        Color aCol = autoOn ? Color{40, 140, 80, 255} : Color{120, 45, 50, 255};
+        if (m_registry.HasComponent<ButtonComponent>(m_btnAutoEventsPad))
+        {
+            m_registry.GetComponent<ButtonComponent>(m_btnAutoEventsPad).DefaultColor = aCol;
+        }
+        if (m_registry.HasComponent<PanelComponent>(m_btnAutoEventsPad))
+        {
+            m_registry.GetComponent<PanelComponent>(m_btnAutoEventsPad).Tint = aCol;
         }
     }
 

@@ -23,6 +23,8 @@
 #include <memory>
 #include <unordered_map>
 
+class DynamicEventSystem;
+
 struct Color;
 class GameFeelSystem;
 
@@ -154,6 +156,10 @@ public:
     [[nodiscard]] uint32_t GetPowerUpOrbTexture(PowerUpType type) const;
     [[nodiscard]] uint32_t GetHazardTexture(HazardEffectType effect) const;
 
+    // Dynamic Arena Event System
+    [[nodiscard]] DynamicEventSystem*       GetDynamicEventSystem() noexcept { return mp_eventSystem; }
+    [[nodiscard]] const DynamicEventSystem* GetDynamicEventSystem() const noexcept { return mp_eventSystem; }
+
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
     void    HandleInput(float dt, const GameContext& context);
@@ -246,8 +252,9 @@ protected:
     float   m_levelTransitionTimer = 0.0f;
     uint32_t m_levelStartScore = 0;
 
-    PaddleSystem* mp_paddleSystem = nullptr;
-    BallSystem*   mp_ballSystem = nullptr;
+    PaddleSystem*       mp_paddleSystem = nullptr;
+    BallSystem*         mp_ballSystem = nullptr;
+    DynamicEventSystem* mp_eventSystem = nullptr;
 
     float   m_paddleSizeDuration = 0.0f;
     bool    m_isShrinkPaddle = false;

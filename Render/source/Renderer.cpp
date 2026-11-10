@@ -117,6 +117,12 @@ void Renderer::EndDraw(uint32_t postProcessShaderId, const PostProcessParams& pa
         shader->setUniform("u_glitchIntensity", params.GlitchIntensity);
         shader->setUniform("u_scanlineFlicker", params.ScanlineFlicker);
         shader->setUniform("u_time", params.Time);
+        shader->setUniform("u_alarmIntensity", params.AlarmIntensity);
+        shader->setUniform("u_alarmColor", sf::Glsl::Vec3(
+            params.AlarmColor.r / 255.f,
+            params.AlarmColor.g / 255.f,
+            params.AlarmColor.b / 255.f
+        ));
 
         sf::RenderStates states;
         states.shader = shader;
