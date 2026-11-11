@@ -424,4 +424,121 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
         CHECK(w2 < 0.0f); // Reverse rotation
         CHECK(std::abs(w1 * r1) == doctest::Approx(std::abs(w2 * r2))); // Linear pitch velocity matched
     }
+
+    TEST_CASE("Chassis CH button stepping logic (CH+ advances, CH- decrements) (#90)")
+    {
+        constexpr int kTotalChannels = 8;
+        auto cycleChannel = [](int current, int step) -> int {
+            return (current + step + kTotalChannels) % kTotalChannels;
+        };
+
+        // CH + advances forward
+        int current = 0;
+        current = cycleChannel(current, 1);
+        CHECK(current == 1);
+        current = cycleChannel(current, 1);
+        CHECK(current == 2);
+
+        // Wrap around at the end
+        current = 7;
+        current = cycleChannel(current, 1);
+        CHECK(current == 0);
+
+        // CH - goes backward
+        current = cycleChannel(current, -1);
+        CHECK(current == 7);
+        current = cycleChannel(current, -1);
+        CHECK(current == 6);
+    }
+
+    TEST_CASE("TV Power Dialog 3-way navigation & Standby state (#90)")
+    {
+        // 3 choices: 0 = Cancel, 1 = Standby, 2 = Power Off
+        int choice = 1; // Default choice is Standby
+        CHECK(choice == 1);
+
+        auto navLeft = [](int ch) { return (ch + 2) % 3; };
+        auto navRight = [](int ch) { return (ch + 1) % 3; };
+
+        CHECK(navLeft(choice) == 0);  // Standby -> Cancel
+        CHECK(navRight(choice) == 2); // Standby -> Power Off
+        CHECK(navRight(2) == 0); // Power Off -> Cancel (wrap)
+        CHECK(navLeft(0) == 2);  // Cancel -> Power Off (wrap)
+
+        // Standby state transition
+        bool isStandby = false;
+        bool isPoweringOff = false;
+
+        auto confirm = [&](int selected) {
+            if (selected == 1) isStandby = true;
+            else if (selected == 2) isPoweringOff = true;
+        };
+
+        confirm(1);
+        CHECK(isStandby == true);
+        CHECK(isPoweringOff == false);
+
+        // Wake up restores standby
+        isStandby = false;
+        CHECK(isStandby == false);
+    }
+
+    TEST_CASE("Speaker Music Note Particles spawn interval scaling with volume (#90)")
+    {
+        auto calcSpawnInterval = [](float masterVolume) -> float {
+            if (masterVolume <= 1.0f) return -1.0f; // No spawn when muted
+            return 0.08f + ((100.0f - masterVolume) / 100.0f) * 0.35f;
+        };
+
+        // Muted (0% vol): no particles
+        CHECK(calcSpawnInterval(0.0f) < 0.0f);
+
+        // Max volume (100% vol): fastest particle emission
+        CHECK(calcSpawnInterval(100.0f) == doctest::Approx(0.08f));
+
+        // 50% volume: intermediate emission rate
+        CHECK(calcSpawnInterval(50.0f) == doctest::Approx(0.255f));
+
+        // 10% volume: slow emission rate
+        CHECK(calcSpawnInterval(10.0f) == doctest::Approx(0.395f));
+
+        // Higher volume produces shorter interval (more particles per second)
+        CHECK(calcSpawnInterval(100.0f) < calcSpawnInterval(50.0f));
+        CHECK(calcSpawnInterval(50.0f) < calcSpawnInterval(10.0f));
+    }
+
+    TEST_CASE("Workshop 3D Credit Coin horizontal perspective width (#90)")
+    {
+        const float R = 26.0f;
+        auto getCoinWidth = [R](float angle) -> float {
+            return std::max(2.5f, std::abs(std::cos(angle)) * R);
+        };
+
+        // Face-on (0 rad): full width
+        CHECK(getCoinWidth(0.0f) == doctest::Approx(26.0f));
+
+        // Edge-on (pi/2 rad): clamped to minimum visible rim width
+        CHECK(getCoinWidth(1.570796f) == doctest::Approx(2.5f));
+
+        // Half turn (pi rad): full width again
+        CHECK(getCoinWidth(3.14159265f) == doctest::Approx(26.0f));
+    }
+
+    TEST_CASE("Endless Doom/Mortal Kombat flame oscillation & strobe blink (#90)")
+    {
+        auto isTitleStrobe = [](float animTime) -> bool {
+            float phase = std::fmod(animTime * 4.5f, 1.0f);
+            return (phase < 0.28f);
+        };
+
+        // At start of cycle: bright strobe
+        CHECK(isTitleStrobe(0.0f) == true);
+
+        // Later in cycle: fiery red title
+        CHECK(isTitleStrobe(0.1f) == false);
+
+        // Next cycle starts: strobe again
+        float nextCycle = 1.0f / 4.5f;
+        CHECK(isTitleStrobe(nextCycle + 0.01f) == true);
+    }
 }

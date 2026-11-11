@@ -150,11 +150,26 @@ private:
         bool Alive = true;
     };
 
+    struct MusicNoteParticle
+    {
+        Vector2f BasePos;
+        Vector2f Velocity;
+        float Lifetime = 0.0f;
+        float MaxLifetime = 2.5f;
+        float Scale = 1.0f;
+        Color NoteColor{120, 220, 255, 255};
+        int NoteType = 0; // 0 = single note, 1 = beamed double note
+        float WobblePhase = 0.0f;
+        float WobbleSpeed = 3.0f;
+    };
+
     void    InitTVChannels();
     void    InitCampaignPreviewLevel();
     void    UpdateCampaignPreviewSimulation(float dt);
+    void    UpdateMusicParticles(float dt);
     void    RenderCampaignPreview(GameContext& context, const Vector2f& pos, float sc, bool isZoomed) const;
     void    RenderTwoGears(GameContext& context, const Vector2f& pos, float sc) const;
+    void    RenderMusicParticles(GameContext& context) const;
     void    RenderWiiZoomedChannel(GameContext& context);
     void    UpdateTVLayout(const GameContext& context);
     void    UpdateTVControls(float dt, GameContext& context);
@@ -347,9 +362,13 @@ private:
     float               m_volumeKnobAngle = 45.0f;
     float               m_masterVolume = 100.0f;
     bool                m_showPowerOffDialog = false;
-    int                 m_powerDialogChoice = 0; // 0 = Cancel, 1 = Power Off
+    int                 m_powerDialogChoice = 0; // 0 = Cancel, 1 = Standby, 2 = Power Off
     bool                m_isPoweringOff = false;
     float               m_powerOffTimer = 0.0f;
+    bool                m_isStandby = false;
+
+    std::vector<MusicNoteParticle> m_musicParticles;
+    float               m_musicParticleTimer = 0.0f;
 
     uint32_t            m_tvStaticSfxId = 0;
     uint32_t            m_tvSwitchSfxId = 0;
