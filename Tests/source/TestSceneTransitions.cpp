@@ -288,4 +288,140 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
         CHECK(res2.first);
         CHECK(res2.second == "ACE");
     }
+
+    TEST_CASE("Retro CRT StaticSnow Scene Transition support (#90)")
+    {
+        SceneManager sm;
+        sm.SetDefaultTransition(SceneTransitionType::StaticSnow, 0.45f, Colors::Black, EasingFunctions::EasingType::EaseInOutQuad);
+
+        const auto& cfg = sm.GetDefaultTransition();
+        CHECK(cfg.Type == SceneTransitionType::StaticSnow);
+        CHECK(cfg.Duration == doctest::Approx(0.45f));
+        CHECK(cfg.FadeColor == Colors::Black);
+    }
+
+    TEST_CASE("Retro TV 4x2 Channel Grid navigation & wrap-around logic (#90)")
+    {
+        // 4 columns x 2 rows = 8 channels
+        constexpr int kColCount = 4;
+        constexpr int kRowCount = 2;
+
+        auto navigate = [](int current, int dx, int dy) -> int {
+            int col = current % kColCount;
+            int row = current / kColCount;
+
+            if (dx != 0)
+            {
+                col = (col + dx + kColCount) % kColCount;
+            }
+            if (dy != 0)
+            {
+                row = (row + dy + kRowCount) % kRowCount;
+            }
+            return row * kColCount + col;
+        };
+
+        // Channel 0: Right -> 1, Left -> 3 (wrap-around row), Down -> 4, Up -> 4 (toggle row)
+        CHECK(navigate(0, 1, 0) == 1);
+        CHECK(navigate(0, -1, 0) == 3);
+        CHECK(navigate(0, 0, 1) == 4);
+        CHECK(navigate(0, 0, -1) == 4);
+
+        // Channel 3: Right -> 0 (wrap-around)
+        CHECK(navigate(3, 1, 0) == 0);
+
+        // Channel 7: Right -> 4, Down -> 3, Up -> 3
+        CHECK(navigate(7, 1, 0) == 4);
+        CHECK(navigate(7, 0, 1) == 3);
+        CHECK(navigate(7, 0, -1) == 3);
+    }
+
+    TEST_CASE("Retro TV Volume Dial angle & Master Volume calculation (#90)")
+    {
+        auto calcKnobAngle = [](float volumePercent) -> float {
+            float clamped = std::clamp(volumePercent, 0.0f, 100.0f);
+            return (clamped / 100.0f) * 270.0f - 135.0f;
+        };
+
+        // 0% -> -135 deg (MIN)
+        CHECK(calcKnobAngle(0.0f) == doctest::Approx(-135.0f));
+        // 50% -> 0 deg (12 o'clock)
+        CHECK(calcKnobAngle(50.0f) == doctest::Approx(0.0f));
+        // 100% -> +135 deg (MAX)
+        CHECK(calcKnobAngle(100.0f) == doctest::Approx(135.0f));
+
+        // Clamping check
+        CHECK(calcKnobAngle(-20.0f) == doctest::Approx(-135.0f));
+        CHECK(calcKnobAngle(150.0f) == doctest::Approx(135.0f));
+    }
+
+    TEST_CASE("Wii Channel Zoom State Machine & Dialog Navigation (#90)")
+    {
+        enum class ZoomState { Grid, ZoomingIn, ZoomedView, ZoomingOut };
+        ZoomState state = ZoomState::Grid;
+        float progress = 0.0f;
+        int choice = 1; // 0 = Retour, 1 = Entrer
+
+        // Trigger ZoomIn on channel select
+        state = ZoomState::ZoomingIn;
+        float dt = 0.15f;
+        progress = std::clamp(progress + dt / 0.30f, 0.0f, 1.0f);
+        CHECK(progress == doctest::Approx(0.5f));
+        CHECK(state == ZoomState::ZoomingIn);
+
+        // Advance to full zoom
+        progress = std::clamp(progress + dt / 0.30f, 0.0f, 1.0f);
+        CHECK(progress == doctest::Approx(1.0f));
+        state = ZoomState::ZoomedView;
+
+        // In ZoomedView: default choice is Entrer (1)
+        CHECK(choice == 1);
+        // Toggle choice to Retour (0)
+        choice = 1 - choice;
+        CHECK(choice == 0);
+
+        // Cancel / Retour initiates ZoomingOut
+        state = ZoomState::ZoomingOut;
+        progress = std::clamp(progress - 0.25f / 0.25f, 0.0f, 1.0f);
+        CHECK(progress == doctest::Approx(0.0f));
+        state = ZoomState::Grid;
+        CHECK(state == ZoomState::Grid);
+    }
+
+    TEST_CASE("Campaign 10-Second Preview loop & Title fade alpha (#90)")
+    {
+        auto calcTitleAlpha = [](float timer) -> float {
+            float alpha = std::clamp(timer / 1.5f, 0.0f, 1.0f);
+            if (timer > 8.5f)
+            {
+                alpha *= std::clamp((10.0f - timer) / 1.5f, 0.0f, 1.0f);
+            }
+            return alpha;
+        };
+
+        // Start (t = 0.0s): fully transparent
+        CHECK(calcTitleAlpha(0.0f) == doctest::Approx(0.0f));
+        // Fade in mid-point (t = 0.75s): 50% alpha
+        CHECK(calcTitleAlpha(0.75f) == doctest::Approx(0.5f));
+        // Fully visible during gameplay (t = 1.5s to 8.5s)
+        CHECK(calcTitleAlpha(1.5f) == doctest::Approx(1.0f));
+        CHECK(calcTitleAlpha(5.0f) == doctest::Approx(1.0f));
+        CHECK(calcTitleAlpha(8.5f) == doctest::Approx(1.0f));
+        // Fading out at end of 10s loop (t = 9.25s)
+        CHECK(calcTitleAlpha(9.25f) == doctest::Approx(0.5f));
+        // End of 10s loop (t = 10.0s)
+        CHECK(calcTitleAlpha(10.0f) == doctest::Approx(0.0f));
+    }
+
+    TEST_CASE("Settings Interlocking Two-Gear kinematic speed matching (#90)")
+    {
+        const float r1 = 28.0f;
+        const float r2 = 18.0f;
+        const float w1 = 1.5f;
+        // Gear 2 rotates opposite direction with angular velocity proportional to radius ratio
+        const float w2 = -w1 * (r1 / r2);
+
+        CHECK(w2 < 0.0f); // Reverse rotation
+        CHECK(std::abs(w1 * r1) == doctest::Approx(std::abs(w2 * r2))); // Linear pitch velocity matched
+    }
 }

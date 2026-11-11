@@ -3,7 +3,6 @@
 #include "ECS/Systems/UISystem.h"
 #include "Scenes/MenuScene.h"
 
-
 Application::Application(const WindowConfig& config)
     : m_window(config),
       m_inputManager(),
@@ -23,6 +22,12 @@ Application::Application(const WindowConfig& config)
 
 void Application::Init()
 {
+    std::string savedDevice = PlayerPrefs::GetString("Audio_Device", "");
+    if (!savedDevice.empty() && savedDevice != "Default Device")
+    {
+        m_audioMixer.SetAudioDevice(savedDevice);
+    }
+
     float sfxVol = PlayerPrefs::GetFloat("SfxVolume", 100.0f);
     float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
     m_audioMixer.SetSfxVolume(sfxVol);

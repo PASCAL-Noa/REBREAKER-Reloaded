@@ -367,9 +367,8 @@ std::array<float, 4> Renderer::WorldRectToNormalizedUV(const Vector2f& center, c
     const sf::FloatRect vp = GetLetterboxViewport();
     float uMin = vp.position.x + lxMin * vp.size.x;
     float uMax = vp.position.x + lxMax * vp.size.x;
-    // SFML RenderTexture FBO has Y inverted in sprite texture coordinates
-    float vMin = 1.0f - (vp.position.y + lyMax * vp.size.y);
-    float vMax = 1.0f - (vp.position.y + lyMin * vp.size.y);
+    float vMin = vp.position.y + lyMin * vp.size.y;
+    float vMax = vp.position.y + lyMax * vp.size.y;
 
     return { uMin, vMin, uMax, vMax };
 }
@@ -743,8 +742,8 @@ void Renderer::DrawSceneTransition(SceneTransitionType type, float progress, Col
             // Ring of triangles: outer edge covers whole viewport, inner circle is the aperture
             constexpr int kSegments = 64;
             const float outerRadius = maxRadius * 1.3f;
-            std::vector<sf::Vertex> ringVertices;
-            ringVertices.reserve((kSegments + 1) * 2);
+            m_vertexScratch.clear();
+            m_vertexScratch.reserve((kSegments + 1) * 2);
 
             const sf::Color sfCol = ToSfColor(color);
             constexpr float kPi = 3.14159265f;
@@ -755,11 +754,11 @@ void Renderer::DrawSceneTransition(SceneTransitionType type, float progress, Col
                 const float cosA = std::cos(angle);
                 const float sinA = std::sin(angle);
 
-                ringVertices.emplace_back(sf::Vector2f(cx + irisRadius * cosA, cy + irisRadius * sinA), sfCol);
-                ringVertices.emplace_back(sf::Vector2f(cx + outerRadius * cosA, cy + outerRadius * sinA), sfCol);
+                m_vertexScratch.emplace_back(sf::Vector2f(cx + irisRadius * cosA, cy + irisRadius * sinA), sfCol);
+                m_vertexScratch.emplace_back(sf::Vector2f(cx + outerRadius * cosA, cy + outerRadius * sinA), sfCol);
             }
 
-            m_renderTexture.draw(ringVertices.data(), ringVertices.size(), sf::PrimitiveType::TriangleStrip);
+            m_renderTexture.draw(m_vertexScratch.data(), m_vertexScratch.size(), sf::PrimitiveType::TriangleStrip);
 
             // Subtle luminous cyan iris rim
             sf::CircleShape irisBorder(irisRadius);
@@ -800,6 +799,79 @@ void Renderer::DrawSceneTransition(SceneTransitionType type, float progress, Col
             rightBorder.setPosition({viewSize.X - curtainW, 0.0f});
             rightBorder.setFillColor(sf::Color(0, 230, 255, 200));
             m_renderTexture.draw(rightBorder);
+        }
+    }
+    else if (type == SceneTransitionType::StaticSnow)
+    {
+        // 1. Dark CRT cathode backdrop with noise
+        const uint8_t bgAlpha = static_cast<uint8_t>(std::clamp(progress * 240.0f, 0.0f, 240.0f));
+        sf::RectangleShape bg(sf::Vector2f(viewSize.X, viewSize.Y));
+        bg.setPosition({0.0f, 0.0f});
+        bg.setFillColor(sf::Color(10, 14, 20, bgAlpha));
+        m_renderTexture.draw(bg);
+
+        // 2. Procedural CRT TV Static Snow (dense high-speed noise particles)
+        constexpr size_t kSnowCount = 500;
+        m_vertexScratch.clear();
+        m_vertexScratch.reserve(kSnowCount * 6);
+
+        static uint32_t s_snowSeed = 987654321;
+        auto snowRand = []() -> float {
+            s_snowSeed = (s_snowSeed * 1664525u + 1013904223u);
+            return static_cast<float>(s_snowSeed % 10000) / 10000.0f;
+        };
+
+        const float intensity = std::clamp(progress * 1.3f, 0.0f, 1.0f);
+        const uint8_t maxAlpha = static_cast<uint8_t>(std::clamp(intensity * 255.0f, 0.0f, 255.0f));
+
+        for (size_t i = 0; i < kSnowCount; ++i)
+        {
+            const float sx = snowRand() * viewSize.X;
+            const float sy = snowRand() * viewSize.Y;
+            const float sw = 2.0f + snowRand() * 6.0f;
+            const float sh = 2.0f + snowRand() * 3.0f;
+            const uint8_t shade = static_cast<uint8_t>(160 + snowRand() * 95);
+            const sf::Color sCol(shade, shade, shade, maxAlpha);
+
+            m_vertexScratch.emplace_back(sf::Vector2f(sx, sy), sCol);
+            m_vertexScratch.emplace_back(sf::Vector2f(sx + sw, sy), sCol);
+            m_vertexScratch.emplace_back(sf::Vector2f(sx + sw, sy + sh), sCol);
+
+            m_vertexScratch.emplace_back(sf::Vector2f(sx, sy), sCol);
+            m_vertexScratch.emplace_back(sf::Vector2f(sx + sw, sy + sh), sCol);
+            m_vertexScratch.emplace_back(sf::Vector2f(sx, sy + sh), sCol);
+        }
+        m_renderTexture.draw(m_vertexScratch.data(), m_vertexScratch.size(), sf::PrimitiveType::Triangles);
+
+        // 3. Horizontal Glitch & Tearing Bands
+        constexpr int kBandCount = 6;
+        for (int i = 0; i < kBandCount; ++i)
+        {
+            float by = snowRand() * viewSize.Y;
+            float bh = 4.0f + snowRand() * 18.0f;
+            uint8_t bAlpha = static_cast<uint8_t>(std::clamp(maxAlpha * (0.4f + snowRand() * 0.4f), 0.0f, 255.0f));
+            sf::RectangleShape band(sf::Vector2f(viewSize.X, bh));
+            band.setPosition({0.0f, by});
+            band.setFillColor(sf::Color(220, 235, 255, bAlpha));
+            m_renderTexture.draw(band);
+        }
+
+        // 4. Rolling V-Hold bar
+        const float vHoldY = std::fmod(progress * viewSize.Y * 3.0f, viewSize.Y);
+        sf::RectangleShape vHoldBar(sf::Vector2f(viewSize.X, 35.0f));
+        vHoldBar.setPosition({0.0f, vHoldY});
+        vHoldBar.setFillColor(sf::Color(255, 255, 255, static_cast<uint8_t>(std::clamp(maxAlpha * 0.35f, 0.0f, 255.0f))));
+        m_renderTexture.draw(vHoldBar);
+
+        // 5. Cathode Phosphor Flash at the peak (progress > 0.85)
+        if (progress > 0.85f)
+        {
+            const float flashP = (progress - 0.85f) / 0.15f;
+            const uint8_t fAlpha = static_cast<uint8_t>(flashP * 220.0f);
+            sf::RectangleShape flash(sf::Vector2f(viewSize.X, viewSize.Y));
+            flash.setPosition({0.0f, 0.0f});
+            flash.setFillColor(sf::Color(255, 255, 255, fAlpha));
+            m_renderTexture.draw(flash);
         }
     }
 

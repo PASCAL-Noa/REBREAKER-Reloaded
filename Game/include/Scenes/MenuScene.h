@@ -25,6 +25,65 @@ struct StarParticle
     float TwinkleFreq = 2.0f;
 };
 
+enum class ChannelType : int
+{
+    Campaign = 0,
+    LevelSelect,
+    TetrisEndless,
+    Workshop,
+    Leaderboard,
+    Achievements,
+    Sandbox,
+    Settings,
+    Count
+};
+
+struct TVChannel
+{
+    ChannelType Type = ChannelType::Campaign;
+    std::string ChannelNumber;  // e.g. "CH-01"
+    std::string Title;          // e.g. "CAMPAIGN"
+    std::string Subtitle;       // e.g. "STAGE RUN"
+    std::string Description;    // e.g. "Classic Breakout adventure with dynamic arena events"
+    Color       ThemeColor{80, 220, 255, 255};
+    Color       CardBgColor{20, 26, 40, 245};
+    Vector2f    Position{0.0f, 0.0f};  // Center coordinates in logical view
+    Vector2f    Size{280.0f, 185.0f};
+    Vector2f    BasePosition{0.0f, 0.0f};
+    Vector2f    BaseSize{280.0f, 185.0f};
+    float       CurrentScale = 1.0f;
+    float       TargetScale = 1.0f;
+};
+
+struct TVLayout
+{
+    float Scale = 1.0f;
+    Vector2f CabinetCenter{960.0f, 540.0f};
+    Vector2f GlassCenter{800.0f, 540.0f};
+    Vector2f GlassSize{1390.0f, 910.0f};
+    std::array<float, 4> GlassRectUV{0.0f, 0.0f, 0.0f, 0.0f};
+
+    Vector2f ToScreenPos(const Vector2f& basePos) const
+    {
+        return CabinetCenter + (basePos - Vector2f{960.0f, 540.0f}) * Scale;
+    }
+
+    Vector2f ToBasePos(const Vector2f& screenPos) const
+    {
+        return Vector2f{960.0f, 540.0f} + (screenPos - CabinetCenter) / (Scale > 0.0001f ? Scale : 1.0f);
+    }
+
+    float ToScreenDim(float baseDim) const
+    {
+        return baseDim * Scale;
+    }
+
+    Vector2f ToScreenSize(const Vector2f& baseSize) const
+    {
+        return baseSize * Scale;
+    }
+};
+
 struct UpgradeCardWidgets
 {
     Entity RootPanel = NULL_ENTITY;
@@ -74,6 +133,40 @@ private:
     void    InitRetroBackground(const GameContext& context);
     void    UpdateRetroBackground(float dt, const GameContext& context);
     void    RenderRetroBackground(const GameContext& context) const;
+
+    enum class ChannelZoomState
+    {
+        Grid,
+        ZoomingIn,
+        ZoomedView,
+        ZoomingOut
+    };
+
+    struct CampaignPreviewBrick
+    {
+        float RelX = 0.0f;
+        float RelY = 0.0f;
+        Color BaseColor{80, 200, 255, 255};
+        bool Alive = true;
+    };
+
+    void    InitTVChannels();
+    void    InitCampaignPreviewLevel();
+    void    UpdateCampaignPreviewSimulation(float dt);
+    void    RenderCampaignPreview(GameContext& context, const Vector2f& pos, float sc, bool isZoomed) const;
+    void    RenderTwoGears(GameContext& context, const Vector2f& pos, float sc) const;
+    void    RenderWiiZoomedChannel(GameContext& context);
+    void    UpdateTVLayout(const GameContext& context);
+    void    UpdateTVControls(float dt, GameContext& context);
+    void    LaunchChannel(int channelIndex, GameContext& context);
+    void    RenderRetroTVChassis(GameContext& context) const;
+    void    RenderCRTBezelAndGlass(GameContext& context) const;
+    void    RenderChannelGrid(GameContext& context);
+    void    RenderTVScreenContent(GameContext& context);
+    void    RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, const Vector2f& size) const;
+    void    RenderTVOSD(GameContext& context) const;
+    void    RenderPowerOffDialog(GameContext& context);
+    void    RenderPowerOffAnimation(GameContext& context) const;
 
     void    CreateMainMenuUI(const GameContext& context);
     void    CreateSettingsLayout(const GameContext& context);
@@ -240,4 +333,39 @@ private:
     std::vector<StarParticle> m_stars;
     float               m_gridAnimOffset = 0.0f;
     float               m_animTime = 0.0f;
+
+    // Interactive Retro CRT TV & Wii-style Channel Grid (#90)
+    TVLayout            m_tvLayout;
+    std::unique_ptr<sf::RenderTexture> m_tvScreenTexture;
+    std::vector<TVChannel> m_tvChannels;
+    int                 m_selectedChannel = 0;
+    int                 m_hoveredChannel = -1;
+    float               m_navDebounceTimer = 0.0f;
+    float               m_channelSwitchGlitch = 0.0f;
+    float               m_osdTimer = 0.0f;
+    std::string         m_osdText;
+    float               m_volumeKnobAngle = 45.0f;
+    float               m_masterVolume = 100.0f;
+    bool                m_showPowerOffDialog = false;
+    int                 m_powerDialogChoice = 0; // 0 = Cancel, 1 = Power Off
+    bool                m_isPoweringOff = false;
+    float               m_powerOffTimer = 0.0f;
+
+    uint32_t            m_tvStaticSfxId = 0;
+    uint32_t            m_tvSwitchSfxId = 0;
+    uint32_t            m_tvHoverSfxId = 0;
+
+    // Wii Channel Selection & Zoom Interaction
+    ChannelZoomState    m_zoomState = ChannelZoomState::Grid;
+    float               m_zoomProgress = 0.0f;
+    float               m_zoomTimer = 0.0f;
+    int                 m_zoomChoice = 1; // 0 = Retour, 1 = Entrer
+
+    // Campaign Gameplay Preview (10s live loop with current level layout)
+    float               m_campaignPreviewTimer = 0.0f;
+    int                 m_campaignLoadedLevel = -1;
+    std::vector<CampaignPreviewBrick> m_campaignBricks;
+    Vector2f            m_campaignBallPos{0.0f, 0.35f};
+    Vector2f            m_campaignBallVel{0.48f, -0.62f};
+    float               m_campaignPaddleX = 0.0f;
 };

@@ -370,7 +370,12 @@ void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop)
     StopMusic();
 
     auto newMusic = std::make_unique<sf::Music>();
-    if (newMusic->openFromFile(filepath))
+    bool opened = false;
+    {
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+        opened = newMusic->openFromFile(filepath);
+    }
+    if (opened)
     {
         mp_impl->activeTrack.music = std::move(newMusic);
         mp_impl->activeTrack.path = filepath;
@@ -472,7 +477,12 @@ void AudioMixer::FadeToMusic(const std::string& filepath, const TweenConfig<floa
 
     // 2. Open and fade in new track using TweenConfig
     auto newMusic = std::make_unique<sf::Music>();
-    if (newMusic->openFromFile(filepath))
+    bool opened = false;
+    {
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+        opened = newMusic->openFromFile(filepath);
+    }
+    if (opened)
     {
         mp_impl->activeTrack.music = std::move(newMusic);
         mp_impl->activeTrack.path = filepath;
@@ -646,6 +656,12 @@ void AudioMixer::SetMasterVolume(float volume) const
     }
 }
 
+float AudioMixer::GetMasterVolume() const
+{
+    if (!mp_impl) return 100.0f;
+    return mp_impl->masterVolume;
+}
+
 void AudioMixer::SetSfxVolume(float volume) const
 {
     if (!mp_impl) return;
@@ -749,11 +765,20 @@ std::string AudioMixer::GetCurrentAudioDevice() const
 
 bool AudioMixer::SetAudioDevice(const std::string& name) const
 {
+    if (name.empty() || name == "Default Device")
+    {
+        return true;
+    }
+
     auto dev = sf::PlaybackDevice::getDevice();
     if (dev.has_value() && dev.value() == name)
     {
         return true;
     }
+
+    StopAll();
+
+    std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
     return sf::PlaybackDevice::setDevice(name);
 }
 
