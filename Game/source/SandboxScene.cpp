@@ -769,6 +769,7 @@ void SandboxScene::HandleSandboxInput(const GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::Escape))
     {
         context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+        MenuScene::SetReturnWithDezoom(true);
         context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
         return;
     }
@@ -1514,6 +1515,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
         .Text = "MENU",
         .OnClick = [&context]() {
             context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            MenuScene::SetReturnWithDezoom(true);
             context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
         },
         .Position = {330.0f, row6Y},

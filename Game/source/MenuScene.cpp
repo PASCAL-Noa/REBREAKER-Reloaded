@@ -190,6 +190,17 @@ void MenuScene::OnInit(GameContext& context)
 
     context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
 
+    if (s_returnWithDezoom)
+    {
+        m_zoomState = ChannelZoomState::ReturningFromFullScreen;
+        m_returnTimer = 0.0f;
+        m_returnProgress = 1.0f;
+        m_zoomProgress = 1.0f;
+        s_returnWithDezoom = false;
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 95.0f);
+        if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 70.0f);
+    }
+
     PreloadGameAssets(context);
 }
 
@@ -682,13 +693,16 @@ void MenuScene::OnRender(GameContext& context)
         RenderPowerOffDialog(context);
         RenderPowerOffAnimation(context);
 
-        // Pleasant CRT aperture expansion beam & phosphor flare during LaunchingFullScreen
-        if (m_zoomState == ChannelZoomState::LaunchingFullScreen && m_launchProgress > 0.60f &&
+        // Pleasant CRT aperture expansion beam & phosphor flare during LaunchingFullScreen / ReturningFromFullScreen
+        if (((m_zoomState == ChannelZoomState::LaunchingFullScreen && m_launchProgress > 0.60f) ||
+             (m_zoomState == ChannelZoomState::ReturningFromFullScreen && m_returnProgress > 0.40f)) &&
             m_selectedChannel >= 0 && m_selectedChannel < static_cast<int>(m_tvChannels.size()))
         {
             const Vector2f viewSize = context.Render.GetLogicalViewSize();
             const Vector2f viewCenter = viewSize * 0.5f;
-            const float flareT = (m_launchProgress - 0.60f) / 0.40f;
+            const float flareT = (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+                ? ((m_launchProgress - 0.60f) / 0.40f)
+                : ((m_returnProgress - 0.40f) / 0.60f);
             const float easeFlare = flareT * flareT;
             const auto& ch = m_tvChannels[m_selectedChannel];
 
@@ -803,6 +817,8 @@ void MenuScene::OpenModal(Entity modalCanvas)
 
 void MenuScene::CloseModals()
 {
+    const bool wasModalOpen = (m_activeModal != NULL_ENTITY);
+
     if (m_activeModal == m_workshopCanvas)
     {
         if (m_previewScene)
@@ -852,6 +868,24 @@ void MenuScene::CloseModals()
     if (m_registry.IsAlive(m_mainCanvas) && m_registry.HasComponent<CanvasComponent>(m_mainCanvas))
     {
         m_registry.GetComponent<CanvasComponent>(m_mainCanvas).IsEnabled = true;
+    }
+
+    if (wasModalOpen)
+    {
+        StartDezoomToGrid();
+    }
+}
+
+void MenuScene::StartDezoomToGrid()
+{
+    m_zoomState = ChannelZoomState::ReturningFromFullScreen;
+    m_returnTimer = 0.0f;
+    m_returnProgress = 1.0f;
+    m_zoomProgress = 1.0f;
+    if (mp_context)
+    {
+        if (m_tvSwitchSfxId != 0) mp_context->Audio.PlaySfx(m_tvSwitchSfxId, 95.0f);
+        if (m_tvStaticSfxId != 0) mp_context->Audio.PlaySfx(m_tvStaticSfxId, 70.0f);
     }
 }
 
@@ -1360,6 +1394,13 @@ void MenuScene::RenderWiiZoomedChannel(GameContext& context)
     if (m_selectedChannel < 0 || m_selectedChannel >= static_cast<int>(m_tvChannels.size())) return;
     const auto& ch = m_tvChannels[m_selectedChannel];
 
+    if (m_zoomState == ChannelZoomState::ZoomingIn ||
+        m_zoomState == ChannelZoomState::ZoomingOut ||
+        m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+    {
+        RenderChannelGrid(context);
+    }
+
     float p = m_zoomProgress;
     float smoothT = p * p * (3.0f - 2.0f * p);
 
@@ -1384,7 +1425,15 @@ void MenuScene::RenderWiiZoomedChannel(GameContext& context)
     if (smoothT > 0.35f)
     {
         float contentAlpha = std::clamp((smoothT - 0.35f) / 0.65f, 0.0f, 1.0f);
-        float uiFade = (m_zoomState == ChannelZoomState::LaunchingFullScreen) ? std::clamp(1.0f - m_launchProgress * 2.8f, 0.0f, 1.0f) : 1.0f;
+        float uiFade = 1.0f;
+        if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+        {
+            uiFade = std::clamp(1.0f - m_launchProgress * 2.8f, 0.0f, 1.0f);
+        }
+        else if (m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+        {
+            uiFade = std::clamp(1.0f - m_returnProgress * 2.8f, 0.0f, 1.0f);
+        }
         uint8_t cAlpha = static_cast<uint8_t>(contentAlpha * 255.0f);
         uint8_t uiAlpha = static_cast<uint8_t>(contentAlpha * uiFade * 255.0f);
 
@@ -1401,9 +1450,15 @@ void MenuScene::RenderWiiZoomedChannel(GameContext& context)
 
         // 2. Center Large Animated Vignette / Preview (scaled up beautifully)
         Vector2f centerVignettePos = curPos - Vector2f{0.0f, 25.0f};
-        float vignetteSc = (m_zoomState == ChannelZoomState::LaunchingFullScreen)
-            ? (1.85f * (1.0f + m_launchProgress * 0.35f))
-            : (1.85f * smoothT);
+        float vignetteSc = (1.85f * smoothT);
+        if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+        {
+            vignetteSc = 1.85f * (1.0f + m_launchProgress * 0.35f);
+        }
+        else if (m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+        {
+            vignetteSc = 1.85f * (1.0f + m_returnProgress * 0.35f);
+        }
 
         if (ch.Type == ChannelType::Campaign)
         {
@@ -1496,6 +1551,18 @@ void MenuScene::UpdateTVLayout(const GameContext& context)
         // Smooth camera dive: TV cathode screen expands to fill 100% of the viewport
         const float targetScale = std::max(viewSize.X / 1390.0f, viewSize.Y / 910.0f) * 1.05f;
         const float diveT = m_launchProgress * m_launchProgress * (3.0f - 2.0f * m_launchProgress);
+        m_tvLayout.Scale = baseScale + (targetScale - baseScale) * diveT;
+
+        const Vector2f baseGlassCenter = m_tvLayout.CabinetCenter + (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * baseScale;
+        const Vector2f targetGlassCenter = Vector2f{viewSize.X * 0.5f, viewSize.Y * 0.5f};
+        m_tvLayout.GlassCenter = baseGlassCenter + (targetGlassCenter - baseGlassCenter) * diveT;
+        m_tvLayout.CabinetCenter = m_tvLayout.GlassCenter - (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * m_tvLayout.Scale;
+    }
+    else if (m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+    {
+        // Smooth camera pull-back: TV cathode screen dezooms from 100% full screen back to cabinet
+        const float targetScale = std::max(viewSize.X / 1390.0f, viewSize.Y / 910.0f) * 1.05f;
+        const float diveT = m_returnProgress * m_returnProgress * (3.0f - 2.0f * m_returnProgress);
         m_tvLayout.Scale = baseScale + (targetScale - baseScale) * diveT;
 
         const Vector2f baseGlassCenter = m_tvLayout.CabinetCenter + (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * baseScale;
@@ -1676,6 +1743,20 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     }
 
     // 4. Wii Channel Zoom State Machine
+    if (m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+    {
+        m_returnTimer += dt;
+        m_returnProgress = std::clamp(1.0f - (m_returnTimer / 0.50f), 0.0f, 1.0f);
+        m_zoomProgress = m_returnProgress;
+        if (m_returnTimer >= 0.50f)
+        {
+            m_returnProgress = 0.0f;
+            m_zoomProgress = 0.0f;
+            m_zoomState = ChannelZoomState::Grid;
+            m_returnTimer = 0.0f;
+        }
+        return;
+    }
     if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
     {
         m_launchTimer += dt;
@@ -1705,8 +1786,8 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     if (m_zoomState == ChannelZoomState::ZoomingOut)
     {
         m_zoomTimer += dt;
-        m_zoomProgress = std::clamp(1.0f - (m_zoomTimer / 0.25f), 0.0f, 1.0f);
-        if (m_zoomTimer >= 0.25f)
+        m_zoomProgress = std::clamp(1.0f - (m_zoomTimer / 0.30f), 0.0f, 1.0f);
+        if (m_zoomTimer >= 0.30f)
         {
             m_zoomProgress = 0.0f;
             m_zoomState = ChannelZoomState::Grid;

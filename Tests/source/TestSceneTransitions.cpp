@@ -665,4 +665,28 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
         CHECK(cycle(7, -1) == 6);
         CHECK(cycle(1, -1) == 0);
     }
+
+    TEST_CASE("Reverse Dezoom Transition Logic (#90)")
+    {
+        // Smooth reverse cubic easing verification
+        auto getDezoomScale = [](float returnProgress, float baseScale, float targetScale) -> float {
+            float p = std::clamp(returnProgress, 0.0f, 1.0f);
+            float diveT = p * p * (3.0f - 2.0f * p);
+            return baseScale + (targetScale - baseScale) * diveT;
+        };
+
+        const float baseScale = 0.55f;
+        const float targetScale = 1.25f;
+
+        // At start of dezoom (full screen)
+        CHECK(getDezoomScale(1.0f, baseScale, targetScale) == doctest::Approx(targetScale));
+        // Midway through dezoom
+        CHECK(getDezoomScale(0.5f, baseScale, targetScale) == doctest::Approx(baseScale + (targetScale - baseScale) * 0.5f));
+        // At completion of dezoom (returned to cabinet grid)
+        CHECK(getDezoomScale(0.0f, baseScale, targetScale) == doctest::Approx(baseScale));
+
+        // Monotonically decreasing
+        CHECK(getDezoomScale(0.8f, baseScale, targetScale) > getDezoomScale(0.4f, baseScale, targetScale));
+        CHECK(getDezoomScale(0.4f, baseScale, targetScale) > getDezoomScale(0.1f, baseScale, targetScale));
+    }
 }

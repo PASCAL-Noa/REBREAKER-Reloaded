@@ -1034,6 +1034,7 @@ void GameUIController::CreatePauseMenu()
         .Text = "QUIT",
         .OnClick = [this]() {
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
         },
         .Position = {0, 150.0f},
@@ -2029,6 +2030,7 @@ void GameUIController::CreateGameOverMenu()
                 return;
             }
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
         },
         .Position = {260.0f, 310.0f},
@@ -2333,6 +2335,7 @@ void GameUIController::CreateVictoryMenu()
         .Text = "MAIN MENU [ESC]",
         .OnClick = [this]() {
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
         },
         .Position = {160.0f, 175.0f},

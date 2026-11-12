@@ -670,6 +670,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
                 return;
             }
             context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            MenuScene::SetReturnWithDezoom(true);
             context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
             return;
         }

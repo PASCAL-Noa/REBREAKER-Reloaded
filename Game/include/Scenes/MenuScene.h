@@ -126,6 +126,9 @@ public:
     [[nodiscard]] uint32_t GetPostProcessShader() const override;
     [[nodiscard]] PostProcessParams GetPostProcessParams() const override;
 
+    static void SetReturnWithDezoom(bool enable) { s_returnWithDezoom = enable; }
+    static bool IsReturnWithDezoom() { return s_returnWithDezoom; }
+
 protected:
     [[nodiscard]] bool PreservesMusicOnDestroy() const override { return true; }
 
@@ -140,8 +143,11 @@ private:
         ZoomingIn,
         ZoomedView,
         ZoomingOut,
-        LaunchingFullScreen
+        LaunchingFullScreen,
+        ReturningFromFullScreen
     };
+
+    void StartDezoomToGrid();
 
     struct CampaignPreviewBrick
     {
@@ -383,6 +389,9 @@ private:
     int                 m_zoomChoice = 1; // 0 = Retour, 1 = Entrer
     float               m_launchTimer = 0.0f;
     float               m_launchProgress = 0.0f;
+    float               m_returnTimer = 0.0f;
+    float               m_returnProgress = 0.0f;
+    inline static bool  s_returnWithDezoom = false;
 
     // Campaign Gameplay Preview (10s live loop with current level layout)
     float               m_campaignPreviewTimer = 0.0f;
