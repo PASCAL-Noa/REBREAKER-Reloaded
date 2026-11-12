@@ -1485,10 +1485,11 @@ void MenuScene::UpdateTVLayout(const GameContext& context)
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
     m_tvLayout.CabinetCenter = Vector2f{viewSize.X * 0.5f, viewSize.Y * 0.5f};
 
-    // TV takes 100% of the player's screen (zero outer margins or black space)
-    const float maxScaleX = viewSize.X / 1880.0f;
-    const float maxScaleY = viewSize.Y / 1040.0f;
-    const float baseScale = std::max(maxScaleX, maxScaleY);
+    // Calculate baseScale so that the TV contents (Glass + Control Panel) fit with zero clipping
+    // on ANY display aspect ratio (16:10 laptop screens, 16:9 monitors, ultrawide, etc.)
+    const float fitScaleX = (viewSize.X * 0.97f) / 1880.0f;
+    const float fitScaleY = (viewSize.Y * 0.96f) / 1040.0f;
+    const float baseScale = std::min(fitScaleX, fitScaleY);
 
     if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
     {
@@ -2076,27 +2077,33 @@ void MenuScene::RenderRetroTVChassis(GameContext& context) const
     const auto& L = m_tvLayout;
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
 
-    // Solid seamless backdrop under cabinet to guarantee zero edge gaps on any display aspect ratio
-    context.Render.DrawRectangle(viewSize.X * 1.05f, viewSize.Y * 1.05f, Transform2D{L.CabinetCenter}, Color{20, 15, 12, 255});
+    // 1. Outer Dark Woodgrain Cabinet Frame spanning 100% of the player's screen
+    context.Render.DrawRectangle(viewSize.X * 1.05f, viewSize.Y * 1.05f, Transform2D{L.CabinetCenter}, Color{24, 18, 14, 255});
 
-    // 1. Outer Dark Woodgrain Cabinet Frame
-    context.Render.DrawRectangle(L.ToScreenDim(1880.0f), L.ToScreenDim(1040.0f), Transform2D{L.CabinetCenter}, Color{24, 18, 14, 255});
+    // Cabinet Bevels along window edges
+    const float bevelThickness = L.ToScreenDim(16.0f);
+    // Top bevel
+    context.Render.DrawRectangle(viewSize.X, bevelThickness, Transform2D{Vector2f{viewSize.X * 0.5f, bevelThickness * 0.5f}}, Color{65, 52, 42, 255});
+    // Left bevel
+    context.Render.DrawRectangle(bevelThickness, viewSize.Y, Transform2D{Vector2f{bevelThickness * 0.5f, viewSize.Y * 0.5f}}, Color{55, 44, 35, 255});
+    // Bottom bevel
+    context.Render.DrawRectangle(viewSize.X, bevelThickness, Transform2D{Vector2f{viewSize.X * 0.5f, viewSize.Y - bevelThickness * 0.5f}}, Color{12, 9, 7, 255});
+    // Right bevel
+    context.Render.DrawRectangle(bevelThickness, viewSize.Y, Transform2D{Vector2f{viewSize.X - bevelThickness * 0.5f, viewSize.Y * 0.5f}}, Color{14, 11, 8, 255});
 
-    // Cabinet Bevels
-    context.Render.DrawRectangle(L.ToScreenDim(1880.0f), L.ToScreenDim(16.0f), Transform2D{L.ToScreenPos(Vector2f{960.0f, 28.0f})}, Color{65, 52, 42, 255});
-    context.Render.DrawRectangle(L.ToScreenDim(16.0f), L.ToScreenDim(1040.0f), Transform2D{L.ToScreenPos(Vector2f{28.0f, 540.0f})}, Color{55, 44, 35, 255});
-    context.Render.DrawRectangle(L.ToScreenDim(1880.0f), L.ToScreenDim(16.0f), Transform2D{L.ToScreenPos(Vector2f{960.0f, 1052.0f})}, Color{12, 9, 7, 255});
-    context.Render.DrawRectangle(L.ToScreenDim(16.0f), L.ToScreenDim(1040.0f), Transform2D{L.ToScreenPos(Vector2f{1892.0f, 540.0f})}, Color{14, 11, 8, 255});
-
-    // Corner Screws
+    // 4 Corner Screws near the corners of the player's screen
+    const float screwMargin = L.ToScreenDim(32.0f);
     const Vector2f screws[4] = {
-        {50.0f, 45.0f}, {1870.0f, 45.0f}, {50.0f, 1035.0f}, {1870.0f, 1035.0f}
+        {screwMargin, screwMargin},
+        {viewSize.X - screwMargin, screwMargin},
+        {screwMargin, viewSize.Y - screwMargin},
+        {viewSize.X - screwMargin, viewSize.Y - screwMargin}
     };
-    for (const auto& sc : screws)
+    for (const auto& scPos : screws)
     {
-        Vector2f scPos = L.ToScreenPos(sc);
         context.Render.DrawCircle(L.ToScreenDim(5.0f), Transform2D{scPos}, Color{160, 165, 175, 255});
         context.Render.DrawLine(scPos - Vector2f{L.ToScreenDim(3.0f), 0.0f}, scPos + Vector2f{L.ToScreenDim(3.0f), 0.0f}, Color{40, 45, 55, 255}, L.ToScreenDim(1.2f));
+        context.Render.DrawLine(scPos - Vector2f{0.0f, L.ToScreenDim(3.0f)}, scPos + Vector2f{0.0f, L.ToScreenDim(3.0f)}, Color{40, 45, 55, 255}, L.ToScreenDim(1.2f));
     }
 
     // 2. Right Control Panel

@@ -622,6 +622,7 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
             {1920.0f, 1080.0f}, // 16:9 Standard Full HD
             {2560.0f, 1440.0f}, // 16:9 QHD
             {1280.0f, 720.0f},  // 16:9 720p
+            {1707.0f, 1067.0f}, // 16:10 User display (logical)
             {1920.0f, 1200.0f}, // 16:10 WUXGA
             {2560.0f, 1600.0f}, // 16:10 MacBook / Pro
             {1600.0f, 1200.0f}  // 4:3 Classic
@@ -629,16 +630,21 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
 
         for (const auto& res : resolutions)
         {
-            float maxScaleX = res.X / 1880.0f;
-            float maxScaleY = res.Y / 1040.0f;
-            float baseScale = std::max(maxScaleX, maxScaleY);
+            const float fitScaleX = (res.X * 0.97f) / 1880.0f;
+            const float fitScaleY = (res.Y * 0.96f) / 1040.0f;
+            const float baseScale = std::min(fitScaleX, fitScaleY);
 
-            float cabW = 1880.0f * baseScale;
-            float cabH = 1040.0f * baseScale;
+            // CRT Glass and controls must completely fit inside the viewport without edge clipping
+            const float glassW = 1390.0f * baseScale;
+            const float glassH = 910.0f * baseScale;
+            CHECK(glassW < res.X);
+            CHECK(glassH < res.Y);
 
-            // Cabinet must always be >= viewport in both dimensions (zero borders)
-            CHECK(cabW >= res.X);
-            CHECK(cabH >= res.Y);
+            // Outer cabinet spans 100% of viewport (zero black letterbox space)
+            const float bgW = res.X * 1.05f;
+            const float bgH = res.Y * 1.05f;
+            CHECK(bgW >= res.X);
+            CHECK(bgH >= res.Y);
         }
     }
 

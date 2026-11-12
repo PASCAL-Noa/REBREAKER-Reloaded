@@ -417,6 +417,8 @@ void PreviewScene::StartCountdown()
 
 void PreviewScene::OnDestroy(GameContext& context)
 {
+    ClearActiveUltimates();
+    ClearVisualMalus();
     if (m_fireballBurnSfxId != 0 && mp_context)
     {
         mp_context->Audio.StopLoopingSfx(m_fireballBurnSfxId);
@@ -428,7 +430,7 @@ void PreviewScene::OnDestroy(GameContext& context)
     m_powerUpSub.Reset();
     m_nextLevelSub.Reset();
 
-    Scene::OnDestroy(context);
+    DefaultScene::OnDestroy(context);
 }
 
 void PreviewScene::OnUpdate(float dt, GameContext& context)

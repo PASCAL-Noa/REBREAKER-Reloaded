@@ -12,7 +12,7 @@
 struct SoundInstance
 {
     uint32_t soundId = 0;
-    sf::Sound sound;
+    std::unique_ptr<sf::Sound> sound;
 };
 
 struct MusicTrack
@@ -29,7 +29,7 @@ struct AudioMixer::Impl
 {
     ResourceManager& resourceManager;
     std::list<SoundInstance> sfxPool;
-    std::unordered_map<uint32_t, sf::Sound> loopingSfx;
+    std::unordered_map<uint32_t, std::unique_ptr<sf::Sound>> loopingSfx;
     std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> lastTriggerTime;
 
     // Ducking state: lower music by 30-50% during heavy streaks, restoring over 0.5s
@@ -63,7 +63,7 @@ struct AudioMixer::Impl
     void CleanUpSfx()
     {
         sfxPool.remove_if([](const SoundInstance& item) {
-            return item.sound.getStatus() == sf::SoundSource::Status::Stopped;
+            return !item.sound || item.sound->getStatus() == sf::SoundSource::Status::Stopped;
         });
     }
 
@@ -143,6 +143,7 @@ void AudioMixer::Update(float dt) const
     else if (mp_impl->activeTrack.music &&
              mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Stopped)
     {
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
         mp_impl->activeTrack.music.reset();
         mp_impl->activeTrack = MusicTrack{};
     }
@@ -159,6 +160,7 @@ void AudioMixer::Update(float dt) const
                 mp_impl->fadingTrack.volumeTween.reset();
                 if (mp_impl->fadingTrack.music)
                 {
+                    std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
                     mp_impl->fadingTrack.music->stop();
                     mp_impl->fadingTrack.music.reset();
                 }
@@ -173,6 +175,7 @@ void AudioMixer::Update(float dt) const
     else if (mp_impl->fadingTrack.music &&
              mp_impl->fadingTrack.music->getStatus() == sf::SoundSource::Status::Stopped)
     {
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
         mp_impl->fadingTrack.music.reset();
         mp_impl->fadingTrack = MusicTrack{};
     }
@@ -203,7 +206,7 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
     size_t totalActive = 0;
     for (const auto& item : mp_impl->sfxPool)
     {
-        if (item.sound.getStatus() == sf::SoundSource::Status::Playing)
+        if (item.sound && item.sound->getStatus() == sf::SoundSource::Status::Playing)
         {
             totalActive++;
             if (item.soundId == soundId)
@@ -218,9 +221,9 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
     {
         for (auto it = mp_impl->sfxPool.begin(); it != mp_impl->sfxPool.end(); ++it)
         {
-            if (it->soundId == soundId && it->sound.getStatus() == sf::SoundSource::Status::Playing)
+            if (it->soundId == soundId && it->sound && it->sound->getStatus() == sf::SoundSource::Status::Playing)
             {
-                it->sound.stop();
+                it->sound->stop();
                 mp_impl->sfxPool.erase(it);
                 if (totalActive > 0) --totalActive;
                 break;
@@ -234,9 +237,9 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
         bool erased = false;
         for (auto it = mp_impl->sfxPool.begin(); it != mp_impl->sfxPool.end(); ++it)
         {
-            if (it->sound.getStatus() == sf::SoundSource::Status::Playing)
+            if (it->sound && it->sound->getStatus() == sf::SoundSource::Status::Playing)
             {
-                it->sound.stop();
+                it->sound->stop();
                 mp_impl->sfxPool.erase(it);
                 if (totalActive > 0) --totalActive;
                 erased = true;
@@ -272,13 +275,12 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
     float finalVolume = volume * headroom * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
     float clampedPan = std::clamp(pan, -1.0f, 1.0f);
 
-    mp_impl->sfxPool.emplace_back(SoundInstance{soundId, sf::Sound(*buffer)});
-
-    sf::Sound& newSound = mp_impl->sfxPool.back().sound;
-    newSound.setVolume(finalVolume);
-    newSound.setPitch(pitch * mp_impl->temporalSfxMultiplier);
-    newSound.setPan(clampedPan);
-    newSound.play();
+    auto soundPtr = std::make_unique<sf::Sound>(*buffer);
+    soundPtr->setVolume(finalVolume);
+    soundPtr->setPitch(pitch * mp_impl->temporalSfxMultiplier);
+    soundPtr->setPan(clampedPan);
+    soundPtr->play();
+    mp_impl->sfxPool.push_back(SoundInstance{soundId, std::move(soundPtr)});
 }
 
 void AudioMixer::StopSfx() const
@@ -286,13 +288,19 @@ void AudioMixer::StopSfx() const
     if (!mp_impl) return;
     for (auto& item : mp_impl->sfxPool)
     {
-        item.sound.stop();
+        if (item.sound)
+        {
+            item.sound->stop();
+        }
     }
     mp_impl->sfxPool.clear();
 
     for (auto& [id, sound] : mp_impl->loopingSfx)
     {
-        sound.stop();
+        if (sound)
+        {
+            sound->stop();
+        }
     }
     mp_impl->loopingSfx.clear();
 
@@ -305,14 +313,14 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
     if (!mp_impl) return;
 
     auto it = mp_impl->loopingSfx.find(soundId);
-    if (it != mp_impl->loopingSfx.end())
+    if (it != mp_impl->loopingSfx.end() && it->second)
     {
         float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
-        it->second.setVolume(finalVolume);
-        it->second.setPitch(pitch * mp_impl->temporalSfxMultiplier);
-        if (it->second.getStatus() != sf::SoundSource::Status::Playing)
+        it->second->setVolume(finalVolume);
+        it->second->setPitch(pitch * mp_impl->temporalSfxMultiplier);
+        if (it->second->getStatus() != sf::SoundSource::Status::Playing)
         {
-            it->second.play();
+            it->second->play();
         }
         return;
     }
@@ -320,15 +328,13 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
     sf::SoundBuffer* buffer = mp_impl->resourceManager.Get<sf::SoundBuffer>(soundId);
     if (!buffer) return;
 
-    auto [emplacedIt, inserted] = mp_impl->loopingSfx.try_emplace(soundId, *buffer);
-    if (inserted)
-    {
-        float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
-        emplacedIt->second.setLooping(true);
-        emplacedIt->second.setVolume(finalVolume);
-        emplacedIt->second.setPitch(pitch * mp_impl->temporalSfxMultiplier);
-        emplacedIt->second.play();
-    }
+    auto snd = std::make_unique<sf::Sound>(*buffer);
+    float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
+    snd->setLooping(true);
+    snd->setVolume(finalVolume);
+    snd->setPitch(pitch * mp_impl->temporalSfxMultiplier);
+    snd->play();
+    mp_impl->loopingSfx[soundId] = std::move(snd);
 }
 
 void AudioMixer::StopLoopingSfx(uint32_t soundId) const
@@ -337,7 +343,10 @@ void AudioMixer::StopLoopingSfx(uint32_t soundId) const
     auto it = mp_impl->loopingSfx.find(soundId);
     if (it != mp_impl->loopingSfx.end())
     {
-        it->second.stop();
+        if (it->second)
+        {
+            it->second->stop();
+        }
         mp_impl->loopingSfx.erase(it);
     }
 }
@@ -346,7 +355,7 @@ bool AudioMixer::IsLoopingSfxPlaying(uint32_t soundId) const
 {
     if (!mp_impl) return false;
     auto it = mp_impl->loopingSfx.find(soundId);
-    return (it != mp_impl->loopingSfx.end() && it->second.getStatus() == sf::SoundSource::Status::Playing);
+    return (it != mp_impl->loopingSfx.end() && it->second && it->second->getStatus() == sf::SoundSource::Status::Playing);
 }
 
 void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop) const
@@ -450,6 +459,7 @@ void AudioMixer::FadeToMusic(const std::string& filepath, const TweenConfig<floa
     {
         if (mp_impl->fadingTrack.music)
         {
+            std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
             mp_impl->fadingTrack.music->stop();
             mp_impl->fadingTrack.music.reset();
         }
@@ -544,6 +554,7 @@ void AudioMixer::FadeOutMusic(const TweenConfig<float>& config) const
 
     if (mp_impl->fadingTrack.music)
     {
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
         mp_impl->fadingTrack.music->stop();
         mp_impl->fadingTrack.music.reset();
     }
@@ -587,6 +598,8 @@ void AudioMixer::FadeMusicVolume(float targetVolume, float duration, EasingFunct
 void AudioMixer::StopMusic() const
 {
     if (!mp_impl) return;
+
+    std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
 
     if (mp_impl->activeTrack.music)
     {
@@ -648,11 +661,11 @@ void AudioMixer::SetMasterVolume(float volume) const
 
     for (auto& item : mp_impl->sfxPool)
     {
-        item.sound.setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
+        if (item.sound) item.sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
     }
     for (auto& [id, sound] : mp_impl->loopingSfx)
     {
-        sound.setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
+        if (sound) sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
     }
 }
 
@@ -668,11 +681,11 @@ void AudioMixer::SetSfxVolume(float volume) const
     mp_impl->sfxVolume = volume;
     for (auto& item : mp_impl->sfxPool)
     {
-        item.sound.setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
+        if (item.sound) item.sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
     }
     for (auto& [id, sound] : mp_impl->loopingSfx)
     {
-        sound.setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
+        if (sound) sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
     }
 }
 

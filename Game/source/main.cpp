@@ -7,6 +7,9 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#if defined(_DEBUG)
+#include <crtdbg.h>
+#endif
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
@@ -18,6 +21,9 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 
 int main()
 {
+#if defined(_WIN32) && defined(_DEBUG)
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
 #ifdef _WIN32
     // Protect against defective/dead 8th logical core (index 7, 0-based)
     {

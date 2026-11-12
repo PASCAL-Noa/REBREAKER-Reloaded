@@ -37,4 +37,4 @@ add_subdirectory(Engine)
 add_subdirectory(Game)
 
 enable_testing()
-add_subdirectory(Tests)
+add_subdirectory(Tests)
