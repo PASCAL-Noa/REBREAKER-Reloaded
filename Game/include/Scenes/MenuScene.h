@@ -139,7 +139,8 @@ private:
         Grid,
         ZoomingIn,
         ZoomedView,
-        ZoomingOut
+        ZoomingOut,
+        LaunchingFullScreen
     };
 
     struct CampaignPreviewBrick
@@ -178,7 +179,7 @@ private:
     void    RenderCRTBezelAndGlass(GameContext& context) const;
     void    RenderChannelGrid(GameContext& context);
     void    RenderTVScreenContent(GameContext& context);
-    void    RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, const Vector2f& size) const;
+    void    RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float scale) const;
     void    RenderTVOSD(GameContext& context) const;
     void    RenderPowerOffDialog(GameContext& context);
     void    RenderPowerOffAnimation(GameContext& context) const;
@@ -379,6 +380,8 @@ private:
     float               m_zoomProgress = 0.0f;
     float               m_zoomTimer = 0.0f;
     int                 m_zoomChoice = 1; // 0 = Retour, 1 = Entrer
+    float               m_launchTimer = 0.0f;
+    float               m_launchProgress = 0.0f;
 
     // Campaign Gameplay Preview (10s live loop with current level layout)
     float               m_campaignPreviewTimer = 0.0f;

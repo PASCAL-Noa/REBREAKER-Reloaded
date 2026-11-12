@@ -541,4 +541,78 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
         float nextCycle = 1.0f / 4.5f;
         CHECK(isTitleStrobe(nextCycle + 0.01f) == true);
     }
+
+    TEST_CASE("Wii Channel Zoom 100% full-screen TV dimensions (#90)")
+    {
+        // TV CRT Screen texture size is exactly 1390 x 910 with center at (695, 455)
+        const Vector2f tvScreenSize{1390.0f, 910.0f};
+        const Vector2f tvScreenCenter = tvScreenSize * 0.5f;
+
+        CHECK(tvScreenCenter.X == doctest::Approx(695.0f));
+        CHECK(tvScreenCenter.Y == doctest::Approx(455.0f));
+
+        // When zoomProgress reaches 1.0 (smoothT = 1.0), the card must match tvScreenSize exactly
+        const Vector2f targetCenter{695.0f, 455.0f};
+        const Vector2f targetSize{1390.0f, 910.0f};
+
+        auto lerpCard = [](const Vector2f& start, const Vector2f& target, float t) -> Vector2f {
+            float smooth = t * t * (3.0f - 2.0f * t);
+            return start + (target - start) * smooth;
+        };
+
+        Vector2f startPos{190.0f, 225.0f};
+        Vector2f startSize{280.0f, 185.0f};
+
+        Vector2f endPos = lerpCard(startPos, targetCenter, 1.0f);
+        Vector2f endSize = lerpCard(startSize, targetSize, 1.0f);
+
+        CHECK(endPos.X == doctest::Approx(695.0f));
+        CHECK(endPos.Y == doctest::Approx(455.0f));
+        CHECK(endSize.X == doctest::Approx(1390.0f));
+        CHECK(endSize.Y == doctest::Approx(910.0f));
+    }
+
+    TEST_CASE("Wii Channel Full-Screen Camera Dive & Flare Transition (#90)")
+    {
+        const Vector2f viewSize{1920.0f, 1080.0f};
+        const float baseScale = std::min((viewSize.X * 0.96f) / 1880.0f, (viewSize.Y * 0.94f) / 1040.0f);
+        const float targetScale = std::max(viewSize.X / 1390.0f, viewSize.Y / 910.0f) * 1.05f;
+
+        // Target scale must be larger than base scale to zoom in past cabinet borders
+        CHECK(targetScale > baseScale);
+
+        auto calcDiveScale = [baseScale, targetScale](float progress) -> float {
+            float diveT = progress * progress * (3.0f - 2.0f * progress);
+            return baseScale + (targetScale - baseScale) * diveT;
+        };
+
+        CHECK(calcDiveScale(0.0f) == doctest::Approx(baseScale));
+        CHECK(calcDiveScale(1.0f) == doctest::Approx(targetScale));
+
+        // Glass center moves towards viewport center (960, 540)
+        const Vector2f baseCabinetCenter{viewSize.X * 0.5f, viewSize.Y * 0.5f};
+        const Vector2f baseGlassCenter = baseCabinetCenter + (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * baseScale;
+        const Vector2f targetGlassCenter = viewSize * 0.5f;
+
+        auto calcGlassCenter = [baseGlassCenter, targetGlassCenter](float progress) -> Vector2f {
+            float diveT = progress * progress * (3.0f - 2.0f * progress);
+            return baseGlassCenter + (targetGlassCenter - baseGlassCenter) * diveT;
+        };
+
+        CHECK(calcGlassCenter(0.0f).X == doctest::Approx(baseGlassCenter.X));
+        CHECK(calcGlassCenter(1.0f).X == doctest::Approx(targetGlassCenter.X));
+        CHECK(calcGlassCenter(1.0f).Y == doctest::Approx(targetGlassCenter.Y));
+
+        // Flare triggers only in the last 40% of the launch transition
+        auto getFlareAlpha = [](float progress) -> float {
+            if (progress <= 0.60f) return 0.0f;
+            return std::clamp((progress - 0.60f) / 0.40f, 0.0f, 1.0f);
+        };
+
+        CHECK(getFlareAlpha(0.0f) == doctest::Approx(0.0f));
+        CHECK(getFlareAlpha(0.50f) == doctest::Approx(0.0f));
+        CHECK(getFlareAlpha(0.60f) == doctest::Approx(0.0f));
+        CHECK(getFlareAlpha(0.80f) == doctest::Approx(0.50f));
+        CHECK(getFlareAlpha(1.0f) == doctest::Approx(1.0f));
+    }
 }

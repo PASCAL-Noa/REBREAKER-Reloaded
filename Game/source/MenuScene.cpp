@@ -681,6 +681,47 @@ void MenuScene::OnRender(GameContext& context)
         RenderTVOSD(context);
         RenderPowerOffDialog(context);
         RenderPowerOffAnimation(context);
+
+        // Pleasant CRT aperture expansion beam & phosphor flare during LaunchingFullScreen
+        if (m_zoomState == ChannelZoomState::LaunchingFullScreen && m_launchProgress > 0.60f &&
+            m_selectedChannel >= 0 && m_selectedChannel < static_cast<int>(m_tvChannels.size()))
+        {
+            const Vector2f viewSize = context.Render.GetLogicalViewSize();
+            const Vector2f viewCenter = viewSize * 0.5f;
+            const float flareT = (m_launchProgress - 0.60f) / 0.40f;
+            const float easeFlare = flareT * flareT;
+            const auto& ch = m_tvChannels[m_selectedChannel];
+
+            // 1. Horizontal cathode flare streak expanding across the display
+            float streakH = 16.0f + 320.0f * easeFlare;
+            uint8_t streakAlpha = static_cast<uint8_t>(std::min(255.0f, easeFlare * 230.0f));
+            context.Render.DrawRectangle(viewSize.X * 1.3f, streakH, Transform2D{viewCenter},
+                Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, streakAlpha});
+
+            // 2. Searing white-hot core laser beam
+            float coreH = 6.0f + 140.0f * easeFlare;
+            uint8_t coreAlpha = static_cast<uint8_t>(std::min(255.0f, easeFlare * 255.0f));
+            context.Render.DrawRectangle(viewSize.X * 1.3f, coreH, Transform2D{viewCenter}, Color{255, 255, 255, coreAlpha});
+
+            // 3. Phosphor circular resonance wave
+            if (flareT > 0.35f)
+            {
+                float waveT = (flareT - 0.35f) / 0.65f;
+                float waveR = viewSize.Y * (0.15f + waveT * 0.85f);
+                uint8_t waveAlpha = static_cast<uint8_t>((1.0f - waveT) * 180.0f);
+                context.Render.DrawCircleOutline(waveR, Transform2D{viewCenter},
+                    Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, waveAlpha}, 3.0f);
+                context.Render.DrawCircleOutline(waveR * 0.65f, Transform2D{viewCenter},
+                    Color{255, 255, 255, static_cast<uint8_t>(waveAlpha * 0.8f)}, 2.0f);
+            }
+
+            // 4. Full-screen flash transition wipe at peak
+            if (flareT > 0.85f)
+            {
+                uint8_t flashA = static_cast<uint8_t>(((flareT - 0.85f) / 0.15f) * 255.0f);
+                context.Render.DrawRectangle(viewSize.X * 1.2f, viewSize.Y * 1.2f, Transform2D{viewCenter}, Color{255, 255, 255, flashA});
+            }
+        }
     }
 
     UISystem::OnRender(m_registry, context);
@@ -1326,8 +1367,9 @@ void MenuScene::RenderWiiZoomedChannel(GameContext& context)
     uint8_t bgDimAlpha = static_cast<uint8_t>(smoothT * 220.0f);
     context.Render.DrawRectangle(1390.0f, 910.0f, Transform2D{Vector2f{695.0f, 455.0f}}, Color{6, 8, 14, bgDimAlpha});
 
-    Vector2f targetCenter{695.0f, 435.0f};
-    Vector2f targetSize{1160.0f, 700.0f};
+    // Zoomed card occupies 100% of the CRT TV screen (1390 x 910)
+    Vector2f targetCenter{695.0f, 455.0f};
+    Vector2f targetSize{1390.0f, 910.0f};
 
     Vector2f startPos = ch.BasePosition - Vector2f{105.0f, 85.0f};
     Vector2f startSize = ch.BaseSize;
@@ -1342,53 +1384,65 @@ void MenuScene::RenderWiiZoomedChannel(GameContext& context)
     if (smoothT > 0.35f)
     {
         float contentAlpha = std::clamp((smoothT - 0.35f) / 0.65f, 0.0f, 1.0f);
+        float uiFade = (m_zoomState == ChannelZoomState::LaunchingFullScreen) ? std::clamp(1.0f - m_launchProgress * 2.8f, 0.0f, 1.0f) : 1.0f;
         uint8_t cAlpha = static_cast<uint8_t>(contentAlpha * 255.0f);
+        uint8_t uiAlpha = static_cast<uint8_t>(contentAlpha * uiFade * 255.0f);
 
-        // 1. Top Channel Header Bar
-        Vector2f headerPos = curPos - Vector2f{0.0f, curSize.Y * 0.5f - 38.0f};
-        context.Render.DrawRectangle(curSize.X - 20.0f, 54.0f, Transform2D{headerPos}, Color{22, 28, 42, cAlpha});
-        context.Render.DrawText(ch.ChannelNumber + "  //  " + ch.Title, m_fontId, 24.0f,
-                                Transform2D{headerPos - Vector2f{curSize.X * 0.5f - 30.0f, 14.0f}},
+        // 1. Top Channel Header Bar (Full width across top of TV screen)
+        Vector2f headerPos = curPos - Vector2f{0.0f, curSize.Y * 0.5f - 40.0f};
+        context.Render.DrawRectangle(curSize.X, 60.0f, Transform2D{headerPos}, Color{16, 22, 34, cAlpha});
+        context.Render.DrawRectangleOutline(curSize.X, 60.0f, Transform2D{headerPos}, Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, static_cast<uint8_t>(cAlpha * 0.7f)}, 2.0f);
+        context.Render.DrawText(ch.ChannelNumber + "  //  " + ch.Title, m_fontId, 26.0f,
+                                Transform2D{headerPos - Vector2f{curSize.X * 0.5f - 40.0f, 16.0f}},
                                 Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, cAlpha});
-        context.Render.DrawText(ch.Subtitle, m_fontId, 18.0f,
-                                Transform2D{headerPos + Vector2f{curSize.X * 0.5f - 240.0f, -12.0f}},
-                                Color{190, 205, 225, cAlpha});
+        context.Render.DrawText(ch.Subtitle, m_fontId, 20.0f,
+                                Transform2D{headerPos + Vector2f{curSize.X * 0.5f - 320.0f, -12.0f}},
+                                Color{200, 215, 235, cAlpha});
 
-        // 2. Center Large Animated Vignette / Preview
-        Vector2f centerVignettePos = curPos - Vector2f{0.0f, 20.0f};
+        // 2. Center Large Animated Vignette / Preview (scaled up beautifully)
+        Vector2f centerVignettePos = curPos - Vector2f{0.0f, 25.0f};
+        float vignetteSc = (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+            ? (1.85f * (1.0f + m_launchProgress * 0.35f))
+            : (1.85f * smoothT);
+
         if (ch.Type == ChannelType::Campaign)
         {
-            RenderCampaignPreview(context, centerVignettePos, 1.0f, true);
+            RenderCampaignPreview(context, centerVignettePos, vignetteSc, true);
         }
         else
         {
-            RenderChannelVignette(context, ch, centerVignettePos, curSize * 0.8f);
+            RenderChannelVignette(context, ch, centerVignettePos, vignetteSc);
         }
 
         // 3. Channel Description Banner
-        Vector2f descPos = curPos + Vector2f{0.0f, curSize.Y * 0.5f - 135.0f};
-        context.Render.DrawTextCentered(ch.Description, m_fontId, 18.0f, Transform2D{descPos}, Color{215, 230, 248, cAlpha});
+        if (uiAlpha > 2)
+        {
+            Vector2f descPos = curPos + Vector2f{0.0f, curSize.Y * 0.5f - 145.0f};
+            context.Render.DrawRectangle(1050.0f, 44.0f, Transform2D{descPos}, Color{12, 16, 26, static_cast<uint8_t>(uiAlpha * 0.85f)});
+            context.Render.DrawRectangleOutline(1050.0f, 44.0f, Transform2D{descPos}, Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, static_cast<uint8_t>(uiAlpha * 0.6f)}, 1.5f);
+            context.Render.DrawTextCentered(ch.Description, m_fontId, 19.0f, Transform2D{descPos}, Color{225, 235, 250, uiAlpha});
 
-        // 4. Wii Channel Style Action Buttons: [ RETOUR ] and [ ENTRER ]
-        Vector2f btnRetourPos = curPos + Vector2f{-200.0f, curSize.Y * 0.5f - 65.0f};
-        Vector2f btnEntrerPos = curPos + Vector2f{200.0f, curSize.Y * 0.5f - 65.0f};
-        Vector2f btnSize{240.0f, 56.0f};
+            // 4. Wii Channel Style Action Buttons: [ RETOUR ] and [ ENTRER ]
+            Vector2f btnRetourPos = curPos + Vector2f{-240.0f, curSize.Y * 0.5f - 65.0f};
+            Vector2f btnEntrerPos = curPos + Vector2f{240.0f, curSize.Y * 0.5f - 65.0f};
+            Vector2f btnSize{260.0f, 62.0f};
 
-        // RETOUR Button
-        bool retourActive = (m_zoomChoice == 0);
-        Color retourBg = retourActive ? Color{45, 65, 95, cAlpha} : Color{20, 26, 38, cAlpha};
-        Color retourBorder = retourActive ? Color{90, 200, 255, cAlpha} : Color{60, 75, 100, cAlpha};
-        context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{btnRetourPos}, retourBg);
-        context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{btnRetourPos}, retourBorder, retourActive ? 3.5f : 1.5f);
-        context.Render.DrawTextCentered("[ RETOUR ]", m_fontId, 22.0f, Transform2D{btnRetourPos}, Color{240, 245, 255, cAlpha});
+            // RETOUR Button
+            bool retourActive = (m_zoomChoice == 0);
+            Color retourBg = retourActive ? Color{45, 65, 95, uiAlpha} : Color{20, 26, 38, uiAlpha};
+            Color retourBorder = retourActive ? Color{90, 200, 255, uiAlpha} : Color{60, 75, 100, uiAlpha};
+            context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{btnRetourPos}, retourBg);
+            context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{btnRetourPos}, retourBorder, retourActive ? 3.5f : 1.5f);
+            context.Render.DrawTextCentered("[ RETOUR ]", m_fontId, 23.0f, Transform2D{btnRetourPos}, Color{240, 245, 255, uiAlpha});
 
-        // ENTRER Button
-        bool entrerActive = (m_zoomChoice == 1);
-        Color entrerBg = entrerActive ? Color{40, 110, 75, cAlpha} : Color{20, 48, 35, cAlpha};
-        Color entrerBorder = entrerActive ? Colors::Gold : Color{70, 140, 95, cAlpha};
-        context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{btnEntrerPos}, entrerBg);
-        context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{btnEntrerPos}, entrerBorder, entrerActive ? 3.5f : 1.5f);
-        context.Render.DrawTextCentered("[ ENTRER ]", m_fontId, 22.0f, Transform2D{btnEntrerPos}, Color{255, 255, 255, cAlpha});
+            // ENTRER Button
+            bool entrerActive = (m_zoomChoice == 1);
+            Color entrerBg = entrerActive ? Color{40, 110, 75, uiAlpha} : Color{20, 48, 35, uiAlpha};
+            Color entrerBorder = entrerActive ? Colors::Gold : Color{70, 140, 95, uiAlpha};
+            context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{btnEntrerPos}, entrerBg);
+            context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{btnEntrerPos}, entrerBorder, entrerActive ? 3.5f : 1.5f);
+            context.Render.DrawTextCentered("[ ENTRER ]", m_fontId, 23.0f, Transform2D{btnEntrerPos}, Color{255, 255, 255, uiAlpha});
+        }
     }
 }
 
@@ -1400,9 +1454,26 @@ void MenuScene::UpdateTVLayout(const GameContext& context)
     // Scale base 1880x1040 design uniformly to fit viewport with retro borders
     const float maxScaleX = (viewSize.X * 0.96f) / 1880.0f;
     const float maxScaleY = (viewSize.Y * 0.94f) / 1040.0f;
-    m_tvLayout.Scale = std::min(maxScaleX, maxScaleY);
+    const float baseScale = std::min(maxScaleX, maxScaleY);
 
-    m_tvLayout.GlassCenter = m_tvLayout.ToScreenPos(Vector2f{800.0f, 540.0f});
+    if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+    {
+        // Smooth camera dive: TV cathode screen expands to fill 100% of the viewport
+        const float targetScale = std::max(viewSize.X / 1390.0f, viewSize.Y / 910.0f) * 1.05f;
+        const float diveT = m_launchProgress * m_launchProgress * (3.0f - 2.0f * m_launchProgress);
+        m_tvLayout.Scale = baseScale + (targetScale - baseScale) * diveT;
+
+        const Vector2f baseGlassCenter = m_tvLayout.CabinetCenter + (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * baseScale;
+        const Vector2f targetGlassCenter = Vector2f{viewSize.X * 0.5f, viewSize.Y * 0.5f};
+        m_tvLayout.GlassCenter = baseGlassCenter + (targetGlassCenter - baseGlassCenter) * diveT;
+        m_tvLayout.CabinetCenter = m_tvLayout.GlassCenter - (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * m_tvLayout.Scale;
+    }
+    else
+    {
+        m_tvLayout.Scale = baseScale;
+        m_tvLayout.GlassCenter = m_tvLayout.ToScreenPos(Vector2f{800.0f, 540.0f});
+    }
+
     m_tvLayout.GlassSize = m_tvLayout.ToScreenSize(Vector2f{1390.0f, 910.0f});
     m_tvLayout.GlassRectUV = context.Render.WorldRectToNormalizedUV(m_tvLayout.GlassCenter, m_tvLayout.GlassSize);
 
@@ -1570,6 +1641,21 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     }
 
     // 4. Wii Channel Zoom State Machine
+    if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+    {
+        m_launchTimer += dt;
+        m_launchProgress = std::clamp(m_launchTimer / 0.55f, 0.0f, 1.0f);
+        if (m_launchTimer >= 0.55f)
+        {
+            m_launchProgress = 1.0f;
+            LaunchChannel(m_selectedChannel, context);
+            m_zoomState = ChannelZoomState::Grid;
+            m_zoomProgress = 0.0f;
+            m_launchProgress = 0.0f;
+            m_launchTimer = 0.0f;
+        }
+        return;
+    }
     if (m_zoomState == ChannelZoomState::ZoomingIn)
     {
         m_zoomTimer += dt;
@@ -1615,9 +1701,11 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         {
             if (m_zoomChoice == 1)
             {
-                LaunchChannel(m_selectedChannel, context);
-                m_zoomState = ChannelZoomState::Grid;
-                m_zoomProgress = 0.0f;
+                m_zoomState = ChannelZoomState::LaunchingFullScreen;
+                m_launchTimer = 0.0f;
+                m_launchProgress = 0.0f;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 100.0f);
+                if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 75.0f);
             }
             else
             {
@@ -1628,14 +1716,13 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
             return;
         }
 
-        // Mouse hover and click on RETOUR and ENTRER buttons
-        Vector2f targetCenter = L.GlassCenter - Vector2f{0.0f, L.ToScreenDim(20.0f)};
-        Vector2f targetSize = L.ToScreenSize(Vector2f{1160.0f, 700.0f});
-        Vector2f btnRetourPos = targetCenter + Vector2f{L.ToScreenDim(-200.0f), targetSize.Y * 0.5f - L.ToScreenDim(65.0f)};
-        Vector2f btnEntrerPos = targetCenter + Vector2f{L.ToScreenDim(200.0f), targetSize.Y * 0.5f - L.ToScreenDim(65.0f)};
-        Vector2f btnHalfSize = L.ToScreenSize(Vector2f{120.0f, 28.0f});
+        // Mouse hover and click on RETOUR and ENTRER buttons mapped into CRT glass texture space
+        Vector2f mouseOnGlass = Vector2f{695.0f, 455.0f} + (mPos - L.GlassCenter) / (L.Scale > 0.0001f ? L.Scale : 1.0f);
+        Vector2f btnRetourPos{455.0f, 845.0f};
+        Vector2f btnEntrerPos{935.0f, 845.0f};
+        Vector2f btnHalfSize{130.0f, 31.0f};
 
-        if (std::abs(mPos.X - btnRetourPos.X) <= btnHalfSize.X && std::abs(mPos.Y - btnRetourPos.Y) <= btnHalfSize.Y)
+        if (std::abs(mouseOnGlass.X - btnRetourPos.X) <= btnHalfSize.X && std::abs(mouseOnGlass.Y - btnRetourPos.Y) <= btnHalfSize.Y)
         {
             m_zoomChoice = 0;
             if (context.Input.IsMouseButtonPress(MouseButton::Left))
@@ -1646,14 +1733,16 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
                 return;
             }
         }
-        else if (std::abs(mPos.X - btnEntrerPos.X) <= btnHalfSize.X && std::abs(mPos.Y - btnEntrerPos.Y) <= btnHalfSize.Y)
+        else if (std::abs(mouseOnGlass.X - btnEntrerPos.X) <= btnHalfSize.X && std::abs(mouseOnGlass.Y - btnEntrerPos.Y) <= btnHalfSize.Y)
         {
             m_zoomChoice = 1;
             if (context.Input.IsMouseButtonPress(MouseButton::Left))
             {
-                LaunchChannel(m_selectedChannel, context);
-                m_zoomState = ChannelZoomState::Grid;
-                m_zoomProgress = 0.0f;
+                m_zoomState = ChannelZoomState::LaunchingFullScreen;
+                m_launchTimer = 0.0f;
+                m_launchProgress = 0.0f;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 100.0f);
+                if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 75.0f);
                 return;
             }
         }
@@ -1841,6 +1930,8 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
 
     m_zoomState = ChannelZoomState::Grid;
     m_zoomProgress = 0.0f;
+    m_launchProgress = 0.0f;
+    m_launchTimer = 0.0f;
 
     if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 100.0f);
     if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 75.0f);
@@ -2139,15 +2230,12 @@ void MenuScene::RenderChannelGrid(GameContext& context)
 
         // Center Procedural Vignette
         Vector2f vignettePos = pos + Vector2f{0.0f, -4.0f * s};
-        Vector2f vignetteSize{w - 16.0f * s, 105.0f * s};
-        RenderChannelVignette(context, ch, vignettePos, vignetteSize);
+        RenderChannelVignette(context, ch, vignettePos, ch.CurrentScale);
     }
 }
 
-void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, const Vector2f& /*size*/) const
+void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float sc) const
 {
-    const float sc = ch.CurrentScale;
-
     switch (ch.Type)
     {
     case ChannelType::Campaign:
