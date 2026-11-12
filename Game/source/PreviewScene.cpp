@@ -417,20 +417,9 @@ void PreviewScene::StartCountdown()
 
 void PreviewScene::OnDestroy(GameContext& context)
 {
-    ClearActiveUltimates();
-    ClearVisualMalus();
-    if (m_fireballBurnSfxId != 0 && mp_context)
-    {
-        mp_context->Audio.StopLoopingSfx(m_fireballBurnSfxId);
-    }
-    m_uiController.reset();
-    mp_state_machine.reset();
-    mp_levelGenerator.reset();
-    m_collisionSub.Reset();
-    m_powerUpSub.Reset();
-    m_nextLevelSub.Reset();
-
-    DefaultScene::OnDestroy(context);
+    m_countdownTimer = 0.0f;
+    m_countdownGoTimer = 0.0f;
+    GameScene::OnDestroy(context);
 }
 
 void PreviewScene::OnUpdate(float dt, GameContext& context)

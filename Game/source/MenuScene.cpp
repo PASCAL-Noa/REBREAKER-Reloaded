@@ -223,9 +223,6 @@ void MenuScene::PreloadGameAssets(GameContext& context)
     // Preload shaders asynchronously
     context.Resources.LoadResourceAsync("Resources/shaders/crack.frag");
     context.Resources.LoadResourceAsync("Resources/shaders/scanner.frag");
-
-    // Preload font asynchronously
-    context.Resources.LoadResourceAsync("Resources/font/arial.ttf");
 }
 
 void MenuScene::OnUpdate(float dt, GameContext& context)

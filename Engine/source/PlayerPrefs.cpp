@@ -2,6 +2,13 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+#include <mutex>
+
+static std::recursive_mutex& GetPrefsMutex()
+{
+    static std::recursive_mutex s_prefsMutex;
+    return s_prefsMutex;
+}
 
 #ifdef _WIN32
     #ifndef NOMINMAX
@@ -16,26 +23,31 @@ const std::string PlayerPrefs::s_FilePath = "playerprefs.json";
 
 void PlayerPrefs::SetInt(const std::string& key, int value)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     s_Data[key] = value;
 }
 
 void PlayerPrefs::SetFloat(const std::string& key, float value)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     s_Data[key] = value;
 }
 
 void PlayerPrefs::SetBool(const std::string& key, bool value)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     s_Data[key] = value;
 }
 
 void PlayerPrefs::SetString(const std::string& key, const std::string& value)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     s_Data[key] = value;
 }
 
 int PlayerPrefs::GetInt(const std::string& key, int defaultValue)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     if (s_Data.contains(key) && s_Data[key].is_number_integer())
     {
         return s_Data[key].get<int>();
@@ -45,6 +57,7 @@ int PlayerPrefs::GetInt(const std::string& key, int defaultValue)
 
 float PlayerPrefs::GetFloat(const std::string& key, float defaultValue)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     if (s_Data.contains(key) && s_Data[key].is_number())
     {
         return s_Data[key].get<float>();
@@ -54,6 +67,7 @@ float PlayerPrefs::GetFloat(const std::string& key, float defaultValue)
 
 bool PlayerPrefs::GetBool(const std::string& key, bool defaultValue)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     if (s_Data.contains(key) && s_Data[key].is_boolean())
     {
         return s_Data[key].get<bool>();
@@ -63,6 +77,7 @@ bool PlayerPrefs::GetBool(const std::string& key, bool defaultValue)
 
 std::string PlayerPrefs::GetString(const std::string& key, const std::string& defaultValue)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     if (s_Data.contains(key) && s_Data[key].is_string())
     {
         return s_Data[key].get<std::string>();
@@ -72,6 +87,7 @@ std::string PlayerPrefs::GetString(const std::string& key, const std::string& de
 
 void PlayerPrefs::Save()
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     std::string tmpFilePath = s_FilePath + ".tmp";
     std::ofstream file(tmpFilePath);
     if (file.is_open())
@@ -113,6 +129,7 @@ void PlayerPrefs::Save()
 
 void PlayerPrefs::Load()
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     std::string tmpFilePath = s_FilePath + ".tmp";
     std::error_code ec;
     if (!std::filesystem::exists(s_FilePath, ec) && std::filesystem::exists(tmpFilePath, ec))
@@ -142,6 +159,7 @@ void PlayerPrefs::Load()
 
 void PlayerPrefs::DeleteAll()
 {
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     s_Data = json::object();
     Save();
 }

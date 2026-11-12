@@ -92,6 +92,12 @@ std::mutex& ResourceManager::GetAudioDecodeMutex()
     return s_audioDecodeMutex;
 }
 
+std::mutex& ResourceManager::GetFontDecodeMutex()
+{
+    static std::mutex s_fontDecodeMutex;
+    return s_fontDecodeMutex;
+}
+
 bool ResourceManager::IsResourceLoaded(uint32_t id) const
 {
     if (id == 0) return false;
@@ -181,10 +187,10 @@ std::future<uint32_t> ResourceManager::LoadResourceAsync(
 
     const uint32_t id = GetResourceId(filepath);
 
-    // Audio decoding through libsndfile / FLAC is not thread-safe for background worker pools.
-    // Load audio synchronously on the calling thread to prevent concurrent decoder crashes.
+    // Audio decoding through libsndfile / FLAC and FreeType font loading are not thread-safe for background worker pools.
+    // Load audio and fonts synchronously on the calling thread to prevent concurrent FreeType heap corruption and decoder crashes.
     const std::string ext = GetExtension(filepath);
-    if (ext == "wav" || ext == "ogg" || ext == "flac" || ext == "mp3")
+    if (ext == "wav" || ext == "ogg" || ext == "flac" || ext == "mp3" || ext == "ttf" || ext == "otf")
     {
         uint32_t loadedId = LoadResource(filepath);
         if (onLoaded)
@@ -260,10 +266,9 @@ std::future<uint32_t> ResourceManager::LoadResourceAsync(
         else if (ext == "ttf" || ext == "otf")
         {
             auto font = std::make_unique<sf::Font>();
-            static std::mutex s_fontDecodeMutex;
             bool success = false;
             {
-                std::lock_guard<std::mutex> fLock(s_fontDecodeMutex);
+                std::lock_guard<std::mutex> fLock(GetFontDecodeMutex());
                 success = font->openFromFile(filepath);
             }
 
@@ -559,10 +564,9 @@ bool ResourceManager::LoadFont(uint32_t id, const std::string& filepath)
     }
 
     auto font = std::make_unique<sf::Font>();
-    static std::mutex s_fontDecodeMutex;
     bool loaded = false;
     {
-        std::lock_guard<std::mutex> fLock(s_fontDecodeMutex);
+        std::lock_guard<std::mutex> fLock(GetFontDecodeMutex());
         loaded = font->openFromFile(filepath);
     }
 
