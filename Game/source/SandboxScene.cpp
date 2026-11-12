@@ -770,7 +770,7 @@ void SandboxScene::HandleSandboxInput(const GameContext& context)
     {
         context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
         MenuScene::SetReturnWithDezoom(true);
-        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
+        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
     }
 
@@ -1516,7 +1516,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
         .OnClick = [&context]() {
             context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             MenuScene::SetReturnWithDezoom(true);
-            context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
+            context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
         .Position = {330.0f, row6Y},
         .Size = {100.0f, padH},

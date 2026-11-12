@@ -803,8 +803,8 @@ void Renderer::DrawSceneTransition(SceneTransitionType type, float progress, Col
     }
     else if (type == SceneTransitionType::StaticSnow)
     {
-        // 1. Soft CRT cathode backdrop
-        const uint8_t bgAlpha = static_cast<uint8_t>(std::clamp(progress * 220.0f, 0.0f, 220.0f));
+        // 1. Soft CRT cathode backdrop (smoothly opaque at midpoint to prevent pop)
+        const uint8_t bgAlpha = static_cast<uint8_t>(std::clamp(progress * 255.0f, 0.0f, 255.0f));
         sf::RectangleShape bg(sf::Vector2f(viewSize.X, viewSize.Y));
         bg.setPosition({0.0f, 0.0f});
         bg.setFillColor(sf::Color(10, 14, 20, bgAlpha));
@@ -821,9 +821,9 @@ void Renderer::DrawSceneTransition(SceneTransitionType type, float progress, Col
             return static_cast<float>(s_snowSeed % 10000) / 10000.0f;
         };
 
-        const float intensity = std::clamp(progress * 1.1f, 0.0f, 1.0f);
-        // Softened alpha: gentle retro hiss rather than blinding static
-        const uint8_t maxAlpha = static_cast<uint8_t>(std::clamp(intensity * 85.0f, 0.0f, 85.0f));
+        const float intensity = std::clamp(progress * 1.05f, 0.0f, 1.0f);
+        // Softened alpha: gentle retro hiss rather than harsh static
+        const uint8_t maxAlpha = static_cast<uint8_t>(std::clamp(intensity * 48.0f, 0.0f, 48.0f));
 
         for (size_t i = 0; i < kSnowCount; ++i)
         {

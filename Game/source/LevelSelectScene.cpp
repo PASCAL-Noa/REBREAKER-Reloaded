@@ -82,7 +82,7 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
         }
         context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
         MenuScene::SetReturnWithDezoom(true);
-        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
+        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
     }
 
@@ -195,7 +195,7 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
         context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
         MenuScene::SetReturnWithDezoom(true);
-        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
+        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
     }
 

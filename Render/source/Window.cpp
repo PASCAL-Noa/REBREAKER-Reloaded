@@ -139,7 +139,13 @@ void Window::ApplyConfig(const WindowConfig &config)
             break;
     }
 
-    m_window.create(sf::VideoMode({m_config.Width, m_config.Height}), m_config.Title, sfStyle, sfState);
+    sf::VideoMode vm({m_config.Width, m_config.Height});
+    if (m_config.Mode == WindowMode::Fullscreen && !vm.isValid())
+    {
+        vm = sf::VideoMode::getDesktopMode();
+    }
+
+    m_window.create(vm, m_config.Title, sfStyle, sfState);
     const sf::Vector2u actualSize = m_window.getSize();
     m_config.Width = actualSize.x;
     m_config.Height = actualSize.y;

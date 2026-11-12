@@ -22,6 +22,7 @@ public:
     static void     Save();
     static void     Load();
     static void     DeleteAll();
+    static bool     HasKey(const std::string& key);
 
 private:
     static json     s_Data;

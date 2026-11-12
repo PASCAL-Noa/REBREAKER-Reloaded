@@ -778,21 +778,40 @@ std::string AudioMixer::GetCurrentAudioDevice() const
 
 bool AudioMixer::SetAudioDevice(const std::string& name) const
 {
-    if (name.empty() || name == "Default Device")
+    std::string targetDevice = name;
+    if (targetDevice.empty() || targetDevice == "Default Device")
     {
-        return true;
+        auto def = sf::PlaybackDevice::getDefaultDevice();
+        targetDevice = def.value_or("");
     }
 
     auto dev = sf::PlaybackDevice::getDevice();
-    if (dev.has_value() && dev.value() == name)
+    if (dev.has_value() && !targetDevice.empty() && dev.value() == targetDevice)
     {
         return true;
     }
 
-    StopAll();
+    try
+    {
+        StopAll();
 
-    std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-    return sf::PlaybackDevice::setDevice(name);
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+        if (targetDevice.empty())
+        {
+            return true;
+        }
+        return sf::PlaybackDevice::setDevice(targetDevice);
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "[AudioMixer] Exception in SetAudioDevice: " << e.what() << std::endl;
+        return false;
+    }
+    catch (...)
+    {
+        std::cerr << "[AudioMixer] Unknown exception in SetAudioDevice." << std::endl;
+        return false;
+    }
 }
 
 void AudioMixer::SetMusicPitch(float pitch) const

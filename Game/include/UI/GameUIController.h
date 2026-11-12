@@ -19,7 +19,7 @@ class GameUIController
 {
 public:
     GameUIController(Registry& registry, GameContext& context, GameScene& scene);
-    ~GameUIController() = default;
+    ~GameUIController();
 
     GameUIController(const GameUIController&) = delete;
     GameUIController& operator=(const GameUIController&) = delete;

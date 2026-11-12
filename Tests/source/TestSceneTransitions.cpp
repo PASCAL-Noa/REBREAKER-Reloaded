@@ -70,7 +70,7 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
         SceneManager sm;
         const auto& defaultCfg = sm.GetDefaultTransition();
         CHECK(defaultCfg.Type == SceneTransitionType::FadeBlack);
-        CHECK(defaultCfg.Duration == doctest::Approx(0.4f));
+        CHECK(defaultCfg.Duration == doctest::Approx(0.65f));
         CHECK(sm.GetTransitionPhase() == SceneTransitionPhase::Idle);
         CHECK(sm.GetTransitionProgress() == 0.0f);
         CHECK_FALSE(sm.IsTransitionActive());

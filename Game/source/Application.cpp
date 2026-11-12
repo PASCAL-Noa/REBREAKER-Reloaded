@@ -2,6 +2,7 @@
 #include "Core/PlayerPrefs.h"
 #include "ECS/Systems/UISystem.h"
 #include "Scenes/MenuScene.h"
+#include <iostream>
 
 Application::Application(const WindowConfig& config)
     : m_window(config),
@@ -28,9 +29,30 @@ void Application::Init()
         m_audioMixer.SetAudioDevice(savedDevice);
     }
 
-    float masterVol = PlayerPrefs::GetFloat("MasterVolume", 100.0f);
-    float sfxVol = PlayerPrefs::GetFloat("SfxVolume", 100.0f);
-    float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
+    bool prefsNeedSave = false;
+    if (!PlayerPrefs::HasKey("MasterVolume"))
+    {
+        PlayerPrefs::SetFloat("MasterVolume", 80.0f);
+        prefsNeedSave = true;
+    }
+    if (!PlayerPrefs::HasKey("SfxVolume"))
+    {
+        PlayerPrefs::SetFloat("SfxVolume", 70.0f);
+        prefsNeedSave = true;
+    }
+    if (!PlayerPrefs::HasKey("MusicVolume"))
+    {
+        PlayerPrefs::SetFloat("MusicVolume", 70.0f);
+        prefsNeedSave = true;
+    }
+    if (prefsNeedSave)
+    {
+        PlayerPrefs::Save();
+    }
+
+    float masterVol = PlayerPrefs::GetFloat("MasterVolume", 80.0f);
+    float sfxVol = PlayerPrefs::GetFloat("SfxVolume", 70.0f);
+    float musicVol = PlayerPrefs::GetFloat("MusicVolume", 70.0f);
     m_audioMixer.SetMasterVolume(masterVol);
     m_audioMixer.SetSfxVolume(sfxVol);
     m_audioMixer.SetMusicVolume(musicVol);
@@ -39,16 +61,15 @@ void Application::Init()
     uint32_t hoverSfx = m_resourceManager.LoadResource("Resources/audio/sfx/ui_hover.wav");
     UISystem::SetDefaultAudio(hoverSfx, clickSfx);
 
-
     // Register global rules
-    m_context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", true, RuleAccess::Public);
-    m_context.Rules.RegisterRule(Rule::Graphics::EnableParticles, "Toggle Particles", true, RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", PlayerPrefs::GetBool("EnableShader", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Graphics::EnableParticles, "Toggle Particles", PlayerPrefs::GetBool("EnableParticles", true), RuleAccess::Public);
     m_context.Rules.RegisterRule(Rule::Debug::ShowCollider, "Toggle Hitbox", false, RuleAccess::Private);
     m_context.Rules.RegisterRule(Rule::Gameplay::Invincible, "God mod", false, RuleAccess::Private);
     m_context.Rules.RegisterRule(Rule::Gameplay::InfiniteLives, "Infinite lives", false, RuleAccess::Private);
     m_context.Rules.RegisterRule(Rule::Gameplay::CheatsUnlocked, "Cheats Unlocked", false, RuleAccess::Private);
     m_context.Rules.RegisterRule(Rule::Gameplay::InfiniteUltimate, "Infinite Ultimate", false, RuleAccess::Private);
-    m_context.Rules.RegisterRule(Rule::Gameplay::ArenaEventsEnabled, "Arena Events", true, RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::ArenaEventsEnabled, "Arena Events", PlayerPrefs::GetBool("EnableArenaEvents", true), RuleAccess::Public);
 
     m_sceneManager.LoadScene<MenuScene>();
 }
@@ -67,14 +88,11 @@ void Application::Run()
         if (!m_window.PollEvents(m_inputManager, &m_renderer)) break;
 
         m_cheatManager.Update(m_time.GetDeltaTime(), m_context);
-
         m_sceneManager.Update(m_time.GetDeltaTime(), m_context);
 
         m_renderer.BeginDraw(m_sceneManager.GetClearColor());
         m_sceneManager.Render(m_context);
-        
         m_cheatManager.Render(m_renderer);
-
         m_renderer.EndDraw(m_sceneManager.GetPostProcessShader(), m_sceneManager.GetPostProcessParams());
     }
 

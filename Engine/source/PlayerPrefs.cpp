@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+#include <cmath>
 #include <mutex>
 
 static std::recursive_mutex& GetPrefsMutex()
@@ -30,6 +31,10 @@ void PlayerPrefs::SetInt(const std::string& key, int value)
 void PlayerPrefs::SetFloat(const std::string& key, float value)
 {
     std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
+    if (std::isnan(value) || std::isinf(value))
+    {
+        value = 0.0f;
+    }
     s_Data[key] = value;
 }
 
@@ -88,42 +93,53 @@ std::string PlayerPrefs::GetString(const std::string& key, const std::string& de
 void PlayerPrefs::Save()
 {
     std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
-    std::string tmpFilePath = s_FilePath + ".tmp";
-    std::ofstream file(tmpFilePath);
-    if (file.is_open())
+    try
     {
-        file << s_Data.dump(4);
-        file.close();
+        std::string tmpFilePath = s_FilePath + ".tmp";
+        std::ofstream file(tmpFilePath);
+        if (file.is_open())
+        {
+            file << s_Data.dump(4);
+            file.close();
 
 #if defined(_WIN32)
-        std::filesystem::path srcPath(tmpFilePath);
-        std::filesystem::path dstPath(s_FilePath);
+            std::filesystem::path srcPath(tmpFilePath);
+            std::filesystem::path dstPath(s_FilePath);
 
-        // MoveFileExW with MOVEFILE_REPLACE_EXISTING performs an atomic replacement on NTFS
-        if (!MoveFileExW(srcPath.c_str(), dstPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-        {
-            // Fallback to std::filesystem::copy_file with overwrite_existing
+            // MoveFileExW with MOVEFILE_REPLACE_EXISTING performs an atomic replacement on NTFS
+            if (!MoveFileExW(srcPath.c_str(), dstPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            {
+                // Fallback to std::filesystem::copy_file with overwrite_existing
+                std::error_code ec;
+                std::filesystem::copy_file(srcPath, dstPath, std::filesystem::copy_options::overwrite_existing, ec);
+                std::filesystem::remove(srcPath, ec);
+                if (ec)
+                {
+                    std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
+                }
+            }
+#else
             std::error_code ec;
-            std::filesystem::copy_file(srcPath, dstPath, std::filesystem::copy_options::overwrite_existing, ec);
-            std::filesystem::remove(srcPath, ec);
+            std::filesystem::copy_file(tmpFilePath, s_FilePath, std::filesystem::copy_options::overwrite_existing, ec);
+            std::filesystem::remove(tmpFilePath, ec);
             if (ec)
             {
                 std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
             }
-        }
-#else
-        std::error_code ec;
-        std::filesystem::copy_file(tmpFilePath, s_FilePath, std::filesystem::copy_options::overwrite_existing, ec);
-        std::filesystem::remove(tmpFilePath, ec);
-        if (ec)
-        {
-            std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
-        }
 #endif
+        }
+        else
+        {
+            std::cerr << "Failed to open temporary file for PlayerPrefs: " << tmpFilePath << std::endl;
+        }
     }
-    else
+    catch (const std::exception& e)
     {
-        std::cerr << "Failed to open temporary file for PlayerPrefs: " << tmpFilePath << std::endl;
+        std::cerr << "Exception while saving PlayerPrefs: " << e.what() << std::endl;
+    }
+    catch (...)
+    {
+        std::cerr << "Unknown exception while saving PlayerPrefs." << std::endl;
     }
 }
 
@@ -143,8 +159,12 @@ void PlayerPrefs::Load()
         try
         {
             file >> s_Data;
+            if (!s_Data.is_object())
+            {
+                s_Data = json::object();
+            }
         }
-        catch (const json::parse_error& e)
+        catch (const std::exception& e)
         {
             std::cerr << "Failed to parse PlayerPrefs: " << e.what() << std::endl;
             s_Data = json::object();
@@ -162,4 +182,10 @@ void PlayerPrefs::DeleteAll()
     std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
     s_Data = json::object();
     Save();
+}
+
+bool PlayerPrefs::HasKey(const std::string& key)
+{
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
+    return s_Data.contains(key);
 }

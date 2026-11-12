@@ -25,12 +25,21 @@
 #include "Core/ProfileManager.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 GameUIController::GameUIController(Registry& registry, GameContext& context, GameScene& scene)
     : m_registry(registry),
       m_context(context),
       m_scene(scene)
 {
+}
+
+GameUIController::~GameUIController()
+{
+    m_livesSub.Reset();
+    m_scoreSub.Reset();
+    m_stateSub.Reset();
+    m_textFeedback.reset();
 }
 
 void GameUIController::OnInit(uint32_t fontId, uint32_t heartTexId, uint32_t fireTexId, uint32_t bounceSfxId, uint32_t scoreRecordedSfxId)
@@ -1035,7 +1044,7 @@ void GameUIController::CreatePauseMenu()
         .OnClick = [this]() {
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             MenuScene::SetReturnWithDezoom(true);
-            m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
+            m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
         .Position = {0, 150.0f},
         .FontId = m_fontId
@@ -1361,6 +1370,12 @@ void GameUIController::CreateRenderTab()
             WindowConfig config = m_context.Render.GetWindow().GetConfig();
             if (config.Mode == WindowMode::Fullscreen) {
                 config.Mode = WindowMode::Windowed;
+                int resW = PlayerPrefs::GetInt("ResolutionWidth", 1920);
+                int resH = PlayerPrefs::GetInt("ResolutionHeight", 1080);
+                if (resW > 0 && resH > 0) {
+                    config.Width = resW;
+                    config.Height = resH;
+                }
                 PlayerPrefs::SetBool("Fullscreen", false);
                 if (m_registry.HasComponent<TextComponent>(m_fsBtn)) {
                     m_registry.GetComponent<TextComponent>(m_fsBtn).Text = "FULL-SCREEN: OFF";
@@ -1374,6 +1389,7 @@ void GameUIController::CreateRenderTab()
             }
             PlayerPrefs::Save();
             m_context.Render.GetWindow().ApplyConfig(config);
+            m_context.Render.OnWindowResized(config.Width, config.Height);
         },
         .Position = {rightPanelX - 250.0f, -viewY * 0.1f},
         .Size = {400.0f, 60.0f},
@@ -1403,6 +1419,7 @@ void GameUIController::CreateRenderTab()
                 PlayerPrefs::SetInt("WindowHeight", static_cast<int>(config.Height));
                 PlayerPrefs::Save();
                 m_context.Render.GetWindow().ApplyConfig(config);
+                m_context.Render.OnWindowResized(config.Width, config.Height);
             }
         },
         .Position = {rightPanelX + 250.0f, -viewY * 0.1f},
@@ -1759,6 +1776,14 @@ void GameUIController::OpenSettingsTab(Entity targetCanvas)
         UpdateVolumeBars(m_sfxVolumeBars, m_context.Audio.GetSfxVolume());
         UpdateVolumeBars(m_musicVolumeBars, m_context.Audio.GetMusicVolume());
     }
+    else if (targetCanvas == m_renderCanvas)
+    {
+        bool isFs = m_context.Render.GetWindow().GetConfig().Mode == WindowMode::Fullscreen;
+        if (m_registry.HasComponent<TextComponent>(m_fsBtn))
+        {
+            m_registry.GetComponent<TextComponent>(m_fsBtn).Text = isFs ? "FULL-SCREEN: ON" : "FULL-SCREEN: OFF";
+        }
+    }
 
     if (m_registry.HasComponent<TweenComponent>(targetCanvas))
     {
@@ -2066,7 +2091,7 @@ void GameUIController::CreateGameOverMenu()
             }
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             MenuScene::SetReturnWithDezoom(true);
-            m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
+            m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
         .Position = {260.0f, 310.0f},
         .Size = {240.0f, 56.0f},
@@ -2371,7 +2396,7 @@ void GameUIController::CreateVictoryMenu()
         .OnClick = [this]() {
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             MenuScene::SetReturnWithDezoom(true);
-            m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
+            m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
         .Position = {160.0f, 175.0f},
         .Size = {240.0f, 56.0f},
