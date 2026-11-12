@@ -136,6 +136,7 @@ private:
     Entity          m_arenaEventsBtn = NULL_ENTITY;
     Entity          m_cheatsTabBtn = NULL_ENTITY;
     Entity          m_audioDeviceBtn = NULL_ENTITY;
+    std::vector<Entity> m_masterVolumeBars;
     std::vector<Entity> m_sfxVolumeBars;
     std::vector<Entity> m_musicVolumeBars;
 

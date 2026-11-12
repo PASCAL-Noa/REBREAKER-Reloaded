@@ -89,8 +89,10 @@ void MenuScene::OnInit(GameContext& context)
     m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::ItemRegen)]    = context.Resources.LoadResource("Resources/sprite/workshop/badge_regen.png");
 
     // Initialize persisted audio & render preferences
+    float masterVol = PlayerPrefs::GetFloat("MasterVolume", 100.0f);
     float sfxVol = PlayerPrefs::GetFloat("SfxVolume", 100.0f);
     float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
+    context.Audio.SetMasterVolume(masterVol);
     context.Audio.SetSfxVolume(sfxVol);
     context.Audio.SetMusicVolume(musicVol);
 
@@ -197,8 +199,8 @@ void MenuScene::OnInit(GameContext& context)
         m_returnProgress = 1.0f;
         m_zoomProgress = 1.0f;
         s_returnWithDezoom = false;
-        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 95.0f);
-        if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 70.0f);
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
+        if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 20.0f);
     }
 
     PreloadGameAssets(context);
@@ -267,7 +269,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
                 m_isRebinding = false;
                 m_rebindAction = InputAction::Count;
                 UISystem::SetNavigationEnabled(true);
-                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 36.0f);
                 UpdateInputButtons();
                 return;
             }
@@ -296,7 +298,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
                     m_isRebinding = false;
                     m_rebindAction = InputAction::Count;
                     UISystem::SetNavigationEnabled(true);
-                    if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                    if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 36.0f);
                     UpdateInputButtons();
                     return;
                 }
@@ -311,7 +313,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     // Preview scene shortcut (accessible anywhere from menu / workshop)
     if (!m_isRebinding && !m_showDescriptionModal && (context.Input.IsKeyPress(KeyCode::P) || context.Input.IsKeyPress(KeyCode::F1) || context.Input.IsKeyPress(KeyCode::F10)))
     {
-        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 36.0f);
         if (m_activeModal == m_workshopCanvas && m_workshopActiveTabCanvas == m_workshopUltimatesCanvas)
         {
             UltimateAbilityType ultToTest = m_lastInspectedUltimate;
@@ -578,7 +580,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
                             }
                             if (m_channelSwitchSfxId != 0 && mp_context)
                             {
-                                mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 80.0f, 1.2f);
+                                mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 35.0f, 1.2f);
                             }
                             RefreshWorkshopUI();
                             break;
@@ -703,37 +705,45 @@ void MenuScene::OnRender(GameContext& context)
             const float flareT = (m_zoomState == ChannelZoomState::LaunchingFullScreen)
                 ? ((m_launchProgress - 0.60f) / 0.40f)
                 : ((m_returnProgress - 0.40f) / 0.60f);
-            const float easeFlare = flareT * flareT;
+            const float easeFlare = flareT * flareT * (3.0f - 2.0f * flareT);
             const auto& ch = m_tvChannels[m_selectedChannel];
 
-            // 1. Horizontal cathode flare streak expanding across the display
-            float streakH = 16.0f + 320.0f * easeFlare;
-            uint8_t streakAlpha = static_cast<uint8_t>(std::min(255.0f, easeFlare * 230.0f));
+            // 1. Soft horizontal cathode phosphor glow expanding across the display
+            float streakH = 12.0f + 180.0f * easeFlare;
+            uint8_t streakAlpha = static_cast<uint8_t>(std::min(95.0f, easeFlare * 95.0f));
             context.Render.DrawRectangle(viewSize.X * 1.3f, streakH, Transform2D{viewCenter},
                 Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, streakAlpha});
 
-            // 2. Searing white-hot core laser beam
-            float coreH = 6.0f + 140.0f * easeFlare;
-            uint8_t coreAlpha = static_cast<uint8_t>(std::min(255.0f, easeFlare * 255.0f));
-            context.Render.DrawRectangle(viewSize.X * 1.3f, coreH, Transform2D{viewCenter}, Color{255, 255, 255, coreAlpha});
+            // 2. Soft luminous warm core beam (gentle glow, no harsh laser)
+            float coreH = 4.0f + 50.0f * easeFlare;
+            uint8_t coreAlpha = static_cast<uint8_t>(std::min(90.0f, easeFlare * 90.0f));
+            context.Render.DrawRectangle(viewSize.X * 1.3f, coreH, Transform2D{viewCenter},
+                Color{static_cast<uint8_t>((230 + ch.ThemeColor.r) / 2),
+                      static_cast<uint8_t>((240 + ch.ThemeColor.g) / 2),
+                      static_cast<uint8_t>((255 + ch.ThemeColor.b) / 2),
+                      coreAlpha});
 
-            // 3. Phosphor circular resonance wave
-            if (flareT > 0.35f)
+            // 3. Phosphor circular resonance wave (gentle)
+            if (flareT > 0.40f)
             {
-                float waveT = (flareT - 0.35f) / 0.65f;
+                float waveT = (flareT - 0.40f) / 0.60f;
                 float waveR = viewSize.Y * (0.15f + waveT * 0.85f);
-                uint8_t waveAlpha = static_cast<uint8_t>((1.0f - waveT) * 180.0f);
+                uint8_t waveAlpha = static_cast<uint8_t>((1.0f - waveT) * 75.0f);
                 context.Render.DrawCircleOutline(waveR, Transform2D{viewCenter},
-                    Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, waveAlpha}, 3.0f);
-                context.Render.DrawCircleOutline(waveR * 0.65f, Transform2D{viewCenter},
-                    Color{255, 255, 255, static_cast<uint8_t>(waveAlpha * 0.8f)}, 2.0f);
+                    Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, waveAlpha}, 2.5f);
+                context.Render.DrawCircleOutline(waveR * 0.70f, Transform2D{viewCenter},
+                    Color{255, 255, 255, static_cast<uint8_t>(waveAlpha * 0.5f)}, 1.5f);
             }
 
-            // 4. Full-screen flash transition wipe at peak
+            // 4. Soft warm bloom transition at peak (no blinding pure-white wipe)
             if (flareT > 0.85f)
             {
-                uint8_t flashA = static_cast<uint8_t>(((flareT - 0.85f) / 0.15f) * 255.0f);
-                context.Render.DrawRectangle(viewSize.X * 1.2f, viewSize.Y * 1.2f, Transform2D{viewCenter}, Color{255, 255, 255, flashA});
+                uint8_t flashA = static_cast<uint8_t>(((flareT - 0.85f) / 0.15f) * 65.0f);
+                context.Render.DrawRectangle(viewSize.X * 1.2f, viewSize.Y * 1.2f, Transform2D{viewCenter},
+                    Color{static_cast<uint8_t>((200 + ch.ThemeColor.r) / 2),
+                          static_cast<uint8_t>((220 + ch.ThemeColor.g) / 2),
+                          static_cast<uint8_t>((245 + ch.ThemeColor.b) / 2),
+                          flashA});
             }
         }
     }
@@ -884,8 +894,8 @@ void MenuScene::StartDezoomToGrid()
     m_zoomProgress = 1.0f;
     if (mp_context)
     {
-        if (m_tvSwitchSfxId != 0) mp_context->Audio.PlaySfx(m_tvSwitchSfxId, 95.0f);
-        if (m_tvStaticSfxId != 0) mp_context->Audio.PlaySfx(m_tvStaticSfxId, 70.0f);
+        if (m_tvSwitchSfxId != 0) mp_context->Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
+        if (m_tvStaticSfxId != 0) mp_context->Audio.PlaySfx(m_tvStaticSfxId, 20.0f);
     }
 }
 
@@ -896,7 +906,7 @@ void MenuScene::OpenDescriptionModal()
     {
         m_registry.GetComponent<CanvasComponent>(m_workshopDescCanvas).IsEnabled = true;
     }
-    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 36.0f);
     RefreshWorkshopUI();
 }
 
@@ -908,7 +918,7 @@ void MenuScene::CloseDescriptionModal()
     {
         m_registry.GetComponent<CanvasComponent>(m_workshopDescCanvas).IsEnabled = false;
     }
-    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 36.0f);
     RefreshWorkshopUI();
 }
 
@@ -1522,8 +1532,8 @@ void MenuScene::CycleChannel(int step, GameContext& context)
     int count = static_cast<int>(m_tvChannels.size());
     m_selectedChannel = (m_selectedChannel + step + count) % count;
     m_channelSwitchGlitch = 0.45f;
-    if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
-    if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 65.0f);
+    if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
+    if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 20.0f);
 
     const auto& ch = m_tvChannels[m_selectedChannel];
     m_osdText = ch.ChannelNumber + "  " + ch.Title;
@@ -1633,8 +1643,8 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         {
             m_isStandby = false;
             m_channelSwitchGlitch = 0.5f;
-            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
-            if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 60.0f);
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
+            if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 20.0f);
             m_osdText = "POWER ON";
             m_osdTimer = 2.0f;
         }
@@ -1648,7 +1658,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         if (context.Input.IsMenuCancelTriggered())
         {
             m_showPowerOffDialog = false;
-            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 80.0f);
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
             return;
         }
 
@@ -1656,12 +1666,12 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         if (context.Input.IsMenuLeftTriggered())
         {
             m_powerDialogChoice = (m_powerDialogChoice + 2) % 3;
-            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 75.0f);
+            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 22.0f);
         }
         if (context.Input.IsMenuRightTriggered())
         {
             m_powerDialogChoice = (m_powerDialogChoice + 1) % 3;
-            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 75.0f);
+            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 22.0f);
         }
 
         // Confirm choice
@@ -1670,20 +1680,20 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
             if (m_powerDialogChoice == 0)
             {
                 m_showPowerOffDialog = false;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 80.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
             }
             else if (m_powerDialogChoice == 1)
             {
                 m_isStandby = true;
                 m_showPowerOffDialog = false;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
             }
             else if (m_powerDialogChoice == 2)
             {
                 m_isPoweringOff = true;
                 m_powerOffTimer = 0.0f;
                 m_showPowerOffDialog = false;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 100.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
             }
             return;
         }
@@ -1696,7 +1706,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
             if (context.Input.IsMouseButtonPress(MouseButton::Left))
             {
                 m_showPowerOffDialog = false;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 80.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
             }
             return;
         }
@@ -1709,7 +1719,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
             {
                 m_isStandby = true;
                 m_showPowerOffDialog = false;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
             }
             return;
         }
@@ -1723,7 +1733,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
                 m_isPoweringOff = true;
                 m_powerOffTimer = 0.0f;
                 m_showPowerOffDialog = false;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 100.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
             }
             return;
         }
@@ -1746,9 +1756,9 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     if (m_zoomState == ChannelZoomState::ReturningFromFullScreen)
     {
         m_returnTimer += dt;
-        m_returnProgress = std::clamp(1.0f - (m_returnTimer / 0.50f), 0.0f, 1.0f);
+        m_returnProgress = std::clamp(1.0f - (m_returnTimer / 0.65f), 0.0f, 1.0f);
         m_zoomProgress = m_returnProgress;
-        if (m_returnTimer >= 0.50f)
+        if (m_returnTimer >= 0.65f)
         {
             m_returnProgress = 0.0f;
             m_zoomProgress = 0.0f;
@@ -1760,8 +1770,8 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
     {
         m_launchTimer += dt;
-        m_launchProgress = std::clamp(m_launchTimer / 0.55f, 0.0f, 1.0f);
-        if (m_launchTimer >= 0.55f)
+        m_launchProgress = std::clamp(m_launchTimer / 0.65f, 0.0f, 1.0f);
+        if (m_launchTimer >= 0.65f)
         {
             m_launchProgress = 1.0f;
             LaunchChannel(m_selectedChannel, context);
@@ -1814,7 +1824,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         if (context.Input.IsMenuLeftTriggered() || context.Input.IsMenuRightTriggered())
         {
             m_zoomChoice = 1 - m_zoomChoice;
-            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 75.0f);
+            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 22.0f);
         }
 
         // Escape / Cancel returns to 4x2 grid (RETOUR)
@@ -1822,7 +1832,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         {
             m_zoomState = ChannelZoomState::ZoomingOut;
             m_zoomTimer = 0.0f;
-            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 80.0f);
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
             return;
         }
 
@@ -1834,14 +1844,14 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
                 m_zoomState = ChannelZoomState::LaunchingFullScreen;
                 m_launchTimer = 0.0f;
                 m_launchProgress = 0.0f;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 100.0f);
-                if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 75.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
+                if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 20.0f);
             }
             else
             {
                 m_zoomState = ChannelZoomState::ZoomingOut;
                 m_zoomTimer = 0.0f;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 80.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
             }
             return;
         }
@@ -1886,7 +1896,10 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
             m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
             m_osdTimer = 2.0f;
             m_osdText = "VOL  " + std::to_string(static_cast<int>(m_masterVolume)) + "%";
-            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 45.0f);
+            PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+            PlayerPrefs::Save();
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 25.0f);
         }
         float wheelDelta = context.Input.GetMouseWheelDelta();
         if (wheelDelta != 0.0f)
@@ -1896,14 +1909,17 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
             m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
             m_osdTimer = 2.0f;
             m_osdText = "VOL  " + std::to_string(static_cast<int>(m_masterVolume)) + "%";
-            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 45.0f);
+            PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+            PlayerPrefs::Save();
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 25.0f);
         }
         float distToPowerBtn = std::sqrt((baseMousePos.X - 1690.0f) * (baseMousePos.X - 1690.0f) + (baseMousePos.Y - 220.0f) * (baseMousePos.Y - 220.0f));
         if (distToPowerBtn <= 26.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
         {
             m_showPowerOffDialog = true;
             m_powerDialogChoice = 1;
-            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
             return;
         }
 
@@ -1914,7 +1930,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
             {
                 m_zoomState = ChannelZoomState::ZoomingOut;
                 m_zoomTimer = 0.0f;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 80.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
                 return;
             }
         }
@@ -1926,8 +1942,8 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
                 m_zoomState = ChannelZoomState::LaunchingFullScreen;
                 m_launchTimer = 0.0f;
                 m_launchProgress = 0.0f;
-                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 100.0f);
-                if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 75.0f);
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
+                if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 20.0f);
                 return;
             }
         }
@@ -1946,7 +1962,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     if (m_zoomState == ChannelZoomState::Grid && (context.Input.IsKeyPress(KeyCode::V) || context.Input.IsKeyPress(KeyCode::S)))
     {
         m_isStandby = true;
-        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
         return;
     }
 
@@ -1956,7 +1972,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     {
         m_showPowerOffDialog = true;
         m_powerDialogChoice = 1; // Default to Standby
-        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
         return;
     }
 
@@ -1967,7 +1983,10 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
         m_osdTimer = 2.0f;
         m_osdText = "VOL  " + std::to_string(static_cast<int>(m_masterVolume)) + "%";
-        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 45.0f);
+        PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+        PlayerPrefs::Save();
+        UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 25.0f);
     };
 
     // Mouse wheel volume control
@@ -2028,7 +2047,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
             {
                 m_hoveredChannel = static_cast<int>(i);
                 m_selectedChannel = static_cast<int>(i);
-                if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 75.0f);
+                if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 22.0f);
             }
 
             if (context.Input.IsMouseButtonPress(MouseButton::Left))
@@ -2037,7 +2056,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
                 m_zoomState = ChannelZoomState::ZoomingIn;
                 m_zoomTimer = 0.0f;
                 m_zoomChoice = 1;
-                if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 85.0f);
+                if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 25.0f);
                 return;
             }
         }
@@ -2077,7 +2096,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
 
         if (m_selectedChannel != prevSelected)
         {
-            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 75.0f);
+            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 22.0f);
         }
     }
 
@@ -2087,7 +2106,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         m_zoomState = ChannelZoomState::ZoomingIn;
         m_zoomTimer = 0.0f;
         m_zoomChoice = 1;
-        if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 85.0f);
+        if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 25.0f);
         return;
     }
 
@@ -2096,7 +2115,7 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     {
         m_showPowerOffDialog = true;
         m_powerDialogChoice = 0;
-        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 30.0f);
         return;
     }
 }
@@ -2111,8 +2130,8 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
     m_launchProgress = 0.0f;
     m_launchTimer = 0.0f;
 
-    if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 100.0f);
-    if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 75.0f);
+    if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 32.0f);
+    if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 20.0f);
     m_channelSwitchGlitch = 0.45f;
 
     switch (ch.Type)
@@ -3092,13 +3111,38 @@ void MenuScene::CreateAudioTab(const GameContext& context)
     });
 
     UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
+        .Label = "MASTER",
+        .OnMinus = [&context, this]() {
+            m_masterVolume = std::max(0.0f, m_masterVolume - 10.0f);
+            context.Audio.SetMasterVolume(m_masterVolume);
+            m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+            PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+            PlayerPrefs::Save();
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+        },
+        .OnPlus = [&context, this]() {
+            m_masterVolume = std::min(100.0f, m_masterVolume + 10.0f);
+            context.Audio.SetMasterVolume(m_masterVolume);
+            m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+            PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+            PlayerPrefs::Save();
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+        },
+        .BarsOut = &m_masterVolumeBars,
+        .Position = {rightPanelX * 0.5f, -viewY * 0.12f},
+        .FontId = m_fontId
+    });
+
+    UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "SFX",
         .OnMinus = [&context, this]() {
             float vol = std::max(0.0f, context.Audio.GetSfxVolume() - 10.0f);
             context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .OnPlus = [&context, this]() {
@@ -3106,11 +3150,11 @@ void MenuScene::CreateAudioTab(const GameContext& context)
             context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .BarsOut = &m_sfxVolumeBars,
-        .Position = {rightPanelX * 0.5f, -viewY * 0.1f + 20.0f},
+        .Position = {rightPanelX * 0.5f, -viewY * 0.01f},
         .FontId = m_fontId
     });
 
@@ -3131,17 +3175,18 @@ void MenuScene::CreateAudioTab(const GameContext& context)
             UpdateVolumeBars(m_musicVolumeBars, vol);
         },
         .BarsOut = &m_musicVolumeBars,
-        .Position = {rightPanelX * 0.5f, viewY * 0.1f - 50.0f},
+        .Position = {rightPanelX * 0.5f, viewY * 0.10f},
         .FontId = m_fontId
     });
 
+    UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
     UpdateVolumeBars(m_sfxVolumeBars, context.Audio.GetSfxVolume());
     UpdateVolumeBars(m_musicVolumeBars, context.Audio.GetMusicVolume());
 
     // Playback Device Selection
     UIFactory::CreateText(m_registry, m_audioCanvas, TextDescriptor{
         .Text = "DEVICE",
-        .Position = {rightPanelX * 0.5f - 110.0f, viewY * 0.1f + 45.0f},
+        .Position = {rightPanelX * 0.5f - 110.0f, viewY * 0.21f},
         .FontId = m_fontId,
         .FontSize = 32.0f,
         .Tint = Colors::White
@@ -3179,14 +3224,14 @@ void MenuScene::CreateAudioTab(const GameContext& context)
             {
                 PlayerPrefs::SetString("Audio_Device", newDevice);
                 PlayerPrefs::Save();
-                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
             }
             if (m_registry.HasComponent<TextComponent>(m_audioDeviceBtn))
             {
                 m_registry.GetComponent<TextComponent>(m_audioDeviceBtn).Text = formatDeviceText(newDevice);
             }
         },
-        .Position = {rightPanelX * 0.5f + 250.0f, viewY * 0.1f + 45.0f},
+        .Position = {rightPanelX * 0.5f + 250.0f, viewY * 0.21f},
         .Size = {480.0f, 54.0f},
         .DefaultColor = Color{40, 55, 80, 255},
         .HoverColor = Color{60, 85, 120, 255},
@@ -3265,7 +3310,9 @@ void MenuScene::CreateRenderTab(const GameContext& context)
                 WindowConfig config = context.Render.GetWindow().GetConfig();
                 config.Width = uniqueModes[static_cast<size_t>(index)].Width;
                 config.Height = uniqueModes[static_cast<size_t>(index)].Height;
+                PlayerPrefs::SetInt("ResolutionWidth", static_cast<int>(config.Width));
                 PlayerPrefs::SetInt("WindowWidth", static_cast<int>(config.Width));
+                PlayerPrefs::SetInt("ResolutionHeight", static_cast<int>(config.Height));
                 PlayerPrefs::SetInt("WindowHeight", static_cast<int>(config.Height));
                 PlayerPrefs::Save();
                 context.Render.GetWindow().ApplyConfig(config);
@@ -3637,6 +3684,7 @@ void MenuScene::OpenSettingsTab(Entity targetCanvas)
 
         if (targetCanvas == m_audioCanvas && mp_context)
         {
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
             UpdateVolumeBars(m_sfxVolumeBars, mp_context->Audio.GetSfxVolume());
             UpdateVolumeBars(m_musicVolumeBars, mp_context->Audio.GetMusicVolume());
         }
@@ -4053,7 +4101,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     m_previewAnimTime = 0.0f;
                     m_simAudioTriggerMask = 0;
                     m_simLastLoop = -1;
-                    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+                    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 36.0f);
                     if (!changed && m_previewScene)
                     {
                         m_previewScene->ResetPreview();
@@ -4112,7 +4160,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             if (m_workshopScrollRow > 0)
             {
                 m_workshopScrollRow--;
-                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 70.0f);
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 36.0f);
                 RefreshWorkshopUI();
             }
         },
@@ -4133,7 +4181,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             if (m_workshopScrollRow < 2)
             {
                 m_workshopScrollRow++;
-                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 70.0f);
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 36.0f);
                 RefreshWorkshopUI();
             }
         },
@@ -4203,7 +4251,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 bool levelChanged = (m_inspectedLevel != lvl);
                 m_inspectedLevel = lvl;
                 m_workshopPreviewLevel = lvl;
-                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 36.0f);
                 if (!levelChanged && m_previewScene)
                 {
                     m_previewScene->ResetPreview();
@@ -4306,7 +4354,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 PowerUpManager::Get().Upgrade(t);
                 m_inspectedLevel = PowerUpManager::Get().GetLevel(t);
                 m_workshopPreviewLevel = m_inspectedLevel;
-                if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+                if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 38.0f);
                 RefreshWorkshopUI();
             }
         },
@@ -4410,8 +4458,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     {
                         mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
                     }
-                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
-                    else if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 35.0f, 1.25f);
+                    else if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 36.0f);
                     RefreshWorkshopUI();
                 },
                 .Position = {bx, ultPipY},
@@ -4509,8 +4557,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     {
                         m_ultimatePreviewScenes[cardIdx]->SetPreviewUltimate(ultType, newLvl);
                     }
-                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
-                    if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 35.0f, 1.25f);
+                    if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 38.0f);
                     RefreshWorkshopUI();
                 }
             },
@@ -4552,7 +4600,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                         m_ultimatePreviewScenes[c]->ResetPreview();
                     }
                 }
-                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 85.0f);
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 36.0f);
                 RefreshWorkshopUI();
             },
             .Position = {x, 325.0f},
@@ -4627,7 +4675,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .Placeholder = "ENTER NICKNAME...",
         .OnSubmit = [this](const std::string& text) {
             ProfileManager::Get().SetUsername(text);
-            if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+            if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 38.0f);
             RefreshWorkshopUI();
         },
         .Position = {-580.0f, -320.0f},
@@ -4719,7 +4767,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             ResetSaveData();
             if (m_brickDestroySfxId != 0 && mp_context)
             {
-                mp_context->Audio.PlaySfx(m_brickDestroySfxId, 85.0f);
+                mp_context->Audio.PlaySfx(m_brickDestroySfxId, 45.0f);
             }
             if (m_resetSaveBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_resetSaveBtn))
             {
@@ -5885,7 +5933,7 @@ void MenuScene::TriggerPreviewChannelSwitch()
     m_previewSwitchTimer = 0.38f;
     if (m_channelSwitchSfxId != 0 && mp_context)
     {
-        mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
+        mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 35.0f, 1.25f);
     }
 }
 

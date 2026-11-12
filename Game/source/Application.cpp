@@ -28,8 +28,10 @@ void Application::Init()
         m_audioMixer.SetAudioDevice(savedDevice);
     }
 
+    float masterVol = PlayerPrefs::GetFloat("MasterVolume", 100.0f);
     float sfxVol = PlayerPrefs::GetFloat("SfxVolume", 100.0f);
     float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
+    m_audioMixer.SetMasterVolume(masterVol);
     m_audioMixer.SetSfxVolume(sfxVol);
     m_audioMixer.SetMusicVolume(musicVol);
 
@@ -77,4 +79,5 @@ void Application::Run()
     }
 
     m_sceneManager.Shutdown(m_context);
+    PlayerPrefs::Save();
 }

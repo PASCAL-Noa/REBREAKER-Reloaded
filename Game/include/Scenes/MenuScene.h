@@ -296,6 +296,7 @@ private:
     Entity  m_shaderBtn = NULL_ENTITY;
     Entity  m_particlesBtn = NULL_ENTITY;
     Entity  m_audioDeviceBtn = NULL_ENTITY;
+    std::vector<Entity> m_masterVolumeBars;
     std::vector<Entity> m_sfxVolumeBars;
     std::vector<Entity> m_musicVolumeBars;
 

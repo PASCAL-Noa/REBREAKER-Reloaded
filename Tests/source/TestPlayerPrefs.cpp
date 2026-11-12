@@ -126,4 +126,39 @@ TEST_SUITE("PlayerPrefs Atomic Persistence Tests")
         PlayerPrefs::Load();
         CHECK(PlayerPrefs::GetInt("recovered_key") == 777);
     }
+
+    TEST_CASE_FIXTURE(PlayerPrefsTestFixture, "Audio and Display format persistence keys")
+    {
+        PlayerPrefs::SetFloat("MasterVolume", 65.0f);
+        PlayerPrefs::SetFloat("SfxVolume", 40.0f);
+        PlayerPrefs::SetFloat("MusicVolume", 55.0f);
+        PlayerPrefs::SetBool("Fullscreen", true);
+        PlayerPrefs::SetInt("ResolutionWidth", 2560);
+        PlayerPrefs::SetInt("WindowWidth", 2560);
+        PlayerPrefs::SetInt("ResolutionHeight", 1440);
+        PlayerPrefs::SetInt("WindowHeight", 1440);
+
+        PlayerPrefs::Save();
+
+        // Overwrite in memory
+        PlayerPrefs::SetFloat("MasterVolume", 100.0f);
+        PlayerPrefs::SetFloat("SfxVolume", 100.0f);
+        PlayerPrefs::SetFloat("MusicVolume", 100.0f);
+        PlayerPrefs::SetBool("Fullscreen", false);
+        PlayerPrefs::SetInt("ResolutionWidth", 0);
+        PlayerPrefs::SetInt("WindowWidth", 0);
+        PlayerPrefs::SetInt("ResolutionHeight", 0);
+        PlayerPrefs::SetInt("WindowHeight", 0);
+
+        PlayerPrefs::Load();
+
+        CHECK(PlayerPrefs::GetFloat("MasterVolume") == doctest::Approx(65.0f));
+        CHECK(PlayerPrefs::GetFloat("SfxVolume") == doctest::Approx(40.0f));
+        CHECK(PlayerPrefs::GetFloat("MusicVolume") == doctest::Approx(55.0f));
+        CHECK(PlayerPrefs::GetBool("Fullscreen") == true);
+        CHECK(PlayerPrefs::GetInt("ResolutionWidth") == 2560);
+        CHECK(PlayerPrefs::GetInt("WindowWidth") == 2560);
+        CHECK(PlayerPrefs::GetInt("ResolutionHeight") == 1440);
+        CHECK(PlayerPrefs::GetInt("WindowHeight") == 1440);
+    }
 }

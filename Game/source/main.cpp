@@ -69,16 +69,23 @@ int main()
         Debug::Info("Engine initialized successfully.");
 
         WindowConfig config{};
-        config.Width = PlayerPrefs::GetInt("ResolutionWidth", 1920);
-        if (config.Width <= 0) config.Width = 1920;
-        config.Height = PlayerPrefs::GetInt("ResolutionHeight", 1080);
-        if (config.Height <= 0) config.Height = 1080;
+        int resW = PlayerPrefs::GetInt("ResolutionWidth", 0);
+        if (resW <= 0) resW = PlayerPrefs::GetInt("WindowWidth", 1920);
+        if (resW <= 0) resW = 1920;
+        config.Width = resW;
+
+        int resH = PlayerPrefs::GetInt("ResolutionHeight", 0);
+        if (resH <= 0) resH = PlayerPrefs::GetInt("WindowHeight", 1080);
+        if (resH <= 0) resH = 1080;
+        config.Height = resH;
+
         const bool fs = PlayerPrefs::GetBool("Fullscreen", false);
         config.Mode = fs ? WindowMode::Fullscreen : WindowMode::Windowed;
 
         Application app(config);
         app.Run();
 
+        PlayerPrefs::Save();
         return 0;
     }
     catch (const std::exception& e)
