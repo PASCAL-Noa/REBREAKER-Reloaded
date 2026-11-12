@@ -174,6 +174,7 @@ private:
     void    RenderWiiZoomedChannel(GameContext& context);
     void    UpdateTVLayout(const GameContext& context);
     void    UpdateTVControls(float dt, GameContext& context);
+    void    CycleChannel(int step, GameContext& context);
     void    LaunchChannel(int channelIndex, GameContext& context);
     void    RenderRetroTVChassis(GameContext& context) const;
     void    RenderCRTBezelAndGlass(GameContext& context) const;

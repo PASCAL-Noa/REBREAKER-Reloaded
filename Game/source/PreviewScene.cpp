@@ -467,7 +467,8 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         }
         if (context.Input.IsKeyPress(KeyCode::Escape) || context.Input.IsJoystickButtonPress(0, 6))
         {
-            context.Scenes.LoadScene<MenuScene>();
+            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
             return;
         }
     }

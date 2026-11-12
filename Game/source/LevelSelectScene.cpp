@@ -80,7 +80,8 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
         {
             context.Audio.PlaySfx(m_clickSfxId, 80.0f);
         }
-        context.Scenes.LoadScene<MenuScene>();
+        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
         return;
     }
 
@@ -191,7 +192,8 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
         centeredMouse.Y >= backY - backH * 0.5f && centeredMouse.Y <= backY + backH * 0.5f)
     {
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
-        context.Scenes.LoadScene<MenuScene>();
+        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.45f);
         return;
     }
 

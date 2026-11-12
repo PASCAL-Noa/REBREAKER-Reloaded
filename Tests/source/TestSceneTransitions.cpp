@@ -575,7 +575,7 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
     TEST_CASE("Wii Channel Full-Screen Camera Dive & Flare Transition (#90)")
     {
         const Vector2f viewSize{1920.0f, 1080.0f};
-        const float baseScale = std::min((viewSize.X * 0.96f) / 1880.0f, (viewSize.Y * 0.94f) / 1040.0f);
+        const float baseScale = std::max(viewSize.X / 1880.0f, viewSize.Y / 1040.0f);
         const float targetScale = std::max(viewSize.X / 1390.0f, viewSize.Y / 910.0f) * 1.05f;
 
         // Target scale must be larger than base scale to zoom in past cabinet borders
@@ -614,5 +614,49 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
         CHECK(getFlareAlpha(0.60f) == doctest::Approx(0.0f));
         CHECK(getFlareAlpha(0.80f) == doctest::Approx(0.50f));
         CHECK(getFlareAlpha(1.0f) == doctest::Approx(1.0f));
+    }
+
+    TEST_CASE("TV Full Screen Viewport Coverage across display aspect ratios (#90)")
+    {
+        const Vector2f resolutions[] = {
+            {1920.0f, 1080.0f}, // 16:9 Standard Full HD
+            {2560.0f, 1440.0f}, // 16:9 QHD
+            {1280.0f, 720.0f},  // 16:9 720p
+            {1920.0f, 1200.0f}, // 16:10 WUXGA
+            {2560.0f, 1600.0f}, // 16:10 MacBook / Pro
+            {1600.0f, 1200.0f}  // 4:3 Classic
+        };
+
+        for (const auto& res : resolutions)
+        {
+            float maxScaleX = res.X / 1880.0f;
+            float maxScaleY = res.Y / 1040.0f;
+            float baseScale = std::max(maxScaleX, maxScaleY);
+
+            float cabW = 1880.0f * baseScale;
+            float cabH = 1040.0f * baseScale;
+
+            // Cabinet must always be >= viewport in both dimensions (zero borders)
+            CHECK(cabW >= res.X);
+            CHECK(cabH >= res.Y);
+        }
+    }
+
+    TEST_CASE("Channel cycling navigation wraps properly forward and backward (#90)")
+    {
+        const int channelCount = 8;
+        auto cycle = [channelCount](int current, int step) -> int {
+            return (current + step + channelCount) % channelCount;
+        };
+
+        // Forward cycling
+        CHECK(cycle(0, 1) == 1);
+        CHECK(cycle(6, 1) == 7);
+        CHECK(cycle(7, 1) == 0); // Wrap around
+
+        // Backward cycling
+        CHECK(cycle(0, -1) == 7); // Wrap around
+        CHECK(cycle(7, -1) == 6);
+        CHECK(cycle(1, -1) == 0);
     }
 }

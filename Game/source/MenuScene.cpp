@@ -1442,7 +1442,41 @@ void MenuScene::RenderWiiZoomedChannel(GameContext& context)
             context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{btnEntrerPos}, entrerBg);
             context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{btnEntrerPos}, entrerBorder, entrerActive ? 3.5f : 1.5f);
             context.Render.DrawTextCentered("[ ENTRER ]", m_fontId, 23.0f, Transform2D{btnEntrerPos}, Color{255, 255, 255, uiAlpha});
+
+            // 5. Left & Right Channel Switch Chevrons on TV Glass
+            Vector2f chLeftPos{50.0f, 455.0f};
+            Vector2f chRightPos{1340.0f, 455.0f};
+            Vector2f navBtnSize{56.0f, 80.0f};
+
+            // Left Chevron [ < ]
+            context.Render.DrawRectangle(navBtnSize.X, navBtnSize.Y, Transform2D{chLeftPos}, Color{16, 22, 34, static_cast<uint8_t>(uiAlpha * 0.75f)});
+            context.Render.DrawRectangleOutline(navBtnSize.X, navBtnSize.Y, Transform2D{chLeftPos}, Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, static_cast<uint8_t>(uiAlpha * 0.7f)}, 1.5f);
+            context.Render.DrawTextCentered("<", m_fontId, 32.0f, Transform2D{chLeftPos - Vector2f{2.0f, 2.0f}}, Color{235, 245, 255, uiAlpha});
+
+            // Right Chevron [ > ]
+            context.Render.DrawRectangle(navBtnSize.X, navBtnSize.Y, Transform2D{chRightPos}, Color{16, 22, 34, static_cast<uint8_t>(uiAlpha * 0.75f)});
+            context.Render.DrawRectangleOutline(navBtnSize.X, navBtnSize.Y, Transform2D{chRightPos}, Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, static_cast<uint8_t>(uiAlpha * 0.7f)}, 1.5f);
+            context.Render.DrawTextCentered(">", m_fontId, 32.0f, Transform2D{chRightPos + Vector2f{2.0f, -2.0f}}, Color{235, 245, 255, uiAlpha});
         }
+    }
+}
+
+void MenuScene::CycleChannel(int step, GameContext& context)
+{
+    if (m_tvChannels.empty()) return;
+    int count = static_cast<int>(m_tvChannels.size());
+    m_selectedChannel = (m_selectedChannel + step + count) % count;
+    m_channelSwitchGlitch = 0.45f;
+    if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
+    if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 65.0f);
+
+    const auto& ch = m_tvChannels[m_selectedChannel];
+    m_osdText = ch.ChannelNumber + "  " + ch.Title;
+    m_osdTimer = 2.0f;
+
+    if (ch.Type == ChannelType::Campaign)
+    {
+        InitCampaignPreviewLevel();
     }
 }
 
@@ -1451,10 +1485,10 @@ void MenuScene::UpdateTVLayout(const GameContext& context)
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
     m_tvLayout.CabinetCenter = Vector2f{viewSize.X * 0.5f, viewSize.Y * 0.5f};
 
-    // Scale base 1880x1040 design uniformly to fit viewport with retro borders
-    const float maxScaleX = (viewSize.X * 0.96f) / 1880.0f;
-    const float maxScaleY = (viewSize.Y * 0.94f) / 1040.0f;
-    const float baseScale = std::min(maxScaleX, maxScaleY);
+    // TV takes 100% of the player's screen (zero outer margins or black space)
+    const float maxScaleX = viewSize.X / 1880.0f;
+    const float maxScaleY = viewSize.Y / 1040.0f;
+    const float baseScale = std::max(maxScaleX, maxScaleY);
 
     if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
     {
@@ -1680,6 +1714,20 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     }
     if (m_zoomState == ChannelZoomState::ZoomedView)
     {
+        // Up / Down arrows, PageUp / PageDown, brackets, or gamepad bumpers switch channel while zoomed
+        if (context.Input.IsMenuUpTriggered() || context.Input.IsKeyPress(KeyCode::PageUp) ||
+            context.Input.IsKeyPress(KeyCode::RBracket) || context.Input.IsJoystickButtonPress(0, 5))
+        {
+            CycleChannel(1, context);
+            return;
+        }
+        if (context.Input.IsMenuDownTriggered() || context.Input.IsKeyPress(KeyCode::PageDown) ||
+            context.Input.IsKeyPress(KeyCode::LBracket) || context.Input.IsJoystickButtonPress(0, 4))
+        {
+            CycleChannel(-1, context);
+            return;
+        }
+
         // Left / Right arrows switch between RETOUR (0) and ENTRER (1)
         if (context.Input.IsMenuLeftTriggered() || context.Input.IsMenuRightTriggered())
         {
@@ -1721,6 +1769,61 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         Vector2f btnRetourPos{455.0f, 845.0f};
         Vector2f btnEntrerPos{935.0f, 845.0f};
         Vector2f btnHalfSize{130.0f, 31.0f};
+
+        // Left & Right TV Glass Chevrons (< and >)
+        if (std::abs(mouseOnGlass.X - 50.0f) <= 30.0f && std::abs(mouseOnGlass.Y - 455.0f) <= 45.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            CycleChannel(-1, context);
+            return;
+        }
+        if (std::abs(mouseOnGlass.X - 1340.0f) <= 30.0f && std::abs(mouseOnGlass.Y - 455.0f) <= 45.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            CycleChannel(1, context);
+            return;
+        }
+
+        // Physical TV Chassis CH + and CH - Button clicks while zoomed
+        if (std::abs(baseMousePos.X - 1690.0f) <= 65.0f && std::abs(baseMousePos.Y - 472.0f) <= 16.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            CycleChannel(1, context);
+            return;
+        }
+        if (std::abs(baseMousePos.X - 1690.0f) <= 65.0f && std::abs(baseMousePos.Y - 516.0f) <= 16.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            CycleChannel(-1, context);
+            return;
+        }
+
+        // Physical Chassis Volume & Power clicks while zoomed
+        float distToVolDial = std::sqrt((baseMousePos.X - 1690.0f) * (baseMousePos.X - 1690.0f) + (baseMousePos.Y - 360.0f) * (baseMousePos.Y - 360.0f));
+        if (distToVolDial <= 48.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            float delta = (baseMousePos.X < 1690.0f) ? -10.0f : 10.0f;
+            m_masterVolume = std::clamp(m_masterVolume + delta, 0.0f, 100.0f);
+            context.Audio.SetMasterVolume(m_masterVolume);
+            m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+            m_osdTimer = 2.0f;
+            m_osdText = "VOL  " + std::to_string(static_cast<int>(m_masterVolume)) + "%";
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 45.0f);
+        }
+        float wheelDelta = context.Input.GetMouseWheelDelta();
+        if (wheelDelta != 0.0f)
+        {
+            m_masterVolume = std::clamp(m_masterVolume + wheelDelta * 5.0f, 0.0f, 100.0f);
+            context.Audio.SetMasterVolume(m_masterVolume);
+            m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+            m_osdTimer = 2.0f;
+            m_osdText = "VOL  " + std::to_string(static_cast<int>(m_masterVolume)) + "%";
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 45.0f);
+        }
+        float distToPowerBtn = std::sqrt((baseMousePos.X - 1690.0f) * (baseMousePos.X - 1690.0f) + (baseMousePos.Y - 220.0f) * (baseMousePos.Y - 220.0f));
+        if (distToPowerBtn <= 26.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            m_showPowerOffDialog = true;
+            m_powerDialogChoice = 1;
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 90.0f);
+            return;
+        }
 
         if (std::abs(mouseOnGlass.X - btnRetourPos.X) <= btnHalfSize.X && std::abs(mouseOnGlass.Y - btnRetourPos.Y) <= btnHalfSize.Y)
         {
@@ -1810,33 +1913,26 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         else adjustVolume(10.0f);
     }
 
-    // Channel cycle helper
-    auto cycleChannel = [this, &context](int step) {
-        int count = static_cast<int>(m_tvChannels.size());
-        m_selectedChannel = (m_selectedChannel + step + count) % count;
-        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 85.0f);
-    };
-
     // Chassis Channel Step Buttons (Fixed inverted logic: CH + advances, CH - decrements)
     // CH +: (1690.0f, 472.0f), size (130.0f, 32.0f)
     if (std::abs(baseMousePos.X - 1690.0f) <= 65.0f && std::abs(baseMousePos.Y - 472.0f) <= 16.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
     {
-        cycleChannel(1);
+        CycleChannel(1, context);
     }
     // CH -: (1690.0f, 516.0f), size (130.0f, 32.0f)
     if (std::abs(baseMousePos.X - 1690.0f) <= 65.0f && std::abs(baseMousePos.Y - 516.0f) <= 16.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
     {
-        cycleChannel(-1);
+        CycleChannel(-1, context);
     }
 
     // Channel switch keys: PageUp / PageDown / [ / ]
     if (context.Input.IsKeyPress(KeyCode::PageUp) || context.Input.IsKeyPress(KeyCode::RBracket))
     {
-        cycleChannel(1);
+        CycleChannel(1, context);
     }
     if (context.Input.IsKeyPress(KeyCode::PageDown) || context.Input.IsKeyPress(KeyCode::LBracket))
     {
-        cycleChannel(-1);
+        CycleChannel(-1, context);
     }
 
     // 6. Channel Card Mouse Hover & Click (Wii Channel select zoom)
@@ -1978,6 +2074,10 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
 void MenuScene::RenderRetroTVChassis(GameContext& context) const
 {
     const auto& L = m_tvLayout;
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+
+    // Solid seamless backdrop under cabinet to guarantee zero edge gaps on any display aspect ratio
+    context.Render.DrawRectangle(viewSize.X * 1.05f, viewSize.Y * 1.05f, Transform2D{L.CabinetCenter}, Color{20, 15, 12, 255});
 
     // 1. Outer Dark Woodgrain Cabinet Frame
     context.Render.DrawRectangle(L.ToScreenDim(1880.0f), L.ToScreenDim(1040.0f), Transform2D{L.CabinetCenter}, Color{24, 18, 14, 255});
