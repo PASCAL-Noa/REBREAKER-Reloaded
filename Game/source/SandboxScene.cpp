@@ -3,6 +3,7 @@
 #include "Core/GameContext.h"
 #include "Core/InputManager.h"
 #include "Core/SceneManager.h"
+#include "AudioMixer.h"
 #include "Factories/BrickFactory.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Core/ProfileManager.h"
@@ -767,7 +768,9 @@ void SandboxScene::HandleSandboxInput(const GameContext& context)
     // [ESC]: Back to Main Menu
     if (context.Input.IsKeyPress(KeyCode::Escape))
     {
-        context.Scenes.LoadScene<MenuScene>();
+        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+        MenuScene::SetReturnWithDezoom(true);
+        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
     }
 
@@ -1510,7 +1513,11 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     // Main Menu Exit Pad
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "MENU",
-        .OnClick = [&context]() { context.Scenes.LoadScene<MenuScene>(); },
+        .OnClick = [&context]() {
+            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            MenuScene::SetReturnWithDezoom(true);
+            context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
+        },
         .Position = {330.0f, row6Y},
         .Size = {100.0f, padH},
         .DefaultColor = Color{110, 35, 40, 255},

@@ -417,18 +417,9 @@ void PreviewScene::StartCountdown()
 
 void PreviewScene::OnDestroy(GameContext& context)
 {
-    if (m_fireballBurnSfxId != 0 && mp_context)
-    {
-        mp_context->Audio.StopLoopingSfx(m_fireballBurnSfxId);
-    }
-    m_uiController.reset();
-    mp_state_machine.reset();
-    mp_levelGenerator.reset();
-    m_collisionSub.Reset();
-    m_powerUpSub.Reset();
-    m_nextLevelSub.Reset();
-
-    Scene::OnDestroy(context);
+    m_countdownTimer = 0.0f;
+    m_countdownGoTimer = 0.0f;
+    GameScene::OnDestroy(context);
 }
 
 void PreviewScene::OnUpdate(float dt, GameContext& context)
@@ -467,7 +458,8 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         }
         if (context.Input.IsKeyPress(KeyCode::Escape) || context.Input.IsJoystickButtonPress(0, 6))
         {
-            context.Scenes.LoadScene<MenuScene>();
+            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
             return;
         }
     }

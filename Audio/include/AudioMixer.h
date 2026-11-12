@@ -55,6 +55,7 @@ public:
     void    SetMusicVolume(float volume) const;
     void    StopAll() const;
 
+    [[nodiscard]] float GetMasterVolume() const;
     [[nodiscard]] float GetSfxVolume() const;
     [[nodiscard]] float GetMusicVolume() const;
 

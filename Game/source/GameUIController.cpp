@@ -25,12 +25,21 @@
 #include "Core/ProfileManager.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 GameUIController::GameUIController(Registry& registry, GameContext& context, GameScene& scene)
     : m_registry(registry),
       m_context(context),
       m_scene(scene)
 {
+}
+
+GameUIController::~GameUIController()
+{
+    m_livesSub.Reset();
+    m_scoreSub.Reset();
+    m_stateSub.Reset();
+    m_textFeedback.reset();
 }
 
 void GameUIController::OnInit(uint32_t fontId, uint32_t heartTexId, uint32_t fireTexId, uint32_t bounceSfxId, uint32_t scoreRecordedSfxId)
@@ -1034,7 +1043,8 @@ void GameUIController::CreatePauseMenu()
         .Text = "QUIT",
         .OnClick = [this]() {
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
-            m_context.Scenes.LoadScene<MenuScene>();
+            MenuScene::SetReturnWithDezoom(true);
+            m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
         .Position = {0, 150.0f},
         .FontId = m_fontId
@@ -1199,13 +1209,36 @@ void GameUIController::CreateAudioTab()
     });
 
     UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
+        .Label = "MASTER",
+        .OnMinus = [&]() {
+            float vol = std::max(0.0f, m_context.Audio.GetMasterVolume() - 10.0f);
+            m_context.Audio.SetMasterVolume(vol);
+            PlayerPrefs::SetFloat("MasterVolume", vol);
+            PlayerPrefs::Save();
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
+            UpdateVolumeBars(m_masterVolumeBars, vol);
+        },
+        .OnPlus = [&]() {
+            float vol = std::min(100.0f, m_context.Audio.GetMasterVolume() + 10.0f);
+            m_context.Audio.SetMasterVolume(vol);
+            PlayerPrefs::SetFloat("MasterVolume", vol);
+            PlayerPrefs::Save();
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
+            UpdateVolumeBars(m_masterVolumeBars, vol);
+        },
+        .BarsOut = &m_masterVolumeBars,
+        .Position = {rightPanelX * 0.5f, -viewY * 0.12f},
+        .FontId = m_fontId
+    });
+
+    UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "SFX",
         .OnMinus = [&]() {
             float vol = std::max(0.0f, m_context.Audio.GetSfxVolume() - 10.0f);
             m_context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            m_context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .OnPlus = [&]() {
@@ -1213,11 +1246,11 @@ void GameUIController::CreateAudioTab()
             m_context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            m_context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
+            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .BarsOut = &m_sfxVolumeBars,
-        .Position = {rightPanelX * 0.5f, -viewY * 0.1f + 20.f},
+        .Position = {rightPanelX * 0.5f, -viewY * 0.01f},
         .FontId = m_fontId
     });
 
@@ -1238,17 +1271,18 @@ void GameUIController::CreateAudioTab()
             UpdateVolumeBars(m_musicVolumeBars, vol);
         },
         .BarsOut = &m_musicVolumeBars,
-        .Position = {rightPanelX * 0.5f, viewY * 0.1f - 50.f},
+        .Position = {rightPanelX * 0.5f, viewY * 0.10f},
         .FontId = m_fontId
     });
 
+    UpdateVolumeBars(m_masterVolumeBars, m_context.Audio.GetMasterVolume());
     UpdateVolumeBars(m_sfxVolumeBars, m_context.Audio.GetSfxVolume());
     UpdateVolumeBars(m_musicVolumeBars, m_context.Audio.GetMusicVolume());
 
     // Playback Device Selection
     UIFactory::CreateText(m_registry, m_audioCanvas, TextDescriptor{
         .Text = "DEVICE",
-        .Position = {rightPanelX * 0.5f - 110.0f, viewY * 0.1f + 45.0f},
+        .Position = {rightPanelX * 0.5f - 110.0f, viewY * 0.21f},
         .FontId = m_fontId,
         .FontSize = 32.0f,
         .Tint = Colors::White
@@ -1286,14 +1320,14 @@ void GameUIController::CreateAudioTab()
             {
                 PlayerPrefs::SetString("Audio_Device", newDevice);
                 PlayerPrefs::Save();
-                if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
             }
             if (m_registry.HasComponent<TextComponent>(m_audioDeviceBtn))
             {
                 m_registry.GetComponent<TextComponent>(m_audioDeviceBtn).Text = formatDeviceText(newDevice);
             }
         },
-        .Position = {rightPanelX * 0.5f + 250.0f, viewY * 0.1f + 45.0f},
+        .Position = {rightPanelX * 0.5f + 250.0f, viewY * 0.21f},
         .Size = {480.0f, 54.0f},
         .DefaultColor = Color{40, 55, 80, 255},
         .HoverColor = Color{60, 85, 120, 255},
@@ -1336,16 +1370,26 @@ void GameUIController::CreateRenderTab()
             WindowConfig config = m_context.Render.GetWindow().GetConfig();
             if (config.Mode == WindowMode::Fullscreen) {
                 config.Mode = WindowMode::Windowed;
+                int resW = PlayerPrefs::GetInt("ResolutionWidth", 1920);
+                int resH = PlayerPrefs::GetInt("ResolutionHeight", 1080);
+                if (resW > 0 && resH > 0) {
+                    config.Width = resW;
+                    config.Height = resH;
+                }
+                PlayerPrefs::SetBool("Fullscreen", false);
                 if (m_registry.HasComponent<TextComponent>(m_fsBtn)) {
                     m_registry.GetComponent<TextComponent>(m_fsBtn).Text = "FULL-SCREEN: OFF";
                 }
             } else {
                 config.Mode = WindowMode::Fullscreen;
+                PlayerPrefs::SetBool("Fullscreen", true);
                 if (m_registry.HasComponent<TextComponent>(m_fsBtn)) {
                     m_registry.GetComponent<TextComponent>(m_fsBtn).Text = "FULL-SCREEN: ON";
                 }
             }
+            PlayerPrefs::Save();
             m_context.Render.GetWindow().ApplyConfig(config);
+            m_context.Render.OnWindowResized(config.Width, config.Height);
         },
         .Position = {rightPanelX - 250.0f, -viewY * 0.1f},
         .Size = {400.0f, 60.0f},
@@ -1365,10 +1409,18 @@ void GameUIController::CreateRenderTab()
         .DefaultText = currentRes,
         .Options = options,
         .OnSelect = [this, uniqueModes](int index, const std::string& /*text*/) {
-            WindowConfig config = m_context.Render.GetWindow().GetConfig();
-            config.Width = uniqueModes[index].Width;
-            config.Height = uniqueModes[index].Height;
-            m_context.Render.GetWindow().ApplyConfig(config);
+            if (index >= 0 && static_cast<size_t>(index) < uniqueModes.size()) {
+                WindowConfig config = m_context.Render.GetWindow().GetConfig();
+                config.Width = uniqueModes[static_cast<size_t>(index)].Width;
+                config.Height = uniqueModes[static_cast<size_t>(index)].Height;
+                PlayerPrefs::SetInt("ResolutionWidth", static_cast<int>(config.Width));
+                PlayerPrefs::SetInt("WindowWidth", static_cast<int>(config.Width));
+                PlayerPrefs::SetInt("ResolutionHeight", static_cast<int>(config.Height));
+                PlayerPrefs::SetInt("WindowHeight", static_cast<int>(config.Height));
+                PlayerPrefs::Save();
+                m_context.Render.GetWindow().ApplyConfig(config);
+                m_context.Render.OnWindowResized(config.Width, config.Height);
+            }
         },
         .Position = {rightPanelX + 250.0f, -viewY * 0.1f},
         .Size = {400.0f, 60.0f},
@@ -1720,8 +1772,17 @@ void GameUIController::OpenSettingsTab(Entity targetCanvas)
 
     if (targetCanvas == m_audioCanvas)
     {
+        UpdateVolumeBars(m_masterVolumeBars, m_context.Audio.GetMasterVolume());
         UpdateVolumeBars(m_sfxVolumeBars, m_context.Audio.GetSfxVolume());
         UpdateVolumeBars(m_musicVolumeBars, m_context.Audio.GetMusicVolume());
+    }
+    else if (targetCanvas == m_renderCanvas)
+    {
+        bool isFs = m_context.Render.GetWindow().GetConfig().Mode == WindowMode::Fullscreen;
+        if (m_registry.HasComponent<TextComponent>(m_fsBtn))
+        {
+            m_registry.GetComponent<TextComponent>(m_fsBtn).Text = isFs ? "FULL-SCREEN: ON" : "FULL-SCREEN: OFF";
+        }
     }
 
     if (m_registry.HasComponent<TweenComponent>(targetCanvas))
@@ -2029,7 +2090,8 @@ void GameUIController::CreateGameOverMenu()
                 return;
             }
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
-            m_context.Scenes.LoadScene<MenuScene>();
+            MenuScene::SetReturnWithDezoom(true);
+            m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
         .Position = {260.0f, 310.0f},
         .Size = {240.0f, 56.0f},
@@ -2333,7 +2395,8 @@ void GameUIController::CreateVictoryMenu()
         .Text = "MAIN MENU [ESC]",
         .OnClick = [this]() {
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
-            m_context.Scenes.LoadScene<MenuScene>();
+            MenuScene::SetReturnWithDezoom(true);
+            m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
         .Position = {160.0f, 175.0f},
         .Size = {240.0f, 56.0f},

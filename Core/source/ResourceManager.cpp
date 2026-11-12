@@ -86,6 +86,18 @@ std::string ResourceManager::GetExtension(const std::string& filepath)
     return ext;
 }
 
+std::mutex& ResourceManager::GetAudioDecodeMutex()
+{
+    static std::mutex s_audioDecodeMutex;
+    return s_audioDecodeMutex;
+}
+
+std::mutex& ResourceManager::GetFontDecodeMutex()
+{
+    static std::mutex s_fontDecodeMutex;
+    return s_fontDecodeMutex;
+}
+
 bool ResourceManager::IsResourceLoaded(uint32_t id) const
 {
     if (id == 0) return false;
@@ -175,6 +187,21 @@ std::future<uint32_t> ResourceManager::LoadResourceAsync(
 
     const uint32_t id = GetResourceId(filepath);
 
+    // Audio decoding through libsndfile / FLAC and FreeType font loading are not thread-safe for background worker pools.
+    // Load audio and fonts synchronously on the calling thread to prevent concurrent FreeType heap corruption and decoder crashes.
+    const std::string ext = GetExtension(filepath);
+    if (ext == "wav" || ext == "ogg" || ext == "flac" || ext == "mp3" || ext == "ttf" || ext == "otf")
+    {
+        uint32_t loadedId = LoadResource(filepath);
+        if (onLoaded)
+        {
+            onLoaded(loadedId);
+        }
+        auto p = std::make_shared<std::promise<uint32_t>>();
+        p->set_value(loadedId);
+        return p->get_future();
+    }
+
     // Check if already loaded
     if (IsResourceLoaded(id))
     {
@@ -239,7 +266,11 @@ std::future<uint32_t> ResourceManager::LoadResourceAsync(
         else if (ext == "ttf" || ext == "otf")
         {
             auto font = std::make_unique<sf::Font>();
-            bool success = font->openFromFile(filepath);
+            bool success = false;
+            {
+                std::lock_guard<std::mutex> fLock(GetFontDecodeMutex());
+                success = font->openFromFile(filepath);
+            }
 
             std::vector<std::function<void(uint32_t)>> callbacks;
             std::vector<std::shared_ptr<std::promise<uint32_t>>> promises;
@@ -270,7 +301,11 @@ std::future<uint32_t> ResourceManager::LoadResourceAsync(
         else if (ext == "wav" || ext == "ogg" || ext == "flac" || ext == "mp3")
         {
             auto buf = std::make_unique<sf::SoundBuffer>();
-            bool success = buf->loadFromFile(filepath);
+            bool success = false;
+            {
+                std::lock_guard<std::mutex> aLock(GetAudioDecodeMutex());
+                success = buf->loadFromFile(filepath);
+            }
 
             std::vector<std::function<void(uint32_t)>> callbacks;
             std::vector<std::shared_ptr<std::promise<uint32_t>>> promises;
@@ -529,7 +564,13 @@ bool ResourceManager::LoadFont(uint32_t id, const std::string& filepath)
     }
 
     auto font = std::make_unique<sf::Font>();
-    if (font->openFromFile(filepath))
+    bool loaded = false;
+    {
+        std::lock_guard<std::mutex> fLock(GetFontDecodeMutex());
+        loaded = font->openFromFile(filepath);
+    }
+
+    if (loaded)
     {
         std::unique_lock<std::shared_mutex> lock(*m_mutex);
         m_fonts[id] = std::move(font);
@@ -550,7 +591,13 @@ bool ResourceManager::LoadSoundBuffer(uint32_t id, const std::string& filepath)
     }
 
     auto buf = std::make_unique<sf::SoundBuffer>();
-    if (buf->loadFromFile(filepath))
+    bool loaded = false;
+    {
+        std::lock_guard<std::mutex> aLock(GetAudioDecodeMutex());
+        loaded = buf->loadFromFile(filepath);
+    }
+
+    if (loaded)
     {
         std::unique_lock<std::shared_mutex> lock(*m_mutex);
         m_soundBuffers[id] = std::move(buf);

@@ -53,6 +53,7 @@ public:
     void    OnUpdate(float dt, GameContext& context) override;
     void    OnRender(GameContext& context) override;
     void    OnDestroy(GameContext& context) override;
+    [[nodiscard]] bool PreservesMusicOnDestroy() const override { return true; }
     [[nodiscard]] uint32_t  GetPostProcessShader() const override;
     [[nodiscard]] PostProcessParams GetPostProcessParams() const override;
     void    TriggerPostProcessFlash(float caIntensity, float vignetteIntensity, const Color& vignetteColor, float flashIntensity = 0.0f, const Color& flashColor = Colors::White);

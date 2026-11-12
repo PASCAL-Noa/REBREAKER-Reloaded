@@ -449,8 +449,11 @@ void GameScene::OnInit(GameContext& context)
         mp_eventSystem->SetPaddleEntity(m_paddle);
     }
 
-    m_uiController = std::make_unique<GameUIController>(m_registry, *mp_context, *this);
-    m_uiController->OnInit(m_fontId, m_heartTexId, m_fireTexId, m_bounceSfxId, m_scoreRecordedSfxId);
+    if (m_renderGameUI)
+    {
+        m_uiController = std::make_unique<GameUIController>(m_registry, *mp_context, *this);
+        m_uiController->OnInit(m_fontId, m_heartTexId, m_fireTexId, m_bounceSfxId, m_scoreRecordedSfxId);
+    }
 
     m_systemManager.OnInit();
 
@@ -602,15 +605,15 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
                 m_countdownLastSecond = currentSec;
                 if (currentSec == 3 && m_countdown3SfxId != 0)
                 {
-                    context.Audio.PlaySfx(m_countdown3SfxId, 100.0f);
+                    context.Audio.PlaySfx(m_countdown3SfxId, 45.0f);
                 }
                 else if (currentSec == 2 && m_countdown2SfxId != 0)
                 {
-                    context.Audio.PlaySfx(m_countdown2SfxId, 100.0f);
+                    context.Audio.PlaySfx(m_countdown2SfxId, 45.0f);
                 }
                 else if (currentSec == 1 && m_countdown1SfxId != 0)
                 {
-                    context.Audio.PlaySfx(m_countdown1SfxId, 100.0f);
+                    context.Audio.PlaySfx(m_countdown1SfxId, 45.0f);
                 }
             }
 
@@ -622,7 +625,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
 
                 if (m_countdownGoSfxId != 0)
                 {
-                    context.Audio.PlaySfx(m_countdownGoSfxId, 100.0f);
+                    context.Audio.PlaySfx(m_countdownGoSfxId, 45.0f);
                 }
 
                 if (mp_paddleSystem)
@@ -669,7 +672,9 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
             {
                 return;
             }
-            context.Scenes.LoadScene<MenuScene>();
+            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            MenuScene::SetReturnWithDezoom(true);
+            context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
             return;
         }
     }
@@ -802,7 +807,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
 
                     if (m_bounceSfxId != 0 && m_audioEnabled)
                     {
-                        context.Audio.PlaySfx(m_bounceSfxId, sweetSpotHit ? 100.0f : 90.0f);
+                        context.Audio.PlaySfx(m_bounceSfxId, sweetSpotHit ? 45.0f : 35.0f);
                     }
 
                     it = m_stuckBalls.erase(it);
@@ -1829,11 +1834,11 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
     {
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_fireballExplosionSfxId != 0)
-            PlaySfx(m_fireballExplosionSfxId, 85.0f);
+            PlaySfx(m_fireballExplosionSfxId, 45.0f);
         else if (m_explosionSfxId != 0)
-            PlaySfx(m_explosionSfxId, 85.0f);
+            PlaySfx(m_explosionSfxId, 45.0f);
         else if (m_despawnSfxId != 0)
-            PlaySfx(m_despawnSfxId, 80.0f);
+            PlaySfx(m_despawnSfxId, 40.0f);
     }
 
     TweenEffects::Shake(m_registry, m_camera, 0.3f, 16.0f);
@@ -2036,7 +2041,7 @@ void GameScene::StartCountdown()
         mp_context->Events.Publish(GameStateChangedEvent(GameUIState::Countdown));
         if (m_audioEnabled && m_countdownReadySfxId != 0)
         {
-            mp_context->Audio.PlaySfx(m_countdownReadySfxId, 100.0f);
+            mp_context->Audio.PlaySfx(m_countdownReadySfxId, 45.0f);
         }
     }
 }
@@ -2763,7 +2768,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
             }
             if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
-                mp_context->Audio.PlaySfx(m_bounceSfxId, 90.0f, 1.4f);
+                mp_context->Audio.PlaySfx(m_bounceSfxId, 40.0f, 1.4f);
             }
             return;
         }
@@ -2784,7 +2789,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
             if (mp_context && m_audioEnabled && m_explosionSfxId != 0)
             {
-                mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
+                mp_context->Audio.PlaySfx(m_explosionSfxId, 50.0f);
             }
 
             m_registry.DestroyEntityDeferred(entity);
@@ -2816,7 +2821,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
             if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
-                mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f, 1.25f);
+                mp_context->Audio.PlaySfx(m_bounceSfxId, 45.0f, 1.25f);
             }
 
             mp_context->Events.Publish(BrickHitEvent(entity, false, false, m_scoreManager.GetComboMultiplier(), contactPos));
@@ -3048,7 +3053,7 @@ void GameScene::HandlePaddleCollision(Entity ballEntity)
 
         if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
         {
-            mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+            mp_context->Audio.PlaySfx(m_bounceSfxId, 40.0f);
         }
         mp_context->Events.Publish(PaddleHitEvent(m_paddle, ballEntity, mutableBallTrans.Position));
         return;
@@ -3103,7 +3108,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
 
             if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
             {
-                mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f, 1.35f);
+                mp_context->Audio.PlaySfx(m_bounceSfxId, 45.0f, 1.35f);
             }
             return;
         }
@@ -3131,7 +3136,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
 
             if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
             {
-                mp_context->Audio.PlaySfx(m_bounceSfxId, 100.0f);
+                mp_context->Audio.PlaySfx(m_bounceSfxId, 45.0f);
             }
 
             m_bottomBarrierCharges--;

@@ -356,7 +356,7 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
                         if (!button.SuppressUniversalSfx)
                         {
                             uint32_t snd = button.HoverSoundId != 0 ? button.HoverSoundId : s_defaultHoverSound;
-                            if (snd != 0) context.Audio.PlaySfx(snd, 70.0f, 1.0f);
+                            if (snd != 0) context.Audio.PlaySfx(snd, 24.0f, 1.0f);
                         }
                     }
                     button.State = ButtonState::Hovered;
@@ -463,7 +463,7 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
                     if (!button.SuppressUniversalSfx)
                     {
                         uint32_t snd = button.HoverSoundId != 0 ? button.HoverSoundId : s_defaultHoverSound;
-                        if (snd != 0) context.Audio.PlaySfx(snd, 70.0f, 1.0f);
+                        if (snd != 0) context.Audio.PlaySfx(snd, 24.0f, 1.0f);
                     }
                 }
             }
@@ -484,7 +484,7 @@ void UISystem::UpdateButtons(Registry& registry, const GameContext& context, con
         if (!btn.SuppressUniversalSfx)
         {
             uint32_t snd = btn.ClickSoundId != 0 ? btn.ClickSoundId : s_defaultClickSound;
-            if (snd != 0) context.Audio.PlaySfx(snd, 85.0f, 1.0f);
+            if (snd != 0) context.Audio.PlaySfx(snd, 32.0f, 1.0f);
         }
     }
 

@@ -5,10 +5,15 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Protect hardware & prevent memory exhaustion by capping Ninja build parallelism
+set_property(GLOBAL PROPERTY JOB_POOLS compile_job_pool=4 link_job_pool=2)
+set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
+set(CMAKE_JOB_POOL_LINK link_job_pool)
+
 option(TREAT_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
 if(MSVC)
-    add_compile_options(/W4)
+    add_compile_options(/W4 /bigobj /utf-8)
     if(TREAT_WARNINGS_AS_ERRORS)
         add_compile_options(/WX)
     endif()
@@ -32,4 +37,4 @@ add_subdirectory(Engine)
 add_subdirectory(Game)
 
 enable_testing()
-add_subdirectory(Tests)
+add_subdirectory(Tests)

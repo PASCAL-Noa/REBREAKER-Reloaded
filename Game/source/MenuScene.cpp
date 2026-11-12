@@ -63,12 +63,16 @@ void MenuScene::OnInit(GameContext& context)
     m_luckyShaderId = context.Resources.LoadResource("Resources/shaders/lucky.frag");
     m_plasmaShaderId = context.Resources.LoadResource("Resources/shaders/plasma.frag");
     m_channelSwitchSfxId = context.Resources.LoadResource("Resources/audio/sfx/ui_click.wav");
+    m_tvStaticSfxId = context.Resources.LoadResource("Resources/audio/sfx/tv_static.wav");
+    m_tvSwitchSfxId = context.Resources.LoadResource("Resources/audio/sfx/tv_switch.wav");
+    m_tvHoverSfxId = context.Resources.LoadResource("Resources/audio/sfx/ui_hover.wav");
     m_paddleTexId = context.Resources.LoadResource("Resources/sprite/paddle.png");
     m_ballTexId = context.Resources.LoadResource("Resources/sprite/ball.png");
     m_brickTexId = context.Resources.LoadResource("Resources/sprite/brick.png");
     m_brickCrackTexId = context.Resources.LoadResource("Resources/sprite/brick_crack.png");
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
     m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
+
 
     // 2D Sprite Asset Pipeline: Workshop Power-Up Badges (#88)
     m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::MultiBall)]    = context.Resources.LoadResource("Resources/sprite/workshop/badge_multiball.png");
@@ -86,16 +90,12 @@ void MenuScene::OnInit(GameContext& context)
     m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::ItemRegen)]    = context.Resources.LoadResource("Resources/sprite/workshop/badge_regen.png");
 
     // Initialize persisted audio & render preferences
-    float sfxVol = PlayerPrefs::GetFloat("SfxVolume", 100.0f);
-    float musicVol = PlayerPrefs::GetFloat("MusicVolume", 100.0f);
+    float masterVol = PlayerPrefs::GetFloat("MasterVolume", 80.0f);
+    float sfxVol = PlayerPrefs::GetFloat("SfxVolume", 70.0f);
+    float musicVol = PlayerPrefs::GetFloat("MusicVolume", 70.0f);
+    context.Audio.SetMasterVolume(masterVol);
     context.Audio.SetSfxVolume(sfxVol);
     context.Audio.SetMusicVolume(musicVol);
-
-    std::string savedDevice = PlayerPrefs::GetString("Audio_Device", "");
-    if (!savedDevice.empty() && context.Audio.GetCurrentAudioDevice() != savedDevice)
-    {
-        context.Audio.SetAudioDevice(savedDevice);
-    }
 
     // Play Main Menu background music smoothly in loop
     context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
@@ -107,6 +107,11 @@ void MenuScene::OnInit(GameContext& context)
     m_leaderboard.Load();
 
     InitRetroBackground(context);
+    InitTVChannels();
+    UpdateTVLayout(context);
+    m_masterVolume = context.Audio.GetMasterVolume();
+    m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+
 
     CreateMainMenuUI(context);
     CreateSettingsLayout(context);
@@ -119,10 +124,15 @@ void MenuScene::OnInit(GameContext& context)
     CreateDebugModal(context);
     CreateWorkshopModal(context);
 
-    // Initialize Workshop Embedded Preview Simulation
-    m_previewTexture = std::make_unique<sf::RenderTexture>();
+    // Initialize CRT TV Screen Offscreen Surface
+    m_tvScreenTexture = std::make_unique<sf::RenderTexture>();
     sf::ContextSettings rtSettings;
     rtSettings.antiAliasingLevel = 4;
+    (void)m_tvScreenTexture->resize(sf::Vector2u(1390, 910), rtSettings);
+    m_tvScreenTexture->setSmooth(true);
+
+    // Initialize Workshop Embedded Preview Simulation
+    m_previewTexture = std::make_unique<sf::RenderTexture>();
     (void)m_previewTexture->resize(sf::Vector2u(1280, 600), rtSettings);
     m_previewTexture->setSmooth(true);
 
@@ -155,10 +165,6 @@ void MenuScene::OnInit(GameContext& context)
             {
                 m_ultimateCards[i].SwitchTimer = 0.38f;
             }
-            if (i < static_cast<int>(m_ultimateCards.size()) && m_ultimateCards[i].Type == m_lastInspectedUltimate && mp_context)
-            {
-                mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
-            }
         });
         int lvl = ProfileManager::Get().GetUltimateLevel(ultTypes[i]);
         m_ultimatePreviewScenes[i]->SetPreviewUltimate(ultTypes[i], lvl);
@@ -184,6 +190,17 @@ void MenuScene::OnInit(GameContext& context)
 
     context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
 
+    if (s_returnWithDezoom)
+    {
+        m_zoomState = ChannelZoomState::ReturningFromFullScreen;
+        m_returnTimer = 0.0f;
+        m_returnProgress = 1.0f;
+        m_zoomProgress = 1.0f;
+        s_returnWithDezoom = false;
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+        if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 6.0f);
+    }
+
     PreloadGameAssets(context);
 }
 
@@ -204,20 +221,6 @@ void MenuScene::PreloadGameAssets(GameContext& context)
     // Preload shaders asynchronously
     context.Resources.LoadResourceAsync("Resources/shaders/crack.frag");
     context.Resources.LoadResourceAsync("Resources/shaders/scanner.frag");
-
-    // Preload audio buffers asynchronously
-    context.Resources.LoadResourceAsync("Resources/audio/sfx/ball_despawn.wav");
-    context.Resources.LoadResourceAsync("Resources/audio/sfx/brick_destroy.wav");
-    context.Resources.LoadResourceAsync("Resources/audio/sfx/brick_hit.wav");
-    context.Resources.LoadResourceAsync("Resources/audio/sfx/combo.wav");
-    context.Resources.LoadResourceAsync("Resources/audio/sfx/game_over.mp3");
-    context.Resources.LoadResourceAsync("Resources/audio/sfx/game_win.mp3");
-    context.Resources.LoadResourceAsync("Resources/audio/sfx/victory.mp3");
-    context.Resources.LoadResourceAsync("Resources/audio/sfx/paddle_hit.wav");
-    context.Resources.LoadResourceAsync("Resources/audio/sfx/powerup.wav");
-
-    // Preload font asynchronously
-    context.Resources.LoadResourceAsync("Resources/font/arial.ttf");
 }
 
 void MenuScene::OnUpdate(float dt, GameContext& context)
@@ -261,7 +264,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
                 m_isRebinding = false;
                 m_rebindAction = InputAction::Count;
                 UISystem::SetNavigationEnabled(true);
-                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
                 UpdateInputButtons();
                 return;
             }
@@ -290,7 +293,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
                     m_isRebinding = false;
                     m_rebindAction = InputAction::Count;
                     UISystem::SetNavigationEnabled(true);
-                    if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                    if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
                     UpdateInputButtons();
                     return;
                 }
@@ -305,7 +308,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     // Preview scene shortcut (accessible anywhere from menu / workshop)
     if (!m_isRebinding && !m_showDescriptionModal && (context.Input.IsKeyPress(KeyCode::P) || context.Input.IsKeyPress(KeyCode::F1) || context.Input.IsKeyPress(KeyCode::F10)))
     {
-        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
         if (m_activeModal == m_workshopCanvas && m_workshopActiveTabCanvas == m_workshopUltimatesCanvas)
         {
             UltimateAbilityType ultToTest = m_lastInspectedUltimate;
@@ -387,43 +390,11 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
         }
     }
 
-    // Navigation shortcuts when no modal is open
+    // Retro CRT TV Channel Grid navigation & controls when no modal is open
     if (m_activeModal == NULL_ENTITY)
     {
-        if (context.Input.IsKeyPress(KeyCode::Enter) || context.Input.IsKeyPress(KeyCode::Space) || context.Input.IsJoystickButtonPress(0, 7))
-        {
-            context.Scenes.LoadScene<GameScene>();
-            return;
-        }
-        if (context.Input.IsKeyPress(KeyCode::L))
-        {
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
-            context.Scenes.LoadScene<LevelSelectScene>();
-            return;
-        }
-        if (context.Input.IsKeyPress(KeyCode::W))
-        {
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
-            OpenModal(m_workshopCanvas);
-            return;
-        }
-        if (context.Input.IsKeyPress(KeyCode::P) || context.Input.IsKeyPress(KeyCode::T))
-        {
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
-            context.Scenes.LoadScene<SandboxScene>();
-            return;
-        }
-
-        if (context.Input.IsKeyPress(KeyCode::C) || context.Input.IsKeyPress(KeyCode::H))
-        {
-            OpenModal(m_leaderboardCanvas);
-            return;
-        }
-        if (context.Input.IsKeyPress(KeyCode::O))
-        {
-            OpenModal(m_settingsCanvas);
-            return;
-        }
+        UpdateCampaignPreviewSimulation(dt);
+        UpdateTVControls(dt, context);
         if (context.Input.IsKeyPress(KeyCode::Tab))
         {
             OpenModal(m_debugCanvas);
@@ -604,7 +575,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
                             }
                             if (m_channelSwitchSfxId != 0 && mp_context)
                             {
-                                mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 80.0f, 1.2f);
+                                mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 15.0f, 1.2f);
                             }
                             RefreshWorkshopUI();
                             break;
@@ -630,6 +601,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     }
 
     UpdateRetroBackground(dt, context);
+    UpdateMusicParticles(dt);
     m_previewAnimTime += dt;
     if (m_previewSwitchTimer > 0.0f)
     {
@@ -667,6 +639,110 @@ void MenuScene::OnRender(GameContext& context)
         RenderWorkshopBackgroundVisuals(context);
     }
 
+    if (m_activeModal == NULL_ENTITY)
+    {
+        UpdateTVLayout(context);
+        RenderRetroTVChassis(context);
+        RenderCRTBezelAndGlass(context);
+
+        if (m_tvScreenTexture)
+        {
+            if (!m_isStandby)
+            {
+                m_tvScreenTexture->clear(sf::Color(10, 14, 22, 255));
+                context.Render.PushRenderTarget(*m_tvScreenTexture);
+                RenderTVScreenContent(context);
+                context.Render.PopRenderTarget();
+                m_tvScreenTexture->display();
+
+                uint32_t crtShader = (context.Rules.GetRule(Rule::Graphics::EnableShader)) ? m_previewShaderId : 0;
+                context.Render.DrawRawTexture(
+                    m_tvScreenTexture->getTexture(),
+                    m_tvLayout.GlassSize.X,
+                    m_tvLayout.GlassSize.Y,
+                    Transform2D{m_tvLayout.GlassCenter},
+                    Colors::White,
+                    crtShader,
+                    m_animTime,
+                    m_channelSwitchGlitch
+                );
+            }
+            else
+            {
+                // Standby mode: Cathode ray tube is off (deep dark glass with subtle reflection)
+                context.Render.DrawRectangle(m_tvLayout.GlassSize.X, m_tvLayout.GlassSize.Y, Transform2D{m_tvLayout.GlassCenter}, Color{4, 6, 10, 255});
+
+                // Subtle pulsating amber standby prompt
+                uint8_t sbPulse = static_cast<uint8_t>(100 + 75 * std::sin(m_animTime * 3.0f));
+                context.Render.DrawTextCentered("STANDBY  //  PRESS ANY KEY TO WAKE", m_fontId, m_tvLayout.ToScreenDim(14.0f),
+                    Transform2D{m_tvLayout.GlassCenter + Vector2f{0.0f, m_tvLayout.GlassSize.Y * 0.40f}}, Color{255, 175, 55, sbPulse});
+            }
+        }
+
+        RenderMusicParticles(context);
+
+        // Subtle diagonal glass reflection
+        const auto& L = m_tvLayout;
+        context.Render.DrawLine(L.ToScreenPos(Vector2f{150.0f, 120.0f}), L.ToScreenPos(Vector2f{700.0f, 120.0f}), Color{255, 255, 255, 18}, L.ToScreenDim(2.0f));
+        context.Render.DrawLine(L.ToScreenPos(Vector2f{150.0f, 130.0f}), L.ToScreenPos(Vector2f{500.0f, 130.0f}), Color{255, 255, 255, 12}, L.ToScreenDim(1.5f));
+
+        RenderTVOSD(context);
+        RenderPowerOffDialog(context);
+        RenderPowerOffAnimation(context);
+
+        // Pleasant CRT aperture expansion beam & phosphor flare during LaunchingFullScreen / ReturningFromFullScreen
+        if (((m_zoomState == ChannelZoomState::LaunchingFullScreen && m_launchProgress > 0.60f) ||
+             (m_zoomState == ChannelZoomState::ReturningFromFullScreen && m_returnProgress > 0.40f)) &&
+            m_selectedChannel >= 0 && m_selectedChannel < static_cast<int>(m_tvChannels.size()))
+        {
+            const Vector2f viewSize = context.Render.GetLogicalViewSize();
+            const Vector2f viewCenter = viewSize * 0.5f;
+            const float flareT = (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+                ? ((m_launchProgress - 0.60f) / 0.40f)
+                : ((m_returnProgress - 0.40f) / 0.60f);
+            const float easeFlare = flareT * flareT * (3.0f - 2.0f * flareT);
+            const auto& ch = m_tvChannels[m_selectedChannel];
+
+            // 1. Soft horizontal cathode phosphor glow expanding across the display
+            float streakH = 12.0f + 180.0f * easeFlare;
+            uint8_t streakAlpha = static_cast<uint8_t>(std::min(95.0f, easeFlare * 95.0f));
+            context.Render.DrawRectangle(viewSize.X * 1.3f, streakH, Transform2D{viewCenter},
+                Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, streakAlpha});
+
+            // 2. Soft luminous warm core beam (gentle glow, no harsh laser)
+            float coreH = 4.0f + 50.0f * easeFlare;
+            uint8_t coreAlpha = static_cast<uint8_t>(std::min(90.0f, easeFlare * 90.0f));
+            context.Render.DrawRectangle(viewSize.X * 1.3f, coreH, Transform2D{viewCenter},
+                Color{static_cast<uint8_t>((230 + ch.ThemeColor.r) / 2),
+                      static_cast<uint8_t>((240 + ch.ThemeColor.g) / 2),
+                      static_cast<uint8_t>((255 + ch.ThemeColor.b) / 2),
+                      coreAlpha});
+
+            // 3. Phosphor circular resonance wave (gentle)
+            if (flareT > 0.40f)
+            {
+                float waveT = (flareT - 0.40f) / 0.60f;
+                float waveR = viewSize.Y * (0.15f + waveT * 0.85f);
+                uint8_t waveAlpha = static_cast<uint8_t>((1.0f - waveT) * 75.0f);
+                context.Render.DrawCircleOutline(waveR, Transform2D{viewCenter},
+                    Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, waveAlpha}, 2.5f);
+                context.Render.DrawCircleOutline(waveR * 0.70f, Transform2D{viewCenter},
+                    Color{255, 255, 255, static_cast<uint8_t>(waveAlpha * 0.5f)}, 1.5f);
+            }
+
+            // 4. Soft warm bloom transition at peak (no blinding pure-white wipe)
+            if (flareT > 0.85f)
+            {
+                uint8_t flashA = static_cast<uint8_t>(((flareT - 0.85f) / 0.15f) * 65.0f);
+                context.Render.DrawRectangle(viewSize.X * 1.2f, viewSize.Y * 1.2f, Transform2D{viewCenter},
+                    Color{static_cast<uint8_t>((200 + ch.ThemeColor.r) / 2),
+                          static_cast<uint8_t>((220 + ch.ThemeColor.g) / 2),
+                          static_cast<uint8_t>((245 + ch.ThemeColor.b) / 2),
+                          flashA});
+            }
+        }
+    }
+
     UISystem::OnRender(m_registry, context);
 
     if (m_activeModal == m_workshopCanvas)
@@ -693,6 +769,7 @@ void MenuScene::OnDestroy(GameContext& context)
     }
     m_previewTexture.reset();
     m_ultimatePreviewTexture.reset();
+    m_tvScreenTexture.reset();
     DefaultScene::OnDestroy(context);
 }
 
@@ -711,6 +788,13 @@ PostProcessParams MenuScene::GetPostProcessParams() const
     params.ChromaticAberration = 0.005f;
     params.VignetteIntensity = 0.25f;
     params.VignetteColor = Color{0, 0, 0, 255};
+    params.Time = m_animTime;
+    params.PreviewRect[0] = 0.0f;
+    params.PreviewRect[1] = 0.0f;
+    params.PreviewRect[2] = 0.0f;
+    params.PreviewRect[3] = 0.0f;
+    params.GlitchIntensity = m_channelSwitchGlitch;
+    params.ScanlineFlicker = (m_channelSwitchGlitch > 0.01f) ? 0.4f : 0.05f;
     return params;
 }
 
@@ -738,6 +822,8 @@ void MenuScene::OpenModal(Entity modalCanvas)
 
 void MenuScene::CloseModals()
 {
+    const bool wasModalOpen = (m_activeModal != NULL_ENTITY);
+
     if (m_activeModal == m_workshopCanvas)
     {
         if (m_previewScene)
@@ -788,6 +874,24 @@ void MenuScene::CloseModals()
     {
         m_registry.GetComponent<CanvasComponent>(m_mainCanvas).IsEnabled = true;
     }
+
+    if (wasModalOpen)
+    {
+        StartDezoomToGrid();
+    }
+}
+
+void MenuScene::StartDezoomToGrid()
+{
+    m_zoomState = ChannelZoomState::ReturningFromFullScreen;
+    m_returnTimer = 0.0f;
+    m_returnProgress = 1.0f;
+    m_zoomProgress = 1.0f;
+    if (mp_context)
+    {
+        if (m_tvSwitchSfxId != 0) mp_context->Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+        if (m_tvStaticSfxId != 0) mp_context->Audio.PlaySfx(m_tvStaticSfxId, 6.0f);
+    }
 }
 
 void MenuScene::OpenDescriptionModal()
@@ -797,7 +901,7 @@ void MenuScene::OpenDescriptionModal()
     {
         m_registry.GetComponent<CanvasComponent>(m_workshopDescCanvas).IsEnabled = true;
     }
-    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 16.0f);
     RefreshWorkshopUI();
 }
 
@@ -809,7 +913,7 @@ void MenuScene::CloseDescriptionModal()
     {
         m_registry.GetComponent<CanvasComponent>(m_workshopDescCanvas).IsEnabled = false;
     }
-    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 16.0f);
     RefreshWorkshopUI();
 }
 
@@ -926,161 +1030,1963 @@ void MenuScene::RenderRetroBackground(const GameContext& context) const
     }
 }
 
-void MenuScene::CreateMainMenuUI(const GameContext& context)
+void MenuScene::CreateMainMenuUI(const GameContext& /*context*/)
 {
     m_mainCanvas = m_registry.CreateEntity();
-    m_registry.AddComponent<CanvasComponent>(m_mainCanvas, CanvasComponent{.IsEnabled = true});
+    m_registry.AddComponent<CanvasComponent>(m_mainCanvas, CanvasComponent{.IsEnabled = false});
+}
 
-    // Subtle neon underline below title
-    UIFactory::CreatePanel(m_registry, m_mainCanvas, PanelDescriptor{
-        .Position = {0.0f, -145.0f},
-        .Size = {420.0f, 3.0f},
-        .Tint = Color{255, 180, 50, 180}
+void MenuScene::InitTVChannels()
+{
+    m_tvChannels.clear();
+    m_tvChannels.reserve(8);
+
+    const float colX[4] = {295.0f, 630.0f, 965.0f, 1300.0f};
+    const float rowY[2] = {310.0f, 535.0f};
+    const Vector2f cardSize{280.0f, 185.0f};
+
+    // 0: Campaign
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Campaign,
+        .ChannelNumber = "CH 01",
+        .Title = "CAMPAIGN",
+        .Subtitle = "ARCADE ODYSSEY",
+        .Description = "Embark on the core arcade journey across dynamic arenas with temporal events!",
+        .ThemeColor = Color{80, 220, 255, 255},
+        .CardBgColor = Color{18, 26, 42, 245},
+        .Position = Vector2f{colX[0], rowY[0]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[0], rowY[0]},
+        .BaseSize = cardSize
     });
 
-    // Title & Subtitle
-    UIFactory::CreateText(m_registry, m_mainCanvas, TextDescriptor{
-        .Text = "REBREAKER",
-        .Position = {0.0f, -235.0f},
-        .FontId = m_fontId,
-        .FontSize = 80.0f,
-        .Tint = Colors::Gold
+    // 1: Level Select
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::LevelSelect,
+        .ChannelNumber = "CH 02",
+        .Title = "STAGE SELECT",
+        .Subtitle = "SECTOR DIRECTORY",
+        .Description = "Choose your arena, browse community maps, and pick custom sector missions.",
+        .ThemeColor = Color{255, 175, 55, 255},
+        .CardBgColor = Color{28, 24, 18, 245},
+        .Position = Vector2f{colX[1], rowY[0]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[1], rowY[0]},
+        .BaseSize = cardSize
     });
 
-    UIFactory::CreateText(m_registry, m_mainCanvas, TextDescriptor{
-        .Text = "--- RELOADED ---",
-        .Position = {0.0f, -175.0f},
-        .FontId = m_fontId,
-        .FontSize = 32.0f,
-        .Tint = Color{255, 100, 50, 255}
+    // 2: Tetris Endless
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::TetrisEndless,
+        .ChannelNumber = "CH 03",
+        .Title = "ENDLESS",
+        .Subtitle = "SURVIVAL MATRIX",
+        .Description = "Test your endurance against endless falling brick matrices and accelerating physics.",
+        .ThemeColor = Color{245, 65, 115, 255},
+        .CardBgColor = Color{28, 16, 26, 245},
+        .Position = Vector2f{colX[2], rowY[0]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[2], rowY[0]},
+        .BaseSize = cardSize
     });
 
-    // Primary Menu Buttons
-    constexpr float btnWidth = 360.0f;
-    constexpr float btnHeight = 42.0f;
-    constexpr float startY = -120.0f;
-    constexpr float stepY = 48.0f;
-
-    // 1. Play
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "PLAY",
-        .OnClick = [&context]() {
-            context.Scenes.LoadScene<GameScene>();
-        },
-        .Position = {0.0f, startY},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{30, 80, 45, 255},
-        .HoverColor = Color{45, 120, 65, 255},
-        .PressedColor = Color{20, 55, 30, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f
+    // 3: Workshop
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Workshop,
+        .ChannelNumber = "CH 04",
+        .Title = "WORKSHOP",
+        .Subtitle = "UPGRADES & TECH",
+        .Description = "Upgrade paddle chassis, test devastating ultimates, and tune ball physics.",
+        .ThemeColor = Color{255, 215, 60, 255},
+        .CardBgColor = Color{28, 25, 16, 245},
+        .Position = Vector2f{colX[3], rowY[0]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[3], rowY[0]},
+        .BaseSize = cardSize
     });
 
-    // 2. Level Select
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "LEVEL SELECT",
-        .OnClick = [&context]() {
-            context.Scenes.LoadScene<LevelSelectScene>();
-        },
-        .Position = {0.0f, startY + stepY},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{35, 55, 90, 255},
-        .HoverColor = Color{50, 80, 130, 255},
-        .PressedColor = Color{25, 40, 65, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f
+    // 4: Leaderboard
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Leaderboard,
+        .ChannelNumber = "CH 05",
+        .Title = "LEADERBOARD",
+        .Subtitle = "ARCADE RANKINGS",
+        .Description = "View global arcade rankings, stage records, and personal best scores.",
+        .ThemeColor = Color{165, 105, 255, 255},
+        .CardBgColor = Color{24, 18, 32, 245},
+        .Position = Vector2f{colX[0], rowY[1]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[0], rowY[1]},
+        .BaseSize = cardSize
     });
 
-    // 3. Training Room / Playground
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "TRAINING ROOM",
-        .OnClick = [&context]() {
-            context.Scenes.LoadScene<SandboxScene>();
-        },
-        .Position = {0.0f, startY + stepY * 2.0f},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{20, 75, 80, 255},
-        .HoverColor = Color{30, 115, 125, 255},
-        .PressedColor = Color{15, 50, 55, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f
+    // 5: Achievements
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Achievements,
+        .ChannelNumber = "CH 06",
+        .Title = "PROFILE",
+        .Subtitle = "CAREER STATS",
+        .Description = "Inspect unlocked badges, career stats, prestige rank, and performance medals.",
+        .ThemeColor = Color{50, 225, 140, 255},
+        .CardBgColor = Color{16, 28, 22, 245},
+        .Position = Vector2f{colX[1], rowY[1]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[1], rowY[1]},
+        .BaseSize = cardSize
     });
 
-    // 4. Workshop & Upgrades
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "WORKSHOP",
-        .OnClick = [this]() {
-            OpenModal(m_workshopCanvas);
-        },
-        .Position = {0.0f, startY + stepY * 3.0f},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{75, 60, 20, 255},
-        .HoverColor = Color{110, 90, 30, 255},
-        .PressedColor = Color{50, 40, 15, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f
+    // 6: Sandbox
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Sandbox,
+        .ChannelNumber = "CH 07",
+        .Title = "SANDBOX ROOM",
+        .Subtitle = "PHYSICS LAB",
+        .Description = "Freeform physics playground to spawn bricks, test weapons, and experiment.",
+        .ThemeColor = Color{60, 190, 255, 255},
+        .CardBgColor = Color{16, 24, 32, 245},
+        .Position = Vector2f{colX[2], rowY[1]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[2], rowY[1]},
+        .BaseSize = cardSize
     });
 
-    // 5. Leaderboard
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "LEADERBOARD",
-        .OnClick = [this]() {
-            OpenModal(m_leaderboardCanvas);
-        },
-        .Position = {0.0f, startY + stepY * 4.0f},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{40, 45, 65, 255},
-        .HoverColor = Color{60, 65, 95, 255},
-        .PressedColor = Color{28, 32, 48, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f
+    // 7: Settings
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Settings,
+        .ChannelNumber = "CH 08",
+        .Title = "SETTINGS",
+        .Subtitle = "SYSTEM OPTIONS",
+        .Description = "Configure CRT shaders, master audio mixing, input bindings, and display modes.",
+        .ThemeColor = Color{180, 205, 230, 255},
+        .CardBgColor = Color{20, 24, 30, 245},
+        .Position = Vector2f{colX[3], rowY[1]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[3], rowY[1]},
+        .BaseSize = cardSize
     });
+}
 
-    // 6. Settings
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "SETTINGS",
-        .OnClick = [this]() {
-            OpenModal(m_settingsCanvas);
-            OpenSettingsTab(m_audioCanvas);
-        },
-        .Position = {0.0f, startY + stepY * 5.0f},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{40, 45, 65, 255},
-        .HoverColor = Color{60, 65, 95, 255},
-        .PressedColor = Color{28, 32, 48, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f
-    });
+void MenuScene::InitCampaignPreviewLevel()
+{
+    int unlocked = m_levelManager.GetUnlockedLevel();
+    if (m_campaignLoadedLevel == unlocked && !m_campaignBricks.empty()) return;
 
-    // 7. Debug / Samples
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "SAMPLES & TESTS",
-        .OnClick = [this]() {
-            OpenModal(m_debugCanvas);
-        },
-        .Position = {0.0f, startY + stepY * 6.0f},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{50, 45, 75, 255},
-        .HoverColor = Color{75, 65, 110, 255},
-        .PressedColor = Color{35, 30, 52, 255},
-        .FontId = m_fontId,
-        .FontSize = 30.0f
-    });
+    m_campaignLoadedLevel = unlocked;
+    m_campaignBricks.clear();
 
-    // 8. Quit
-    UIFactory::CreateButton(m_registry, m_mainCanvas, ButtonDescriptor{
-        .Text = "QUIT",
-        .OnClick = [&context]() {
+    std::string levelPath = m_levelManager.GetLevelPath(unlocked - 1);
+    std::ifstream file(levelPath);
+    std::string line;
+    std::vector<std::string> lines;
+    if (file.is_open())
+    {
+        while (std::getline(file, line))
+        {
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
+            if (!line.empty()) lines.push_back(line);
+        }
+    }
+
+    if (lines.empty())
+    {
+        lines = {
+            "333333333333",
+            "2222B22B2222",
+            "1111S11S1111",
+            "110011110011"
+        };
+    }
+
+    int rows = static_cast<int>(lines.size());
+    int maxCols = 0;
+    for (const auto& l : lines) maxCols = std::max(maxCols, static_cast<int>(l.length()));
+    if (maxCols == 0) maxCols = 1;
+
+    for (int r = 0; r < rows; ++r)
+    {
+        const auto& l = lines[r];
+        for (int c = 0; c < static_cast<int>(l.length()); ++c)
+        {
+            char ch = l[c];
+            if (ch == '0' || ch == ' ') continue;
+
+            Color brickCol{80, 200, 255, 240};
+            if (ch == '1') brickCol = Color{75, 195, 255, 240};
+            else if (ch == '2') brickCol = Color{55, 225, 120, 240};
+            else if (ch == '3') brickCol = Color{255, 125, 45, 240};
+            else if (ch == 'B' || ch == 'b') brickCol = Color{245, 55, 75, 240};
+            else if (ch == 'S' || ch == 's') brickCol = Color{195, 85, 255, 240};
+            else if (ch == 'M' || ch == 'm') brickCol = Color{175, 185, 200, 240};
+
+            float normX = ((static_cast<float>(c) + 0.5f) / static_cast<float>(maxCols) - 0.5f) * 1.55f;
+            float normY = -0.52f + (static_cast<float>(r) / static_cast<float>(rows)) * 0.44f;
+
+            m_campaignBricks.push_back(CampaignPreviewBrick{
+                .RelX = normX,
+                .RelY = normY,
+                .BaseColor = brickCol,
+                .Alive = true
+            });
+        }
+    }
+
+    m_campaignPreviewTimer = 0.0f;
+    m_campaignBallPos = Vector2f{0.0f, 0.35f};
+    m_campaignBallVel = Vector2f{0.48f, -0.62f};
+    m_campaignPaddleX = 0.0f;
+}
+
+void MenuScene::UpdateCampaignPreviewSimulation(float dt)
+{
+    InitCampaignPreviewLevel();
+
+    m_campaignPreviewTimer += dt;
+    if (m_campaignPreviewTimer >= 10.0f)
+    {
+        m_campaignPreviewTimer = 0.0f;
+        for (auto& b : m_campaignBricks) b.Alive = true;
+        m_campaignBallPos = Vector2f{0.0f, 0.35f};
+        m_campaignBallVel = Vector2f{0.48f, -0.62f};
+        m_campaignPaddleX = 0.0f;
+    }
+
+    // Ball movement
+    m_campaignBallPos += m_campaignBallVel * dt;
+
+    // Paddle tracking
+    m_campaignPaddleX += (m_campaignBallPos.X - m_campaignPaddleX) * std::min(1.0f, dt * 7.5f);
+
+    // Wall bounces
+    if (m_campaignBallPos.X < -0.72f)
+    {
+        m_campaignBallPos.X = -0.72f;
+        m_campaignBallVel.X = std::abs(m_campaignBallVel.X);
+    }
+    else if (m_campaignBallPos.X > 0.72f)
+    {
+        m_campaignBallPos.X = 0.72f;
+        m_campaignBallVel.X = -std::abs(m_campaignBallVel.X);
+    }
+
+    if (m_campaignBallPos.Y < -0.62f)
+    {
+        m_campaignBallPos.Y = -0.62f;
+        m_campaignBallVel.Y = std::abs(m_campaignBallVel.Y);
+    }
+    else if (m_campaignBallPos.Y > 0.42f)
+    {
+        // Paddle bounce
+        m_campaignBallPos.Y = 0.42f;
+        m_campaignBallVel.Y = -std::abs(m_campaignBallVel.Y);
+        m_campaignBallVel.X = std::clamp((m_campaignBallPos.X - m_campaignPaddleX) * 2.8f, -0.75f, 0.75f);
+    }
+
+    // Brick hits
+    for (auto& b : m_campaignBricks)
+    {
+        if (!b.Alive) continue;
+        if (std::abs(m_campaignBallPos.X - b.RelX) < 0.08f && std::abs(m_campaignBallPos.Y - b.RelY) < 0.05f)
+        {
+            b.Alive = false;
+            m_campaignBallVel.Y = -m_campaignBallVel.Y;
+            break;
+        }
+    }
+}
+
+void MenuScene::RenderCampaignPreview(GameContext& context, const Vector2f& pos, float sc, bool isZoomed) const
+{
+    float arenaW = isZoomed ? (780.0f * sc) : (230.0f * sc);
+    float arenaH = isZoomed ? (420.0f * sc) : (110.0f * sc);
+
+    // Arena boundary & backdrop
+    context.Render.DrawRectangle(arenaW, arenaH, Transform2D{pos}, Color{10, 14, 22, 220});
+    context.Render.DrawRectangleOutline(arenaW, arenaH, Transform2D{pos}, Color{45, 75, 115, 180}, 1.5f * sc);
+
+    // Grid lines in background
+    for (int g = -2; g <= 2; ++g)
+    {
+        float gx = pos.X + static_cast<float>(g) * (arenaW * 0.18f);
+        context.Render.DrawLine(Vector2f{gx, pos.Y - arenaH * 0.5f}, Vector2f{gx, pos.Y + arenaH * 0.5f}, Color{255, 255, 255, 10}, 1.0f * sc);
+    }
+
+    // Bricks
+    float bW = isZoomed ? (48.0f * sc) : (14.0f * sc);
+    float bH = isZoomed ? (16.0f * sc) : (5.5f * sc);
+
+    for (const auto& b : m_campaignBricks)
+    {
+        if (!b.Alive) continue;
+        Vector2f bp = pos + Vector2f{b.RelX * (arenaW * 0.45f), b.RelY * (arenaH * 0.45f)};
+        context.Render.DrawRectangle(bW, bH, Transform2D{bp}, b.BaseColor);
+        context.Render.DrawRectangleOutline(bW, bH, Transform2D{bp}, Colors::White, 1.0f * sc);
+    }
+
+    // Paddle
+    float padW = isZoomed ? (85.0f * sc) : (32.0f * sc);
+    float padH = isZoomed ? (14.0f * sc) : (5.0f * sc);
+    Vector2f padPos = pos + Vector2f{m_campaignPaddleX * (arenaW * 0.45f), 0.45f * (arenaH * 0.45f)};
+    context.Render.DrawRectangle(padW, padH, Transform2D{padPos}, Color{50, 225, 120, 255});
+    context.Render.DrawRectangleOutline(padW, padH, Transform2D{padPos}, Colors::White, 1.2f * sc);
+
+    // Ball
+    float ballR = isZoomed ? (7.0f * sc) : (3.5f * sc);
+    Vector2f ballPos = pos + Vector2f{m_campaignBallPos.X * (arenaW * 0.45f), m_campaignBallPos.Y * (arenaH * 0.45f)};
+    context.Render.DrawCircle(ballR, Transform2D{ballPos}, Colors::White);
+    context.Render.DrawCircleOutline(ballR * 1.5f, Transform2D{ballPos}, Color{80, 220, 255, 150}, 1.2f * sc);
+
+    // Fading Title Banner ("un titre qui arrive avec un fondu", 10s preview)
+    float titleAlpha = std::clamp(m_campaignPreviewTimer / 1.5f, 0.0f, 1.0f);
+    if (m_campaignPreviewTimer > 8.5f)
+    {
+        titleAlpha *= std::clamp((10.0f - m_campaignPreviewTimer) / 1.5f, 0.0f, 1.0f);
+    }
+    uint8_t a = static_cast<uint8_t>(titleAlpha * 255.0f);
+
+    if (a > 2)
+    {
+        std::string stageTitle = "STAGE " + std::to_string(m_campaignLoadedLevel);
+        Vector2f titlePos = pos + Vector2f{0.0f, isZoomed ? (-arenaH * 0.38f) : (-arenaH * 0.32f)};
+        float fSize = isZoomed ? (28.0f * sc) : (14.0f * sc);
+        float pillW = isZoomed ? (240.0f * sc) : (110.0f * sc);
+        float pillH = isZoomed ? (38.0f * sc) : (18.0f * sc);
+
+        context.Render.DrawRectangle(pillW, pillH, Transform2D{titlePos}, Color{12, 18, 28, static_cast<uint8_t>(a * 0.85f)});
+        context.Render.DrawRectangleOutline(pillW, pillH, Transform2D{titlePos}, Color{80, 220, 255, a}, 1.5f * sc);
+        context.Render.DrawTextCentered(stageTitle, m_fontId, fSize, Transform2D{titlePos}, Color{240, 250, 255, a});
+    }
+}
+
+void MenuScene::RenderTwoGears(GameContext& context, const Vector2f& pos, float sc) const
+{
+    // Gear 1 (Left, larger): R = 28 * sc, Teeth = 10, Clockwise
+    const float r1 = 28.0f * sc;
+    const int N1 = 10;
+    const float ang1 = m_animTime * 1.5f;
+    const Vector2f p1 = pos + Vector2f{-22.0f * sc, -4.0f * sc};
+
+    // Gear 2 (Right, smaller): R = 18 * sc, Teeth = 6, Counter-clockwise
+    const float r2 = 18.0f * sc;
+    const int N2 = 6;
+    const float ang2 = -ang1 * (r1 / r2) + (3.14159265f / static_cast<float>(N2));
+    const Vector2f p2 = pos + Vector2f{24.0f * sc, 10.0f * sc};
+
+    auto drawSingleGear = [&](const Vector2f& center, float r, int teeth, float ang, Color bodyCol, Color rimCol) {
+        for (int k = 0; k < teeth; ++k)
+        {
+            float tAng = ang + static_cast<float>(k) * (6.2831853f / static_cast<float>(teeth));
+            Vector2f tPos = center + Vector2f{std::cos(tAng) * (r * 0.95f), std::sin(tAng) * (r * 0.95f)};
+            float tW = r * 0.32f;
+            float tH = r * 0.34f;
+            context.Render.DrawRectangle(tW, tH, Transform2D{tPos, tAng}, bodyCol);
+            context.Render.DrawRectangleOutline(tW, tH, Transform2D{tPos, tAng}, rimCol, 1.2f * sc);
+        }
+
+        context.Render.DrawCircle(r * 0.85f, Transform2D{center}, bodyCol);
+        context.Render.DrawCircleOutline(r * 0.85f, Transform2D{center}, rimCol, 1.8f * sc);
+        context.Render.DrawCircleOutline(r * 0.55f, Transform2D{center}, Color{static_cast<uint8_t>(std::min(255, bodyCol.r + 25)), static_cast<uint8_t>(std::min(255, bodyCol.g + 25)), static_cast<uint8_t>(std::min(255, bodyCol.b + 25)), 200}, 1.2f * sc);
+        context.Render.DrawCircle(r * 0.28f, Transform2D{center}, Color{16, 20, 26, 255});
+        context.Render.DrawCircleOutline(r * 0.28f, Transform2D{center}, rimCol, 1.2f * sc);
+        context.Render.DrawCircle(r * 0.12f, Transform2D{center}, Color{235, 240, 250, 255});
+    };
+
+    drawSingleGear(p1, r1, N1, ang1, Color{130, 142, 160, 240}, Color{210, 225, 245, 255});
+    drawSingleGear(p2, r2, N2, ang2, Color{105, 115, 130, 240}, Color{185, 200, 220, 255});
+}
+
+void MenuScene::RenderWiiZoomedChannel(GameContext& context)
+{
+    if (m_selectedChannel < 0 || m_selectedChannel >= static_cast<int>(m_tvChannels.size())) return;
+    const auto& ch = m_tvChannels[m_selectedChannel];
+
+    if (m_zoomState == ChannelZoomState::ZoomingIn ||
+        m_zoomState == ChannelZoomState::ZoomingOut ||
+        m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+    {
+        RenderChannelGrid(context);
+    }
+
+    float p = m_zoomProgress;
+    float smoothT = p * p * (3.0f - 2.0f * p);
+
+    // Dim cathode glass background
+    uint8_t bgDimAlpha = static_cast<uint8_t>(smoothT * 220.0f);
+    context.Render.DrawRectangle(1390.0f, 910.0f, Transform2D{Vector2f{695.0f, 455.0f}}, Color{6, 8, 14, bgDimAlpha});
+
+    // Zoomed card occupies 100% of the CRT TV screen (1390 x 910)
+    Vector2f targetCenter{695.0f, 455.0f};
+    Vector2f targetSize{1390.0f, 910.0f};
+
+    Vector2f startPos = ch.BasePosition - Vector2f{105.0f, 85.0f};
+    Vector2f startSize = ch.BaseSize;
+
+    Vector2f curPos = startPos + (targetCenter - startPos) * smoothT;
+    Vector2f curSize = startSize + (targetSize - startSize) * smoothT;
+
+    context.Render.DrawRectangle(curSize.X, curSize.Y, Transform2D{curPos}, ch.CardBgColor);
+    Color glowCol{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, static_cast<uint8_t>(200 + 55 * std::sin(m_animTime * 5.0f))};
+    context.Render.DrawRectangleOutline(curSize.X, curSize.Y, Transform2D{curPos}, glowCol, 4.0f);
+
+    if (smoothT > 0.35f)
+    {
+        float contentAlpha = std::clamp((smoothT - 0.35f) / 0.65f, 0.0f, 1.0f);
+        float uiFade = 1.0f;
+        if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+        {
+            uiFade = std::clamp(1.0f - m_launchProgress * 2.8f, 0.0f, 1.0f);
+        }
+        else if (m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+        {
+            uiFade = std::clamp(1.0f - m_returnProgress * 2.8f, 0.0f, 1.0f);
+        }
+        uint8_t cAlpha = static_cast<uint8_t>(contentAlpha * 255.0f);
+        uint8_t uiAlpha = static_cast<uint8_t>(contentAlpha * uiFade * 255.0f);
+
+        // 1. Top Channel Header Bar (Full width across top of TV screen)
+        Vector2f headerPos = curPos - Vector2f{0.0f, curSize.Y * 0.5f - 40.0f};
+        context.Render.DrawRectangle(curSize.X, 60.0f, Transform2D{headerPos}, Color{16, 22, 34, cAlpha});
+        context.Render.DrawRectangleOutline(curSize.X, 60.0f, Transform2D{headerPos}, Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, static_cast<uint8_t>(cAlpha * 0.7f)}, 2.0f);
+        context.Render.DrawText(ch.ChannelNumber + "  //  " + ch.Title, m_fontId, 26.0f,
+                                Transform2D{headerPos - Vector2f{curSize.X * 0.5f - 40.0f, 16.0f}},
+                                Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, cAlpha});
+        context.Render.DrawText(ch.Subtitle, m_fontId, 20.0f,
+                                Transform2D{headerPos + Vector2f{curSize.X * 0.5f - 320.0f, -12.0f}},
+                                Color{200, 215, 235, cAlpha});
+
+        // 2. Center Large Animated Vignette / Preview (scaled up beautifully)
+        Vector2f centerVignettePos = curPos - Vector2f{0.0f, 25.0f};
+        float vignetteSc = (1.85f * smoothT);
+        if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+        {
+            vignetteSc = 1.85f * (1.0f + m_launchProgress * 0.35f);
+        }
+        else if (m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+        {
+            vignetteSc = 1.85f * (1.0f + m_returnProgress * 0.35f);
+        }
+
+        if (ch.Type == ChannelType::Campaign)
+        {
+            RenderCampaignPreview(context, centerVignettePos, vignetteSc, true);
+        }
+        else
+        {
+            RenderChannelVignette(context, ch, centerVignettePos, vignetteSc);
+        }
+
+        // 3. Channel Description Banner
+        if (uiAlpha > 2)
+        {
+            Vector2f descPos = curPos + Vector2f{0.0f, curSize.Y * 0.5f - 145.0f};
+            context.Render.DrawRectangle(1050.0f, 44.0f, Transform2D{descPos}, Color{12, 16, 26, static_cast<uint8_t>(uiAlpha * 0.85f)});
+            context.Render.DrawRectangleOutline(1050.0f, 44.0f, Transform2D{descPos}, Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, static_cast<uint8_t>(uiAlpha * 0.6f)}, 1.5f);
+            context.Render.DrawTextCentered(ch.Description, m_fontId, 19.0f, Transform2D{descPos}, Color{225, 235, 250, uiAlpha});
+
+            // 4. Wii Channel Style Action Buttons: [ RETOUR ] and [ ENTRER ]
+            Vector2f btnRetourPos = curPos + Vector2f{-240.0f, curSize.Y * 0.5f - 65.0f};
+            Vector2f btnEntrerPos = curPos + Vector2f{240.0f, curSize.Y * 0.5f - 65.0f};
+            Vector2f btnSize{260.0f, 62.0f};
+
+            // RETOUR Button
+            bool retourActive = (m_zoomChoice == 0);
+            Color retourBg = retourActive ? Color{45, 65, 95, uiAlpha} : Color{20, 26, 38, uiAlpha};
+            Color retourBorder = retourActive ? Color{90, 200, 255, uiAlpha} : Color{60, 75, 100, uiAlpha};
+            context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{btnRetourPos}, retourBg);
+            context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{btnRetourPos}, retourBorder, retourActive ? 3.5f : 1.5f);
+            context.Render.DrawTextCentered("[ RETOUR ]", m_fontId, 23.0f, Transform2D{btnRetourPos}, Color{240, 245, 255, uiAlpha});
+
+            // ENTRER Button
+            bool entrerActive = (m_zoomChoice == 1);
+            Color entrerBg = entrerActive ? Color{40, 110, 75, uiAlpha} : Color{20, 48, 35, uiAlpha};
+            Color entrerBorder = entrerActive ? Colors::Gold : Color{70, 140, 95, uiAlpha};
+            context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{btnEntrerPos}, entrerBg);
+            context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{btnEntrerPos}, entrerBorder, entrerActive ? 3.5f : 1.5f);
+            context.Render.DrawTextCentered("[ ENTRER ]", m_fontId, 23.0f, Transform2D{btnEntrerPos}, Color{255, 255, 255, uiAlpha});
+
+            // 5. Left & Right Channel Switch Chevrons on TV Glass
+            Vector2f chLeftPos{50.0f, 455.0f};
+            Vector2f chRightPos{1340.0f, 455.0f};
+            Vector2f navBtnSize{56.0f, 80.0f};
+
+            // Left Chevron [ < ]
+            context.Render.DrawRectangle(navBtnSize.X, navBtnSize.Y, Transform2D{chLeftPos}, Color{16, 22, 34, static_cast<uint8_t>(uiAlpha * 0.75f)});
+            context.Render.DrawRectangleOutline(navBtnSize.X, navBtnSize.Y, Transform2D{chLeftPos}, Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, static_cast<uint8_t>(uiAlpha * 0.7f)}, 1.5f);
+            context.Render.DrawTextCentered("<", m_fontId, 32.0f, Transform2D{chLeftPos - Vector2f{2.0f, 2.0f}}, Color{235, 245, 255, uiAlpha});
+
+            // Right Chevron [ > ]
+            context.Render.DrawRectangle(navBtnSize.X, navBtnSize.Y, Transform2D{chRightPos}, Color{16, 22, 34, static_cast<uint8_t>(uiAlpha * 0.75f)});
+            context.Render.DrawRectangleOutline(navBtnSize.X, navBtnSize.Y, Transform2D{chRightPos}, Color{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, static_cast<uint8_t>(uiAlpha * 0.7f)}, 1.5f);
+            context.Render.DrawTextCentered(">", m_fontId, 32.0f, Transform2D{chRightPos + Vector2f{2.0f, -2.0f}}, Color{235, 245, 255, uiAlpha});
+        }
+    }
+}
+
+void MenuScene::CycleChannel(int step, GameContext& context)
+{
+    if (m_tvChannels.empty()) return;
+    int count = static_cast<int>(m_tvChannels.size());
+    m_selectedChannel = (m_selectedChannel + step + count) % count;
+    m_channelSwitchGlitch = 0.45f;
+    if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+    if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 6.0f);
+
+    const auto& ch = m_tvChannels[m_selectedChannel];
+    m_osdText = ch.ChannelNumber + "  " + ch.Title;
+    m_osdTimer = 2.0f;
+
+    if (ch.Type == ChannelType::Campaign)
+    {
+        InitCampaignPreviewLevel();
+    }
+}
+
+void MenuScene::UpdateTVLayout(const GameContext& context)
+{
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+    m_tvLayout.CabinetCenter = Vector2f{viewSize.X * 0.5f, viewSize.Y * 0.5f};
+
+    // Calculate baseScale so that the TV contents (Glass + Control Panel) fit with zero clipping
+    // on ANY display aspect ratio (16:10 laptop screens, 16:9 monitors, ultrawide, etc.)
+    const float fitScaleX = (viewSize.X * 0.97f) / 1880.0f;
+    const float fitScaleY = (viewSize.Y * 0.96f) / 1040.0f;
+    const float baseScale = std::min(fitScaleX, fitScaleY);
+
+    if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+    {
+        // Smooth camera dive: TV cathode screen expands to fill 100% of the viewport
+        const float targetScale = std::max(viewSize.X / 1390.0f, viewSize.Y / 910.0f) * 1.05f;
+        const float diveT = m_launchProgress * m_launchProgress * (3.0f - 2.0f * m_launchProgress);
+        m_tvLayout.Scale = baseScale + (targetScale - baseScale) * diveT;
+
+        const Vector2f baseGlassCenter = m_tvLayout.CabinetCenter + (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * baseScale;
+        const Vector2f targetGlassCenter = Vector2f{viewSize.X * 0.5f, viewSize.Y * 0.5f};
+        m_tvLayout.GlassCenter = baseGlassCenter + (targetGlassCenter - baseGlassCenter) * diveT;
+        m_tvLayout.CabinetCenter = m_tvLayout.GlassCenter - (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * m_tvLayout.Scale;
+    }
+    else if (m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+    {
+        // Smooth camera pull-back: TV cathode screen dezooms from 100% full screen back to cabinet
+        const float targetScale = std::max(viewSize.X / 1390.0f, viewSize.Y / 910.0f) * 1.05f;
+        const float diveT = m_returnProgress * m_returnProgress * (3.0f - 2.0f * m_returnProgress);
+        m_tvLayout.Scale = baseScale + (targetScale - baseScale) * diveT;
+
+        const Vector2f baseGlassCenter = m_tvLayout.CabinetCenter + (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * baseScale;
+        const Vector2f targetGlassCenter = Vector2f{viewSize.X * 0.5f, viewSize.Y * 0.5f};
+        m_tvLayout.GlassCenter = baseGlassCenter + (targetGlassCenter - baseGlassCenter) * diveT;
+        m_tvLayout.CabinetCenter = m_tvLayout.GlassCenter - (Vector2f{800.0f, 540.0f} - Vector2f{960.0f, 540.0f}) * m_tvLayout.Scale;
+    }
+    else
+    {
+        m_tvLayout.Scale = baseScale;
+        m_tvLayout.GlassCenter = m_tvLayout.ToScreenPos(Vector2f{800.0f, 540.0f});
+    }
+
+    m_tvLayout.GlassSize = m_tvLayout.ToScreenSize(Vector2f{1390.0f, 910.0f});
+    m_tvLayout.GlassRectUV = context.Render.WorldRectToNormalizedUV(m_tvLayout.GlassCenter, m_tvLayout.GlassSize);
+
+    for (auto& ch : m_tvChannels)
+    {
+        ch.Position = m_tvLayout.ToScreenPos(ch.BasePosition);
+        ch.Size = m_tvLayout.ToScreenSize(ch.BaseSize);
+    }
+}
+
+void MenuScene::UpdateTVControls(float dt, GameContext& context)
+{
+    // Ensure layout is up-to-date with current window / logical size
+    UpdateTVLayout(context);
+    const auto& L = m_tvLayout;
+
+    // 1. Power-off shutdown collapse animation in progress
+    if (m_isPoweringOff)
+    {
+        m_powerOffTimer += dt;
+        if (m_powerOffTimer >= 0.85f)
+        {
             context.Render.GetWindow().Close();
-        },
-        .Position = {0.0f, startY + stepY * 7.0f},
-        .Size = {btnWidth, btnHeight},
-        .DefaultColor = Color{90, 30, 35, 255},
-        .HoverColor = Color{130, 45, 50, 255},
-        .PressedColor = Color{60, 20, 25, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f
-    });
+        }
+        return;
+    }
+
+    auto [mx, my] = context.Input.GetMousePosition();
+    Vector2f mPos{mx, my};
+    Vector2f baseMousePos = L.ToBasePos(mPos);
+
+    // 0. Standby Mode (TV Cathode Screen Asleep)
+    if (m_isStandby)
+    {
+        m_animTime += dt;
+        bool wakeUp = false;
+        if (context.Input.GetLastKeyPressed() != KeyCode::Count ||
+            context.Input.GetAnyGamepadInputTriggered() >= 0 ||
+            context.Input.IsMouseButtonPress(MouseButton::Left) ||
+            context.Input.IsMouseButtonPress(MouseButton::Right) ||
+            context.Input.IsMenuSelectTriggered() ||
+            context.Input.IsMenuCancelTriggered())
+        {
+            wakeUp = true;
+        }
+
+        // Clicking the chassis power button also wakes up the TV
+        float distToPowerBtn = std::sqrt((baseMousePos.X - 1690.0f) * (baseMousePos.X - 1690.0f) + (baseMousePos.Y - 220.0f) * (baseMousePos.Y - 220.0f));
+        if (distToPowerBtn <= 26.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            wakeUp = true;
+        }
+
+        if (wakeUp)
+        {
+            m_isStandby = false;
+            m_channelSwitchGlitch = 0.5f;
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 6.0f);
+            m_osdText = "POWER ON";
+            m_osdTimer = 2.0f;
+        }
+        return;
+    }
+
+    // 2. Power-off dialog active
+    if (m_showPowerOffDialog)
+    {
+        // Cancel via MenuCancel (Escape / Gamepad B)
+        if (context.Input.IsMenuCancelTriggered())
+        {
+            m_showPowerOffDialog = false;
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            return;
+        }
+
+        // Navigate between Cancel (0), Standby (1), and Power Off (2)
+        if (context.Input.IsMenuLeftTriggered())
+        {
+            m_powerDialogChoice = (m_powerDialogChoice + 2) % 3;
+            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 10.0f);
+        }
+        if (context.Input.IsMenuRightTriggered())
+        {
+            m_powerDialogChoice = (m_powerDialogChoice + 1) % 3;
+            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 10.0f);
+        }
+
+        // Confirm choice
+        if (context.Input.IsMenuSelectTriggered())
+        {
+            if (m_powerDialogChoice == 0)
+            {
+                m_showPowerOffDialog = false;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            }
+            else if (m_powerDialogChoice == 1)
+            {
+                m_isStandby = true;
+                m_showPowerOffDialog = false;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            }
+            else if (m_powerDialogChoice == 2)
+            {
+                m_isPoweringOff = true;
+                m_powerOffTimer = 0.0f;
+                m_showPowerOffDialog = false;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            }
+            return;
+        }
+
+        // Mouse hover and click on dialog buttons (base coordinates)
+        // Cancel button: (605.0f, 620.0f), size (175.0f, 52.0f)
+        if (std::abs(baseMousePos.X - 605.0f) <= 87.5f && std::abs(baseMousePos.Y - 620.0f) <= 26.0f)
+        {
+            m_powerDialogChoice = 0;
+            if (context.Input.IsMouseButtonPress(MouseButton::Left))
+            {
+                m_showPowerOffDialog = false;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            }
+            return;
+        }
+
+        // Standby button: (800.0f, 620.0f), size (175.0f, 52.0f)
+        if (std::abs(baseMousePos.X - 800.0f) <= 87.5f && std::abs(baseMousePos.Y - 620.0f) <= 26.0f)
+        {
+            m_powerDialogChoice = 1;
+            if (context.Input.IsMouseButtonPress(MouseButton::Left))
+            {
+                m_isStandby = true;
+                m_showPowerOffDialog = false;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            }
+            return;
+        }
+
+        // Power Off button: (995.0f, 620.0f), size (175.0f, 52.0f)
+        if (std::abs(baseMousePos.X - 995.0f) <= 87.5f && std::abs(baseMousePos.Y - 620.0f) <= 26.0f)
+        {
+            m_powerDialogChoice = 2;
+            if (context.Input.IsMouseButtonPress(MouseButton::Left))
+            {
+                m_isPoweringOff = true;
+                m_powerOffTimer = 0.0f;
+                m_showPowerOffDialog = false;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            }
+            return;
+        }
+        return;
+    }
+
+    // 3. Normal TV operation timers
+    m_animTime += dt;
+    if (m_osdTimer > 0.0f) m_osdTimer -= dt;
+    if (m_channelSwitchGlitch > 0.0f) m_channelSwitchGlitch = std::max(0.0f, m_channelSwitchGlitch - dt * 2.0f);
+    if (m_navDebounceTimer > 0.0f) m_navDebounceTimer -= dt;
+
+    if (m_tvChannels.empty()) return;
+    if (m_selectedChannel < 0 || m_selectedChannel >= static_cast<int>(m_tvChannels.size()))
+    {
+        m_selectedChannel = 0;
+    }
+
+    // 4. Wii Channel Zoom State Machine
+    if (m_zoomState == ChannelZoomState::ReturningFromFullScreen)
+    {
+        m_returnTimer += dt;
+        m_returnProgress = std::clamp(1.0f - (m_returnTimer / 0.65f), 0.0f, 1.0f);
+        m_zoomProgress = m_returnProgress;
+        if (m_returnTimer >= 0.65f)
+        {
+            m_returnProgress = 0.0f;
+            m_zoomProgress = 0.0f;
+            m_zoomState = ChannelZoomState::Grid;
+            m_returnTimer = 0.0f;
+        }
+        return;
+    }
+    if (m_zoomState == ChannelZoomState::LaunchingFullScreen)
+    {
+        m_launchTimer += dt;
+        m_launchProgress = std::clamp(m_launchTimer / 0.65f, 0.0f, 1.0f);
+        if (m_launchTimer >= 0.65f)
+        {
+            m_launchProgress = 1.0f;
+            LaunchChannel(m_selectedChannel, context);
+            m_zoomState = ChannelZoomState::Grid;
+            m_zoomProgress = 0.0f;
+            m_launchProgress = 0.0f;
+            m_launchTimer = 0.0f;
+        }
+        return;
+    }
+    if (m_zoomState == ChannelZoomState::ZoomingIn)
+    {
+        m_zoomTimer += dt;
+        m_zoomProgress = std::clamp(m_zoomTimer / 0.30f, 0.0f, 1.0f);
+        if (m_zoomTimer >= 0.30f)
+        {
+            m_zoomProgress = 1.0f;
+            m_zoomState = ChannelZoomState::ZoomedView;
+        }
+        return;
+    }
+    if (m_zoomState == ChannelZoomState::ZoomingOut)
+    {
+        m_zoomTimer += dt;
+        m_zoomProgress = std::clamp(1.0f - (m_zoomTimer / 0.30f), 0.0f, 1.0f);
+        if (m_zoomTimer >= 0.30f)
+        {
+            m_zoomProgress = 0.0f;
+            m_zoomState = ChannelZoomState::Grid;
+        }
+        return;
+    }
+    if (m_zoomState == ChannelZoomState::ZoomedView)
+    {
+        // Up / Down arrows, PageUp / PageDown, brackets, or gamepad bumpers switch channel while zoomed
+        if (context.Input.IsMenuUpTriggered() || context.Input.IsKeyPress(KeyCode::PageUp) ||
+            context.Input.IsKeyPress(KeyCode::RBracket) || context.Input.IsJoystickButtonPress(0, 5))
+        {
+            CycleChannel(1, context);
+            return;
+        }
+        if (context.Input.IsMenuDownTriggered() || context.Input.IsKeyPress(KeyCode::PageDown) ||
+            context.Input.IsKeyPress(KeyCode::LBracket) || context.Input.IsJoystickButtonPress(0, 4))
+        {
+            CycleChannel(-1, context);
+            return;
+        }
+
+        // Left / Right arrows switch between RETOUR (0) and ENTRER (1)
+        if (context.Input.IsMenuLeftTriggered() || context.Input.IsMenuRightTriggered())
+        {
+            m_zoomChoice = 1 - m_zoomChoice;
+            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 10.0f);
+        }
+
+        // Escape / Cancel returns to 4x2 grid (RETOUR)
+        if (context.Input.IsMenuCancelTriggered())
+        {
+            m_zoomState = ChannelZoomState::ZoomingOut;
+            m_zoomTimer = 0.0f;
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            return;
+        }
+
+        // Enter / Select activates the selected button
+        if (context.Input.IsMenuSelectTriggered())
+        {
+            if (m_zoomChoice == 1)
+            {
+                m_zoomState = ChannelZoomState::LaunchingFullScreen;
+                m_launchTimer = 0.0f;
+                m_launchProgress = 0.0f;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+                if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 6.0f);
+            }
+            else
+            {
+                m_zoomState = ChannelZoomState::ZoomingOut;
+                m_zoomTimer = 0.0f;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            }
+            return;
+        }
+
+        // Mouse hover and click on RETOUR and ENTRER buttons mapped into CRT glass texture space
+        Vector2f mouseOnGlass = Vector2f{695.0f, 455.0f} + (mPos - L.GlassCenter) / (L.Scale > 0.0001f ? L.Scale : 1.0f);
+        Vector2f btnRetourPos{455.0f, 845.0f};
+        Vector2f btnEntrerPos{935.0f, 845.0f};
+        Vector2f btnHalfSize{130.0f, 31.0f};
+
+        // Left & Right TV Glass Chevrons (< and >)
+        if (std::abs(mouseOnGlass.X - 50.0f) <= 30.0f && std::abs(mouseOnGlass.Y - 455.0f) <= 45.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            CycleChannel(-1, context);
+            return;
+        }
+        if (std::abs(mouseOnGlass.X - 1340.0f) <= 30.0f && std::abs(mouseOnGlass.Y - 455.0f) <= 45.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            CycleChannel(1, context);
+            return;
+        }
+
+        // Physical TV Chassis CH + and CH - Button clicks while zoomed
+        if (std::abs(baseMousePos.X - 1690.0f) <= 65.0f && std::abs(baseMousePos.Y - 472.0f) <= 16.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            CycleChannel(1, context);
+            return;
+        }
+        if (std::abs(baseMousePos.X - 1690.0f) <= 65.0f && std::abs(baseMousePos.Y - 516.0f) <= 16.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            CycleChannel(-1, context);
+            return;
+        }
+
+        // Physical Chassis Volume & Power clicks while zoomed
+        float distToVolDial = std::sqrt((baseMousePos.X - 1690.0f) * (baseMousePos.X - 1690.0f) + (baseMousePos.Y - 360.0f) * (baseMousePos.Y - 360.0f));
+        if (distToVolDial <= 48.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            float delta = (baseMousePos.X < 1690.0f) ? -10.0f : 10.0f;
+            m_masterVolume = std::clamp(m_masterVolume + delta, 0.0f, 100.0f);
+            context.Audio.SetMasterVolume(m_masterVolume);
+            m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+            m_osdTimer = 2.0f;
+            m_osdText = "VOL  " + std::to_string(static_cast<int>(m_masterVolume)) + "%";
+            PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+            PlayerPrefs::Save();
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 10.0f);
+        }
+        float wheelDelta = context.Input.GetMouseWheelDelta();
+        if (wheelDelta != 0.0f)
+        {
+            m_masterVolume = std::clamp(m_masterVolume + wheelDelta * 5.0f, 0.0f, 100.0f);
+            context.Audio.SetMasterVolume(m_masterVolume);
+            m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+            m_osdTimer = 2.0f;
+            m_osdText = "VOL  " + std::to_string(static_cast<int>(m_masterVolume)) + "%";
+            PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+            PlayerPrefs::Save();
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 10.0f);
+        }
+        float distToPowerBtn = std::sqrt((baseMousePos.X - 1690.0f) * (baseMousePos.X - 1690.0f) + (baseMousePos.Y - 220.0f) * (baseMousePos.Y - 220.0f));
+        if (distToPowerBtn <= 26.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            m_showPowerOffDialog = true;
+            m_powerDialogChoice = 1;
+            if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+            return;
+        }
+
+        if (std::abs(mouseOnGlass.X - btnRetourPos.X) <= btnHalfSize.X && std::abs(mouseOnGlass.Y - btnRetourPos.Y) <= btnHalfSize.Y)
+        {
+            m_zoomChoice = 0;
+            if (context.Input.IsMouseButtonPress(MouseButton::Left))
+            {
+                m_zoomState = ChannelZoomState::ZoomingOut;
+                m_zoomTimer = 0.0f;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+                return;
+            }
+        }
+        else if (std::abs(mouseOnGlass.X - btnEntrerPos.X) <= btnHalfSize.X && std::abs(mouseOnGlass.Y - btnEntrerPos.Y) <= btnHalfSize.Y)
+        {
+            m_zoomChoice = 1;
+            if (context.Input.IsMouseButtonPress(MouseButton::Left))
+            {
+                m_zoomState = ChannelZoomState::LaunchingFullScreen;
+                m_launchTimer = 0.0f;
+                m_launchProgress = 0.0f;
+                if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+                if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 6.0f);
+                return;
+            }
+        }
+        return;
+    }
+
+    // Scale tweening for channel cards
+    for (size_t i = 0; i < m_tvChannels.size(); ++i)
+    {
+        float target = (static_cast<int>(i) == m_selectedChannel) ? 1.07f : 1.0f;
+        m_tvChannels[i].CurrentScale += (target - m_tvChannels[i].CurrentScale) * std::min(1.0f, 16.0f * dt);
+    }
+
+    // 5. Physical Chassis Controls: Power Button, Volume Dial, Channel Step
+    // Standby direct hotkey: V or S when on TV grid
+    if (m_zoomState == ChannelZoomState::Grid && (context.Input.IsKeyPress(KeyCode::V) || context.Input.IsKeyPress(KeyCode::S)))
+    {
+        m_isStandby = true;
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+        return;
+    }
+
+    // Chassis Power Button: center (1690.0f, 220.0f), radius 26.0f in base coords
+    float distToPowerBtn = std::sqrt((baseMousePos.X - 1690.0f) * (baseMousePos.X - 1690.0f) + (baseMousePos.Y - 220.0f) * (baseMousePos.Y - 220.0f));
+    if (distToPowerBtn <= 26.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+    {
+        m_showPowerOffDialog = true;
+        m_powerDialogChoice = 1; // Default to Standby
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+        return;
+    }
+
+    // Volume adjustment helper
+    auto adjustVolume = [this, &context](float delta) {
+        m_masterVolume = std::clamp(m_masterVolume + delta, 0.0f, 100.0f);
+        context.Audio.SetMasterVolume(m_masterVolume);
+        m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+        m_osdTimer = 2.0f;
+        m_osdText = "VOL  " + std::to_string(static_cast<int>(m_masterVolume)) + "%";
+        PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+        PlayerPrefs::Save();
+        UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 10.0f);
+    };
+
+    // Mouse wheel volume control
+    float wheelDelta = context.Input.GetMouseWheelDelta();
+    if (wheelDelta != 0.0f)
+    {
+        adjustVolume(wheelDelta * 5.0f);
+    }
+
+    // Volume keys: + / - / = / _
+    if (context.Input.IsKeyPress(KeyCode::Add) || context.Input.IsKeyPress(KeyCode::Equal))
+    {
+        adjustVolume(5.0f);
+    }
+    if (context.Input.IsKeyPress(KeyCode::Subtract) || context.Input.IsKeyPress(KeyCode::Hyphen))
+    {
+        adjustVolume(-5.0f);
+    }
+
+    // Chassis Volume Dial click: center (1690.0f, 360.0f), radius 48.0f
+    float distToVolDial = std::sqrt((baseMousePos.X - 1690.0f) * (baseMousePos.X - 1690.0f) + (baseMousePos.Y - 360.0f) * (baseMousePos.Y - 360.0f));
+    if (distToVolDial <= 48.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+    {
+        if (baseMousePos.X < 1690.0f) adjustVolume(-10.0f);
+        else adjustVolume(10.0f);
+    }
+
+    // Chassis Channel Step Buttons (Fixed inverted logic: CH + advances, CH - decrements)
+    // CH +: (1690.0f, 472.0f), size (130.0f, 32.0f)
+    if (std::abs(baseMousePos.X - 1690.0f) <= 65.0f && std::abs(baseMousePos.Y - 472.0f) <= 16.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+    {
+        CycleChannel(1, context);
+    }
+    // CH -: (1690.0f, 516.0f), size (130.0f, 32.0f)
+    if (std::abs(baseMousePos.X - 1690.0f) <= 65.0f && std::abs(baseMousePos.Y - 516.0f) <= 16.0f && context.Input.IsMouseButtonPress(MouseButton::Left))
+    {
+        CycleChannel(-1, context);
+    }
+
+    // Channel switch keys: PageUp / PageDown / [ / ]
+    if (context.Input.IsKeyPress(KeyCode::PageUp) || context.Input.IsKeyPress(KeyCode::RBracket))
+    {
+        CycleChannel(1, context);
+    }
+    if (context.Input.IsKeyPress(KeyCode::PageDown) || context.Input.IsKeyPress(KeyCode::LBracket))
+    {
+        CycleChannel(-1, context);
+    }
+
+    // 6. Channel Card Mouse Hover & Click (Wii Channel select zoom)
+    for (size_t i = 0; i < m_tvChannels.size(); ++i)
+    {
+        const auto& ch = m_tvChannels[i];
+        if (std::abs(baseMousePos.X - ch.BasePosition.X) <= ch.BaseSize.X * 0.5f &&
+            std::abs(baseMousePos.Y - ch.BasePosition.Y) <= ch.BaseSize.Y * 0.5f)
+        {
+            if (m_hoveredChannel != static_cast<int>(i))
+            {
+                m_hoveredChannel = static_cast<int>(i);
+                m_selectedChannel = static_cast<int>(i);
+                if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 10.0f);
+            }
+
+            if (context.Input.IsMouseButtonPress(MouseButton::Left))
+            {
+                m_selectedChannel = static_cast<int>(i);
+                m_zoomState = ChannelZoomState::ZoomingIn;
+                m_zoomTimer = 0.0f;
+                m_zoomChoice = 1;
+                if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 10.0f);
+                return;
+            }
+        }
+    }
+
+    // 7. Keyboard / Gamepad 4x2 Navigation
+    if (m_navDebounceTimer <= 0.0f)
+    {
+        int prevSelected = m_selectedChannel;
+        int col = m_selectedChannel % 4;
+        int row = m_selectedChannel / 4;
+
+        if (context.Input.IsMenuLeftTriggered())
+        {
+            col = (col + 3) % 4;
+            m_selectedChannel = row * 4 + col;
+            m_navDebounceTimer = 0.20f;
+        }
+        else if (context.Input.IsMenuRightTriggered())
+        {
+            col = (col + 1) % 4;
+            m_selectedChannel = row * 4 + col;
+            m_navDebounceTimer = 0.20f;
+        }
+        else if (context.Input.IsMenuUpTriggered())
+        {
+            row = (row + 1) % 2;
+            m_selectedChannel = row * 4 + col;
+            m_navDebounceTimer = 0.20f;
+        }
+        else if (context.Input.IsMenuDownTriggered())
+        {
+            row = (row + 1) % 2;
+            m_selectedChannel = row * 4 + col;
+            m_navDebounceTimer = 0.20f;
+        }
+
+        if (m_selectedChannel != prevSelected)
+        {
+            if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 10.0f);
+        }
+    }
+
+    // 8. Channel Select / Zoom confirmation: Enter, Space, Gamepad A
+    if (context.Input.IsMenuSelectTriggered())
+    {
+        m_zoomState = ChannelZoomState::ZoomingIn;
+        m_zoomTimer = 0.0f;
+        m_zoomChoice = 1;
+        if (m_tvHoverSfxId != 0) context.Audio.PlaySfx(m_tvHoverSfxId, 10.0f);
+        return;
+    }
+
+    // 9. Escape / Gamepad B brings up Power Off dialog
+    if (context.Input.IsMenuCancelTriggered())
+    {
+        m_showPowerOffDialog = true;
+        m_powerDialogChoice = 0;
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+        return;
+    }
+}
+
+void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
+{
+    if (channelIndex < 0 || channelIndex >= static_cast<int>(m_tvChannels.size())) return;
+    const auto& ch = m_tvChannels[channelIndex];
+
+    m_zoomState = ChannelZoomState::Grid;
+    m_zoomProgress = 0.0f;
+    m_launchProgress = 0.0f;
+    m_launchTimer = 0.0f;
+
+    if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+    if (m_tvStaticSfxId != 0) context.Audio.PlaySfx(m_tvStaticSfxId, 6.0f);
+    m_channelSwitchGlitch = 0.45f;
+
+    switch (ch.Type)
+    {
+    case ChannelType::Campaign:
+        context.Scenes.LoadSceneWithTransition<GameScene>(SceneTransitionType::StaticSnow, 0.65f);
+        break;
+    case ChannelType::LevelSelect:
+        context.Scenes.LoadSceneWithTransition<LevelSelectScene>(SceneTransitionType::StaticSnow, 0.65f);
+        break;
+    case ChannelType::TetrisEndless:
+        context.Scenes.LoadSceneWithTransition<GameScene>(SceneTransitionType::StaticSnow, 0.65f);
+        break;
+    case ChannelType::Workshop:
+        m_channelSwitchGlitch = 0.0f;
+        OpenModal(m_workshopCanvas);
+        OpenWorkshopTab(m_workshopUpgradesCanvas);
+        break;
+    case ChannelType::Leaderboard:
+        m_channelSwitchGlitch = 0.0f;
+        OpenModal(m_leaderboardCanvas);
+        break;
+    case ChannelType::Achievements:
+        m_channelSwitchGlitch = 0.0f;
+        OpenModal(m_workshopCanvas);
+        OpenWorkshopTab(m_workshopProfileCanvas);
+        break;
+    case ChannelType::Sandbox:
+        context.Scenes.LoadSceneWithTransition<SandboxScene>(SceneTransitionType::StaticSnow, 0.65f);
+        break;
+    case ChannelType::Settings:
+        m_channelSwitchGlitch = 0.0f;
+        OpenModal(m_settingsCanvas);
+        OpenSettingsTab(m_audioCanvas);
+        break;
+    default:
+        break;
+    }
+}
+
+void MenuScene::RenderRetroTVChassis(GameContext& context) const
+{
+    const auto& L = m_tvLayout;
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+
+    // 1. Outer Dark Woodgrain Cabinet Frame spanning 100% of the player's screen
+    context.Render.DrawRectangle(viewSize.X * 1.05f, viewSize.Y * 1.05f, Transform2D{L.CabinetCenter}, Color{24, 18, 14, 255});
+
+    // Cabinet Bevels along window edges
+    const float bevelThickness = L.ToScreenDim(16.0f);
+    // Top bevel
+    context.Render.DrawRectangle(viewSize.X, bevelThickness, Transform2D{Vector2f{viewSize.X * 0.5f, bevelThickness * 0.5f}}, Color{65, 52, 42, 255});
+    // Left bevel
+    context.Render.DrawRectangle(bevelThickness, viewSize.Y, Transform2D{Vector2f{bevelThickness * 0.5f, viewSize.Y * 0.5f}}, Color{55, 44, 35, 255});
+    // Bottom bevel
+    context.Render.DrawRectangle(viewSize.X, bevelThickness, Transform2D{Vector2f{viewSize.X * 0.5f, viewSize.Y - bevelThickness * 0.5f}}, Color{12, 9, 7, 255});
+    // Right bevel
+    context.Render.DrawRectangle(bevelThickness, viewSize.Y, Transform2D{Vector2f{viewSize.X - bevelThickness * 0.5f, viewSize.Y * 0.5f}}, Color{14, 11, 8, 255});
+
+    // 4 Corner Screws near the corners of the player's screen
+    const float screwMargin = L.ToScreenDim(32.0f);
+    const Vector2f screws[4] = {
+        {screwMargin, screwMargin},
+        {viewSize.X - screwMargin, screwMargin},
+        {screwMargin, viewSize.Y - screwMargin},
+        {viewSize.X - screwMargin, viewSize.Y - screwMargin}
+    };
+    for (const auto& scPos : screws)
+    {
+        context.Render.DrawCircle(L.ToScreenDim(5.0f), Transform2D{scPos}, Color{160, 165, 175, 255});
+        context.Render.DrawLine(scPos - Vector2f{L.ToScreenDim(3.0f), 0.0f}, scPos + Vector2f{L.ToScreenDim(3.0f), 0.0f}, Color{40, 45, 55, 255}, L.ToScreenDim(1.2f));
+        context.Render.DrawLine(scPos - Vector2f{0.0f, L.ToScreenDim(3.0f)}, scPos + Vector2f{0.0f, L.ToScreenDim(3.0f)}, Color{40, 45, 55, 255}, L.ToScreenDim(1.2f));
+    }
+
+    // 2. Right Control Panel
+    const Vector2f panelCenter = L.ToScreenPos(Vector2f{1690.0f, 540.0f});
+    context.Render.DrawRectangle(L.ToScreenDim(300.0f), L.ToScreenDim(960.0f), Transform2D{panelCenter}, Color{32, 36, 44, 255});
+    context.Render.DrawRectangleOutline(L.ToScreenDim(300.0f), L.ToScreenDim(960.0f), Transform2D{panelCenter}, Color{55, 62, 75, 255}, L.ToScreenDim(3.0f));
+
+    // Section Demarcations & Recessed Grooves
+    const float sectionDividersY[5] = {175.0f, 285.0f, 435.0f, 560.0f, 835.0f};
+    for (float dy : sectionDividersY)
+    {
+        Vector2f pA = L.ToScreenPos(Vector2f{1555.0f, dy});
+        Vector2f pB = L.ToScreenPos(Vector2f{1825.0f, dy});
+        context.Render.DrawLine(pA, pB, Color{15, 18, 24, 255}, L.ToScreenDim(2.5f));
+        context.Render.DrawLine(pA + Vector2f{0.0f, L.ToScreenDim(2.0f)}, pB + Vector2f{0.0f, L.ToScreenDim(2.0f)}, Color{60, 68, 82, 180}, L.ToScreenDim(1.0f));
+    }
+
+    // Top Nameplate Badge ("REBREAKER RELOADED")
+    const Vector2f badgeCenter = L.ToScreenPos(Vector2f{1690.0f, 125.0f});
+    context.Render.DrawRectangle(L.ToScreenDim(246.0f), L.ToScreenDim(48.0f), Transform2D{badgeCenter}, Color{42, 34, 18, 255});
+    context.Render.DrawRectangleOutline(L.ToScreenDim(246.0f), L.ToScreenDim(48.0f), Transform2D{badgeCenter}, Color{220, 180, 70, 255}, L.ToScreenDim(2.0f));
+    context.Render.DrawTextCentered("REBREAKER RELOADED", m_fontId, L.ToScreenDim(17.0f), Transform2D{badgeCenter}, Colors::Gold);
+
+    // Master Power Button & Recessed Socket
+    const Vector2f pwrCenter = L.ToScreenPos(Vector2f{1690.0f, 220.0f});
+    context.Render.DrawCircle(L.ToScreenDim(32.0f), Transform2D{pwrCenter}, Color{16, 18, 22, 255});
+    context.Render.DrawCircleOutline(L.ToScreenDim(32.0f), Transform2D{pwrCenter}, Color{48, 54, 65, 255}, L.ToScreenDim(1.5f));
+    context.Render.DrawCircle(L.ToScreenDim(24.0f), Transform2D{pwrCenter}, Color{180, 40, 45, 255});
+    context.Render.DrawCircleOutline(L.ToScreenDim(24.0f), Transform2D{pwrCenter}, Color{240, 80, 85, 255}, L.ToScreenDim(2.0f));
+    context.Render.DrawTextCentered("POWER", m_fontId, L.ToScreenDim(13.0f), Transform2D{pwrCenter + Vector2f{0.0f, L.ToScreenDim(38.0f)}}, Color{200, 210, 225, 255});
+
+    // Power Indicator LED
+    const Vector2f ledPos = L.ToScreenPos(Vector2f{1690.0f + 68.0f, 220.0f});
+    context.Render.DrawCircle(L.ToScreenDim(8.0f), Transform2D{ledPos}, Color{20, 25, 30, 255});
+    if (m_showPowerOffDialog)
+    {
+        uint8_t pulseRed = static_cast<uint8_t>(180 + 75 * std::sin(m_animTime * 8.0f));
+        context.Render.DrawCircle(L.ToScreenDim(5.0f), Transform2D{ledPos}, Color{pulseRed, 40, 40, 255});
+    }
+    else if (m_isStandby)
+    {
+        uint8_t pulseAmber = static_cast<uint8_t>(180 + 65 * std::sin(m_animTime * 3.0f));
+        context.Render.DrawCircle(L.ToScreenDim(5.0f), Transform2D{ledPos}, Color{pulseAmber, 140, 30, 255});
+    }
+    else
+    {
+        context.Render.DrawCircle(L.ToScreenDim(5.0f), Transform2D{ledPos}, Color{50, 255, 75, 255});
+    }
+
+    // Rotary Volume Dial & Basin
+    const Vector2f volCenter = L.ToScreenPos(Vector2f{1690.0f, 360.0f});
+    context.Render.DrawTextCentered("VOLUME", m_fontId, L.ToScreenDim(13.0f), Transform2D{volCenter - Vector2f{0.0f, L.ToScreenDim(56.0f)}}, Color{200, 210, 225, 255});
+    context.Render.DrawCircle(L.ToScreenDim(48.0f), Transform2D{volCenter}, Color{18, 20, 25, 255});
+    context.Render.DrawCircleOutline(L.ToScreenDim(48.0f), Transform2D{volCenter}, Color{45, 52, 62, 255}, L.ToScreenDim(1.5f));
+    context.Render.DrawCircle(L.ToScreenDim(38.0f), Transform2D{volCenter}, Color{55, 62, 72, 255});
+    context.Render.DrawCircle(L.ToScreenDim(22.0f), Transform2D{volCenter}, Color{35, 40, 48, 255});
+
+    // Graduation ticks around dial
+    for (int deg = -135; deg <= 135; deg += 27)
+    {
+        float rad = static_cast<float>(deg) * 3.14159f / 180.0f;
+        Vector2f p1 = volCenter + Vector2f{std::cos(rad) * L.ToScreenDim(42.0f), std::sin(rad) * L.ToScreenDim(42.0f)};
+        Vector2f p2 = volCenter + Vector2f{std::cos(rad) * L.ToScreenDim(48.0f), std::sin(rad) * L.ToScreenDim(48.0f)};
+        context.Render.DrawLine(p1, p2, Color{140, 150, 165, 200}, L.ToScreenDim(1.5f));
+    }
+
+    // Rotating indicator notch
+    float knotRad = m_volumeKnobAngle * 3.14159f / 180.0f;
+    Vector2f notchEnd = volCenter + Vector2f{std::cos(knotRad) * L.ToScreenDim(36.0f), std::sin(knotRad) * L.ToScreenDim(36.0f)};
+    context.Render.DrawLine(volCenter, notchEnd, Color{255, 160, 50, 255}, L.ToScreenDim(3.0f));
+
+    context.Render.DrawText("MIN", m_fontId, L.ToScreenDim(11.0f), Transform2D{volCenter + Vector2f{L.ToScreenDim(-45.0f), L.ToScreenDim(46.0f)}}, Color{160, 170, 185, 200});
+    context.Render.DrawText("MAX", m_fontId, L.ToScreenDim(11.0f), Transform2D{volCenter + Vector2f{L.ToScreenDim(25.0f), L.ToScreenDim(46.0f)}}, Color{160, 170, 185, 200});
+
+    // Channel Step Buttons (Bug-free geometric arrow rendering & demarcations)
+    const Vector2f chUpPos = L.ToScreenPos(Vector2f{1690.0f, 472.0f});
+    const Vector2f chDnPos = L.ToScreenPos(Vector2f{1690.0f, 516.0f});
+
+    // CH + Button
+    context.Render.DrawRectangle(L.ToScreenDim(130.0f), L.ToScreenDim(32.0f), Transform2D{chUpPos}, Color{42, 48, 58, 255});
+    context.Render.DrawRectangleOutline(L.ToScreenDim(130.0f), L.ToScreenDim(32.0f), Transform2D{chUpPos}, Color{70, 80, 95, 255}, L.ToScreenDim(1.5f));
+    context.Render.DrawTextCentered("CH +", m_fontId, L.ToScreenDim(16.0f), Transform2D{chUpPos - Vector2f{L.ToScreenDim(14.0f), 0.0f}}, Color{210, 220, 235, 255});
+    // Geometric Up-Arrow Triangle
+    Vector2f triTop = chUpPos + Vector2f{L.ToScreenDim(32.0f), L.ToScreenDim(-6.0f)};
+    Vector2f triLeft = chUpPos + Vector2f{L.ToScreenDim(24.0f), L.ToScreenDim(5.0f)};
+    Vector2f triRight = chUpPos + Vector2f{L.ToScreenDim(40.0f), L.ToScreenDim(5.0f)};
+    context.Render.DrawLine(triTop, triLeft, Color{220, 230, 245, 255}, L.ToScreenDim(1.8f));
+    context.Render.DrawLine(triTop, triRight, Color{220, 230, 245, 255}, L.ToScreenDim(1.8f));
+    context.Render.DrawLine(triLeft, triRight, Color{220, 230, 245, 255}, L.ToScreenDim(1.8f));
+
+    // CH - Button
+    context.Render.DrawRectangle(L.ToScreenDim(130.0f), L.ToScreenDim(32.0f), Transform2D{chDnPos}, Color{42, 48, 58, 255});
+    context.Render.DrawRectangleOutline(L.ToScreenDim(130.0f), L.ToScreenDim(32.0f), Transform2D{chDnPos}, Color{70, 80, 95, 255}, L.ToScreenDim(1.5f));
+    context.Render.DrawTextCentered("CH -", m_fontId, L.ToScreenDim(16.0f), Transform2D{chDnPos - Vector2f{L.ToScreenDim(14.0f), 0.0f}}, Color{210, 220, 235, 255});
+    // Geometric Down-Arrow Triangle
+    Vector2f triBot = chDnPos + Vector2f{L.ToScreenDim(32.0f), L.ToScreenDim(6.0f)};
+    Vector2f triLeftD = chDnPos + Vector2f{L.ToScreenDim(24.0f), L.ToScreenDim(-5.0f)};
+    Vector2f triRightD = chDnPos + Vector2f{L.ToScreenDim(40.0f), L.ToScreenDim(-5.0f)};
+    context.Render.DrawLine(triBot, triLeftD, Color{220, 230, 245, 255}, L.ToScreenDim(1.8f));
+    context.Render.DrawLine(triBot, triRightD, Color{220, 230, 245, 255}, L.ToScreenDim(1.8f));
+    context.Render.DrawLine(triLeftD, triRightD, Color{220, 230, 245, 255}, L.ToScreenDim(1.8f));
+
+    // Realistic Circular Acoustic Speaker Cone (Replacing old slats and phone jack)
+    const Vector2f spkCenter = L.ToScreenPos(Vector2f{1690.0f, 695.0f});
+    // Outer mounting ring with hex bolts
+    context.Render.DrawCircle(L.ToScreenDim(84.0f), Transform2D{spkCenter}, Color{24, 28, 36, 255});
+    context.Render.DrawCircleOutline(L.ToScreenDim(84.0f), Transform2D{spkCenter}, Color{55, 62, 75, 255}, L.ToScreenDim(2.5f));
+
+    const float boltAngles[4] = {0.785398f, 2.35619f, 3.92699f, 5.49779f};
+    for (float bAng : boltAngles)
+    {
+        Vector2f boltPos = spkCenter + Vector2f{std::cos(bAng) * L.ToScreenDim(76.0f), std::sin(bAng) * L.ToScreenDim(76.0f)};
+        context.Render.DrawCircle(L.ToScreenDim(3.5f), Transform2D{boltPos}, Color{160, 168, 180, 255});
+        context.Render.DrawCircle(L.ToScreenDim(1.5f), Transform2D{boltPos}, Color{30, 35, 42, 255});
+    }
+
+    // Flexible rubber suspension surround
+    context.Render.DrawCircle(L.ToScreenDim(70.0f), Transform2D{spkCenter}, Color{16, 18, 24, 255});
+    context.Render.DrawCircleOutline(L.ToScreenDim(70.0f), Transform2D{spkCenter}, Color{38, 44, 54, 255}, L.ToScreenDim(2.0f));
+
+    // Deep acoustic cone
+    context.Render.DrawCircle(L.ToScreenDim(60.0f), Transform2D{spkCenter}, Color{10, 12, 16, 255});
+
+    // Concentric acoustic rib rings
+    context.Render.DrawCircleOutline(L.ToScreenDim(48.0f), Transform2D{spkCenter}, Color{32, 38, 48, 220}, L.ToScreenDim(1.2f));
+    context.Render.DrawCircleOutline(L.ToScreenDim(36.0f), Transform2D{spkCenter}, Color{36, 42, 54, 220}, L.ToScreenDim(1.2f));
+
+    // Center metallic dome dust cap
+    context.Render.DrawCircle(L.ToScreenDim(22.0f), Transform2D{spkCenter}, Color{22, 26, 34, 255});
+    context.Render.DrawCircleOutline(L.ToScreenDim(22.0f), Transform2D{spkCenter}, Color{70, 80, 95, 255}, L.ToScreenDim(1.5f));
+    float spkPulse = std::sin(m_animTime * 10.0f) * L.ToScreenDim(1.2f);
+    context.Render.DrawCircleOutline(L.ToScreenDim(22.0f) + spkPulse, Transform2D{spkCenter}, Color{80, 160, 240, 70}, L.ToScreenDim(1.2f));
+
+    // Game Version & Credits Badge ("NOA PASCAL")
+    const Vector2f plateCenter = L.ToScreenPos(Vector2f{1690.0f, 885.0f});
+    context.Render.DrawRectangle(L.ToScreenDim(230.0f), L.ToScreenDim(44.0f), Transform2D{plateCenter}, Color{22, 26, 34, 240});
+    context.Render.DrawRectangleOutline(L.ToScreenDim(230.0f), L.ToScreenDim(44.0f), Transform2D{plateCenter}, Color{70, 80, 95, 200}, L.ToScreenDim(1.5f));
+    context.Render.DrawTextCentered("VERSION 1.0.0", m_fontId, L.ToScreenDim(12.0f), Transform2D{plateCenter - Vector2f{0.0f, L.ToScreenDim(8.0f)}}, Color{190, 205, 225, 240});
+    context.Render.DrawTextCentered("NOA PASCAL", m_fontId, L.ToScreenDim(14.0f), Transform2D{plateCenter + Vector2f{0.0f, L.ToScreenDim(9.0f)}}, Colors::Gold);
+}
+
+void MenuScene::RenderCRTBezelAndGlass(GameContext& context) const
+{
+    const auto& L = m_tvLayout;
+
+    // Molded matte CRT casing bezel
+    context.Render.DrawRectangle(L.ToScreenDim(1440.0f), L.ToScreenDim(960.0f), Transform2D{L.GlassCenter}, Color{18, 20, 25, 255});
+    context.Render.DrawRectangleOutline(L.ToScreenDim(1440.0f), L.ToScreenDim(960.0f), Transform2D{L.GlassCenter}, Color{40, 45, 55, 255}, L.ToScreenDim(4.0f));
+
+    // Inner Cathode Screen Glass
+    context.Render.DrawRectangle(L.GlassSize.X, L.GlassSize.Y, Transform2D{L.GlassCenter}, Color{12, 16, 26, 255});
+
+    // Dark cathodic shadows along glass borders
+    context.Render.DrawRectangle(L.GlassSize.X, L.ToScreenDim(20.0f), Transform2D{L.ToScreenPos(Vector2f{800.0f, 95.0f})}, Color{5, 7, 12, 180});
+    context.Render.DrawRectangle(L.GlassSize.X, L.ToScreenDim(20.0f), Transform2D{L.ToScreenPos(Vector2f{800.0f, 985.0f})}, Color{5, 7, 12, 180});
+    context.Render.DrawRectangle(L.ToScreenDim(20.0f), L.GlassSize.Y, Transform2D{L.ToScreenPos(Vector2f{115.0f, 540.0f})}, Color{5, 7, 12, 180});
+    context.Render.DrawRectangle(L.ToScreenDim(20.0f), L.GlassSize.Y, Transform2D{L.ToScreenPos(Vector2f{1485.0f, 540.0f})}, Color{5, 7, 12, 180});
+
+}
+
+void MenuScene::RenderTVScreenContent(GameContext& context)
+{
+    if (m_zoomState != ChannelZoomState::Grid)
+    {
+        RenderWiiZoomedChannel(context);
+    }
+    else
+    {
+        RenderChannelGrid(context);
+    }
+}
+
+void MenuScene::RenderChannelGrid(GameContext& context)
+{
+    if (m_tvChannels.empty()) return;
+    if (m_selectedChannel < 0 || m_selectedChannel >= static_cast<int>(m_tvChannels.size()))
+    {
+        m_selectedChannel = 0;
+    }
+
+    // 1. CRT Screen Header Bar (Fixed inside 1390 x 910 TV screen)
+    const Vector2f headerPillPos{695.0f, 55.0f};
+    context.Render.DrawRectangle(520.0f, 44.0f, Transform2D{headerPillPos}, Color{20, 28, 44, 230});
+    context.Render.DrawRectangleOutline(520.0f, 44.0f, Transform2D{headerPillPos}, Color{70, 150, 240, 220}, 2.0f);
+    context.Render.DrawTextCentered("REBREAKER CHANNEL MENU", m_fontId, 22.0f, Transform2D{headerPillPos}, Color{240, 250, 255, 255});
+
+    // Left Phosphor TV channel tag
+    std::string chTag = "CH 0" + std::to_string(m_selectedChannel + 1) + "  AV-1";
+    context.Render.DrawText(chTag, m_fontId, 18.0f, Transform2D{Vector2f{45.0f, 45.0f}}, Color{75, 255, 120, 220});
+
+    // Right Phosphor audio spec tag
+    context.Render.DrawText("STEREO [NICAM] 60Hz", m_fontId, 16.0f, Transform2D{Vector2f{1155.0f, 45.0f}}, Color{255, 195, 70, 220});
+
+    // 2. 8 Channel Cards (4x2 Grid)
+    for (size_t i = 0; i < m_tvChannels.size(); ++i)
+    {
+        const auto& ch = m_tvChannels[i];
+        float s = ch.CurrentScale;
+        Vector2f pos = ch.BasePosition - Vector2f{105.0f, 85.0f};
+        float w = ch.BaseSize.X * s;
+        float h = ch.BaseSize.Y * s;
+
+        // Drop shadow
+        context.Render.DrawRectangle(w, h, Transform2D{pos + Vector2f{5.0f * s, 6.0f * s}}, Color{0, 0, 0, 130});
+
+        // Background
+        context.Render.DrawRectangle(w, h, Transform2D{pos}, ch.CardBgColor);
+
+        // Border: pulsing neon glow when selected
+        if (static_cast<int>(i) == m_selectedChannel)
+        {
+            uint8_t glowAlpha = static_cast<uint8_t>(180 + 75 * std::sin(m_animTime * 6.0f));
+            Color glowCol{ch.ThemeColor.r, ch.ThemeColor.g, ch.ThemeColor.b, glowAlpha};
+            context.Render.DrawRectangleOutline(w, h, Transform2D{pos}, glowCol, 4.0f);
+        }
+        else
+        {
+            context.Render.DrawRectangleOutline(w, h, Transform2D{pos}, Color{50, 65, 88, 180}, 2.0f);
+        }
+
+        // Top Banner inside card
+        Vector2f topBannerPos = pos + Vector2f{0.0f, -h * 0.5f + 16.0f * s};
+        context.Render.DrawRectangle(w - 4.0f, 30.0f * s, Transform2D{topBannerPos}, Color{26, 34, 52, 255});
+        context.Render.DrawText(ch.ChannelNumber, m_fontId, 13.0f * s, Transform2D{pos + Vector2f{-w * 0.5f + 12.0f * s, -h * 0.5f + 7.0f * s}}, ch.ThemeColor);
+        context.Render.DrawText(ch.Subtitle, m_fontId, 11.0f * s, Transform2D{pos + Vector2f{w * 0.5f - 110.0f * s, -h * 0.5f + 8.0f * s}}, Color{170, 185, 205, 220});
+
+        // Bottom Title Banner
+        Vector2f botBannerPos = pos + Vector2f{0.0f, h * 0.5f - 18.0f * s};
+        context.Render.DrawRectangle(w - 4.0f, 32.0f * s, Transform2D{botBannerPos}, Color{12, 16, 26, 240});
+        context.Render.DrawTextCentered(ch.Title, m_fontId, 17.0f * s, Transform2D{botBannerPos}, ch.ThemeColor);
+
+        // Center Procedural Vignette
+        Vector2f vignettePos = pos + Vector2f{0.0f, -4.0f * s};
+        RenderChannelVignette(context, ch, vignettePos, ch.CurrentScale);
+    }
+}
+
+void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float sc) const
+{
+    switch (ch.Type)
+    {
+    case ChannelType::Campaign:
+    {
+        RenderCampaignPreview(context, pos, sc, false);
+        break;
+    }
+    case ChannelType::LevelSelect:
+    {
+        // Holographic Sector Grid & Pulsing Stage Nodes
+        for (int l = -3; l <= 3; ++l)
+        {
+            float lx = pos.X + static_cast<float>(l) * 16.0f * sc;
+            context.Render.DrawLine(Vector2f{lx, pos.Y - 24.0f * sc}, Vector2f{pos.X + static_cast<float>(l) * 26.0f * sc, pos.Y + 26.0f * sc},
+                                    Color{255, 175, 55, 35}, 1.0f * sc);
+        }
+
+        // Connecting data highways between 4 stage nodes
+        const Vector2f nodes[4] = {
+            pos + Vector2f{-45.0f * sc, 10.0f * sc},
+            pos + Vector2f{-15.0f * sc, -18.0f * sc},
+            pos + Vector2f{18.0f * sc, 14.0f * sc},
+            pos + Vector2f{48.0f * sc, -12.0f * sc}
+        };
+
+        for (int i = 0; i < 3; ++i)
+        {
+            context.Render.DrawLine(nodes[i], nodes[i + 1], Color{255, 180, 60, 160}, 1.5f * sc);
+            float pulseT = std::fmod(m_animTime * 1.8f + static_cast<float>(i) * 0.33f, 1.0f);
+            Vector2f pulsePos = nodes[i] + (nodes[i + 1] - nodes[i]) * pulseT;
+            context.Render.DrawCircle(3.0f * sc, Transform2D{pulsePos}, Color{255, 235, 140, 255});
+        }
+
+        // 4 Stage Sector Nodes
+        for (int i = 0; i < 4; ++i)
+        {
+            float pRing = 5.0f * sc + std::sin(m_animTime * 4.0f + static_cast<float>(i)) * 2.0f * sc;
+            context.Render.DrawCircle(6.5f * sc, Transform2D{nodes[i]}, Color{30, 24, 16, 255});
+            context.Render.DrawCircle(4.5f * sc, Transform2D{nodes[i]}, Color{255, 180, 55, 255});
+            context.Render.DrawCircleOutline(pRing + 3.0f * sc, Transform2D{nodes[i]}, Color{255, 210, 80, 140}, 1.2f * sc);
+        }
+
+        // Target selector sweeping across sectors
+        float scanT = std::fmod(m_animTime * 0.8f, 3.0f);
+        int idxA = static_cast<int>(scanT);
+        int idxB = (idxA + 1) % 4;
+        float frac = scanT - static_cast<float>(idxA);
+        Vector2f reticlePos = nodes[idxA] + (nodes[idxB] - nodes[idxA]) * frac;
+
+        context.Render.DrawRectangleOutline(18.0f * sc, 18.0f * sc, Transform2D{reticlePos}, Color{255, 240, 100, 240}, 1.5f * sc);
+        context.Render.DrawLine(reticlePos - Vector2f{12.0f * sc, 0.0f}, reticlePos + Vector2f{12.0f * sc, 0.0f}, Color{255, 220, 70, 200}, 1.0f * sc);
+        context.Render.DrawLine(reticlePos - Vector2f{0.0f, 12.0f * sc}, reticlePos + Vector2f{0.0f, 12.0f * sc}, Color{255, 220, 70, 200}, 1.0f * sc);
+        break;
+    }
+    case ChannelType::TetrisEndless:
+    {
+        // Doom / Mortal Kombat style inferno flames with flashing ENDLESS title
+        // 1. Fiery inferno flames background
+        const float flameBaseY = pos.Y + 36.0f * sc;
+        constexpr int kFlameTongues = 11;
+        for (int k = 0; k < kFlameTongues; ++k)
+        {
+            float fx = pos.X + (static_cast<float>(k) - 5.0f) * (12.0f * sc);
+            float fHeight = (28.0f + 16.0f * std::sin(m_animTime * 6.5f + k * 1.25f) + 8.0f * std::cos(m_animTime * 9.0f + k * 2.1f)) * sc;
+            float sway = std::sin(m_animTime * 7.5f + k * 1.4f) * 4.0f * sc;
+            Vector2f tip{fx + sway, flameBaseY - fHeight};
+            float bW = 11.0f * sc;
+
+            // Outer crimson/blood flame tongue
+            context.Render.DrawLine(Vector2f{fx - bW * 0.5f, flameBaseY}, tip, Color{195, 25, 12, 215}, 4.0f * sc);
+            context.Render.DrawLine(Vector2f{fx + bW * 0.5f, flameBaseY}, tip, Color{195, 25, 12, 215}, 4.0f * sc);
+            context.Render.DrawLine(Vector2f{fx, flameBaseY}, tip, Color{240, 75, 18, 230}, 6.0f * sc);
+
+            // Inner searing yellow-orange core
+            Vector2f innerTip{fx + sway * 0.55f, flameBaseY - fHeight * 0.65f};
+            context.Render.DrawLine(Vector2f{fx, flameBaseY}, innerTip, Color{255, 225, 60, 245}, 3.5f * sc);
+        }
+
+        // 2. Rising glowing embers
+        for (int e = 0; e < 6; ++e)
+        {
+            float eProgress = std::fmod(m_animTime * 1.6f + static_cast<float>(e) * 0.35f, 1.0f);
+            float ex = pos.X + std::sin(static_cast<float>(e) * 2.3f + m_animTime * 3.5f) * 45.0f * sc;
+            float ey = flameBaseY - eProgress * 68.0f * sc;
+            uint8_t eAlpha = static_cast<uint8_t>((1.0f - eProgress) * 255.0f);
+            context.Render.DrawCircle(1.8f * sc, Transform2D{Vector2f{ex, ey}}, Color{255, 205, 70, eAlpha});
+        }
+
+        // 3. Brutalist "ENDLESS" title with Doom / Mortal Kombat blinking strobe
+        Vector2f titlePos = pos + Vector2f{0.0f, -8.0f * sc};
+
+        // Flashing strobe logic: rapid pulse between searing white-gold and blood crimson
+        float flashPhase = std::fmod(m_animTime * 4.5f, 1.0f);
+        bool isStrobe = (flashPhase < 0.28f);
+
+        Color titleCol = isStrobe ? Color{255, 255, 225, 255} : Color{255, 65, 25, 255};
+        Color accentCol = isStrobe ? Color{255, 240, 100, 255} : Color{215, 30, 15, 230};
+
+        // Charred drop shadow
+        context.Render.DrawTextCentered("ENDLESS", m_fontId, 22.0f * sc, Transform2D{titlePos + Vector2f{2.0f * sc, 2.5f * sc}}, Color{15, 2, 4, 255});
+
+        // Fiery top & bottom bracket lines
+        context.Render.DrawLine(titlePos + Vector2f{-52.0f * sc, -14.0f * sc}, titlePos + Vector2f{52.0f * sc, -14.0f * sc}, accentCol, 2.2f * sc);
+        context.Render.DrawLine(titlePos + Vector2f{-52.0f * sc, 14.0f * sc}, titlePos + Vector2f{52.0f * sc, 14.0f * sc}, accentCol, 2.2f * sc);
+
+        // Blinking title
+        context.Render.DrawTextCentered("ENDLESS", m_fontId, 22.0f * sc, Transform2D{titlePos}, titleCol);
+        break;
+    }
+    case ChannelType::Workshop:
+    {
+        // 3D Rotating Golden Credit Token ("un crédit qui rotate")
+        float rotAngle = m_animTime * 2.5f;
+        float cosA = std::cos(rotAngle);
+        float bounceY = std::sin(m_animTime * 3.2f) * 4.0f * sc;
+
+        // Ground shadow on the pedestal below
+        Vector2f shadowPos = pos + Vector2f{0.0f, 32.0f * sc};
+        float shadowScale = 1.0f - (bounceY / (12.0f * sc));
+        context.Render.DrawCircle(22.0f * sc * shadowScale, Transform2D{shadowPos, 0.0f, Vector2f{1.2f, 0.35f}}, Color{10, 14, 22, 160});
+
+        Vector2f coinPos = pos + Vector2f{0.0f, -4.0f * sc + bounceY};
+        const float R = 26.0f * sc;
+        float w = std::max(2.5f * sc, std::abs(cosA) * R);
+        float h = R;
+
+        // 3D Coin cylindrical edge thickness when tilted
+        float edgeThickness = 4.5f * sc * std::sin(rotAngle);
+        if (std::abs(edgeThickness) > 0.8f * sc)
+        {
+            Vector2f edgePos = coinPos - Vector2f{edgeThickness * 0.5f, 0.0f};
+            context.Render.DrawCircle(h, Transform2D{edgePos, 0.0f, Vector2f{w / h, 1.0f}}, Color{180, 135, 25, 255});
+        }
+
+        // Coin Face
+        Color faceCol = (cosA >= 0.0f) ? Color{250, 210, 45, 255} : Color{235, 190, 35, 255};
+        context.Render.DrawCircle(h, Transform2D{coinPos, 0.0f, Vector2f{w / h, 1.0f}}, faceCol);
+        context.Render.DrawCircleOutline(h, Transform2D{coinPos, 0.0f, Vector2f{w / h, 1.0f}}, Color{255, 245, 175, 255}, 1.8f * sc);
+
+        if (w > 8.0f * sc)
+        {
+            // Inner engraved groove
+            context.Render.DrawCircleOutline(h * 0.76f, Transform2D{coinPos, 0.0f, Vector2f{w / h, 1.0f}}, Color{195, 145, 20, 220}, 1.2f * sc);
+
+            // Sci-fi Credit Glyph "₵" (engraved C with horizontal tech bars)
+            float cW = w * 0.40f;
+            float cH = h * 0.40f;
+            // Left vertical spine of C
+            context.Render.DrawLine(coinPos + Vector2f{-cW, -cH}, coinPos + Vector2f{-cW, cH}, Color{85, 52, 12, 255}, 2.5f * sc);
+            // Top and bottom arms of C
+            context.Render.DrawLine(coinPos + Vector2f{-cW, -cH}, coinPos + Vector2f{cW, -cH}, Color{85, 52, 12, 255}, 2.0f * sc);
+            context.Render.DrawLine(coinPos + Vector2f{-cW, cH}, coinPos + Vector2f{cW, cH}, Color{85, 52, 12, 255}, 2.0f * sc);
+            // Twin horizontal credit hashes
+            context.Render.DrawLine(coinPos + Vector2f{-cW * 1.35f, -cH * 0.28f}, coinPos + Vector2f{cW * 1.35f, -cH * 0.28f}, Color{255, 250, 210, 255}, 1.5f * sc);
+            context.Render.DrawLine(coinPos + Vector2f{-cW * 1.35f, cH * 0.28f}, coinPos + Vector2f{cW * 1.35f, cH * 0.28f}, Color{255, 250, 210, 255}, 1.5f * sc);
+        }
+
+        // Specular gleam when coin faces forward
+        if (std::abs(cosA) > 0.82f)
+        {
+            Vector2f glintPos = coinPos + Vector2f{w * 0.62f, -h * 0.62f};
+            context.Render.DrawLine(glintPos - Vector2f{6.0f * sc, 0.0f}, glintPos + Vector2f{6.0f * sc, 0.0f}, Colors::White, 1.8f * sc);
+            context.Render.DrawLine(glintPos - Vector2f{0.0f, 6.0f * sc}, glintPos + Vector2f{0.0f, 6.0f * sc}, Colors::White, 1.8f * sc);
+        }
+        break;
+    }
+    case ChannelType::Leaderboard:
+    {
+        // 3 Podium pedestal bars
+        context.Render.DrawRectangle(26.0f * sc, 30.0f * sc, Transform2D{pos + Vector2f{-34.0f * sc, 22.0f * sc}}, Color{125, 135, 155, 240});
+        context.Render.DrawRectangleOutline(26.0f * sc, 30.0f * sc, Transform2D{pos + Vector2f{-34.0f * sc, 22.0f * sc}}, Color{180, 195, 215, 255}, 1.2f * sc);
+        context.Render.DrawTextCentered("2", m_fontId, 14.0f * sc, Transform2D{pos + Vector2f{-34.0f * sc, 22.0f * sc}}, Color{200, 215, 235, 255});
+
+        context.Render.DrawRectangle(32.0f * sc, 46.0f * sc, Transform2D{pos + Vector2f{0.0f, 14.0f * sc}}, Color{215, 175, 45, 245});
+        context.Render.DrawRectangleOutline(32.0f * sc, 46.0f * sc, Transform2D{pos + Vector2f{0.0f, 14.0f * sc}}, Colors::Gold, 1.5f * sc);
+        context.Render.DrawTextCentered("1", m_fontId, 18.0f * sc, Transform2D{pos + Vector2f{0.0f, 14.0f * sc}}, Colors::White);
+
+        context.Render.DrawRectangle(26.0f * sc, 20.0f * sc, Transform2D{pos + Vector2f{34.0f * sc, 27.0f * sc}}, Color{165, 100, 65, 240});
+        context.Render.DrawRectangleOutline(26.0f * sc, 20.0f * sc, Transform2D{pos + Vector2f{34.0f * sc, 27.0f * sc}}, Color{215, 140, 95, 255}, 1.2f * sc);
+        context.Render.DrawTextCentered("3", m_fontId, 14.0f * sc, Transform2D{pos + Vector2f{34.0f * sc, 27.0f * sc}}, Color{235, 170, 130, 255});
+
+        // Floating Golden Crown above 1st place with light beam radiance
+        float crownBob = std::sin(m_animTime * 3.0f) * 4.0f * sc;
+        Vector2f cp = pos + Vector2f{0.0f, -22.0f * sc + crownBob};
+
+        // Radiant light rays
+        for (int r = 0; r < 6; ++r)
+        {
+            float ang = m_animTime * 1.5f + static_cast<float>(r) * 1.047197f;
+            Vector2f rayEnd = cp + Vector2f{std::cos(ang) * 22.0f * sc, std::sin(ang) * 22.0f * sc};
+            context.Render.DrawLine(cp, rayEnd, Color{255, 235, 120, 130}, 1.2f * sc);
+        }
+
+        // Crown geometry
+        context.Render.DrawRectangle(24.0f * sc, 10.0f * sc, Transform2D{cp + Vector2f{0.0f, 4.0f * sc}}, Colors::Gold);
+        context.Render.DrawCircle(3.5f * sc, Transform2D{cp + Vector2f{-10.0f * sc, -4.0f * sc}}, Colors::Gold);
+        context.Render.DrawCircle(4.5f * sc, Transform2D{cp + Vector2f{0.0f, -6.0f * sc}}, Color{255, 245, 160, 255});
+        context.Render.DrawCircle(3.5f * sc, Transform2D{cp + Vector2f{10.0f * sc, -4.0f * sc}}, Colors::Gold);
+
+        // Rising golden arcade stars
+        for (int s = 0; s < 3; ++s)
+        {
+            float starT = std::fmod(m_animTime * 1.2f + static_cast<float>(s) * 0.33f, 1.0f);
+            float sy = pos.Y + 30.0f * sc - starT * 55.0f * sc;
+            float sx = pos.X + (static_cast<float>(s) - 1.0f) * 32.0f * sc + std::sin(m_animTime * 4.0f + static_cast<float>(s)) * 5.0f * sc;
+            uint8_t sa = static_cast<uint8_t>((1.0f - starT) * 230.0f);
+            context.Render.DrawCircle(2.5f * sc, Transform2D{Vector2f{sx, sy}}, Color{255, 235, 120, sa});
+        }
+        break;
+    }
+    case ChannelType::Achievements:
+    {
+        // Holographic Pilot ID, Player Visor Avatar, Filling EXP Bar, Shimmering Medal
+        context.Render.DrawRectangle(95.0f * sc, 58.0f * sc, Transform2D{pos}, Color{14, 26, 22, 220});
+        context.Render.DrawRectangleOutline(95.0f * sc, 58.0f * sc, Transform2D{pos}, Color{50, 225, 140, 160}, 1.2f * sc);
+
+        // Pilot Avatar Silhouette with glowing neon visor
+        Vector2f avPos = pos + Vector2f{-26.0f * sc, -4.0f * sc};
+        context.Render.DrawCircle(10.0f * sc, Transform2D{avPos + Vector2f{0.0f, -6.0f * sc}}, Color{35, 60, 50, 255});
+        context.Render.DrawRectangle(14.0f * sc, 4.0f * sc, Transform2D{avPos + Vector2f{0.0f, -6.0f * sc}}, Color{60, 255, 180, 255});
+        context.Render.DrawRectangle(22.0f * sc, 9.0f * sc, Transform2D{avPos + Vector2f{0.0f, 6.0f * sc}}, Color{30, 52, 44, 255});
+
+        // Prestige Star Medal with rotating sheen
+        Vector2f medPos = pos + Vector2f{24.0f * sc, -8.0f * sc};
+        context.Render.DrawCircle(14.0f * sc, Transform2D{medPos}, Color{235, 190, 45, 255});
+        context.Render.DrawCircleOutline(14.0f * sc, Transform2D{medPos}, Color{255, 240, 140, 255}, 1.5f * sc);
+        float starRot = m_animTime * 1.8f;
+        context.Render.DrawRectangle(10.0f * sc, 10.0f * sc, Transform2D{medPos, starRot}, Colors::White);
+
+        // Animated EXP Progress Bar
+        Vector2f barPos = pos + Vector2f{0.0f, 18.0f * sc};
+        context.Render.DrawRectangle(78.0f * sc, 7.0f * sc, Transform2D{barPos}, Color{10, 18, 14, 255});
+        context.Render.DrawRectangleOutline(78.0f * sc, 7.0f * sc, Transform2D{barPos}, Color{50, 225, 140, 150}, 1.0f * sc);
+        float fillP = 0.5f + 0.4f * std::sin(m_animTime * 1.6f);
+        float fillW = 76.0f * sc * fillP;
+        float fillX = barPos.X - 38.0f * sc + fillW * 0.5f;
+        context.Render.DrawRectangle(fillW, 5.0f * sc, Transform2D{Vector2f{fillX, barPos.Y}}, Color{50, 235, 140, 240});
+        break;
+    }
+    case ChannelType::Sandbox:
+    {
+        // Interactive Physics Lab Preview
+        context.Render.DrawRectangle(95.0f * sc, 58.0f * sc, Transform2D{pos}, Color{12, 20, 30, 220});
+        context.Render.DrawRectangleOutline(95.0f * sc, 58.0f * sc, Transform2D{pos}, Color{60, 190, 255, 160}, 1.2f * sc);
+
+        // Central gravity well
+        float pulseWell = 7.0f * sc + std::sin(m_animTime * 4.0f) * 2.0f * sc;
+        context.Render.DrawCircle(pulseWell, Transform2D{pos}, Color{60, 190, 255, 60});
+        context.Render.DrawCircle(4.0f * sc, Transform2D{pos}, Color{100, 220, 255, 255});
+
+        // 3 Kinetic test spheres orbiting and bouncing
+        Vector2f sp1 = pos + Vector2f{std::cos(m_animTime * 3.2f) * 28.0f * sc, std::sin(m_animTime * 2.4f) * 18.0f * sc};
+        Vector2f sp2 = pos + Vector2f{std::sin(m_animTime * 2.8f) * 32.0f * sc, std::cos(m_animTime * 3.6f) * 19.0f * sc};
+        Vector2f sp3 = pos + Vector2f{std::cos(m_animTime * 2.1f + 2.0f) * 22.0f * sc, std::sin(m_animTime * 3.1f + 1.0f) * 20.0f * sc};
+
+        context.Render.DrawCircle(4.0f * sc, Transform2D{sp1}, Color{80, 220, 255, 255});
+        context.Render.DrawCircle(4.0f * sc, Transform2D{sp2}, Color{255, 75, 135, 255});
+        context.Render.DrawCircle(4.0f * sc, Transform2D{sp3}, Color{85, 255, 130, 255});
+
+        // Laser deflection beam bouncing between 2 test mirrors
+        Vector2f m1 = pos + Vector2f{-34.0f * sc, 16.0f * sc};
+        Vector2f m2 = pos + Vector2f{34.0f * sc, -16.0f * sc};
+        context.Render.DrawRectangle(4.0f * sc, 12.0f * sc, Transform2D{m1, 0.7854f}, Color{200, 220, 240, 255});
+        context.Render.DrawRectangle(4.0f * sc, 12.0f * sc, Transform2D{m2, 0.7854f}, Color{200, 220, 240, 255});
+        context.Render.DrawLine(m1, pos, Color{255, 60, 90, 180}, 1.2f * sc);
+        context.Render.DrawLine(pos, m2, Color{255, 60, 90, 180}, 1.2f * sc);
+        break;
+    }
+    case ChannelType::Settings:
+    {
+        RenderTwoGears(context, pos, sc);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+void MenuScene::RenderTVOSD(GameContext& context) const
+{
+    if (m_osdTimer <= 0.0f) return;
+
+    const auto& L = m_tvLayout;
+    const Vector2f osdCenter = L.ToScreenPos(Vector2f{800.0f, 195.0f});
+    context.Render.DrawRectangle(L.ToScreenDim(440.0f), L.ToScreenDim(44.0f), Transform2D{osdCenter}, Color{0, 0, 0, 220});
+    context.Render.DrawRectangleOutline(L.ToScreenDim(440.0f), L.ToScreenDim(44.0f), Transform2D{osdCenter}, Color{50, 255, 80, 230}, L.ToScreenDim(2.0f));
+    context.Render.DrawTextCentered(m_osdText, m_fontId, L.ToScreenDim(20.0f), Transform2D{osdCenter}, Color{60, 255, 90, 255});
+
+    if (m_osdText.rfind("VOL", 0) == 0)
+    {
+        // Segmented volume progress bar below text
+        const Vector2f barCenter = L.ToScreenPos(Vector2f{800.0f, 210.0f});
+        context.Render.DrawRectangle(L.ToScreenDim(380.0f), L.ToScreenDim(6.0f), Transform2D{barCenter}, Color{20, 40, 25, 255});
+        float fillW = L.ToScreenDim(380.0f) * (m_masterVolume / 100.0f);
+        if (fillW > 0.0f)
+        {
+            float fillX = barCenter.X - L.ToScreenDim(190.0f) + fillW * 0.5f;
+            context.Render.DrawRectangle(fillW, L.ToScreenDim(6.0f), Transform2D{Vector2f{fillX, barCenter.Y}}, Color{60, 255, 90, 255});
+        }
+    }
+}
+
+void MenuScene::RenderPowerOffDialog(GameContext& context)
+{
+    if (!m_showPowerOffDialog) return;
+
+    const auto& L = m_tvLayout;
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+
+    // Full screen dim backdrop
+    context.Render.DrawRectangle(viewSize.X * 2.0f, viewSize.Y * 2.0f, Transform2D{L.CabinetCenter}, Color{0, 0, 0, 190});
+
+    const Vector2f diagCenter = L.ToScreenPos(Vector2f{800.0f, 540.0f});
+    context.Render.DrawRectangle(L.ToScreenDim(660.0f), L.ToScreenDim(320.0f), Transform2D{diagCenter}, Color{12, 16, 26, 250});
+    context.Render.DrawRectangleOutline(L.ToScreenDim(660.0f), L.ToScreenDim(320.0f), Transform2D{diagCenter}, Color{235, 60, 65, 240}, L.ToScreenDim(3.0f));
+
+    // Header Red Warning Bar
+    context.Render.DrawRectangle(L.ToScreenDim(654.0f), L.ToScreenDim(38.0f), Transform2D{diagCenter - Vector2f{0.0f, L.ToScreenDim(130.0f)}}, Color{180, 35, 40, 255});
+    context.Render.DrawTextCentered("/// SYSTEM POWER ///", m_fontId, L.ToScreenDim(18.0f), Transform2D{diagCenter - Vector2f{0.0f, L.ToScreenDim(130.0f)}}, Colors::White);
+
+    context.Render.DrawTextCentered("STANDBY OR POWER DOWN TELEVISION?", m_fontId, L.ToScreenDim(24.0f), Transform2D{diagCenter - Vector2f{0.0f, L.ToScreenDim(60.0f)}}, Colors::White);
+    context.Render.DrawTextCentered("Choose Standby to sleep TV screen, or Power Off to exit.", m_fontId, L.ToScreenDim(16.0f), Transform2D{diagCenter - Vector2f{0.0f, L.ToScreenDim(15.0f)}}, Color{190, 205, 225, 255});
+
+    // 3 Buttons: Cancel (0), Standby (1), Power Off (2)
+    const Vector2f cancelPos = L.ToScreenPos(Vector2f{800.0f - 195.0f, 540.0f + 80.0f});
+    const Vector2f standbyPos = L.ToScreenPos(Vector2f{800.0f, 540.0f + 80.0f});
+    const Vector2f pwrPos = L.ToScreenPos(Vector2f{800.0f + 195.0f, 540.0f + 80.0f});
+    const float btnW = L.ToScreenDim(175.0f);
+    const float btnH = L.ToScreenDim(52.0f);
+
+    // Cancel Button (0)
+    if (m_powerDialogChoice == 0)
+    {
+        context.Render.DrawRectangle(btnW, btnH, Transform2D{cancelPos}, Color{35, 50, 75, 255});
+        context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{cancelPos}, Color{80, 180, 255, 255}, L.ToScreenDim(3.0f));
+    }
+    else
+    {
+        context.Render.DrawRectangle(btnW, btnH, Transform2D{cancelPos}, Color{20, 25, 38, 255});
+        context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{cancelPos}, Color{50, 65, 90, 180}, L.ToScreenDim(1.5f));
+    }
+    context.Render.DrawTextCentered("[ CANCEL ]", m_fontId, L.ToScreenDim(19.0f), Transform2D{cancelPos}, Colors::White);
+
+    // Standby Button (1)
+    if (m_powerDialogChoice == 1)
+    {
+        context.Render.DrawRectangle(btnW, btnH, Transform2D{standbyPos}, Color{170, 100, 20, 255});
+        context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{standbyPos}, Color{255, 185, 50, 255}, L.ToScreenDim(3.0f));
+    }
+    else
+    {
+        context.Render.DrawRectangle(btnW, btnH, Transform2D{standbyPos}, Color{40, 26, 12, 255});
+        context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{standbyPos}, Color{120, 75, 25, 180}, L.ToScreenDim(1.5f));
+    }
+    context.Render.DrawTextCentered("[ STANDBY ]", m_fontId, L.ToScreenDim(19.0f), Transform2D{standbyPos}, Colors::White);
+
+    // Power Off Button (2)
+    if (m_powerDialogChoice == 2)
+    {
+        context.Render.DrawRectangle(btnW, btnH, Transform2D{pwrPos}, Color{150, 35, 40, 255});
+        context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{pwrPos}, Color{255, 80, 85, 255}, L.ToScreenDim(3.0f));
+    }
+    else
+    {
+        context.Render.DrawRectangle(btnW, btnH, Transform2D{pwrPos}, Color{45, 18, 22, 255});
+        context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{pwrPos}, Color{120, 40, 45, 180}, L.ToScreenDim(1.5f));
+    }
+    context.Render.DrawTextCentered("[ POWER OFF ]", m_fontId, L.ToScreenDim(19.0f), Transform2D{pwrPos}, Colors::White);
+}
+
+void MenuScene::UpdateMusicParticles(float dt)
+{
+    // If master volume is off or 0, or in standby, do not spawn new particles
+    if (m_masterVolume > 1.0f && !m_isStandby)
+    {
+        m_musicParticleTimer += dt;
+        // Spawn frequency: at vol 100 -> ~0.08s, at vol 50 -> ~0.26s, at vol 10 -> ~0.40s
+        float spawnInterval = 0.08f + ((100.0f - m_masterVolume) / 100.0f) * 0.35f;
+        if (m_musicParticleTimer >= spawnInterval && m_musicParticles.size() < 40)
+        {
+            m_musicParticleTimer = 0.0f;
+            MusicNoteParticle p;
+            // Spawn around speaker center (1690.0f, 695.0f) in TV base coords
+            static uint32_t s_pSeed = 13579;
+            auto pRand = []() -> float {
+                s_pSeed = s_pSeed * 1664525u + 1013904223u;
+                return static_cast<float>(s_pSeed % 10000) / 10000.0f;
+            };
+
+            float offsetAng = pRand() * 6.283185f;
+            float offsetR = pRand() * 32.0f;
+            p.BasePos = Vector2f{1690.0f + std::cos(offsetAng) * offsetR, 695.0f + std::sin(offsetAng) * offsetR};
+
+            // Drift leftwards (into the room) and upwards
+            float speedScale = 0.7f + (m_masterVolume / 100.0f) * 0.6f;
+            p.Velocity = Vector2f{
+                (-35.0f - pRand() * 45.0f) * speedScale,
+                (-55.0f - pRand() * 50.0f) * speedScale
+            };
+
+            p.MaxLifetime = 2.0f + pRand() * 1.2f;
+            p.Lifetime = 0.0f;
+            p.Scale = 0.85f + pRand() * 0.45f;
+            p.WobblePhase = pRand() * 6.28f;
+            p.WobbleSpeed = 2.5f + pRand() * 3.0f;
+            p.NoteType = (pRand() > 0.45f) ? 1 : 0;
+
+            const Color noteCols[5] = {
+                Color{100, 230, 255, 255}, // Neon cyan
+                Color{255, 115, 220, 255}, // Electric magenta
+                Color{255, 235, 90, 255},  // Radiant gold
+                Color{180, 140, 255, 255}, // Bright purple
+                Color{120, 255, 175, 255}  // Mint green
+            };
+            p.NoteColor = noteCols[static_cast<int>(pRand() * 5) % 5];
+
+            m_musicParticles.push_back(p);
+        }
+    }
+
+    // Update existing particles
+    for (auto it = m_musicParticles.begin(); it != m_musicParticles.end();)
+    {
+        it->Lifetime += dt;
+        if (it->Lifetime >= it->MaxLifetime)
+        {
+            it = m_musicParticles.erase(it);
+        }
+        else
+        {
+            it->BasePos.X += (it->Velocity.X + std::sin(it->Lifetime * it->WobbleSpeed + it->WobblePhase) * 20.0f) * dt;
+            it->BasePos.Y += it->Velocity.Y * dt;
+            ++it;
+        }
+    }
+}
+
+void MenuScene::RenderMusicParticles(GameContext& context) const
+{
+    if (m_musicParticles.empty()) return;
+
+    const auto& L = m_tvLayout;
+    for (const auto& p : m_musicParticles)
+    {
+        float progress = p.Lifetime / p.MaxLifetime;
+        float alphaFactor = 1.0f;
+        if (progress < 0.2f)
+        {
+            alphaFactor = progress / 0.2f;
+        }
+        else if (progress > 0.65f)
+        {
+            alphaFactor = (1.0f - progress) / 0.35f;
+        }
+
+        uint8_t a = static_cast<uint8_t>(std::clamp(alphaFactor * 240.0f, 0.0f, 240.0f));
+        Color col = p.NoteColor;
+        col.a = a;
+        Color glowCol = p.NoteColor;
+        glowCol.a = static_cast<uint8_t>(a * 0.35f);
+
+        Vector2f screenPos = L.ToScreenPos(p.BasePos);
+        float sc = L.Scale * p.Scale;
+
+        if (p.NoteType == 0)
+        {
+            // Single musical note (♪)
+            // Glowing aura behind notehead
+            context.Render.DrawCircle(L.ToScreenDim(9.0f * sc), Transform2D{screenPos}, glowCol);
+
+            // Notehead (tilted filled ellipse)
+            context.Render.DrawCircle(L.ToScreenDim(5.0f * sc), Transform2D{screenPos, -0.3f, Vector2f{1.25f, 0.85f}}, col);
+
+            // Stem (vertical line upwards from right side of notehead)
+            Vector2f stemBase = screenPos + Vector2f{L.ToScreenDim(4.5f * sc), L.ToScreenDim(-1.0f * sc)};
+            Vector2f stemTop = stemBase + Vector2f{0.0f, L.ToScreenDim(-17.0f * sc)};
+            context.Render.DrawLine(stemBase, stemTop, col, L.ToScreenDim(2.0f * sc));
+
+            // Curved flag at the top of stem
+            Vector2f flagMid = stemTop + Vector2f{L.ToScreenDim(5.0f * sc), L.ToScreenDim(5.0f * sc)};
+            Vector2f flagEnd = flagMid + Vector2f{L.ToScreenDim(2.5f * sc), L.ToScreenDim(7.0f * sc)};
+            context.Render.DrawLine(stemTop, flagMid, col, L.ToScreenDim(2.0f * sc));
+            context.Render.DrawLine(flagMid, flagEnd, col, L.ToScreenDim(1.5f * sc));
+        }
+        else
+        {
+            // Double beamed musical notes (♫)
+            Vector2f leftHead = screenPos + Vector2f{L.ToScreenDim(-7.0f * sc), L.ToScreenDim(2.0f * sc)};
+            Vector2f rightHead = screenPos + Vector2f{L.ToScreenDim(7.0f * sc), 0.0f};
+
+            // Glow
+            context.Render.DrawCircle(L.ToScreenDim(8.0f * sc), Transform2D{leftHead}, glowCol);
+            context.Render.DrawCircle(L.ToScreenDim(8.0f * sc), Transform2D{rightHead}, glowCol);
+
+            // Left notehead & right notehead
+            context.Render.DrawCircle(L.ToScreenDim(4.5f * sc), Transform2D{leftHead, -0.3f, Vector2f{1.25f, 0.85f}}, col);
+            context.Render.DrawCircle(L.ToScreenDim(4.5f * sc), Transform2D{rightHead, -0.3f, Vector2f{1.25f, 0.85f}}, col);
+
+            // Stems
+            Vector2f leftStemBase = leftHead + Vector2f{L.ToScreenDim(4.0f * sc), L.ToScreenDim(-1.0f * sc)};
+            Vector2f leftStemTop = leftStemBase + Vector2f{0.0f, L.ToScreenDim(-16.0f * sc)};
+            Vector2f rightStemBase = rightHead + Vector2f{L.ToScreenDim(4.0f * sc), L.ToScreenDim(-1.0f * sc)};
+            Vector2f rightStemTop = rightStemBase + Vector2f{0.0f, L.ToScreenDim(-18.0f * sc)};
+
+            context.Render.DrawLine(leftStemBase, leftStemTop, col, L.ToScreenDim(1.8f * sc));
+            context.Render.DrawLine(rightStemBase, rightStemTop, col, L.ToScreenDim(1.8f * sc));
+
+            // Connecting Beam between tops
+            context.Render.DrawLine(leftStemTop, rightStemTop, col, L.ToScreenDim(3.5f * sc));
+        }
+    }
+}
+
+void MenuScene::RenderPowerOffAnimation(GameContext& context) const
+{
+    if (!m_isPoweringOff) return;
+
+    const auto& L = m_tvLayout;
+    const Vector2f screenCenter = L.GlassCenter;
+    const float screenW = L.GlassSize.X;
+    const float screenH = L.GlassSize.Y;
+
+    if (m_powerOffTimer < 0.40f)
+    {
+        float p = m_powerOffTimer / 0.40f;
+        float h = (1.0f - p) * screenH;
+        if (h < 4.0f) h = 4.0f;
+
+        float blackTopH = (screenH - h) * 0.5f;
+        context.Render.DrawRectangle(screenW, blackTopH, Transform2D{Vector2f{screenCenter.X, screenCenter.Y - (screenH + h) * 0.25f}}, Color{0, 0, 0, 255});
+        context.Render.DrawRectangle(screenW, blackTopH, Transform2D{Vector2f{screenCenter.X, screenCenter.Y + (screenH + h) * 0.25f}}, Color{0, 0, 0, 255});
+        context.Render.DrawRectangle(screenW, h, Transform2D{screenCenter}, Color{235, 245, 255, 255});
+    }
+    else if (m_powerOffTimer < 0.65f)
+    {
+        float p = (m_powerOffTimer - 0.40f) / 0.25f;
+        float w = (1.0f - p) * screenW;
+        if (w < 8.0f) w = 8.0f;
+
+        context.Render.DrawRectangle(screenW, screenH, Transform2D{screenCenter}, Color{0, 0, 0, 255});
+        context.Render.DrawRectangle(w, 4.0f, Transform2D{screenCenter}, Color{245, 250, 255, 255});
+    }
+    else
+    {
+        float p = (m_powerOffTimer - 0.65f) / 0.20f;
+        context.Render.DrawRectangle(screenW, screenH, Transform2D{screenCenter}, Color{0, 0, 0, 255});
+        uint8_t a = static_cast<uint8_t>(std::clamp((1.0f - p) * 255.0f, 0.0f, 255.0f));
+        context.Render.DrawCircle(L.ToScreenDim(4.0f), Transform2D{screenCenter}, Color{255, 255, 255, a});
+    }
 }
 
 
@@ -1200,13 +3106,38 @@ void MenuScene::CreateAudioTab(const GameContext& context)
     });
 
     UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
+        .Label = "MASTER",
+        .OnMinus = [&context, this]() {
+            m_masterVolume = std::max(0.0f, m_masterVolume - 10.0f);
+            context.Audio.SetMasterVolume(m_masterVolume);
+            m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+            PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+            PlayerPrefs::Save();
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+        },
+        .OnPlus = [&context, this]() {
+            m_masterVolume = std::min(100.0f, m_masterVolume + 10.0f);
+            context.Audio.SetMasterVolume(m_masterVolume);
+            m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
+            PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
+            PlayerPrefs::Save();
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
+        },
+        .BarsOut = &m_masterVolumeBars,
+        .Position = {rightPanelX * 0.5f, -viewY * 0.12f},
+        .FontId = m_fontId
+    });
+
+    UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "SFX",
         .OnMinus = [&context, this]() {
             float vol = std::max(0.0f, context.Audio.GetSfxVolume() - 10.0f);
             context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .OnPlus = [&context, this]() {
@@ -1214,11 +3145,11 @@ void MenuScene::CreateAudioTab(const GameContext& context)
             context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 100.0f);
+            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .BarsOut = &m_sfxVolumeBars,
-        .Position = {rightPanelX * 0.5f, -viewY * 0.1f + 20.0f},
+        .Position = {rightPanelX * 0.5f, -viewY * 0.01f},
         .FontId = m_fontId
     });
 
@@ -1239,17 +3170,18 @@ void MenuScene::CreateAudioTab(const GameContext& context)
             UpdateVolumeBars(m_musicVolumeBars, vol);
         },
         .BarsOut = &m_musicVolumeBars,
-        .Position = {rightPanelX * 0.5f, viewY * 0.1f - 50.0f},
+        .Position = {rightPanelX * 0.5f, viewY * 0.10f},
         .FontId = m_fontId
     });
 
+    UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
     UpdateVolumeBars(m_sfxVolumeBars, context.Audio.GetSfxVolume());
     UpdateVolumeBars(m_musicVolumeBars, context.Audio.GetMusicVolume());
 
     // Playback Device Selection
     UIFactory::CreateText(m_registry, m_audioCanvas, TextDescriptor{
         .Text = "DEVICE",
-        .Position = {rightPanelX * 0.5f - 110.0f, viewY * 0.1f + 45.0f},
+        .Position = {rightPanelX * 0.5f - 110.0f, viewY * 0.21f},
         .FontId = m_fontId,
         .FontSize = 32.0f,
         .Tint = Colors::White
@@ -1287,14 +3219,15 @@ void MenuScene::CreateAudioTab(const GameContext& context)
             {
                 PlayerPrefs::SetString("Audio_Device", newDevice);
                 PlayerPrefs::Save();
-                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
+                context.Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 60.0f, true);
+                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
             }
             if (m_registry.HasComponent<TextComponent>(m_audioDeviceBtn))
             {
                 m_registry.GetComponent<TextComponent>(m_audioDeviceBtn).Text = formatDeviceText(newDevice);
             }
         },
-        .Position = {rightPanelX * 0.5f + 250.0f, viewY * 0.1f + 45.0f},
+        .Position = {rightPanelX * 0.5f + 250.0f, viewY * 0.21f},
         .Size = {480.0f, 54.0f},
         .DefaultColor = Color{40, 55, 80, 255},
         .HoverColor = Color{60, 85, 120, 255},
@@ -1337,6 +3270,12 @@ void MenuScene::CreateRenderTab(const GameContext& context)
             WindowConfig config = context.Render.GetWindow().GetConfig();
             if (config.Mode == WindowMode::Fullscreen) {
                 config.Mode = WindowMode::Windowed;
+                int resW = PlayerPrefs::GetInt("ResolutionWidth", 1920);
+                int resH = PlayerPrefs::GetInt("ResolutionHeight", 1080);
+                if (resW > 0 && resH > 0) {
+                    config.Width = resW;
+                    config.Height = resH;
+                }
                 PlayerPrefs::SetBool("Fullscreen", false);
                 if (m_registry.HasComponent<TextComponent>(m_fsBtn)) {
                     m_registry.GetComponent<TextComponent>(m_fsBtn).Text = "FULL-SCREEN: OFF";
@@ -1350,6 +3289,7 @@ void MenuScene::CreateRenderTab(const GameContext& context)
             }
             PlayerPrefs::Save();
             context.Render.GetWindow().ApplyConfig(config);
+            context.Render.OnWindowResized(config.Width, config.Height);
         },
         .Position = {rightPanelX - 250.0f, -viewY * 0.1f},
         .Size = {400.0f, 60.0f},
@@ -1373,10 +3313,13 @@ void MenuScene::CreateRenderTab(const GameContext& context)
                 WindowConfig config = context.Render.GetWindow().GetConfig();
                 config.Width = uniqueModes[static_cast<size_t>(index)].Width;
                 config.Height = uniqueModes[static_cast<size_t>(index)].Height;
+                PlayerPrefs::SetInt("ResolutionWidth", static_cast<int>(config.Width));
                 PlayerPrefs::SetInt("WindowWidth", static_cast<int>(config.Width));
+                PlayerPrefs::SetInt("ResolutionHeight", static_cast<int>(config.Height));
                 PlayerPrefs::SetInt("WindowHeight", static_cast<int>(config.Height));
                 PlayerPrefs::Save();
                 context.Render.GetWindow().ApplyConfig(config);
+                context.Render.OnWindowResized(config.Width, config.Height);
             }
         },
         .Position = {rightPanelX + 250.0f, -viewY * 0.1f},
@@ -1745,8 +3688,17 @@ void MenuScene::OpenSettingsTab(Entity targetCanvas)
 
         if (targetCanvas == m_audioCanvas && mp_context)
         {
+            UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
             UpdateVolumeBars(m_sfxVolumeBars, mp_context->Audio.GetSfxVolume());
             UpdateVolumeBars(m_musicVolumeBars, mp_context->Audio.GetMusicVolume());
+        }
+        else if (targetCanvas == m_renderCanvas && mp_context)
+        {
+            bool isFs = mp_context->Render.GetWindow().GetConfig().Mode == WindowMode::Fullscreen;
+            if (m_registry.HasComponent<TextComponent>(m_fsBtn))
+            {
+                m_registry.GetComponent<TextComponent>(m_fsBtn).Text = isFs ? "FULL-SCREEN: ON" : "FULL-SCREEN: OFF";
+            }
         }
     }
 }
@@ -1765,7 +3717,7 @@ void MenuScene::CreateLeaderboardModal(const GameContext& /*context*/)
 
     // Header
     UIFactory::CreateText(m_registry, m_leaderboardCanvas, TextDescriptor{
-        .Text = "HIGH SCORES",
+        .Text = "LEADERBOARD",
         .Position = {0.0f, -250.0f},
         .FontId = m_fontId,
         .FontSize = 46.0f,
@@ -2161,7 +4113,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     m_previewAnimTime = 0.0f;
                     m_simAudioTriggerMask = 0;
                     m_simLastLoop = -1;
-                    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+                    if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 16.0f);
                     if (!changed && m_previewScene)
                     {
                         m_previewScene->ResetPreview();
@@ -2220,7 +4172,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             if (m_workshopScrollRow > 0)
             {
                 m_workshopScrollRow--;
-                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 70.0f);
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 16.0f);
                 RefreshWorkshopUI();
             }
         },
@@ -2241,7 +4193,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             if (m_workshopScrollRow < 2)
             {
                 m_workshopScrollRow++;
-                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 70.0f);
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 16.0f);
                 RefreshWorkshopUI();
             }
         },
@@ -2311,7 +4263,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 bool levelChanged = (m_inspectedLevel != lvl);
                 m_inspectedLevel = lvl;
                 m_workshopPreviewLevel = lvl;
-                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 16.0f);
                 if (!levelChanged && m_previewScene)
                 {
                     m_previewScene->ResetPreview();
@@ -2414,7 +4366,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                 PowerUpManager::Get().Upgrade(t);
                 m_inspectedLevel = PowerUpManager::Get().GetLevel(t);
                 m_workshopPreviewLevel = m_inspectedLevel;
-                if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+                if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
                 RefreshWorkshopUI();
             }
         },
@@ -2518,8 +4470,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     {
                         mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
                     }
-                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
-                    else if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 80.0f);
+                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 15.0f, 1.25f);
+                    else if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 16.0f);
                     RefreshWorkshopUI();
                 },
                 .Position = {bx, ultPipY},
@@ -2617,8 +4569,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     {
                         m_ultimatePreviewScenes[cardIdx]->SetPreviewUltimate(ultType, newLvl);
                     }
-                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
-                    if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+                    if (m_channelSwitchSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 15.0f, 1.25f);
+                    if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
                     RefreshWorkshopUI();
                 }
             },
@@ -2660,7 +4612,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                         m_ultimatePreviewScenes[c]->ResetPreview();
                     }
                 }
-                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 85.0f);
+                if (m_clickSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_clickSfxId, 16.0f);
                 RefreshWorkshopUI();
             },
             .Position = {x, 325.0f},
@@ -2735,7 +4687,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .Placeholder = "ENTER NICKNAME...",
         .OnSubmit = [this](const std::string& text) {
             ProfileManager::Get().SetUsername(text);
-            if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 85.0f);
+            if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
             RefreshWorkshopUI();
         },
         .Position = {-580.0f, -320.0f},
@@ -2827,7 +4779,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             ResetSaveData();
             if (m_brickDestroySfxId != 0 && mp_context)
             {
-                mp_context->Audio.PlaySfx(m_brickDestroySfxId, 85.0f);
+                mp_context->Audio.PlaySfx(m_brickDestroySfxId, 45.0f);
             }
             if (m_resetSaveBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_resetSaveBtn))
             {
@@ -3993,7 +5945,7 @@ void MenuScene::TriggerPreviewChannelSwitch()
     m_previewSwitchTimer = 0.38f;
     if (m_channelSwitchSfxId != 0 && mp_context)
     {
-        mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 85.0f, 1.25f);
+        mp_context->Audio.PlaySfx(m_channelSwitchSfxId, 15.0f, 1.25f);
     }
 }
 

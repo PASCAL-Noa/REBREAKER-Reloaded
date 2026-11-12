@@ -7,7 +7,8 @@ ThreadPool::ThreadPool(size_t threadCount)
     if (threadCount == 0)
     {
         unsigned int hw = std::thread::hardware_concurrency();
-        threadCount = std::max(2u, hw);
+        // Cap default thread count to 4 to prevent CPU exhaustion and avoid unstable cores
+        threadCount = std::min(4u, std::max(2u, hw));
     }
 
     m_workers.reserve(threadCount);

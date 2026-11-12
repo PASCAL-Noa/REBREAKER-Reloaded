@@ -7,5 +7,6 @@ enum class SceneTransitionType
     FadeWhite,
     CrossFade,
     IrisWipe,
-    CurtainWipe
+    CurtainWipe,
+    StaticSnow
 };

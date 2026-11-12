@@ -8,9 +8,9 @@ SceneManager::SceneManager()
 {
     m_defaultTransitionConfig = SceneTransitionConfig{
         .Type = SceneTransitionType::FadeBlack,
-        .Duration = 0.4f,
+        .Duration = 0.65f,
         .FadeColor = Colors::Black,
-        .Ease = EasingFunctions::EasingType::EaseInOutQuad
+        .Ease = EasingFunctions::EasingType::EaseInOutCubic
     };
     m_transitionConfig = m_defaultTransitionConfig;
 }

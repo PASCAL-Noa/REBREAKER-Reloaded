@@ -18,7 +18,7 @@ public:
     void Shutdown(GameContext& context);
 
     void SetDefaultTransition(const SceneTransitionConfig& config);
-    void SetDefaultTransition(SceneTransitionType type, float duration = 0.4f, Color color = Colors::Black, EasingFunctions::EasingType ease = EasingFunctions::EasingType::EaseInOutQuad);
+    void SetDefaultTransition(SceneTransitionType type, float duration = 0.65f, Color color = Colors::Black, EasingFunctions::EasingType ease = EasingFunctions::EasingType::EaseInOutCubic);
     [[nodiscard]] const SceneTransitionConfig& GetDefaultTransition() const noexcept { return m_defaultTransitionConfig; }
 
     [[nodiscard]] SceneTransitionPhase GetTransitionPhase() const noexcept { return m_transitionPhase; }
@@ -33,7 +33,7 @@ public:
     void LoadSceneWithTransition(const SceneTransitionConfig& config, Args&&... args);
 
     template <typename T, typename... Args>
-    void LoadSceneWithTransition(SceneTransitionType type, float duration = 0.4f, Color color = Colors::Black, EasingFunctions::EasingType ease = EasingFunctions::EasingType::EaseInOutQuad, Args&&... args);
+    void LoadSceneWithTransition(SceneTransitionType type, float duration = 0.65f, Color color = Colors::Black, EasingFunctions::EasingType ease = EasingFunctions::EasingType::EaseInOutCubic, Args&&... args);
 
     template <typename T, typename... Args>
     void LoadSceneInstant(Args&&... args);
