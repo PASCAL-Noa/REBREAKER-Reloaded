@@ -165,7 +165,12 @@ void DynamicEventSystem::EnterState(ArenaEventState newState)
             break;
 
         case ArenaEventState::Active:
-            m_stateDuration = (m_currentEvent == ArenaEventType::TemporalFlux) ? 20.0f : m_eventDuration;
+            if (m_currentEvent == ArenaEventType::TemporalFlux)
+                m_stateDuration = 20.0f;
+            else if (m_currentEvent == ArenaEventType::UltimateLockdown)
+                m_stateDuration = 45.0f;
+            else
+                m_stateDuration = m_eventDuration;
             m_stateTimer = m_stateDuration;
             m_alarmIntensity = 0.85f;
             m_alarmColor = GetArenaEventColor(m_currentEvent);
@@ -316,6 +321,12 @@ void DynamicEventSystem::ActivateEvent(ArenaEventType type)
             m_meteorSpawnTimer = 0.15f;
             break;
 
+        case ArenaEventType::UltimateLockdown:
+            m_eventDuration = 45.0f;
+            m_stateDuration = 45.0f;
+            m_stateTimer = 45.0f;
+            break;
+
         default:
             break;
     }
@@ -419,6 +430,10 @@ void DynamicEventSystem::UpdateLifecycle(float dt)
             else if (m_currentEvent == ArenaEventType::SolarFlareBlackout)
             {
                 m_alarmIntensity = 0.30f * (std::sin(m_stateTimer * 3.5f) * 0.5f + 0.5f);
+            }
+            else if (m_currentEvent == ArenaEventType::UltimateLockdown)
+            {
+                m_alarmIntensity = 0.35f * (std::sin(m_stateTimer * 5.0f) * 0.5f + 0.5f);
             }
             else
             {

@@ -1,6 +1,7 @@
 #include "Scenes/LevelSelectScene.h"
 #include "Scenes/GameScene.h"
 #include "Scenes/MenuScene.h"
+#include "Scenes/CustomGameScene.h"
 #include "Core/GameContext.h"
 #include "Core/GameData.h"
 #include "Core/SceneManager.h"
@@ -83,6 +84,13 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
         context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
         MenuScene::SetReturnWithDezoom(true);
         context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
+        return;
+    }
+
+    if (context.Input.IsKeyPress(KeyCode::C))
+    {
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        context.Scenes.LoadSceneWithTransition<CustomGameScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
     }
 
@@ -186,16 +194,24 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
 
     // Back button click
     constexpr float backY = 330.0f;
-    constexpr float backW = 300.0f;
-    constexpr float backH = 52.0f;
     if (mouseClicked &&
-        centeredMouse.X >= -backW * 0.5f && centeredMouse.X <= backW * 0.5f &&
-        centeredMouse.Y >= backY - backH * 0.5f && centeredMouse.Y <= backY + backH * 0.5f)
+        centeredMouse.X >= -260.0f && centeredMouse.X <= -20.0f &&
+        centeredMouse.Y >= backY - 26.0f && centeredMouse.Y <= backY + 26.0f)
     {
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
         context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
         MenuScene::SetReturnWithDezoom(true);
         context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
+        return;
+    }
+
+    // Custom Match button click
+    if (mouseClicked &&
+        centeredMouse.X >= 20.0f && centeredMouse.X <= 260.0f &&
+        centeredMouse.Y >= backY - 26.0f && centeredMouse.Y <= backY + 26.0f)
+    {
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        context.Scenes.LoadSceneWithTransition<CustomGameScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
     }
 
@@ -370,15 +386,24 @@ void LevelSelectScene::RenderThumbnailsAndEffects(const GameContext& context) co
             Color{180, 200, 230, 220});
     }
 
-    // --- 4. BACK BUTTON ---
+    // --- 4. BACK & CUSTOM MATCH BUTTONS ---
     const float backY = screenCenterY + 330.0f;
-    const float backW = 300.0f;
-    const float backH = 52.0f;
-    context.Render.DrawRectangle(backW, backH, Transform2D{Vector2f{screenCenterX, backY}}, Color{95, 35, 42, 255});
-    context.Render.DrawRectangleOutline(backW, backH, Transform2D{Vector2f{screenCenterX, backY}}, Color{180, 60, 70, 200}, 2.0f);
-    context.Render.DrawTextCentered("<- BACK [ESC]", m_fontId, 28.0f,
-        Transform2D{Vector2f{screenCenterX, backY}},
+    const float btnW = 240.0f;
+    const float btnH = 50.0f;
+
+    // Back Button
+    context.Render.DrawRectangle(btnW, btnH, Transform2D{Vector2f{screenCenterX - 135.0f, backY}}, Color{95, 35, 42, 255});
+    context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{Vector2f{screenCenterX - 135.0f, backY}}, Color{180, 60, 70, 200}, 2.0f);
+    context.Render.DrawTextCentered("<- RETOUR [ECHAP]", m_fontId, 22.0f,
+        Transform2D{Vector2f{screenCenterX - 135.0f, backY}},
         Colors::White);
+
+    // Custom Match Button
+    context.Render.DrawRectangle(btnW, btnH, Transform2D{Vector2f{screenCenterX + 135.0f, backY}}, Color{28, 55, 95, 255});
+    context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{Vector2f{screenCenterX + 135.0f, backY}}, Colors::Gold, 2.0f);
+    context.Render.DrawTextCentered("PARTIE PERSO [C]", m_fontId, 22.0f,
+        Transform2D{Vector2f{screenCenterX + 135.0f, backY}},
+        Colors::Gold);
 }
 
 void LevelSelectScene::OnRender(GameContext& context)

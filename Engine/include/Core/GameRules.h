@@ -26,7 +26,15 @@ namespace Rule
         InfiniteLives,
         CheatsUnlocked,
         InfiniteUltimate,
-        ArenaEventsEnabled
+        ArenaEventsEnabled,
+        HazardZonesEnabled,
+        HazardUltimateDrainEnabled,
+        HazardScreenGlitchEnabled,
+        HazardCameraTiltEnabled,
+        HazardZoomPulseEnabled,
+        HazardAudioWarpEnabled,
+        UltimateLockdownEnabled,
+        EndlessCreepingCeiling
     };
 
     enum class Debug : uint32_t

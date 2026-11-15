@@ -10,9 +10,7 @@
 #endif
 #include <windows.h>
 #include <dbghelp.h>
-#if defined(_DEBUG)
-#include <crtdbg.h>
-#endif
+
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
@@ -20,12 +18,22 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 
 static LONG WINAPI CustomCrashHandler(EXCEPTION_POINTERS* pEx)
 {
+    if (!pEx || !pEx->ExceptionRecord) return EXCEPTION_CONTINUE_SEARCH;
+
+    DWORD code = pEx->ExceptionRecord->ExceptionCode;
+    if (code != EXCEPTION_ACCESS_VIOLATION &&
+        code != 0xC0000374 /* STATUS_HEAP_CORRUPTION */ &&
+        code != 0xC0000008 /* STATUS_INVALID_HANDLE */)
+    {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
     std::ofstream file("crash.log", std::ios::app);
     file << "\n================ CRASH DETECTED ================\n";
-    file << "Exception Code: 0x" << std::hex << pEx->ExceptionRecord->ExceptionCode << "\n";
+    file << "Exception Code: 0x" << std::hex << code << "\n";
     file << "Exception Address: 0x" << std::hex << (uintptr_t)pEx->ExceptionRecord->ExceptionAddress << "\n";
 
-    if (pEx->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&
+    if (code == EXCEPTION_ACCESS_VIOLATION &&
         pEx->ExceptionRecord->NumberParameters >= 2)
     {
         file << "Access Violation: tried to "
@@ -33,32 +41,28 @@ static LONG WINAPI CustomCrashHandler(EXCEPTION_POINTERS* pEx)
              << " address 0x" << std::hex << pEx->ExceptionRecord->ExceptionInformation[1] << "\n";
     }
 
+    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
     HANDLE process = GetCurrentProcess();
-    HANDLE thread = GetCurrentThread();
-    SymInitialize(process, NULL, TRUE);
+    SymInitialize(process, ".;out\\build\\x64-Debug\\bin", TRUE);
 
-    STACKFRAME64 stackFrame{};
-    CONTEXT contextRecord = *pEx->ContextRecord;
-    DWORD machineType = IMAGE_FILE_MACHINE_AMD64;
-
-    stackFrame.AddrPC.Offset = contextRecord.Rip;
-    stackFrame.AddrPC.Mode = AddrModeFlat;
-    stackFrame.AddrFrame.Offset = contextRecord.Rbp;
-    stackFrame.AddrFrame.Mode = AddrModeFlat;
-    stackFrame.AddrStack.Offset = contextRecord.Rsp;
-    stackFrame.AddrStack.Mode = AddrModeFlat;
-
+    CONTEXT ctx = *pEx->ContextRecord;
     file << "--- STACK TRACE ---\n";
     for (int frame = 0; frame < 64; ++frame)
     {
-        if (!StackWalk64(machineType, process, thread, &stackFrame, &contextRecord,
-                         NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL))
-        {
-            break;
-        }
+        DWORD64 ip = ctx.Rip;
+        if (ip == 0) break;
 
-        DWORD64 address = stackFrame.AddrPC.Offset;
-        if (address == 0) break;
+        HMODULE hMod = NULL;
+        char modName[MAX_PATH] = "Unknown";
+        DWORD64 rva = 0;
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCSTR)ip, &hMod) && hMod)
+        {
+            GetModuleFileNameA(hMod, modName, sizeof(modName));
+            char* lastSlash = strrchr(modName, '\\');
+            if (lastSlash) memmove(modName, lastSlash + 1, strlen(lastSlash));
+            rva = ip - (DWORD64)hMod;
+        }
 
         char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)]{};
         PSYMBOL_INFO symbol = (PSYMBOL_INFO)buffer;
@@ -66,23 +70,39 @@ static LONG WINAPI CustomCrashHandler(EXCEPTION_POINTERS* pEx)
         symbol->MaxNameLen = MAX_SYM_NAME;
 
         DWORD64 displacement = 0;
-        if (SymFromAddr(process, address, &displacement, symbol))
+        if (SymFromAddr(process, ip, &displacement, symbol))
         {
             IMAGEHLP_LINE64 line{};
             line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
             DWORD lineDisplacement = 0;
-            if (SymGetLineFromAddr64(process, address, &lineDisplacement, &line))
+            if (SymGetLineFromAddr64(process, ip, &lineDisplacement, &line))
             {
-                file << "#" << frame << " " << symbol->Name << " at " << line.FileName << ":" << line.LineNumber << "\n";
+                file << "#" << frame << " [" << modName << " + 0x" << std::hex << rva << "] "
+                     << symbol->Name << " at " << line.FileName << ":" << std::dec << line.LineNumber << "\n";
             }
             else
             {
-                file << "#" << frame << " " << symbol->Name << " + 0x" << std::hex << displacement << "\n";
+                file << "#" << frame << " [" << modName << " + 0x" << std::hex << rva << "] "
+                     << symbol->Name << " + 0x" << std::hex << displacement << "\n";
             }
         }
         else
         {
-            file << "#" << frame << " 0x" << std::hex << address << "\n";
+            file << "#" << frame << " [" << modName << " + 0x" << std::hex << rva << "] 0x" << std::hex << ip << "\n";
+        }
+
+        DWORD64 imageBase = 0;
+        PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry(ctx.Rip, &imageBase, NULL);
+        if (!fn)
+        {
+            ctx.Rip = (ctx.Rsp != 0) ? *(DWORD64*)ctx.Rsp : 0;
+            ctx.Rsp += 8;
+        }
+        else
+        {
+            PVOID handlerData = NULL;
+            DWORD64 establisherFrame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, ctx.Rip, fn, &ctx, &handlerData, &establisherFrame, NULL);
         }
     }
     file << "================================================\n" << std::flush;
@@ -99,9 +119,7 @@ int main()
 {
 #ifdef _WIN32
     SetUnhandledExceptionFilter(CustomCrashHandler);
-#endif
-#if defined(_WIN32) && defined(_DEBUG)
-    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    AddVectoredExceptionHandler(1, CustomCrashHandler);
 #endif
 #ifdef _WIN32
     // Protect against defective/dead 8th logical core (index 7, 0-based)

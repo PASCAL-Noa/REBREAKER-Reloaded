@@ -151,4 +151,14 @@ TEST_SUITE("UI Feedback & Audio Tests")
         mixer.SetMusicVolume(70.0f);
         CHECK(mixer.GetMusicVolume() == doctest::Approx(70.0f));
     }
+
+    TEST_CASE("Load startup audio assets into SoundBuffer and Music")
+    {
+        sf::SoundBuffer buf;
+        CHECK(buf.loadFromFile("Resources/audio/sfx/ui_click.wav"));
+        CHECK(buf.loadFromFile("Resources/audio/sfx/paddle_hit.wav"));
+
+        sf::Music music;
+        CHECK(music.openFromFile("Resources/audio/music/Game-menu.ogg"));
+    }
 }

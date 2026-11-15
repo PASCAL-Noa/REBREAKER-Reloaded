@@ -7,5 +7,5 @@
 class BrickFactory
 {
 public:
-    static Entity Create(Registry& registry, float x, float y, BrickType type, bool isSpecial, uint32_t texId);
+    static Entity Create(Registry& registry, float x, float y, BrickType type, bool isSpecial, uint32_t texId, uint8_t armorTier = 0);
 };

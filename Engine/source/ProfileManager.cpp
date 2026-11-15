@@ -312,6 +312,182 @@ void ProfileManager::EquipCosmetic(CosmeticSlot slot, const std::string& id)
     PlayerPrefs::Save();
 }
 
+uint32_t ProfileManager::GetEndlessHighScore() const
+{
+    return static_cast<uint32_t>(std::max(0, PlayerPrefs::GetInt("Endless_HighScore", 0)));
+}
+
+float ProfileManager::GetEndlessBestTime() const
+{
+    return std::max(0.0f, PlayerPrefs::GetFloat("Endless_BestTime", 0.0f));
+}
+
+std::string ProfileManager::GetEndlessBestTimeFormatted() const
+{
+    float totalSec = GetEndlessBestTime();
+    int minutes = static_cast<int>(totalSec) / 60;
+    int seconds = static_cast<int>(totalSec) % 60;
+    char buffer[16];
+    std::snprintf(buffer, sizeof(buffer), "%02d:%02d", minutes, seconds);
+    return std::string(buffer);
+}
+
+int ProfileManager::GetEndlessBestWaves() const
+{
+    return std::max(0, PlayerPrefs::GetInt("Endless_BestWaves", 0));
+}
+
+int ProfileManager::GetEndlessTotalRuns() const
+{
+    return std::max(0, PlayerPrefs::GetInt("Endless_TotalRuns", 0));
+}
+
+int ProfileManager::GetEndlessTotalWaves() const
+{
+    return std::max(0, PlayerPrefs::GetInt("Endless_TotalWaves", 0));
+}
+
+void ProfileManager::RecordEndlessRun(float survivalTime, int wavesCleared, uint32_t score)
+{
+    uint32_t curHighScore = GetEndlessHighScore();
+    if (score > curHighScore)
+    {
+        PlayerPrefs::SetInt("Endless_HighScore", static_cast<int>(score));
+    }
+
+    float curBestTime = GetEndlessBestTime();
+    if (survivalTime > curBestTime)
+    {
+        PlayerPrefs::SetFloat("Endless_BestTime", survivalTime);
+    }
+
+    int curBestWaves = GetEndlessBestWaves();
+    if (wavesCleared > curBestWaves)
+    {
+        PlayerPrefs::SetInt("Endless_BestWaves", wavesCleared);
+    }
+
+    PlayerPrefs::SetInt("Endless_TotalRuns", GetEndlessTotalRuns() + 1);
+    PlayerPrefs::SetInt("Endless_TotalWaves", GetEndlessTotalWaves() + wavesCleared);
+
+    AddLifetimeScore(score);
+    uint32_t earnedCredits = ConvertScoreToCredits(score);
+    AddLifetimeCredits(earnedCredits);
+    PowerUpManager::Get().AddCoins(static_cast<int>(earnedCredits));
+
+    PlayerPrefs::Save();
+}
+
+int ProfileManager::GetEndlessPerkLevel(EndlessPerkType type) const
+{
+    return std::clamp(PlayerPrefs::GetInt("Endless_PerkLevel_" + std::to_string(static_cast<int>(type)), 0), 0, GetEndlessPerkMaxLevel(type));
+}
+
+void ProfileManager::SetEndlessPerkLevel(EndlessPerkType type, int level)
+{
+    int clamped = std::clamp(level, 0, GetEndlessPerkMaxLevel(type));
+    PlayerPrefs::SetInt("Endless_PerkLevel_" + std::to_string(static_cast<int>(type)), clamped);
+    PlayerPrefs::Save();
+}
+
+int ProfileManager::GetEndlessPerkMaxLevel(EndlessPerkType type) const
+{
+    switch (type)
+    {
+    case EndlessPerkType::InitialRerolls:  return 3;
+    case EndlessPerkType::ShieldRecovery:  return 3;
+    case EndlessPerkType::ScoreMultiplier: return 5;
+    case EndlessPerkType::StartingLives:   return 2;
+    default: return 1;
+    }
+}
+
+int ProfileManager::GetEndlessPerkUpgradeCost(EndlessPerkType type) const
+{
+    int curLevel = GetEndlessPerkLevel(type);
+    if (curLevel >= GetEndlessPerkMaxLevel(type)) return 0;
+
+    switch (type)
+    {
+    case EndlessPerkType::InitialRerolls:
+        return 200 * (curLevel + 1);
+    case EndlessPerkType::ShieldRecovery:
+        return 300 * (curLevel + 1);
+    case EndlessPerkType::ScoreMultiplier:
+        return 150 * (curLevel + 1);
+    case EndlessPerkType::StartingLives:
+        return 400 * (curLevel + 1);
+    default:
+        return 200;
+    }
+}
+
+bool ProfileManager::CanUpgradeEndlessPerk(EndlessPerkType type) const
+{
+    int curLevel = GetEndlessPerkLevel(type);
+    if (curLevel >= GetEndlessPerkMaxLevel(type)) return false;
+    return PowerUpManager::Get().GetCoins() >= GetEndlessPerkUpgradeCost(type);
+}
+
+bool ProfileManager::UpgradeEndlessPerk(EndlessPerkType type)
+{
+    if (!CanUpgradeEndlessPerk(type)) return false;
+    int cost = GetEndlessPerkUpgradeCost(type);
+    if (PowerUpManager::Get().SpendCoins(cost))
+    {
+        SetEndlessPerkLevel(type, GetEndlessPerkLevel(type) + 1);
+        return true;
+    }
+    return false;
+}
+
+std::string ProfileManager::GetEndlessPerkName(EndlessPerkType type)
+{
+    switch (type)
+    {
+    case EndlessPerkType::InitialRerolls:  return "DRAFT REROLLS";
+    case EndlessPerkType::ShieldRecovery:  return "SHIELD RECOVERY";
+    case EndlessPerkType::ScoreMultiplier: return "SCORE OVERDRIVE";
+    case EndlessPerkType::StartingLives:   return "REINFORCED CHASSIS";
+    default: return "PERK";
+    }
+}
+
+std::string ProfileManager::GetEndlessPerkDescription(EndlessPerkType type)
+{
+    switch (type)
+    {
+    case EndlessPerkType::InitialRerolls:
+        return "Grants tactical draft reroll tokens per run to re-spin undesirable card offerings.";
+    case EndlessPerkType::ShieldRecovery:
+        return "Deploys a protective bottom arena energy shield periodically to catch stray balls.";
+    case EndlessPerkType::ScoreMultiplier:
+        return "Permanently escalates all point multipliers and combat bounty rewards in Endless Mode.";
+    case EndlessPerkType::StartingLives:
+        return "Augments initial paddle durability with bonus reserve lives at run launch.";
+    default:
+        return "";
+    }
+}
+
+std::string ProfileManager::GetEndlessPerkTierInfo(EndlessPerkType type, int level)
+{
+    if (level <= 0) return "LOCKED - NO PERK ACTIVE";
+    switch (type)
+    {
+    case EndlessPerkType::InitialRerolls:
+        return "TIER " + std::to_string(level) + ": " + std::to_string(level) + " DRAFT REROLL" + (level > 1 ? "S" : "") + " PER RUN";
+    case EndlessPerkType::ShieldRecovery:
+        return "TIER " + std::to_string(level) + ": BOTTOM SHIELD RECOVERS EVERY " + std::to_string(std::max(1, 6 - level)) + " WAVES";
+    case EndlessPerkType::ScoreMultiplier:
+        return "TIER " + std::to_string(level) + ": +" + std::to_string(level * 10) + "% PERMANENT ENDLESS SCORE BONUS";
+    case EndlessPerkType::StartingLives:
+        return "TIER " + std::to_string(level) + ": +" + std::to_string(level) + " EXTRA STARTING RESERVE LIFE";
+    default:
+        return "TIER " + std::to_string(level);
+    }
+}
+
 void ProfileManager::ResetToDefaults()
 {
     PlayerPrefs::SetString("PlayerProfile_Username", "PLAYER");
@@ -324,6 +500,16 @@ void ProfileManager::ResetToDefaults()
     }
     PlayerPrefs::SetString("Equipped_PaddleSkin", "paddle_neon_cyan");
     PlayerPrefs::SetString("Equipped_BallTrail", "trail_plasma_blue");
+
+    PlayerPrefs::SetInt("Endless_HighScore", 0);
+    PlayerPrefs::SetFloat("Endless_BestTime", 0.0f);
+    PlayerPrefs::SetInt("Endless_BestWaves", 0);
+    PlayerPrefs::SetInt("Endless_TotalRuns", 0);
+    PlayerPrefs::SetInt("Endless_TotalWaves", 0);
+    for (int i = 0; i < static_cast<int>(EndlessPerkType::Count); ++i)
+    {
+        PlayerPrefs::SetInt("Endless_PerkLevel_" + std::to_string(i), 0);
+    }
 
     for (auto& item : m_cosmetics)
     {

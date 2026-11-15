@@ -16,6 +16,11 @@ public:
 
     State<T>* CreateState(int stateIndex)
     {
+        if (stateIndex < 0) return nullptr;
+        if (stateIndex >= static_cast<int>(m_states.size()))
+        {
+            m_states.resize(stateIndex + 1);
+        }
         m_states[stateIndex] = std::make_unique<State<T>>(m_owner);
         return m_states[stateIndex].get();
     }

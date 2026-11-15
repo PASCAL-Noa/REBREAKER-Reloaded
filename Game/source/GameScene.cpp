@@ -378,9 +378,11 @@ void GameScene::OnInit(GameContext& context)
         bool isPaddle = (otherEntity == m_paddle);
         bool isBottomWall = (otherEntity == m_bottomWall);
 
-        HandleBrickCollision(otherEntity, ballEntity, /*isLaser=*/false, /*isExplosion=*/false);
-
-        if (isPaddle)
+        if (isBrick)
+        {
+            HandleBrickCollision(otherEntity, ballEntity, /*isLaser=*/false, /*isExplosion=*/false);
+        }
+        else if (isPaddle)
         {
             HandlePaddleCollision(ballEntity);
         }
@@ -1516,17 +1518,26 @@ void GameScene::OnRender(GameContext& context)
             m_uiController->RenderCountdown(context);
         }
 
+        // 1. In-game HUDs (Ultimate meter, arena event terminal messages, scene-specific HUD)
+        // MUST be rendered BEFORE Canvas UI (UISystem::OnRender) so that Pause Menu,
+        // modal menus, and submenus are strictly always rendered in the foreground!
+        RenderUltimateMeterHUD(context);
+
+        const bool isPaused = IsPaused();
+        const bool isModalOpen = (m_uiController && m_uiController->IsModalOrSubMenuOpen());
+
+        if (mp_eventSystem && m_renderGameUI && !isPaused && !isModalOpen)
+        {
+            mp_eventSystem->RenderUI(context, m_fontId);
+        }
+
+        RenderSceneSpecificHUD(context);
+
+        // 2. Canvases (Pause menu, Options, Level Select, Game Over, etc.)
         UISystem::OnRender(m_registry, context);
         if (m_uiController)
         {
             m_uiController->OnRender(context);
-        }
-
-        RenderUltimateMeterHUD(context);
-
-        if (mp_eventSystem && m_renderGameUI)
-        {
-            mp_eventSystem->RenderUI(context, m_fontId);
         }
     }
 }
@@ -2145,6 +2156,11 @@ bool GameScene::CanUnpause() const
         return false;
     }
     return true;
+}
+
+bool GameScene::IsPaused() const
+{
+    return mp_state_machine && mp_state_machine->GetCurrentState() == static_cast<int>(SceneState::Paused);
 }
 
 bool GameScene::IsTypingName()
@@ -3942,7 +3958,7 @@ void GameScene::UpdatePaddleSpeed()
         speedMultiplier += (PowerUpManager::Get().Shrink().GetEffectivePaddleSpeedBonusPercent() / 100.0f);
     }
 
-    m_registry.GetComponent<PaddleComponent>(m_paddle).Speed = kBasePaddleSpeed * speedMultiplier;
+    m_registry.GetComponent<PaddleComponent>(m_paddle).Speed = kBasePaddleSpeed * speedMultiplier * GetBasePaddleSpeedMultiplier();
 }
 
 void GameScene::UpdatePowerUpTimers(float dt)
@@ -3963,7 +3979,7 @@ void GameScene::UpdatePowerUpTimers(float dt)
                 auto& paddleCollider = m_registry.GetComponent<BoxCollider>(m_paddle);
                 auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
                 paddleCollider.Size = Vector2f{120.0f, 20.0f};
-                paddleTrans.Scale = Vector2f{1.0f, 1.0f};
+                paddleTrans.Scale = Vector2f{GetBasePaddleScaleX(), 1.0f};
 
                 const float halfW = paddleCollider.GetEffectiveSize(paddleTrans.Scale).X * 0.5f;
                 const float limitX = 800.0f - halfW;
@@ -4471,9 +4487,25 @@ void GameScene::SetUltimateCharge(float charge)
     m_ultimateReady = (m_ultimateCharge >= m_ultimateMaxCharge);
 }
 
+void GameScene::DrainUltimateCharge(float amount)
+{
+    m_ultimateCharge = std::max(0.0f, m_ultimateCharge - amount);
+    m_ultimateReady = (m_ultimateCharge >= m_ultimateMaxCharge);
+}
+
 void GameScene::TryTriggerUltimate()
 {
     if (!m_ultimateReady) return;
+
+    if (mp_eventSystem && mp_eventSystem->IsUltimateBlocked())
+    {
+        if (m_audioEnabled && m_bounceSfxId != 0 && mp_context)
+        {
+            mp_context->Audio.PlaySfx(m_bounceSfxId, 50.0f, 0.6f);
+        }
+        TriggerPostProcessFlash(0.015f, 0.4f, Color{0, 220, 255, 255}, 0.2f, Color{0, 240, 255, 255});
+        return;
+    }
 
     UltimateAbilityType equipped = ProfileManager::Get().GetEquippedUltimate();
     int level = ProfileManager::Get().GetUltimateLevel(equipped);
@@ -6550,7 +6582,11 @@ Entity GameScene::SpawnHazardZone(const Vector2f& position, const Vector2f& size
     uint32_t hazardTex = GetHazardTexture(effect);
     if (hazardTex != 0)
     {
-        m_registry.AddComponent<SpriteComponent>(zone, SpriteComponent{hazardTex, Color{255, 255, 255, 175}, -1});
+        Color tint = Color{255, 255, 255, 175};
+        if (effect == HazardEffectType::UltimateDrain) tint = Color{235, 45, 255, 215};
+        else if (effect == HazardEffectType::ScreenGlitch) tint = Color{0, 235, 255, 190};
+        else if (effect == HazardEffectType::CameraTilt) tint = Color{255, 180, 40, 190};
+        m_registry.AddComponent<SpriteComponent>(zone, SpriteComponent{hazardTex, tint, -1});
     }
     return zone;
 }
@@ -6726,6 +6762,14 @@ void GameScene::UpdateHazardZones(const float dt)
                     break;
                 case HazardEffectType::TemporalAudioWarp:
                     TriggerTemporalAudioDistortion(0.88f, 0.15f, hz.Duration);
+                    break;
+                case HazardEffectType::UltimateDrain:
+                    DrainUltimateCharge(40.0f);
+                    TriggerPostProcessFlash(0.025f, 0.55f, Color{190, 20, 240, 255}, 0.25f, Color{240, 50, 255, 255});
+                    if (m_audioEnabled && m_bounceSfxId != 0 && mp_context)
+                    {
+                        mp_context->Audio.PlaySfx(m_bounceSfxId, 65.0f, 0.45f);
+                    }
                     break;
                 case HazardEffectType::AllMaluses:
                 default:

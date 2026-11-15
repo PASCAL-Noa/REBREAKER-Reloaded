@@ -5,6 +5,7 @@
 #include <deque>
 #include <unordered_map>
 #include <chrono>
+#include <thread>
 #include <algorithm>
 #include <iostream>
 #include <memory>
@@ -779,7 +780,7 @@ std::string AudioMixer::GetCurrentAudioDevice() const
 bool AudioMixer::SetAudioDevice(const std::string& name) const
 {
     std::string targetDevice = name;
-    if (targetDevice.empty() || targetDevice == "Default Device")
+    if (targetDevice.empty() || targetDevice == "Default Device" || targetDevice == "< DEFAULT DEVICE >")
     {
         auto def = sf::PlaybackDevice::getDefaultDevice();
         targetDevice = def.value_or("");
@@ -795,12 +796,26 @@ bool AudioMixer::SetAudioDevice(const std::string& name) const
     {
         StopAll();
 
+        // Allow any active miniaudio WASAPI device worker to flush and terminate safely
+        std::this_thread::sleep_for(std::chrono::milliseconds(60));
+
         std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
         if (targetDevice.empty())
         {
             return true;
         }
-        return sf::PlaybackDevice::setDevice(targetDevice);
+
+        auto available = sf::PlaybackDevice::getAvailableDevices();
+        if (std::find(available.begin(), available.end(), targetDevice) == available.end())
+        {
+            std::cerr << "[AudioMixer] Warning: Target audio device \"" << targetDevice << "\" not in available devices.\n";
+            return false;
+        }
+
+        bool ok = sf::PlaybackDevice::setDevice(targetDevice);
+        // Allow the newly opened WASAPI device stream to stabilize before new sounds/music are allocated
+        std::this_thread::sleep_for(std::chrono::milliseconds(60));
+        return ok;
     }
     catch (const std::exception& e)
     {

@@ -25,6 +25,15 @@ enum class CosmeticSlot : int
     Count = 3
 };
 
+enum class EndlessPerkType : int
+{
+    InitialRerolls = 0,
+    ShieldRecovery = 1,
+    ScoreMultiplier = 2,
+    StartingLives = 3,
+    Count = 4
+};
+
 struct CosmeticItem
 {
     std::string Id;
@@ -76,6 +85,27 @@ public:
     bool UnlockCosmetic(const std::string& id);
     [[nodiscard]] std::string GetEquippedCosmetic(CosmeticSlot slot) const;
     void EquipCosmetic(CosmeticSlot slot, const std::string& id);
+
+    // Endless Mode Statistics
+    [[nodiscard]] uint32_t    GetEndlessHighScore() const;
+    [[nodiscard]] float       GetEndlessBestTime() const;
+    [[nodiscard]] std::string GetEndlessBestTimeFormatted() const;
+    [[nodiscard]] int         GetEndlessBestWaves() const;
+    [[nodiscard]] int         GetEndlessTotalRuns() const;
+    [[nodiscard]] int         GetEndlessTotalWaves() const;
+    void                      RecordEndlessRun(float survivalTime, int wavesCleared, uint32_t score);
+
+    // Dedicated Endless Mode Perks & Upgrades
+    [[nodiscard]] int         GetEndlessPerkLevel(EndlessPerkType type) const;
+    void                      SetEndlessPerkLevel(EndlessPerkType type, int level);
+    [[nodiscard]] int         GetEndlessPerkMaxLevel(EndlessPerkType type) const;
+    [[nodiscard]] int         GetEndlessPerkUpgradeCost(EndlessPerkType type) const;
+    [[nodiscard]] bool        CanUpgradeEndlessPerk(EndlessPerkType type) const;
+    bool                      UpgradeEndlessPerk(EndlessPerkType type);
+
+    static std::string        GetEndlessPerkName(EndlessPerkType type);
+    static std::string        GetEndlessPerkDescription(EndlessPerkType type);
+    static std::string        GetEndlessPerkTierInfo(EndlessPerkType type, int level);
 
     void ResetToDefaults();
 

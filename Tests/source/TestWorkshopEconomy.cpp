@@ -7,8 +7,8 @@
 
 struct WorkshopEconomyFixture
 {
-    std::filesystem::path prefsPath{"playerprefs.json"};
-    std::filesystem::path backupPath{"playerprefs.json.econbackup"};
+    std::filesystem::path prefsPath{PlayerPrefs::GetFilePath()};
+    std::filesystem::path backupPath{PlayerPrefs::GetFilePath() + ".econbackup"};
     bool hadOriginal = false;
 
     WorkshopEconomyFixture()
@@ -28,7 +28,7 @@ struct WorkshopEconomyFixture
     {
         std::error_code ec;
         std::filesystem::remove(prefsPath, ec);
-        std::filesystem::remove("playerprefs.json.tmp", ec);
+        std::filesystem::remove(prefsPath.string() + ".tmp", ec);
 
         if (hadOriginal)
         {
@@ -485,5 +485,46 @@ TEST_SUITE("Workshop, Economy & Player Profile Tests")
         CHECK(PlayerPrefs::GetInt("UnlockedLevel") == 1);
         CHECK(PlayerPrefs::GetInt("HighestClearedLevel") == 0);
         CHECK(PlayerPrefs::GetInt("HighScore_Level_1") == 0);
+    }
+
+    TEST_CASE_FIXTURE(WorkshopEconomyFixture, "Workshop Preview transient overrides never leak or overwrite persisted levels or PlayerPrefs saves")
+    {
+        auto& pum = PowerUpManager::Get();
+        pum.SetLevel(PowerUpType::Storm, 5);
+        pum.SetLevel(PowerUpType::MultiBall, 4);
+
+        CHECK(pum.GetPersistedLevel(PowerUpType::Storm) == 5);
+        CHECK(pum.GetPersistedLevel(PowerUpType::MultiBall) == 4);
+        CHECK(pum.GetLevel(PowerUpType::Storm) == 5);
+        CHECK(pum.GetLevel(PowerUpType::MultiBall) == 4);
+
+        // Simulate workshop inspection / embedded preview overriding levels transiently
+        pum.SetLevelTransient(PowerUpType::Storm, 1);
+        pum.SetLevelTransient(PowerUpType::MultiBall, 2);
+
+        // Simulation/preview sees transient levels
+        CHECK(pum.GetLevel(PowerUpType::Storm) == 1);
+        CHECK(pum.GetLevel(PowerUpType::MultiBall) == 2);
+
+        // Persisted levels remain strictly intact
+        CHECK(pum.GetPersistedLevel(PowerUpType::Storm) == 5);
+        CHECK(pum.GetPersistedLevel(PowerUpType::MultiBall) == 4);
+
+        // SaveToPrefs while transient level is active must STILL save persisted levels
+        pum.SaveToPrefs();
+        CHECK(PlayerPrefs::GetInt("PowerUp_Storm_Level", 1) == 5);
+        CHECK(PlayerPrefs::GetInt("PowerUp_MultiBall_Level", 1) == 4);
+
+        // Clear overrides restores simulation levels back to persisted levels
+        pum.ClearTransientOverrides();
+        CHECK(pum.GetLevel(PowerUpType::Storm) == 5);
+        CHECK(pum.GetLevel(PowerUpType::MultiBall) == 4);
+
+        // Reloading from prefs retains true persisted levels
+        pum.LoadFromPrefs();
+        CHECK(pum.GetPersistedLevel(PowerUpType::Storm) == 5);
+        CHECK(pum.GetPersistedLevel(PowerUpType::MultiBall) == 4);
+        CHECK(pum.GetLevel(PowerUpType::Storm) == 5);
+        CHECK(pum.GetLevel(PowerUpType::MultiBall) == 4);
     }
 }

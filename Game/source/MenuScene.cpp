@@ -1,5 +1,7 @@
 #include "Scenes/MenuScene.h"
 #include "Scenes/GameScene.h"
+#include "Scenes/EndlessScene.h"
+#include "Scenes/CustomGameScene.h"
 #include "Scenes/PreviewScene.h"
 #include <SFML/Graphics/RenderTexture.hpp>
 #include "Scenes/LevelSelectScene.h"
@@ -45,6 +47,7 @@ MenuScene::~MenuScene() = default;
 void MenuScene::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
+    PowerUpManager::Get().LoadFromPrefs();
     m_bgColor = Color{8, 10, 16, 255};
 
     m_clickSfxId = context.Resources.LoadResource("Resources/audio/sfx/paddle_hit.wav");
@@ -180,13 +183,13 @@ void MenuScene::OnInit(GameContext& context)
     m_previewScene->SetOnResetCallback([this]() {
         m_previewSwitchTimer = 0.38f;
     });
+    m_inspectedLevel = PowerUpManager::Get().GetPersistedLevel(m_selectedPowerUp);
     m_lastPreviewPowerUp = m_selectedPowerUp;
     m_lastPreviewLevel = m_inspectedLevel;
     m_lastEquippedUltimate = ProfileManager::Get().GetEquippedUltimate();
     m_lastInspectedUltimate = m_lastEquippedUltimate;
-    int realLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
     m_previewScene->SetPreviewPowerUp(m_selectedPowerUp, m_inspectedLevel);
-    PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLvl);
+    PowerUpManager::Get().ClearTransientOverrides();
 
     context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
 
@@ -501,12 +504,11 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
                     m_previewScene->SetMusicEnabled(false);
                 }
 
-                int realLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
                 PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, m_inspectedLevel);
 
                 m_previewScene->OnUpdate(dt, context);
 
-                PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLevel);
+                PowerUpManager::Get().ClearTransientOverrides();
             }
         }
         else if (m_workshopActiveTabCanvas == m_workshopUltimatesCanvas)
@@ -2095,6 +2097,14 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         }
     }
 
+    // Custom Game Mode Shortcut [C]
+    if (context.Input.IsKeyPress(KeyCode::C))
+    {
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+        context.Scenes.LoadSceneWithTransition<CustomGameScene>(SceneTransitionType::StaticSnow, 0.65f);
+        return;
+    }
+
     // 8. Channel Select / Zoom confirmation: Enter, Space, Gamepad A
     if (context.Input.IsMenuSelectTriggered())
     {
@@ -2138,7 +2148,7 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
         context.Scenes.LoadSceneWithTransition<LevelSelectScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::TetrisEndless:
-        context.Scenes.LoadSceneWithTransition<GameScene>(SceneTransitionType::StaticSnow, 0.65f);
+        context.Scenes.LoadSceneWithTransition<EndlessScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::Workshop:
         m_channelSwitchGlitch = 0.0f;
@@ -2153,6 +2163,9 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
         m_channelSwitchGlitch = 0.0f;
         OpenModal(m_workshopCanvas);
         OpenWorkshopTab(m_workshopProfileCanvas);
+        break;
+    case ChannelType::CustomGame:
+        context.Scenes.LoadSceneWithTransition<CustomGameScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::Sandbox:
         context.Scenes.LoadSceneWithTransition<SandboxScene>(SceneTransitionType::StaticSnow, 0.65f);
@@ -2434,6 +2447,12 @@ void MenuScene::RenderChannelGrid(GameContext& context)
         Vector2f vignettePos = pos + Vector2f{0.0f, -4.0f * s};
         RenderChannelVignette(context, ch, vignettePos, ch.CurrentScale);
     }
+
+    // 3. CRT Screen Bottom Status Bar with Custom Match shortcut
+    const Vector2f footerPos{695.0f, 705.0f};
+    context.Render.DrawRectangle(920.0f, 36.0f, Transform2D{footerPos}, Color{16, 24, 38, 235});
+    context.Render.DrawRectangleOutline(920.0f, 36.0f, Transform2D{footerPos}, Color{70, 160, 245, 200}, 1.5f);
+    context.Render.DrawTextCentered("[C] CUSTOM MATCH LAB   |   [ENTER] SELECT   |   [ESC] SLEEP", m_fontId, 17.0f, Transform2D{footerPos}, Color{220, 235, 255, 245});
 }
 
 void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float sc) const
@@ -2704,6 +2723,13 @@ void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch,
         context.Render.DrawRectangle(4.0f * sc, 12.0f * sc, Transform2D{m2, 0.7854f}, Color{200, 220, 240, 255});
         context.Render.DrawLine(m1, pos, Color{255, 60, 90, 180}, 1.2f * sc);
         context.Render.DrawLine(pos, m2, Color{255, 60, 90, 180}, 1.2f * sc);
+        break;
+    }
+    case ChannelType::CustomGame:
+    {
+        context.Render.DrawRectangle(95.0f * sc, 58.0f * sc, Transform2D{pos}, Color{16, 24, 36, 220});
+        context.Render.DrawRectangleOutline(95.0f * sc, 58.0f * sc, Transform2D{pos}, Colors::Gold, 1.2f * sc);
+        context.Render.DrawTextCentered("CUSTOM LAB", m_fontId, 18.0f * sc, Transform2D{pos}, Colors::Gold);
         break;
     }
     case ChannelType::Settings:
@@ -3107,22 +3133,24 @@ void MenuScene::CreateAudioTab(const GameContext& context)
 
     UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "MASTER",
-        .OnMinus = [&context, this]() {
+        .OnMinus = [this]() {
+            if (!mp_context) return;
             m_masterVolume = std::max(0.0f, m_masterVolume - 10.0f);
-            context.Audio.SetMasterVolume(m_masterVolume);
+            mp_context->Audio.SetMasterVolume(m_masterVolume);
             m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
             PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
             PlayerPrefs::Save();
-            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
+            if (m_bounceSfxId != 0) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
             UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
         },
-        .OnPlus = [&context, this]() {
+        .OnPlus = [this]() {
+            if (!mp_context) return;
             m_masterVolume = std::min(100.0f, m_masterVolume + 10.0f);
-            context.Audio.SetMasterVolume(m_masterVolume);
+            mp_context->Audio.SetMasterVolume(m_masterVolume);
             m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
             PlayerPrefs::SetFloat("MasterVolume", m_masterVolume);
             PlayerPrefs::Save();
-            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
+            if (m_bounceSfxId != 0) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
             UpdateVolumeBars(m_masterVolumeBars, m_masterVolume);
         },
         .BarsOut = &m_masterVolumeBars,
@@ -3132,20 +3160,22 @@ void MenuScene::CreateAudioTab(const GameContext& context)
 
     UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "SFX",
-        .OnMinus = [&context, this]() {
-            float vol = std::max(0.0f, context.Audio.GetSfxVolume() - 10.0f);
-            context.Audio.SetSfxVolume(vol);
+        .OnMinus = [this]() {
+            if (!mp_context) return;
+            float vol = std::max(0.0f, mp_context->Audio.GetSfxVolume() - 10.0f);
+            mp_context->Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
+            if (m_bounceSfxId != 0) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
-        .OnPlus = [&context, this]() {
-            float vol = std::min(100.0f, context.Audio.GetSfxVolume() + 10.0f);
-            context.Audio.SetSfxVolume(vol);
+        .OnPlus = [this]() {
+            if (!mp_context) return;
+            float vol = std::min(100.0f, mp_context->Audio.GetSfxVolume() + 10.0f);
+            mp_context->Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
             PlayerPrefs::Save();
-            if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
+            if (m_bounceSfxId != 0) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
         .BarsOut = &m_sfxVolumeBars,
@@ -3155,16 +3185,18 @@ void MenuScene::CreateAudioTab(const GameContext& context)
 
     UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "MUSIC",
-        .OnMinus = [&context, this]() {
-            float vol = std::max(0.0f, context.Audio.GetMusicVolume() - 10.0f);
-            context.Audio.SetMusicVolume(vol);
+        .OnMinus = [this]() {
+            if (!mp_context) return;
+            float vol = std::max(0.0f, mp_context->Audio.GetMusicVolume() - 10.0f);
+            mp_context->Audio.SetMusicVolume(vol);
             PlayerPrefs::SetFloat("MusicVolume", vol);
             PlayerPrefs::Save();
             UpdateVolumeBars(m_musicVolumeBars, vol);
         },
-        .OnPlus = [&context, this]() {
-            float vol = std::min(100.0f, context.Audio.GetMusicVolume() + 10.0f);
-            context.Audio.SetMusicVolume(vol);
+        .OnPlus = [this]() {
+            if (!mp_context) return;
+            float vol = std::min(100.0f, mp_context->Audio.GetMusicVolume() + 10.0f);
+            mp_context->Audio.SetMusicVolume(vol);
             PlayerPrefs::SetFloat("MusicVolume", vol);
             PlayerPrefs::Save();
             UpdateVolumeBars(m_musicVolumeBars, vol);
@@ -3199,11 +3231,12 @@ void MenuScene::CreateAudioTab(const GameContext& context)
 
     m_audioDeviceBtn = UIFactory::CreateButton(m_registry, m_audioCanvas, ButtonDescriptor{
         .Text = formatDeviceText(context.Audio.GetCurrentAudioDevice()),
-        .OnClick = [&context, this, formatDeviceText]() {
-            auto devices = context.Audio.GetAvailableAudioDevices();
+        .OnClick = [this, formatDeviceText]() {
+            if (!mp_context) return;
+            auto devices = mp_context->Audio.GetAvailableAudioDevices();
             if (devices.empty()) return;
 
-            std::string current = context.Audio.GetCurrentAudioDevice();
+            std::string current = mp_context->Audio.GetCurrentAudioDevice();
             size_t currentIdx = 0;
             for (size_t i = 0; i < devices.size(); ++i)
             {
@@ -3215,12 +3248,12 @@ void MenuScene::CreateAudioTab(const GameContext& context)
             }
             size_t nextIdx = (currentIdx + 1) % devices.size();
             std::string newDevice = devices[nextIdx];
-            if (context.Audio.SetAudioDevice(newDevice))
+            if (mp_context->Audio.SetAudioDevice(newDevice))
             {
                 PlayerPrefs::SetString("Audio_Device", newDevice);
                 PlayerPrefs::Save();
-                context.Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 60.0f, true);
-                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 16.0f);
+                mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 60.0f, true);
+                if (m_bounceSfxId != 0) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
             }
             if (m_registry.HasComponent<TextComponent>(m_audioDeviceBtn))
             {
@@ -4108,7 +4141,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     PowerUpType newType = kAllWorkshopPowerUps[pwrIdx];
                     bool changed = (m_selectedPowerUp != newType);
                     m_selectedPowerUp = newType;
-                    m_inspectedLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+                    m_inspectedLevel = PowerUpManager::Get().GetPersistedLevel(m_selectedPowerUp);
                     m_workshopPreviewLevel = m_inspectedLevel;
                     m_previewAnimTime = 0.0f;
                     m_simAudioTriggerMask = 0;
@@ -4364,7 +4397,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             if (PowerUpManager::Get().CanUpgrade(t))
             {
                 PowerUpManager::Get().Upgrade(t);
-                m_inspectedLevel = PowerUpManager::Get().GetLevel(t);
+                m_inspectedLevel = PowerUpManager::Get().GetPersistedLevel(t);
                 m_workshopPreviewLevel = m_inspectedLevel;
                 if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
                 RefreshWorkshopUI();
@@ -4728,13 +4761,52 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     });
 
     UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "Cosmetic hulls, custom particle ribbons & sound packs unlock in upcoming operations.",
-        .Position = {-580.0f, 50.0f},
+        .Text = "ENDLESS MODE PERKS & UPGRADES",
+        .Position = {-580.0f, 15.0f},
         .FontId = m_fontId,
-        .FontSize = 22.0f,
-        .Tint = Color{150, 165, 195, 255},
+        .FontSize = 24.0f,
+        .Tint = Colors::Gold,
         .ZOrder = 3
     });
+
+    for (int i = 0; i < 4; ++i)
+    {
+        EndlessPerkType perkType = static_cast<EndlessPerkType>(i);
+        float py = 75.0f + static_cast<float>(i) * 65.0f;
+
+        m_workshopEndlessPerkTexts[i] = UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
+            .Text = ProfileManager::GetEndlessPerkName(perkType),
+            .Position = {-740.0f, py},
+            .FontId = m_fontId,
+            .FontSize = 20.0f,
+            .Tint = Colors::White,
+            .ZOrder = 3
+        });
+
+        m_workshopEndlessPerkBtns[i] = UIFactory::CreateButton(m_registry, m_workshopProfileCanvas, ButtonDescriptor{
+            .Text = "UPGRADE",
+            .OnClick = [this, perkType]() {
+                if (ProfileManager::Get().UpgradeEndlessPerk(perkType))
+                {
+                    uint32_t sfx = (m_powerupBuffSfxId != 0) ? m_powerupBuffSfxId : m_clickSfxId;
+                    if (sfx != 0 && mp_context) mp_context->Audio.PlaySfx(sfx, 60.0f);
+                    RefreshWorkshopUI();
+                }
+                else
+                {
+                    if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 25.0f, 0.8f);
+                }
+            },
+            .Position = {-390.0f, py},
+            .Size = {240.0f, 44.0f},
+            .DefaultColor = Color{45, 60, 90, 255},
+            .HoverColor = Color{65, 90, 135, 255},
+            .PressedColor = Color{30, 42, 65, 255},
+            .FontId = m_fontId,
+            .FontSize = 18.0f,
+            .ZOrder = 3
+        });
+    }
 
     // Right Card: Career Log
     UIFactory::CreatePanel(m_registry, m_workshopProfileCanvas, PanelDescriptor{
@@ -4864,7 +4936,7 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
     m_previewAnimTime = 0.0f;
     m_simAudioTriggerMask = 0;
     m_simLastLoop = -1;
-    m_inspectedLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+    m_inspectedLevel = PowerUpManager::Get().GetPersistedLevel(m_selectedPowerUp);
     m_workshopPreviewLevel = m_inspectedLevel;
 
     if (targetCanvas == m_workshopUpgradesCanvas)
@@ -4908,7 +4980,7 @@ void MenuScene::ResetSaveData()
     m_levelManager.ResetProgression();
     m_leaderboard.ResetToDefaults();
     PlayerPrefs::Save();
-    m_inspectedLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+    m_inspectedLevel = PowerUpManager::Get().GetPersistedLevel(m_selectedPowerUp);
     m_workshopPreviewLevel = m_inspectedLevel;
     RefreshWorkshopUI();
 }
@@ -4958,7 +5030,7 @@ void MenuScene::RefreshWorkshopUI()
 
             if (m_registry.HasComponent<TextComponent>(m_upgradeCards[slot].CostText))
             {
-                int curL = PowerUpManager::Get().GetLevel(type);
+                int curL = PowerUpManager::Get().GetPersistedLevel(type);
                 int maxL = PowerUpManager::Get().GetMaxLevel(type);
                 if (curL >= maxL)
                 {
@@ -5009,7 +5081,7 @@ void MenuScene::RefreshWorkshopUI()
     }
 
     // Refresh Inspector for Currently Selected Power-Up (Right Column)
-    int selCurLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+    int selCurLvl = PowerUpManager::Get().GetPersistedLevel(m_selectedPowerUp);
     int selMaxLvl = PowerUpManager::Get().GetMaxLevel(m_selectedPowerUp);
     if (m_inspectedLevel < 1) m_inspectedLevel = 1;
     if (m_inspectedLevel > selMaxLvl) m_inspectedLevel = selMaxLvl;
@@ -5281,6 +5353,9 @@ void MenuScene::RefreshWorkshopUI()
         ss << "TOTAL CREDITS EARNED:  " << ProfileManager::Get().GetLifetimeCredits() << " CR\n\n";
         ss << "CURRENT BANK BALANCE:  " << PowerUpManager::Get().GetCoins() << " CR\n\n";
         ss << "HIGHEST STAGE CLEARED: STAGE " << m_levelManager.GetHighestClearedLevel() << "\n\n";
+        ss << "ENDLESS BEST SURVIVAL: " << ProfileManager::Get().GetEndlessBestTimeFormatted() << "\n\n";
+        ss << "ENDLESS WAVES CLEARED: " << ProfileManager::Get().GetEndlessBestWaves() << " WAVES\n\n";
+        ss << "ENDLESS HIGH SCORE:    " << ProfileManager::Get().GetEndlessHighScore() << " PTS\n\n";
         
         int totalPurchased = 0;
         const PowerUpType allTypes[] = {
@@ -5290,11 +5365,38 @@ void MenuScene::RefreshWorkshopUI()
         };
         for (PowerUpType pt : allTypes)
         {
-            totalPurchased += (PowerUpManager::Get().GetLevel(pt) - 1);
+            totalPurchased += (PowerUpManager::Get().GetPersistedLevel(pt) - 1);
         }
         ss << "UPGRADES INSTALLED:    " << totalPurchased << " / 48 TIERS";
 
         textComp.Text = ss.str();
+    }
+
+    // Endless Mode Perks Refresh
+    for (int i = 0; i < 4; ++i)
+    {
+        EndlessPerkType perk = static_cast<EndlessPerkType>(i);
+        int lvl = ProfileManager::Get().GetEndlessPerkLevel(perk);
+        int maxLvl = ProfileManager::Get().GetEndlessPerkMaxLevel(perk);
+
+        if (m_workshopEndlessPerkTexts[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkTexts[i]))
+        {
+            std::string perkInfo = ProfileManager::GetEndlessPerkName(perk) + " (T" + std::to_string(lvl) + "/" + std::to_string(maxLvl) + ")";
+            m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkTexts[i]).Text = perkInfo;
+        }
+
+        if (m_workshopEndlessPerkBtns[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkBtns[i]))
+        {
+            if (lvl >= maxLvl)
+            {
+                m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkBtns[i]).Text = "[MAX TIER]";
+            }
+            else
+            {
+                int cost = ProfileManager::Get().GetEndlessPerkUpgradeCost(perk);
+                m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkBtns[i]).Text = "UPGRADE (" + std::to_string(cost) + " CR)";
+            }
+        }
     }
 
     // 5. Description Modal Refresh
@@ -5377,9 +5479,8 @@ void MenuScene::RefreshWorkshopUI()
         {
             m_lastPreviewPowerUp = m_selectedPowerUp;
             m_lastPreviewLevel = m_inspectedLevel;
-            int realLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
             m_previewScene->SetPreviewPowerUp(m_selectedPowerUp, m_inspectedLevel);
-            PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLevel);
+            PowerUpManager::Get().ClearTransientOverrides();
             TriggerPreviewChannelSwitch();
         }
     }
@@ -5516,7 +5617,7 @@ void MenuScene::RenderWorkshopBackgroundVisuals(GameContext& context)
             bool isSelected = (type == m_selectedPowerUp);
             Color elemCol = GetPowerUpThemeColor(type);
 
-            int curLvl = PowerUpManager::Get().GetLevel(type);
+            int curLvl = PowerUpManager::Get().GetPersistedLevel(type);
             int maxLvl = PowerUpManager::Get().GetMaxLevel(type);
             bool isMaxed = (curLvl >= maxLvl);
             int cost = PowerUpManager::Get().GetUpgradeCost(type);
@@ -5769,7 +5870,7 @@ void MenuScene::RenderWorkshopForegroundVisuals(GameContext& context)
             Transform2D{Vector2f{activeBx, barY}}, Color{255, 215, 60, glowAlpha}, 2.5f);
 
         // Animated Glowing Pulse Border around Upgrade CTA Button when affordable
-        int curSelLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+        int curSelLvl = PowerUpManager::Get().GetPersistedLevel(m_selectedPowerUp);
         int maxSelLvl = PowerUpManager::Get().GetMaxLevel(m_selectedPowerUp);
         if (curSelLvl < maxSelLvl)
         {
@@ -5871,7 +5972,7 @@ void MenuScene::RenderWorkshopForegroundVisuals(GameContext& context)
         {
             title = PowerUpManager::Get().GetName(m_selectedPowerUp);
             desc = PowerUpManager::Get().GetDescription(m_selectedPowerUp);
-            selCurLvl = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
+            selCurLvl = PowerUpManager::Get().GetPersistedLevel(m_selectedPowerUp);
             selInsLvl = m_inspectedLevel;
         }
 
@@ -5957,14 +6058,13 @@ void MenuScene::RenderPowerUpSimulation(GameContext& context, PowerUpType type, 
     {
         m_previewTexture->clear(sf::Color(8, 10, 16, 255));
 
-        int realLevel = PowerUpManager::Get().GetLevel(m_selectedPowerUp);
         PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, m_inspectedLevel);
 
         context.Render.PushRenderTarget(*m_previewTexture);
         m_previewScene->OnRender(context);
         context.Render.PopRenderTarget();
 
-        PowerUpManager::Get().SetLevelTransient(m_selectedPowerUp, realLevel);
+        PowerUpManager::Get().ClearTransientOverrides();
 
         m_previewTexture->display();
 

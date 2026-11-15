@@ -1210,7 +1210,7 @@ void GameUIController::CreateAudioTab()
 
     UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "MASTER",
-        .OnMinus = [&]() {
+        .OnMinus = [this]() {
             float vol = std::max(0.0f, m_context.Audio.GetMasterVolume() - 10.0f);
             m_context.Audio.SetMasterVolume(vol);
             PlayerPrefs::SetFloat("MasterVolume", vol);
@@ -1218,7 +1218,7 @@ void GameUIController::CreateAudioTab()
             if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
             UpdateVolumeBars(m_masterVolumeBars, vol);
         },
-        .OnPlus = [&]() {
+        .OnPlus = [this]() {
             float vol = std::min(100.0f, m_context.Audio.GetMasterVolume() + 10.0f);
             m_context.Audio.SetMasterVolume(vol);
             PlayerPrefs::SetFloat("MasterVolume", vol);
@@ -1233,7 +1233,7 @@ void GameUIController::CreateAudioTab()
 
     UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "SFX",
-        .OnMinus = [&]() {
+        .OnMinus = [this]() {
             float vol = std::max(0.0f, m_context.Audio.GetSfxVolume() - 10.0f);
             m_context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
@@ -1241,7 +1241,7 @@ void GameUIController::CreateAudioTab()
             if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 35.0f);
             UpdateVolumeBars(m_sfxVolumeBars, vol);
         },
-        .OnPlus = [&]() {
+        .OnPlus = [this]() {
             float vol = std::min(100.0f, m_context.Audio.GetSfxVolume() + 10.0f);
             m_context.Audio.SetSfxVolume(vol);
             PlayerPrefs::SetFloat("SfxVolume", vol);
@@ -1256,14 +1256,14 @@ void GameUIController::CreateAudioTab()
 
     UIFactory::CreateVolumeControl(m_registry, m_audioCanvas, VolumeControlDescriptor{
         .Label = "MUSIC",
-        .OnMinus = [&]() {
+        .OnMinus = [this]() {
             float vol = std::max(0.0f, m_context.Audio.GetMusicVolume() - 10.0f);
             m_context.Audio.SetMusicVolume(vol);
             PlayerPrefs::SetFloat("MusicVolume", vol);
             PlayerPrefs::Save();
             UpdateVolumeBars(m_musicVolumeBars, vol);
         },
-        .OnPlus = [&]() {
+        .OnPlus = [this]() {
             float vol = std::min(100.0f, m_context.Audio.GetMusicVolume() + 10.0f);
             m_context.Audio.SetMusicVolume(vol);
             PlayerPrefs::SetFloat("MusicVolume", vol);
@@ -2010,11 +2010,30 @@ void GameUIController::CreatePowerUpTesterUI()
     });
     m_powerUpTesterButtons.push_back(btnCycle);
 
+    // Hazard Zone button
+    Entity btnHazard = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
+        .Text = "Hazard Zone [J]",
+        .OnClick = [this]() {
+            m_scene.SpawnHazardZone(Vector2f{0.0f, -100.0f}, Vector2f{240.0f, 70.0f}, HazardEffectType::AllMaluses, 4.0f);
+        },
+        .Position = {-155.0f, actionY + actionStepY * 5},
+        .Size = {260.0f, 27.0f},
+        .DefaultColor = Color{120, 30, 60, 255},
+        .HoverColor = Color{170, 45, 85, 255},
+        .PressedColor = Color{40, 15, 25, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 17.0f,
+        .AnchorPoint = Anchor::MiddleRight,
+        .IgnoreMenuNavigation = true
+    });
+    m_powerUpTesterButtons.push_back(btnHazard);
+
     // Next Level button
     Entity btnNext = UIFactory::CreateButton(m_registry, m_powerUpTesterCanvas, ButtonDescriptor{
         .Text = "Next Level [N]",
         .OnClick = [this]() { m_scene.AdvanceToNextLevel(); },
-        .Position = {-155.0f, actionY + actionStepY * 5},
+        .Position = {-155.0f, actionY + actionStepY * 6},
         .Size = {260.0f, 32.0f},
         .DefaultColor = Color{50, 80, 120, 255},
         .HoverColor = Color{70, 110, 160, 255},

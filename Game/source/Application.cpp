@@ -70,6 +70,14 @@ void Application::Init()
     m_context.Rules.RegisterRule(Rule::Gameplay::CheatsUnlocked, "Cheats Unlocked", false, RuleAccess::Private);
     m_context.Rules.RegisterRule(Rule::Gameplay::InfiniteUltimate, "Infinite Ultimate", false, RuleAccess::Private);
     m_context.Rules.RegisterRule(Rule::Gameplay::ArenaEventsEnabled, "Arena Events", PlayerPrefs::GetBool("EnableArenaEvents", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::HazardZonesEnabled, "Hazard Zones", PlayerPrefs::GetBool("EnableHazardZones", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::HazardUltimateDrainEnabled, "Hazard: Ultimate Drain", PlayerPrefs::GetBool("EnableHazardUltimateDrain", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::HazardScreenGlitchEnabled, "Hazard: Screen Glitch", PlayerPrefs::GetBool("EnableHazardScreenGlitch", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::HazardCameraTiltEnabled, "Hazard: Camera Tilt", PlayerPrefs::GetBool("EnableHazardCameraTilt", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::HazardZoomPulseEnabled, "Hazard: Zoom Pulse", PlayerPrefs::GetBool("EnableHazardZoomPulse", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::HazardAudioWarpEnabled, "Hazard: Audio Warp", PlayerPrefs::GetBool("EnableHazardAudioWarp", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::UltimateLockdownEnabled, "Event: EMP Lockdown", PlayerPrefs::GetBool("EnableUltimateLockdown", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::EndlessCreepingCeiling, "Endless: Creeping Ceiling", PlayerPrefs::GetBool("EnableCreepingCeiling", true), RuleAccess::Public);
 
     m_sceneManager.LoadScene<MenuScene>();
 }

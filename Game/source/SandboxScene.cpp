@@ -64,7 +64,8 @@ namespace
         HazardEffectType::ScreenGlitch,
         HazardEffectType::CameraTilt,
         HazardEffectType::CameraZoomPulse,
-        HazardEffectType::TemporalAudioWarp
+        HazardEffectType::TemporalAudioWarp,
+        HazardEffectType::UltimateDrain
     };
     constexpr int kMalusCount = sizeof(kAllMaluses) / sizeof(kAllMaluses[0]);
 
@@ -148,6 +149,7 @@ namespace
             case HazardEffectType::CameraTilt:        return "MALUS: CAMERA TILT";
             case HazardEffectType::CameraZoomPulse:   return "MALUS: ZOOM PULSE";
             case HazardEffectType::TemporalAudioWarp: return "MALUS: AUDIO WARP";
+            case HazardEffectType::UltimateDrain:     return "MALUS: ULTIMATE DRAIN";
             default:                                  return "MALUS";
         }
     }
@@ -161,6 +163,7 @@ namespace
             case HazardEffectType::CameraTilt:        return Color{165, 45, 155, 255};
             case HazardEffectType::CameraZoomPulse:   return Color{135, 45, 185, 255};
             case HazardEffectType::TemporalAudioWarp: return Color{95, 55, 185, 255};
+            case HazardEffectType::UltimateDrain:     return Color{215, 30, 255, 255};
             default:                                  return Color{200, 40, 80, 255};
         }
     }
@@ -648,6 +651,14 @@ void SandboxScene::TriggerSelectedMalus()
         case HazardEffectType::TemporalAudioWarp:
             TriggerTemporalAudioDistortion(0.88f, 0.15f, 1.2f);
             break;
+        case HazardEffectType::UltimateDrain:
+            DrainUltimateCharge(50.0f);
+            TriggerPostProcessFlash(0.025f, 0.5f, Color{200, 30, 255, 255}, 0.25f, Color{240, 60, 255, 255});
+            if (m_audioEnabled && m_bounceSfxId != 0 && mp_context)
+            {
+                mp_context->Audio.PlaySfx(m_bounceSfxId, 60.0f, 0.45f);
+            }
+            break;
         case HazardEffectType::AllMaluses:
         default:
             TriggerVisualMalus(1.2f, true, true, true);
@@ -680,14 +691,15 @@ void SandboxScene::ClearActiveMaluses()
     m_registry.ProcessDeferredCommands();
 }
 
-static constexpr std::array<ArenaEventType, 7> kAllArenaEvents = {
+static constexpr std::array<ArenaEventType, 8> kAllArenaEvents = {
     ArenaEventType::TemporalFlux,
     ArenaEventType::GravityShiftLeft,
     ArenaEventType::GravityShiftRight,
     ArenaEventType::GravityShiftDown,
     ArenaEventType::CameraEarthquake,
     ArenaEventType::SolarFlareBlackout,
-    ArenaEventType::MeteorShower
+    ArenaEventType::MeteorShower,
+    ArenaEventType::UltimateLockdown
 };
 
 void SandboxScene::NextArenaEvent()
