@@ -366,6 +366,7 @@ protected:
     float       m_ultimateMaxCharge = 100.0f;
     bool        m_ultimateReady = false;
     float       m_ultimateReadyPulseTime = 0.0f;
+    float       m_ultimateDrainFlashTimer = 0.0f;
     uint32_t    m_ultimateReadySfxId = 0;
     uint32_t    m_plasmaLaunchSfxId = 0;
     uint32_t    m_plasmaExplodeSfxId = 0;

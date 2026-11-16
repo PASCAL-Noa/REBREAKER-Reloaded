@@ -81,6 +81,11 @@ void EndlessScene::OnInit(GameContext& context)
     m_brickCount = m_endlessGenerator.Generate(m_registry, context, m_brickTexId);
     ApplyWaveTheme(1);
 
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetLaunchSpeed(700.0f);
+    }
+
     // 5. Calibrate Dynamic Event System for Endless progression
     if (mp_eventSystem)
     {
@@ -207,6 +212,7 @@ void EndlessScene::TriggerDraft(DraftType type)
     m_activeDraftType = type;
     m_selectedDraftIndex = 0;
     m_draftAnimProgress = 0.0f;
+    m_draftTimer = kDraftMaxDuration;
     m_draftRndSeed = static_cast<uint32_t>(m_survivalTime * 1000.0f) + static_cast<uint32_t>(m_wavesCleared * 100);
 
     // Cancel visual maluses & distortions during card draft so panel is clean and readable
@@ -349,9 +355,36 @@ void EndlessScene::MultiplyPaddleSpeed(float factor)
 
 void EndlessScene::OnUpdate(float dt, GameContext& context)
 {
-    // 1. Handle Draft Modal Interactivity (Pauses physical action)
+    const int currentState = mp_state_machine ? mp_state_machine->GetCurrentState() : static_cast<int>(SceneState::Playing);
+    if (currentState != static_cast<int>(SceneState::Playing))
+    {
+        // When Paused, Countdown, or GameOver: update base GameScene (menus, UI controller) and return
+        GameScene::OnUpdate(dt, context);
+        return;
+    }
+
+    // 1. Handle Draft Modal Interactivity (Pauses physical action & limits choice time to 10s max)
     if (m_draftActive)
     {
+        // Check for pause request while in draft modal
+        if (context.Input.IsActionTriggered(InputAction::Pause) || context.Input.IsKeyPress(KeyCode::Escape))
+        {
+            if (mp_state_machine)
+            {
+                mp_state_machine->SetState(static_cast<int>(SceneState::Paused));
+                return;
+            }
+        }
+
+        // 10s max timer to select boost
+        m_draftTimer -= dt;
+        if (m_draftTimer <= 0.0f)
+        {
+            m_draftTimer = 0.0f;
+            SelectDraftCard(m_selectedDraftIndex);
+            return;
+        }
+
         m_draftAnimProgress = std::min(1.0f, m_draftAnimProgress + 8.0f * dt);
 
         // Keyboard & Gamepad Selection
@@ -435,16 +468,21 @@ void EndlessScene::OnUpdate(float dt, GameContext& context)
             RerollDraft();
         }
 
-        return; // Pause game logic during draft modal
+        return; // STRICTLY FREEZE GAMEPLAY & PHYSICS DURING DRAFT! Player CANNOT lose!
     }
 
-    // 2. Track Survival Time
-    m_survivalTime += dt;
+    // 2. Base GameScene Update (handles physics, balls, paddle, collisions during active gameplay)
+    GameScene::OnUpdate(dt, context);
 
-    // 3. Update Procedural Generator
-    m_endlessGenerator.Update(dt, m_registry, context);
+    // 3. Anti-AFK Check: Only advance wave survival timer if ball is in flight
+    const bool isBallAttached = (mp_paddleSystem && mp_paddleSystem->IsBallAttached());
+    if (!isBallAttached)
+    {
+        m_survivalTime += dt;
+        m_endlessGenerator.Update(dt, m_registry, context);
+    }
 
-    // 4. Wave Clear Banner Animation
+    // 3. Wave Clear Banner Animation
     if (m_waveClearBannerActive)
     {
         m_waveClearBannerTimer -= dt;
@@ -454,7 +492,7 @@ void EndlessScene::OnUpdate(float dt, GameContext& context)
         }
     }
 
-    // 5. Emergency Defense Burn (Triggered automatically or when danger is critical)
+    // 4. Emergency Defense Burn (Triggered automatically or when danger is critical)
     if (m_emergencyBurnCooldown > 0.0f)
     {
         m_emergencyBurnCooldown -= dt;
@@ -469,49 +507,57 @@ void EndlessScene::OnUpdate(float dt, GameContext& context)
         }
     }
 
-    // 5b. Dynamic Intra-Wave Hazard Injection at 50% wave progress
+    // 5. Dynamic Intra-Wave Hazard Injection at 50% wave progress
     if (m_endlessGenerator.GetWaveTimeProgress() >= 0.5f && !m_midWaveHazardSpawned)
     {
         m_midWaveHazardSpawned = true;
         float spawnX = static_cast<float>((m_wavesCleared * 137) % 600) - 300.0f;
-        SpawnHazardZone(Vector2f{spawnX, -30.0f}, Vector2f{200.0f, 60.0f}, HazardEffectType::UltimateDrain, 2.5f);
-        TriggerPostProcessFlash(0.02f, 0.35f, Color{180, 40, 255, 255}, 0.15f, Color{220, 80, 255, 255});
+        SpawnHazardZone(Vector2f{spawnX, -30.0f}, Vector2f{200.0f, 60.0f}, HazardEffectType::SpeedSurge, 2.5f);
+        TriggerPostProcessFlash(0.02f, 0.35f, Color{0, 200, 255, 255}, 0.15f, Color{100, 230, 255, 255});
     }
 
-    // 5c. Climax Rush in final 15% of wave time:
-    // Accelerate slow balls to maintain active engagement and prevent lazy idle loops
+    // 6. Continuous Dynamic Ball Pacing:
+    // Prevent slow sluggish balls and boring idle loops during Endless play
+    m_registry.View<RigidBody, BallComponent>([](Entity, RigidBody& rb, BallComponent&) {
+        float speedSq = rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y;
+        if (speedSq < 600.0f * 600.0f && speedSq > 1.0f)
+        {
+            float speed = std::sqrt(speedSq);
+            rb.Velocity = (rb.Velocity / speed) * 640.0f;
+        }
+    });
+
+    // Climax Rush in final 15% of wave time:
+    // Extra acceleration for high-tension climax sprint
     if (m_endlessGenerator.IsWaveClimaxActive())
     {
         m_registry.View<RigidBody, BallComponent>([](Entity, RigidBody& rb, BallComponent&) {
             float speedSq = rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y;
-            if (speedSq < 550.0f * 550.0f && speedSq > 1.0f)
+            if (speedSq < 720.0f * 720.0f && speedSq > 1.0f)
             {
                 float speed = std::sqrt(speedSq);
-                rb.Velocity = (rb.Velocity / speed) * 580.0f;
+                rb.Velocity = (rb.Velocity / speed) * 740.0f;
             }
         });
     }
 
-    // 6. Check Wave Progression (Quotas & Grid clears)
+    // 7. Check Wave Progression (Quotas & Grid clears)
     CheckWaveClear(context);
 
-    // 7. Check Periodic 1-Minute Survival Supply Draft
+    // 8. Check Periodic 1-Minute Survival Supply Draft
     if (m_survivalTime >= m_nextMinuteDraftTime && !m_draftActive)
     {
         m_nextMinuteDraftTime += 60.0f;
         TriggerDraft(DraftType::PeriodicSupply);
     }
 
-    // 8. Dynamic Event Scaling with Wave Level
+    // 9. Dynamic Event Scaling with Wave Level
     if (mp_eventSystem)
     {
         float minInterval = std::max(16.0f, 35.0f - static_cast<float>(m_wavesCleared) * 1.5f);
         float maxInterval = minInterval + 12.0f;
         mp_eventSystem->SetIntervalRange(minInterval, maxInterval);
     }
-
-    // 9. Base GameScene Update
-    GameScene::OnUpdate(dt, context);
 }
 
 void EndlessScene::CheckWaveClear(GameContext& context)
@@ -875,12 +921,38 @@ void EndlessScene::RenderDraftModal(GameContext& context) const
     if (m_activeDraftType == DraftType::WaveClear)
     {
         context.Render.DrawTextCentered("WAVE CLEARED : ELITE UPGRADE", m_fontId, 36.0f, Transform2D{Vector2f{screenCenterX, screenCenterY - 290.0f}}, Colors::Gold);
-        context.Render.DrawTextCentered("ELITE REWARD FOR SURVIVING THE WAVE - ENHANCED RARITY", m_fontId, 18.0f, Transform2D{Vector2f{screenCenterX, screenCenterY - 248.0f}}, Color{255, 220, 130, 230});
+        context.Render.DrawTextCentered("ELITE REWARD FOR SURVIVING THE WAVE - ENHANCED RARITY", m_fontId, 18.0f, Transform2D{Vector2f{screenCenterX, screenCenterY - 252.0f}}, Color{255, 220, 130, 230});
     }
     else
     {
         context.Render.DrawTextCentered("TACTICAL SUPPLY : 1-MINUTE SURVIVAL", m_fontId, 36.0f, Transform2D{Vector2f{screenCenterX, screenCenterY - 290.0f}}, Color{80, 220, 255, 255});
-        context.Render.DrawTextCentered("SURVIVAL MILESTONE REACHED - SELECT A TACTICAL UPGRADE", m_fontId, 18.0f, Transform2D{Vector2f{screenCenterX, screenCenterY - 248.0f}}, Color{160, 210, 240, 220});
+        context.Render.DrawTextCentered("SURVIVAL MILESTONE REACHED - SELECT A TACTICAL UPGRADE", m_fontId, 18.0f, Transform2D{Vector2f{screenCenterX, screenCenterY - 252.0f}}, Color{160, 210, 240, 220});
+    }
+
+    // 10s Timer Banner & Progress Bar
+    const float timerRatio = std::clamp(m_draftTimer / kDraftMaxDuration, 0.0f, 1.0f);
+    int secondsRemaining = static_cast<int>(std::ceil(m_draftTimer));
+    char timerBuf[48];
+    std::snprintf(timerBuf, sizeof(timerBuf), "CHOOSE YOUR BOOST  [ %02d s ]", secondsRemaining);
+
+    Color timerTextColor = (m_draftTimer <= 3.0f)
+        ? Color{255, 70, 70, static_cast<uint8_t>(200 + 55.0f * std::sin(m_draftTimer * 16.0f))}
+        : (m_draftTimer <= 6.0f ? Colors::Gold : Color{80, 230, 255, 255});
+
+    context.Render.DrawTextCentered(timerBuf, m_fontId, 19.0f, Transform2D{Vector2f{screenCenterX, screenCenterY - 222.0f}}, timerTextColor);
+
+    // Timer Bar
+    const float barTotalWidth = 460.0f;
+    const float barHeight = 6.0f;
+    const float barCenterY = screenCenterY - 204.0f;
+    context.Render.DrawRectangle(barTotalWidth + 4.0f, barHeight + 4.0f, Transform2D{Vector2f{screenCenterX, barCenterY}}, Color{15, 22, 35, 220});
+    context.Render.DrawRectangleOutline(barTotalWidth + 4.0f, barHeight + 4.0f, Transform2D{Vector2f{screenCenterX, barCenterY}}, Color{60, 85, 120, 200}, 1.5f);
+    if (timerRatio > 0.0f)
+    {
+        float filledW = barTotalWidth * timerRatio;
+        float filledCenterX = screenCenterX - (barTotalWidth - filledW) * 0.5f;
+        Color barFillColor = (m_draftTimer <= 3.0f) ? Color{255, 60, 60, 255} : (m_draftTimer <= 6.0f ? Color{255, 200, 40, 255} : Color{0, 210, 255, 255});
+        context.Render.DrawRectangle(filledW, barHeight, Transform2D{Vector2f{filledCenterX, barCenterY}}, barFillColor);
     }
 
     const float cardWidth = 340.0f;

@@ -49,6 +49,9 @@ public:
     [[nodiscard]] DraftType GetActiveDraftType() const noexcept { return m_activeDraftType; }
     [[nodiscard]] int  GetAvailableRerolls() const noexcept { return m_remainingRerolls; }
     [[nodiscard]] const std::vector<RogueliteCard>& GetCurrentDraftCards() const noexcept { return m_currentDraftCards; }
+    [[nodiscard]] float GetDraftTimer() const noexcept { return m_draftTimer; }
+    void SetDraftTimer(float timer) noexcept { m_draftTimer = timer; }
+    [[nodiscard]] int  GetSelectedDraftIndex() const noexcept { return m_selectedDraftIndex; }
 
     // Perk Applicator Hook
     void ApplyPerk(RoguelitePerkType type);
@@ -106,6 +109,8 @@ private:
     int       m_remainingRerolls = 0;
     int       m_selectedDraftIndex = 0;
     float     m_draftAnimProgress = 0.0f;
+    float     m_draftTimer = 10.0f;
+    static constexpr float kDraftMaxDuration = 10.0f;
     std::vector<RogueliteCard> m_currentDraftCards;
     uint32_t  m_draftRndSeed = 987654321;
 

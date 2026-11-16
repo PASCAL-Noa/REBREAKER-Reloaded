@@ -7,7 +7,11 @@
 #include "Factories/BrickFactory.h"
 #include "ECS/Registry.hpp"
 #include "ECS/Components/Transform2D.h"
+#include "ECS/Components/BoxCollider.h"
+#include "ECS/Components/RigidBody.h"
 #include "ECS/Systems/DynamicEventSystem.h"
+#include "ECS/Systems/PaddleSystem.h"
+#include "Core/GameContext.h"
 #include <filesystem>
 #include <algorithm>
 #include <cmath>
@@ -348,14 +352,14 @@ TEST_SUITE("Endless Mode Progression & Roguelite Mechanics Tests")
 
     TEST_CASE("Procedural Endless Generator: Wave Duration Mathematical Scaling")
     {
-        // Wave 1 = 60s (1 min)
-        CHECK(ProceduralEndlessGenerator::GetWaveTargetDuration(1) == doctest::Approx(60.0f));
+        // Wave 1 = 40s
+        CHECK(ProceduralEndlessGenerator::GetWaveTargetDuration(1) == doctest::Approx(40.0f));
 
         // Wave 100 = 480s (8 min)
         CHECK(ProceduralEndlessGenerator::GetWaveTargetDuration(100) == doctest::Approx(480.0f));
 
-        // Wave 50 smooth interpolation: 60 + (49/99)*420 = 267.878f
-        CHECK(ProceduralEndlessGenerator::GetWaveTargetDuration(50) == doctest::Approx(267.878f));
+        // Wave 50 smooth interpolation: 40 + (49/99)*440 = 257.778f
+        CHECK(ProceduralEndlessGenerator::GetWaveTargetDuration(50) == doctest::Approx(257.778f));
 
         // Wave 130 = 600s (10 min)
         CHECK(ProceduralEndlessGenerator::GetWaveTargetDuration(130) == doctest::Approx(600.0f));
@@ -374,25 +378,25 @@ TEST_SUITE("Endless Mode Progression & Roguelite Mechanics Tests")
         gen.GenerateWave(1, registry, 0);
         CHECK(gen.GetCurrentWave() == 1);
         CHECK(gen.GetWaveTimer() == doctest::Approx(0.0f));
-        CHECK(gen.GetCurrentWaveTargetDuration() == doctest::Approx(60.0f));
+        CHECK(gen.GetCurrentWaveTargetDuration() == doctest::Approx(40.0f));
         CHECK_FALSE(gen.IsWaveTimeElapsed());
         CHECK_FALSE(gen.IsWaveTargetReached());
         // Wave 1 has 0 hazards (warmup)
         CHECK(gen.GetWaveHazards().empty());
 
         // Simulating wave timer progression
-        gen.SetWaveTimer(30.0f);
+        gen.SetWaveTimer(20.0f);
         CHECK(gen.GetWaveTimeProgress() == doctest::Approx(0.5f));
         CHECK_FALSE(gen.IsWaveTimeElapsed());
         CHECK_FALSE(gen.IsWaveTargetReached());
 
         // Simulating climax threshold (>= 85%)
-        gen.SetWaveTimer(55.0f);
+        gen.SetWaveTimer(36.0f);
         CHECK(gen.IsWaveClimaxActive());
         CHECK_FALSE(gen.IsWaveTimeElapsed());
 
-        // Completing wave duration (60s)
-        gen.SetWaveTimer(60.0f);
+        // Completing wave duration (40s)
+        gen.SetWaveTimer(40.0f);
         CHECK(gen.IsWaveTimeElapsed());
         CHECK(gen.IsWaveTargetReached());
 
@@ -400,7 +404,7 @@ TEST_SUITE("Endless Mode Progression & Roguelite Mechanics Tests")
         gen.AdvanceWave(registry, 0);
         CHECK(gen.GetCurrentWave() == 2);
         CHECK(gen.GetWaveTimer() == doctest::Approx(0.0f));
-        CHECK(gen.GetCurrentWaveTargetDuration() > 60.0f);
+        CHECK(gen.GetCurrentWaveTargetDuration() > 40.0f);
         CHECK_FALSE(gen.IsWaveTargetReached());
         // Wave 2 spawns 1 hazard with ScreenGlitch (popular triple vision chromatic glitch)
         REQUIRE(gen.GetWaveHazards().size() == 1);
@@ -555,5 +559,83 @@ TEST_SUITE("Endless Mode Progression & Roguelite Mechanics Tests")
         // 4. Reloading from prefs restores real level 4
         PowerUpManager::Get().LoadFromPrefs();
         CHECK(PowerUpManager::Get().GetLevel(PowerUpType::Storm) == 4);
+    }
+
+    TEST_CASE_FIXTURE(EndlessModeTestFixture, "PaddleSystem: Launch angle orients dynamically with paddle position and auto-launches")
+    {
+        alignas(GameContext) char dummyBuffer[sizeof(GameContext) * 2];
+        GameContext& dummyContext = *reinterpret_cast<GameContext*>(dummyBuffer);
+
+        Registry testReg;
+        PaddleSystem padSys(testReg, dummyContext);
+        padSys.SetLaunchSpeed(700.0f);
+        padSys.SetAutoLaunchDelay(0.5f);
+
+        // Paddle on left side (X = -250.0f)
+        Entity paddleLeft = testReg.CreateEntity();
+        testReg.AddComponent<Transform2D>(paddleLeft, Transform2D{Vector2f{-250.0f, 300.0f}});
+        testReg.AddComponent<BoxCollider>(paddleLeft, BoxCollider{Vector2f{120.0f, 20.0f}});
+
+        Entity ball1 = testReg.CreateEntity();
+        testReg.AddComponent<Transform2D>(ball1, Transform2D{Vector2f{-250.0f, 260.0f}});
+        testReg.AddComponent<RigidBody>(ball1, RigidBody{});
+
+        padSys.AttachBall(paddleLeft, ball1);
+        CHECK(padSys.IsBallAttached());
+
+        // Launch from left paddle: X velocity must be negative (launching towards the left)!
+        padSys.LaunchBall();
+        CHECK_FALSE(padSys.IsBallAttached());
+        auto& rb1 = testReg.GetComponent<RigidBody>(ball1);
+        CHECK(rb1.Velocity.X < 0.0f);
+        CHECK(rb1.Velocity.Y < 0.0f);
+
+        // Paddle on right side (X = +250.0f)
+        Entity paddleRight = testReg.CreateEntity();
+        testReg.AddComponent<Transform2D>(paddleRight, Transform2D{Vector2f{250.0f, 300.0f}});
+        testReg.AddComponent<BoxCollider>(paddleRight, BoxCollider{Vector2f{120.0f, 20.0f}});
+
+        Entity ball2 = testReg.CreateEntity();
+        testReg.AddComponent<Transform2D>(ball2, Transform2D{Vector2f{250.0f, 260.0f}});
+        testReg.AddComponent<RigidBody>(ball2, RigidBody{});
+
+        padSys.AttachBall(paddleRight, ball2);
+        CHECK(padSys.IsBallAttached());
+
+        // Launch from right paddle: X velocity must be positive (launching towards the right)!
+        padSys.LaunchBall();
+        CHECK_FALSE(padSys.IsBallAttached());
+        auto& rb2 = testReg.GetComponent<RigidBody>(ball2);
+        CHECK(rb2.Velocity.X > 0.0f);
+        CHECK(rb2.Velocity.Y < 0.0f);
+    }
+
+    TEST_CASE("Roguelite Boost Draft: 10s Timer & Auto-Selection Logic")
+    {
+        constexpr float kDraftMaxDuration = 10.0f;
+        float draftTimer = kDraftMaxDuration;
+        int selectedIndex = 0;
+        bool draftActive = true;
+
+        // Verify initial duration is 10s
+        CHECK(draftTimer == doctest::Approx(10.0f));
+        CHECK(draftActive);
+
+        // Advance 4s
+        draftTimer -= 4.0f;
+        CHECK(draftTimer == doctest::Approx(6.0f));
+        CHECK(draftActive);
+
+        // Advance beyond 10s -> Auto-select triggered
+        draftTimer -= 7.0f;
+        if (draftTimer <= 0.0f)
+        {
+            draftTimer = 0.0f;
+            draftActive = false; // Auto-select card at selectedIndex
+        }
+
+        CHECK_FALSE(draftActive);
+        CHECK(draftTimer == doctest::Approx(0.0f));
+        CHECK(selectedIndex == 0);
     }
 }

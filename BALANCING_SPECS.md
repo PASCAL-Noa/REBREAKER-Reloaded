@@ -27,18 +27,18 @@ Let $w \ge 1$ denote the current wave number. The target duration $T(w)$ in seco
 $$
 T(w) =
 \begin{cases}
-60.0\text{ s} & \text{if } w \le 1 \\
-60.0 + \dfrac{w - 1}{99.0} \times 420.0\text{ s} & \text{if } 1 < w \le 100 \\
+40.0\text{ s} & \text{if } w \le 1 \\
+40.0 + \dfrac{w - 1}{99.0} \times 440.0\text{ s} & \text{if } 1 < w \le 100 \\
 \min\Big(600.0\text{ s},\; 480.0 + (w - 100) \times 4.0\text{ s}\Big) & \text{if } w > 100
 \end{cases}
 $$
 
 ### Key Wave Milestones:
-- **Wave 1**: $60.0\text{ s}$ ($1.0\text{ minute}$) - Warmup wave, 0 arena hazards.
-- **Wave 10**: $98.2\text{ s}$ (~$1.6\text{ minutes}$) - First significant difficulty ramp.
-- **Wave 25**: $161.8\text{ s}$ (~$2.7\text{ minutes}$) - Multi-hazard arenas and tier 2 armor.
-- **Wave 50**: $267.9\text{ s}$ (~$4.5\text{ minutes}$) - Midpoint benchmark.
-- **Wave 75**: $373.9\text{ s}$ (~$6.2\text{ minutes}$) - Dense armor and high creep frequency.
+- **Wave 1**: $40.0\text{ s}$ (~$0.7\text{ minutes}$) - Punchy warmup sprint, 0 initial hazards, early explosive bomb brick variety.
+- **Wave 10**: $80.0\text{ s}$ (~$1.3\text{ minutes}$) - First significant difficulty ramp.
+- **Wave 25**: $146.7\text{ s}$ (~$2.4\text{ minutes}$) - Multi-hazard arenas and tier 2 armor.
+- **Wave 50**: $257.8\text{ s}$ (~$4.3\text{ minutes}$) - Midpoint benchmark.
+- **Wave 75**: $368.9\text{ s}$ (~$6.1\text{ minutes}$) - Dense armor and high creep frequency.
 - **Wave 100**: $480.0\text{ s}$ ($8.0\text{ minutes}$) - Pinnacle endurance challenge.
 - **Wave 130+**: $600.0\text{ s}$ ($10.0\text{ minutes}$) - Hard ceiling cap per wave.
 
@@ -59,21 +59,30 @@ Let $P = \dfrac{t_{\text{wave}}}{T(w)} \in [0.0, 1.0]$ denote the elapsed time p
 - **HUD Cleanliness**: The brick counter is omitted from the HUD banner, focusing cleanly on Wave, Survival Time, Elapsed Time %, Score Multiplier, and Seed.
 
 ### 2.2 Intra-Wave Creep Acceleration
-- Base downward creep interval decreases by wave: $I_{\text{base}}(w) = \max\Big(4.5\text{ s},\; (18.0 - (w - 1) \times 0.75) \times M_{\text{creep}}\Big)$.
+- Base downward creep interval decreases by wave: $I_{\text{base}}(w) = \max\Big(4.0\text{ s},\; (11.0 - (w - 1) \times 0.40) \times M_{\text{creep}}\Big)$.
+- In Wave 1, downward creep begins at $11.0\text{ s}$, creating immediate visual tension and early stress.
 - Modulated by intra-wave progress: $I(w, P) = I_{\text{base}}(w) \times (1.0 - 0.35 \times P)$.
 - As the clock ticks down, the ceiling drops **up to 35% faster**, demanding active board clearance.
 
-### 2.3 Intra-Wave Brick Hardening
+### 2.3 Intra-Wave Brick Hardening & Early Variety
+- Wave 1 features guaranteed volatile explosive Bomb bricks on upper rows, enabling immediate explosive chain reactions.
 - Procedural cell density and armor probability scale upwards as $P$ increases.
 - Top rows dropped after $P \ge 0.35$ feature higher chances of Hard (3-hit) and Armored bricks.
 
 ### 2.4 Mid-Wave Hazard Injection ($P \ge 0.50$)
-- At 50% wave progress, an arena hazard zone (e.g. UltimateDrain or ScreenGlitch) spawns dynamically at an unexpected location to disrupt passive paddle positioning.
+- At 50% wave progress, a dynamic **SpeedSurge** hazard zone spawns at an unexpected location, kicking ball kinetic speed into high gear (+25% surge).
 
-### 2.5 Climax Rush ($P \ge 0.85$, Final 15%)
-- Visual HUD warning: `[!] WAVE CLIMAX - FINAL SURGE ENGAGED [!]`.
-- Minimum ball velocity is enforced at $580\text{ px/s}$: sluggish or looping balls receive an immediate kinetic nudge.
+### 2.5 Climax Rush ($P \ge 0.85$, Final 15%) & Ball Pacing
+- **Launch Speed**: Base paddle launch velocity is boosted to $700.0\text{ px/s}$.
+- **Continuous Minimum Velocity**: Active balls are dynamically prevented from falling below $600.0\text{ px/s}$, eliminating sluggish balls and boring idle loops.
+- **Climax Rush**: Visual HUD warning `[!] WAVE CLIMAX - FINAL SURGE ENGAGED [!]`, with minimum ball velocity escalated to $740\text{ px/s}$.
 - Overdrive Capacitor perk triggers during this phase.
+
+### 2.6 Anti-AFK Auto-Launch & Strict Pause Isolation
+- **Auto-Launch at Start**: Immediately upon countdown completion, the attached ball is automatically launched into flight.
+- **Dynamic Orientation**: Launch trajectory dynamically orients based on paddle horizontal position: paddle situated on the left half angles the launch to the left, while paddle on the right half angles to the right.
+- **Anti-AFK Wave Guard**: Survival endurance timers and ceiling descent only advance when the ball is actively in flight. An AFK player cannot sit idle with a ball attached.
+- **Strict Pause Freezing**: When the game is paused, all game systems, wave timers, descent creep, hazard zone spawns, and draft progression are strictly frozen.
 
 ---
 
@@ -193,8 +202,10 @@ All power-ups can be upgraded from **Level 1 to Level 5** in the Workshop using 
   - Hard / Metal brick hit: $+3.0$ units.
   - Combo streak $> 5$: $+0.5$ bonus unit per hit.
   - Siphon perks / cards: $+5.0$ units per trigger.
-- **Drain Hazards**:
-  - UltimateDrain hazard zone drains $40.0$ units on touch.
+- **Drain Hazards & Clarity**:
+  - UltimateDrain is excluded from standard Endless rotation to prevent confusing silent meter losses.
+  - If active in custom/sandbox modes, drain is reduced to $10.0$ units (down from $40.0$).
+  - When drained, the Ultimate HUD meter pulses a warning red border and explicitly displays `[!] ENERGY DRAINED: -10% [!]`.
   - EMP Ultimate Lockdown event locks meter activation for $45.0\text{ s}$.
 
 ---
@@ -204,6 +215,8 @@ All power-ups can be upgraded from **Level 1 to Level 5** in the Workshop using 
 Endless mode offers card drafts:
 - **Periodic Supply**: Every $60.0\text{ s}$ of survival time. Standard / lower rarity cards.
 - **Wave Clear**: Every 3 waves cleared (Wave 3, 6, 9...). Higher rarity chances.
+- **Strict Gameplay Pause During Draft**: While the boost draft is on screen, all ball physics, creep descent, hazard zones, and life penalties are strictly frozen. The player is guaranteed safety and cannot lose while choosing their boost.
+- **Pacing & 10s Countdown**: The draft modal features a prominent $10.0\text{ s}$ countdown and dynamic color-coded timer bar. If the timer elapses without player input, the currently highlighted card is auto-selected, seamlessly resuming gameplay.
 
 | ID | Name | Rarity | Category | Description |
 |:---|:---|:---|:---|:---|
@@ -230,21 +243,22 @@ Endless mode offers card drafts:
 
 ## 6. Maluses & Tactical Hazard Zones
 
-Hazard zones spawn on the arena field. Balls and paddles passing through them receive immediate tactical debuffs:
+Hazard zones spawn on the arena field with prominent color-coded outlines and centered text identification banners. Balls and paddles passing through them receive immediate tactical effects:
 
-1. **ScreenGlitch (`#00EBFF`)**:
+1. **SpeedSurge (`#00F0FF`) - `[!] SPEED SURGE [!]`**:
+   - Accelerates ball velocity by $+25\%$ on contact with an electric cyan shockwave.
+2. **ScreenGlitch (`#00EBFF`) - `[!] GLITCH FIELD [!]`**:
    - Triggers chromatic optical aberration and triple-vision paddle projection.
    - Duration: $1.2\text{ s}$ to $2.0\text{ s}$.
-2. **UltimateDrain (`#EB2DFF`)**:
-   - Instantly siphons $40.0$ to $50.0$ units from the Ultimate ability charge meter.
-   - Flashes purple warning flare.
-3. **Dynamic Camera Tilt (`#FFB428`)**:
+3. **Dynamic Camera Tilt (`#FFB428`) - `[!] GRAVITY TILT [!]`**:
    - Tilts the gameplay camera view by $\pm 2.5^\circ$ for $1.2\text{ s}$ to $2.2\text{ s}$.
-4. **Camera Zoom Pulse (`#B432C8`)**:
+4. **Camera Zoom Pulse (`#B432C8`) - `[!] PULSE FIELD [!]`**:
    - Pulses camera scale in and out by $\pm 5\%$ rhythmically for $1.2\text{ s}$.
-5. **Audio Warp Distortion (`#5F37B9`)**:
+5. **Audio Warp Distortion (`#5F37B9`) - `[!] TIME WARP [!]`**:
    - Warps master audio pitch between $0.88\times$ and $1.15\times$ for acoustic disorientation.
-6. **AllMaluses (`#DC234B`)**:
+6. **UltimateDrain (`#EB2DFF`) - `[!] ENERGY DRAIN [!]`**:
+   - Drains $10.0$ units from the Ultimate ability charge meter with red warning feedback on the HUD.
+7. **AllMaluses (`#DC234B`) - `[!] CHAOS ZONE [!]`**:
    - Triggers combined visual chromatic glitch, camera tilt, and temporal audio warp.
 
 ---
