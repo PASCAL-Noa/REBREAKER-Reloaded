@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 #include "Tetris/TetrisMatrix.h"
+#include "Resources/ResourceManager.h"
+#include <SFML/Audio.hpp>
+#include <filesystem>
 #include <string>
 #include <set>
 #include <vector>
@@ -144,6 +147,33 @@ TEST_SUITE("TetrisMatrix Core Logic & Gimmick Stage Engine")
         CHECK(trackingMatrix.GetCurrentX() == startX + 1);
         while (trackingMatrix.MoveTowardsColumn(0)) {}
         CHECK(trackingMatrix.GetCurrentX() <= startX);
+    }
+
+    TEST_CASE("Audio Assets Loading Verification")
+    {
+        sf::SoundBuffer buffer;
+        const char* sfxFiles[] = {
+            "Resources/audio/sfx/tetris_move.wav",
+            "Resources/audio/sfx/tetris_rotate.wav",
+            "Resources/audio/sfx/tetris_drop.wav",
+            "Resources/audio/sfx/tetris_line_clear.wav",
+            "Resources/audio/sfx/tetris_tetris.wav",
+            "Resources/audio/sfx/tetris_danger.wav"
+        };
+        for (const char* f : sfxFiles)
+        {
+            CHECK(buffer.loadFromFile(f));
+        }
+
+        sf::Music music;
+        CHECK(music.openFromFile("Resources/audio/music/tetris_8bit_theme.wav"));
+    }
+
+    TEST_CASE("Resource Path Resolution Verification")
+    {
+        std::string resolved = ResourceManager::ResolveFilePath("Resources/audio/music/tetris_8bit_theme.wav");
+        CHECK_FALSE(resolved.empty());
+        CHECK(std::filesystem::exists(resolved));
     }
 
     TEST_CASE("5. Ghost Piece Calculation and Hard Drop")

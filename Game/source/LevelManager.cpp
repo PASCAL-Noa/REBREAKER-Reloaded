@@ -20,7 +20,7 @@ LevelManager::LevelManager(const std::string& levelsDirectory)
 
 void LevelManager::Initialize(const std::string& levelsDirectory)
 {
-    m_levelsDirectory = levelsDirectory;
+    m_levelsDirectory = ResourceManager::ResolveFilePath(levelsDirectory);
     m_levelFiles.clear();
 
     std::error_code ec;

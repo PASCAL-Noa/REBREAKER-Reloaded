@@ -6,6 +6,14 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
+#if defined(_WIN32)
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+#endif
 
 ResourceManager::ResourceManager()
     : m_threadPool(std::make_unique<ThreadPool>()),
@@ -84,6 +92,70 @@ std::string ResourceManager::GetExtension(const std::string& filepath)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
     return ext;
+}
+
+std::string ResourceManager::ResolveFilePath(const std::string& filepath)
+{
+    if (filepath.empty()) return filepath;
+
+    std::error_code ec;
+    // 1. Direct path check (relative to cwd or absolute)
+    if (std::filesystem::exists(filepath, ec))
+    {
+        return filepath;
+    }
+
+    // 2. Path relative to executable directory
+    std::filesystem::path exeDir;
+#if defined(_WIN32)
+    wchar_t buffer[MAX_PATH];
+    DWORD len = GetModuleFileNameW(NULL, buffer, MAX_PATH);
+    if (len > 0)
+    {
+        exeDir = std::filesystem::path(buffer).parent_path();
+    }
+    else
+    {
+        exeDir = std::filesystem::current_path();
+    }
+#else
+    exeDir = std::filesystem::current_path();
+#endif
+
+    std::filesystem::path candidate = exeDir / filepath;
+    if (std::filesystem::exists(candidate, ec))
+    {
+        return candidate.generic_string();
+    }
+
+    // 3. Check exeDir / Resources / ... (if filepath is missing "Resources/")
+    candidate = exeDir / "Resources" / filepath;
+    if (std::filesystem::exists(candidate, ec))
+    {
+        return candidate.generic_string();
+    }
+
+    // 4. Walk up parent directories (handles running from bin/, out/build/..., cmake-build-..., etc.)
+    std::filesystem::path cur = exeDir;
+    for (int i = 0; i < 5; ++i)
+    {
+        if (!cur.has_parent_path()) break;
+        cur = cur.parent_path();
+
+        candidate = cur / filepath;
+        if (std::filesystem::exists(candidate, ec))
+        {
+            return candidate.generic_string();
+        }
+
+        candidate = cur / "Resources" / filepath;
+        if (std::filesystem::exists(candidate, ec))
+        {
+            return candidate.generic_string();
+        }
+    }
+
+    return filepath;
 }
 
 std::mutex& ResourceManager::GetAudioDecodeMutex()
@@ -237,18 +309,19 @@ std::future<uint32_t> ResourceManager::LoadResourceAsync(
     // Dispatch background loading task to ThreadPool
     m_threadPool->EnqueueDetached([this, id, filepath]() {
         const std::string ext = GetExtension(filepath);
+        const std::string resolved = ResolveFilePath(filepath);
 
         if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "bmp")
         {
             auto image = std::make_unique<sf::Image>();
-            bool success = image->loadFromFile(filepath);
+            bool success = image->loadFromFile(resolved);
 
             std::lock_guard<std::mutex> lock(*m_pendingMutex);
             m_pendingTextures.push_back({ id, filepath, std::move(image), success });
         }
         else if (ext == "frag" || ext == "vert")
         {
-            std::ifstream file(filepath);
+            std::ifstream file(resolved);
             std::string source;
             bool success = false;
             if (file.is_open())
@@ -520,8 +593,9 @@ bool ResourceManager::LoadTexture(const uint32_t id, const std::string& filepath
         if (m_textures.contains(id)) return m_textures.at(id) != nullptr;
     }
 
+    const std::string resolved = ResolveFilePath(filepath);
     auto tex = std::make_unique<sf::Texture>();
-    if (tex->loadFromFile(filepath))
+    if (tex->loadFromFile(resolved))
     {
         std::unique_lock<std::shared_mutex> lock(*m_mutex);
         m_textures[id] = std::move(tex);
@@ -541,9 +615,10 @@ bool ResourceManager::LoadShader(const uint32_t id, const std::string& filepath)
         if (m_shaders.contains(id)) return m_shaders.at(id) != nullptr;
     }
 
+    const std::string resolved = ResolveFilePath(filepath);
     auto shader = std::make_unique<sf::Shader>();
     sf::Shader::Type type = (GetExtension(filepath) == "frag") ? sf::Shader::Type::Fragment : sf::Shader::Type::Vertex;
-    if (shader->loadFromFile(filepath, type))
+    if (shader->loadFromFile(resolved, type))
     {
         std::unique_lock<std::shared_mutex> lock(*m_mutex);
         m_shaders[id] = std::move(shader);
@@ -563,11 +638,12 @@ bool ResourceManager::LoadFont(uint32_t id, const std::string& filepath)
         if (m_fonts.contains(id)) return m_fonts.at(id) != nullptr;
     }
 
+    const std::string resolved = ResolveFilePath(filepath);
     auto font = std::make_unique<sf::Font>();
     bool loaded = false;
     {
         std::lock_guard<std::mutex> fLock(GetFontDecodeMutex());
-        loaded = font->openFromFile(filepath);
+        loaded = font->openFromFile(resolved);
     }
 
     if (loaded)
@@ -590,11 +666,12 @@ bool ResourceManager::LoadSoundBuffer(uint32_t id, const std::string& filepath)
         if (m_soundBuffers.contains(id)) return m_soundBuffers.at(id) != nullptr;
     }
 
+    const std::string resolved = ResolveFilePath(filepath);
     auto buf = std::make_unique<sf::SoundBuffer>();
     bool loaded = false;
     {
         std::lock_guard<std::mutex> aLock(GetAudioDecodeMutex());
-        loaded = buf->loadFromFile(filepath);
+        loaded = buf->loadFromFile(resolved);
     }
 
     if (loaded)
@@ -617,7 +694,8 @@ bool ResourceManager::LoadText(uint32_t id, const std::string& filepath)
         if (m_textFiles.contains(id)) return true;
     }
 
-    std::ifstream file(filepath);
+    const std::string resolved = ResolveFilePath(filepath);
+    std::ifstream file(resolved);
     if (!file.is_open())
     {
         std::cerr << "[ResourceManager] Warning: Failed to open text file \"" << filepath << "\".\n";

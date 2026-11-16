@@ -46,7 +46,8 @@ void TetrisScene::OnInit(GameContext& context)
     m_registry.ProcessDeferredCommands();
     m_brickCount = 0;
 
-    // 3. Reset lives
+    // 3. Reset lives & stop campaign music
+    m_playlist.Clear();
     m_lives = 3;
     context.Events.Publish(LivesChangedEvent(m_lives));
 
@@ -58,7 +59,10 @@ void TetrisScene::OnInit(GameContext& context)
     m_tetrisSfxId = context.Resources.LoadResource("Resources/audio/sfx/tetris_tetris.wav");
     m_dangerSfxId = context.Resources.LoadResource("Resources/audio/sfx/tetris_danger.wav");
 
-    context.Audio.PlayMusic("Resources/audio/music/tetris_8bit_theme.wav", 65.0f, true);
+    if (m_musicEnabled)
+    {
+        context.Audio.PlayMusic("Resources/audio/music/tetris_8bit_theme.wav", 65.0f, true);
+    }
 
     // 5. Initialize Tetris Matrix and spawn initial playfield bricks
     m_matrix.Reset();
@@ -335,7 +339,7 @@ void TetrisScene::HandlePlayerInput(GameContext& context)
                           context.Input.IsJoystickButtonPress(0, 1);
     if (rotateCw)
     {
-        if (m_matrix.RotateClockwise() && m_rotateSfxId != 0)
+        if (m_matrix.RotateClockwise() && m_audioEnabled && m_rotateSfxId != 0)
         {
             context.Audio.PlaySfx(m_rotateSfxId, 55.0f);
         }
@@ -344,7 +348,7 @@ void TetrisScene::HandlePlayerInput(GameContext& context)
     // 2. ROTATE COUNTER-CLOCKWISE: Q / Gamepad X (2)
     if (context.Input.IsKeyPress(KeyCode::Q) || context.Input.IsJoystickButtonPress(0, 2))
     {
-        if (m_matrix.RotateCounterClockwise() && m_rotateSfxId != 0)
+        if (m_matrix.RotateCounterClockwise() && m_audioEnabled && m_rotateSfxId != 0)
         {
             context.Audio.PlaySfx(m_rotateSfxId, 55.0f);
         }
@@ -363,7 +367,7 @@ void TetrisScene::HandlePlayerInput(GameContext& context)
             auto settled = m_matrix.HardDrop();
             if (!settled.empty())
             {
-                if (m_dropSfxId != 0) context.Audio.PlaySfx(m_dropSfxId, 65.0f);
+                if (m_audioEnabled && m_dropSfxId != 0) context.Audio.PlaySfx(m_dropSfxId, 65.0f);
                 SyncSettledBricks(settled);
                 ProcessLineClears(context);
                 m_matrix.SpawnNextPiece();
@@ -387,7 +391,7 @@ void TetrisScene::HandlePlayerInput(GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::Left))
     {
         m_manualOverrideTimer = 1.0f;
-        if (m_matrix.MoveLeft() && m_moveSfxId != 0)
+        if (m_matrix.MoveLeft() && m_audioEnabled && m_moveSfxId != 0)
         {
             context.Audio.PlaySfx(m_moveSfxId, 45.0f);
         }
@@ -395,7 +399,7 @@ void TetrisScene::HandlePlayerInput(GameContext& context)
     else if (context.Input.IsKeyPress(KeyCode::Right))
     {
         m_manualOverrideTimer = 1.0f;
-        if (m_matrix.MoveRight() && m_moveSfxId != 0)
+        if (m_matrix.MoveRight() && m_audioEnabled && m_moveSfxId != 0)
         {
             context.Audio.PlaySfx(m_moveSfxId, 45.0f);
         }
@@ -458,7 +462,7 @@ void TetrisScene::CheckBallTetrominoCollision(GameContext& context)
                 }
 
                 // Trickshot rotation!
-                if (m_matrix.RotateClockwise() && m_rotateSfxId != 0)
+                if (m_matrix.RotateClockwise() && m_audioEnabled && m_rotateSfxId != 0)
                 {
                     context.Audio.PlaySfx(m_rotateSfxId, 75.0f);
                 }
@@ -513,7 +517,7 @@ void TetrisScene::StepMatrixLogic(float dt, GameContext& context)
         auto settled = m_matrix.SettlePiece();
         if (!settled.empty())
         {
-            if (m_dropSfxId != 0) context.Audio.PlaySfx(m_dropSfxId, 55.0f);
+            if (m_audioEnabled && m_dropSfxId != 0) context.Audio.PlaySfx(m_dropSfxId, 55.0f);
             SyncSettledBricks(settled);
             ProcessLineClears(context);
             m_matrix.SpawnNextPiece();
@@ -533,7 +537,7 @@ void TetrisScene::StepMatrixLogic(float dt, GameContext& context)
         if (m_dangerAlarmTimer >= 1.2f)
         {
             m_dangerAlarmTimer = 0.0f;
-            if (m_dangerSfxId != 0)
+            if (m_audioEnabled && m_dangerSfxId != 0)
             {
                 context.Audio.PlaySfx(m_dangerSfxId, 60.0f);
             }
@@ -624,13 +628,16 @@ void TetrisScene::ProcessLineClears(GameContext& context)
     m_overdriveTimer = 5.0f + static_cast<float>(lineCount) * 1.5f;
 
     // Audio SFX
-    if (lineCount >= 4 && m_tetrisSfxId != 0)
+    if (m_audioEnabled)
     {
-        context.Audio.PlaySfx(m_tetrisSfxId, 85.0f);
-    }
-    else if (m_lineClearSfxId != 0)
-    {
-        context.Audio.PlaySfx(m_lineClearSfxId, 75.0f);
+        if (lineCount >= 4 && m_tetrisSfxId != 0)
+        {
+            context.Audio.PlaySfx(m_tetrisSfxId, 85.0f);
+        }
+        else if (m_lineClearSfxId != 0)
+        {
+            context.Audio.PlaySfx(m_lineClearSfxId, 75.0f);
+        }
     }
 
     // Visual Punch Flash
