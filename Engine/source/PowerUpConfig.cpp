@@ -33,6 +33,67 @@ int PowerUpManager::GetLevel(PowerUpType type) const
     }
 }
 
+int PowerUpManager::GetPersistedLevel(PowerUpType type) const
+{
+    switch (type)
+    {
+        case PowerUpType::MultiBall:     return m_persistedMultiBallLevel;
+        case PowerUpType::ExpandPaddle:  return m_persistedExpandLevel;
+        case PowerUpType::ShrinkPaddle:  return m_persistedShrinkLevel;
+        case PowerUpType::Storm:         return m_persistedStormLevel;
+        case PowerUpType::TempoBall:     return m_persistedTempoLevel;
+        case PowerUpType::ExtraLife:     return m_persistedLifeLevel;
+        case PowerUpType::BigBall:       return m_persistedBigLevel;
+        case PowerUpType::FireBall:      return m_persistedFireBallLevel;
+        case PowerUpType::StickyPaddle:  return m_persistedStickyLevel;
+        case PowerUpType::BottomBarrier: return m_persistedBarrierLevel;
+        case PowerUpType::MagnetPaddle:  return m_persistedMagnetLevel;
+        case PowerUpType::GhostBall:     return m_persistedGhostLevel;
+        case PowerUpType::ItemRegen:     return m_persistedItemRegenLevel;
+        default:                         return 1;
+    }
+}
+
+void PowerUpManager::SetPersistedLevel(PowerUpType type, int level)
+{
+    int maxLvl = GetMaxLevel(type);
+    int clamped = std::clamp(level, 1, maxLvl);
+    switch (type)
+    {
+        case PowerUpType::MultiBall:     m_persistedMultiBallLevel = clamped; break;
+        case PowerUpType::ExpandPaddle:  m_persistedExpandLevel = clamped; break;
+        case PowerUpType::ShrinkPaddle:  m_persistedShrinkLevel = clamped; break;
+        case PowerUpType::Storm:         m_persistedStormLevel = clamped; break;
+        case PowerUpType::TempoBall:     m_persistedTempoLevel = clamped; break;
+        case PowerUpType::ExtraLife:     m_persistedLifeLevel = clamped; break;
+        case PowerUpType::BigBall:       m_persistedBigLevel = clamped; break;
+        case PowerUpType::FireBall:      m_persistedFireBallLevel = clamped; break;
+        case PowerUpType::StickyPaddle:  m_persistedStickyLevel = clamped; break;
+        case PowerUpType::BottomBarrier: m_persistedBarrierLevel = clamped; break;
+        case PowerUpType::MagnetPaddle:  m_persistedMagnetLevel = clamped; break;
+        case PowerUpType::GhostBall:     m_persistedGhostLevel = clamped; break;
+        case PowerUpType::ItemRegen:     m_persistedItemRegenLevel = clamped; break;
+        default: break;
+    }
+}
+
+void PowerUpManager::ClearTransientOverrides()
+{
+    m_multiBall.Level   = m_persistedMultiBallLevel;
+    m_expand.Level      = m_persistedExpandLevel;
+    m_shrink.Level      = m_persistedShrinkLevel;
+    m_storm.Level       = m_persistedStormLevel;
+    m_tempo.Level       = m_persistedTempoLevel;
+    m_life.Level        = m_persistedLifeLevel;
+    m_big.Level         = m_persistedBigLevel;
+    m_fireBall.Level    = m_persistedFireBallLevel;
+    m_sticky.Level      = m_persistedStickyLevel;
+    m_barrier.Level     = m_persistedBarrierLevel;
+    m_magnet.Level      = m_persistedMagnetLevel;
+    m_ghost.Level       = m_persistedGhostLevel;
+    m_itemRegen.Level   = m_persistedItemRegenLevel;
+}
+
 int PowerUpManager::GetMaxLevel(PowerUpType type) const
 {
     switch (type)
@@ -56,7 +117,10 @@ int PowerUpManager::GetMaxLevel(PowerUpType type) const
 
 void PowerUpManager::SetLevel(PowerUpType type, int level)
 {
-    SetLevelTransient(type, level);
+    int maxLvl = GetMaxLevel(type);
+    int clamped = std::clamp(level, 1, maxLvl);
+    SetPersistedLevel(type, clamped);
+    SetLevelTransient(type, clamped);
     SaveToPrefs();
 }
 
@@ -73,6 +137,12 @@ void PowerUpManager::SetLevelTransient(PowerUpType type, int level)
         case PowerUpType::Storm:        m_storm.Level = clamped; break;
         case PowerUpType::TempoBall:    m_tempo.Level = clamped; break;
         case PowerUpType::ExtraLife:    m_life.Level = clamped; break;
+        case PowerUpType::BigBall:      return; // Handled below
+        default: break;
+    }
+
+    switch (type)
+    {
         case PowerUpType::BigBall:      m_big.Level = clamped; break;
         case PowerUpType::FireBall:     m_fireBall.Level = clamped; break;
         case PowerUpType::StickyPaddle: m_sticky.Level = clamped; break;
@@ -86,28 +156,29 @@ void PowerUpManager::SetLevelTransient(PowerUpType type, int level)
 
 int PowerUpManager::GetUpgradeCost(PowerUpType type) const
 {
+    int level = GetPersistedLevel(type);
     switch (type)
     {
-        case PowerUpType::MultiBall:    return m_multiBall.GetUpgradeCost();
-        case PowerUpType::ExpandPaddle: return m_expand.GetUpgradeCost();
-        case PowerUpType::ShrinkPaddle: return m_shrink.GetUpgradeCost();
-        case PowerUpType::Storm:        return m_storm.GetUpgradeCost();
-        case PowerUpType::TempoBall:    return m_tempo.GetUpgradeCost();
-        case PowerUpType::ExtraLife:    return m_life.GetUpgradeCost();
-        case PowerUpType::BigBall:      return m_big.GetUpgradeCost();
-        case PowerUpType::FireBall:     return m_fireBall.GetUpgradeCost();
-        case PowerUpType::StickyPaddle: return m_sticky.GetUpgradeCost();
-        case PowerUpType::BottomBarrier: return m_barrier.GetUpgradeCost();
-        case PowerUpType::MagnetPaddle: return m_magnet.GetUpgradeCost();
-        case PowerUpType::GhostBall:    return m_ghost.GetUpgradeCost();
-        case PowerUpType::ItemRegen:    return m_itemRegen.GetUpgradeCost();
-        default:                        return 100;
+        case PowerUpType::MultiBall:    return 100 * level;
+        case PowerUpType::ExpandPaddle: return 100 * level;
+        case PowerUpType::ShrinkPaddle: return 100 * level;
+        case PowerUpType::Storm:        return 150 * level;
+        case PowerUpType::TempoBall:    return 120 * level;
+        case PowerUpType::ExtraLife:    return 200 * level;
+        case PowerUpType::BigBall:      return 150 * level;
+        case PowerUpType::FireBall:     return 160 * level;
+        case PowerUpType::StickyPaddle: return 140 * level;
+        case PowerUpType::BottomBarrier: return 150 * level;
+        case PowerUpType::MagnetPaddle: return 130 * level;
+        case PowerUpType::GhostBall:    return 160 * level;
+        case PowerUpType::ItemRegen:    return 120 * level;
+        default:                        return 100 * level;
     }
 }
 
 bool PowerUpManager::CanUpgrade(PowerUpType type) const
 {
-    int curLevel = GetLevel(type);
+    int curLevel = GetPersistedLevel(type);
     int maxLevel = GetMaxLevel(type);
     if (curLevel >= maxLevel) return false;
     return m_coins >= GetUpgradeCost(type);
@@ -118,8 +189,7 @@ bool PowerUpManager::Upgrade(PowerUpType type)
     if (!CanUpgrade(type)) return false;
     int cost = GetUpgradeCost(type);
     m_coins -= cost;
-    SetLevel(type, GetLevel(type) + 1);
-    SaveToPrefs();
+    SetLevel(type, GetPersistedLevel(type) + 1);
     return true;
 }
 
@@ -147,13 +217,15 @@ void PowerUpManager::LoadFromPrefs()
     m_coins = PlayerPrefs::GetInt("Economy_Coins", 0);
 
     // MultiBall
-    m_multiBall.Level          = PlayerPrefs::GetInt("PowerUp_MultiBall_Level", m_multiBall.Level);
+    m_persistedMultiBallLevel  = std::clamp(PlayerPrefs::GetInt("PowerUp_MultiBall_Level", 1), 1, 5);
+    m_multiBall.Level          = m_persistedMultiBallLevel;
     m_multiBall.BaseExtraBalls = PlayerPrefs::GetInt("PowerUp_MultiBall_BaseExtra", m_multiBall.BaseExtraBalls);
     m_multiBall.MaxTotalBalls  = PlayerPrefs::GetInt("PowerUp_MultiBall_MaxTotal", m_multiBall.MaxTotalBalls);
     m_multiBall.SplitAngleDeg  = PlayerPrefs::GetFloat("PowerUp_MultiBall_SplitAngle", m_multiBall.SplitAngleDeg);
 
     // Expand Paddle
-    m_expand.Level             = PlayerPrefs::GetInt("PowerUp_Expand_Level", m_expand.Level);
+    m_persistedExpandLevel     = std::clamp(PlayerPrefs::GetInt("PowerUp_Expand_Level", 1), 1, 5);
+    m_expand.Level             = m_persistedExpandLevel;
     m_expand.BaseDuration      = 10.0f;
     m_expand.DurationPerLevel  = 2.0f;
     m_expand.BaseScale         = 1.20f;
@@ -162,7 +234,8 @@ void PowerUpManager::LoadFromPrefs()
     m_expand.DropChanceStepPerLevel = 0.10f;
 
     // Shrink Paddle
-    m_shrink.Level             = PlayerPrefs::GetInt("PowerUp_Shrink_Level", m_shrink.Level);
+    m_persistedShrinkLevel     = std::clamp(PlayerPrefs::GetInt("PowerUp_Shrink_Level", 1), 1, 5);
+    m_shrink.Level             = m_persistedShrinkLevel;
     m_shrink.BaseDuration      = 10.0f;
     m_shrink.DurationPerLevel  = 2.0f;
     m_shrink.BaseScale         = 0.65f;
@@ -172,11 +245,13 @@ void PowerUpManager::LoadFromPrefs()
     m_shrink.DropChanceStepPerLevel = 0.10f;
 
     // Storm (Thunderstorm)
-    m_storm.Level        = PlayerPrefs::GetInt("PowerUp_Storm_Level", PlayerPrefs::GetInt("PowerUp_Laser_Level", m_storm.Level));
+    m_persistedStormLevel = std::clamp(PlayerPrefs::GetInt("PowerUp_Storm_Level", PlayerPrefs::GetInt("PowerUp_Laser_Level", 1)), 1, 5);
+    m_storm.Level        = m_persistedStormLevel;
     m_storm.StrikeRadius = PlayerPrefs::GetFloat("PowerUp_Storm_StrikeRadius", m_storm.StrikeRadius);
 
     // Tempo Ball
-    m_tempo.Level              = PlayerPrefs::GetInt("PowerUp_Tempo_Level", m_tempo.Level);
+    m_persistedTempoLevel      = std::clamp(PlayerPrefs::GetInt("PowerUp_Tempo_Level", 1), 1, 5);
+    m_tempo.Level              = m_persistedTempoLevel;
     m_tempo.BaseDuration       = 10.0f;
     m_tempo.DurationPerLevel   = 1.0f;
     m_tempo.BaseSpeedMultiplier = 0.60f;
@@ -188,12 +263,14 @@ void PowerUpManager::LoadFromPrefs()
     m_tempo.SlowZoneBottomY    = PlayerPrefs::GetFloat("PowerUp_Tempo_SlowZoneBottomY", m_tempo.SlowZoneBottomY);
 
     // Extra Life
-    m_life.Level        = PlayerPrefs::GetInt("PowerUp_Life_Level", m_life.Level);
+    m_persistedLifeLevel= std::clamp(PlayerPrefs::GetInt("PowerUp_Life_Level", 1), 1, 5);
+    m_life.Level        = m_persistedLifeLevel;
     m_life.LivesGranted = PlayerPrefs::GetInt("PowerUp_Life_Granted", m_life.LivesGranted);
     m_life.MaxLivesCap  = PlayerPrefs::GetInt("PowerUp_Life_Cap", m_life.MaxLivesCap);
 
     // Big Ball
-    m_big.Level              = PlayerPrefs::GetInt("PowerUp_Big_Level", m_big.Level);
+    m_persistedBigLevel      = std::clamp(PlayerPrefs::GetInt("PowerUp_Big_Level", 1), 1, 5);
+    m_big.Level              = m_persistedBigLevel;
     m_big.BaseDuration       = PlayerPrefs::GetFloat("PowerUp_Big_BaseDuration", m_big.BaseDuration);
     m_big.DurationPerLevel   = PlayerPrefs::GetFloat("PowerUp_Big_DurationPerLvl", m_big.DurationPerLevel);
     m_big.BaseScale          = PlayerPrefs::GetFloat("PowerUp_Big_BaseScale", m_big.BaseScale);
@@ -202,7 +279,8 @@ void PowerUpManager::LoadFromPrefs()
     m_big.OneHitKill         = PlayerPrefs::GetBool("PowerUp_Big_OneHitKill", m_big.OneHitKill);
 
     // Fire Ball
-    m_fireBall.Level              = PlayerPrefs::GetInt("PowerUp_Fire_Level", m_fireBall.Level);
+    m_persistedFireBallLevel      = std::clamp(PlayerPrefs::GetInt("PowerUp_Fire_Level", 1), 1, 5);
+    m_fireBall.Level              = m_persistedFireBallLevel;
     m_fireBall.BaseScale          = PlayerPrefs::GetFloat("PowerUp_Fire_BaseScale", m_fireBall.BaseScale);
     m_fireBall.ScaleBonusPerLevel = PlayerPrefs::GetFloat("PowerUp_Fire_ScaleBonus", m_fireBall.ScaleBonusPerLevel);
     m_fireBall.BaseAoERadius      = PlayerPrefs::GetFloat("PowerUp_Fire_BaseAoE", m_fireBall.BaseAoERadius);
@@ -210,7 +288,8 @@ void PowerUpManager::LoadFromPrefs()
     m_fireBall.FuseDuration       = PlayerPrefs::GetFloat("PowerUp_Fire_FuseDuration", m_fireBall.FuseDuration);
 
     // Sticky Paddle
-    m_sticky.Level             = PlayerPrefs::GetInt("PowerUp_Sticky_Level", m_sticky.Level);
+    m_persistedStickyLevel     = std::clamp(PlayerPrefs::GetInt("PowerUp_Sticky_Level", 1), 1, 5);
+    m_sticky.Level             = m_persistedStickyLevel;
     m_sticky.BaseDuration      = 12.0f;
     m_sticky.DurationPerLevel  = 2.0f;
     m_sticky.AutoLaunchDelay   = 3.0f;
@@ -218,14 +297,16 @@ void PowerUpManager::LoadFromPrefs()
     m_sticky.BoostPercentPerLevel = 15.0f;
 
     // Bottom Barrier
-    m_barrier.Level            = PlayerPrefs::GetInt("PowerUp_Barrier_Level", m_barrier.Level);
+    m_persistedBarrierLevel    = std::clamp(PlayerPrefs::GetInt("PowerUp_Barrier_Level", 1), 1, 5);
+    m_barrier.Level            = m_persistedBarrierLevel;
     m_barrier.BaseDuration     = PlayerPrefs::GetFloat("PowerUp_Barrier_BaseDuration", m_barrier.BaseDuration);
     m_barrier.DurationPerLevel = PlayerPrefs::GetFloat("PowerUp_Barrier_DurationPerLvl", m_barrier.DurationPerLevel);
     m_barrier.BaseCharges      = PlayerPrefs::GetInt("PowerUp_Barrier_BaseCharges", m_barrier.BaseCharges);
     m_barrier.ChargesPerLevel  = PlayerPrefs::GetInt("PowerUp_Barrier_ChargesPerLvl", m_barrier.ChargesPerLevel);
 
     // Magnet Paddle
-    m_magnet.Level             = PlayerPrefs::GetInt("PowerUp_Magnet_Level", m_magnet.Level);
+    m_persistedMagnetLevel     = std::clamp(PlayerPrefs::GetInt("PowerUp_Magnet_Level", 1), 1, 5);
+    m_magnet.Level             = m_persistedMagnetLevel;
     m_magnet.BaseDuration      = 10.0f;
     m_magnet.DurationPerLevel  = 2.5f;
     m_magnet.MagnetRadius      = 850.0f;
@@ -235,13 +316,15 @@ void PowerUpManager::LoadFromPrefs()
     m_magnet.BallPullForcePerLevel = 80.0f;
 
     // Ghost Ball
-    m_ghost.Level              = PlayerPrefs::GetInt("PowerUp_Ghost_Level", m_ghost.Level);
+    m_persistedGhostLevel      = std::clamp(PlayerPrefs::GetInt("PowerUp_Ghost_Level", 1), 1, 5);
+    m_ghost.Level              = m_persistedGhostLevel;
     m_ghost.BaseDuration       = 5.0f;
     m_ghost.DurationPerLevel   = 1.0f;
     m_ghost.Alpha              = PlayerPrefs::GetFloat("PowerUp_Ghost_Alpha", m_ghost.Alpha);
 
     // Item Brick Regen
-    m_itemRegen.Level          = PlayerPrefs::GetInt("PowerUp_ItemRegen_Level", m_itemRegen.Level);
+    m_persistedItemRegenLevel  = std::clamp(PlayerPrefs::GetInt("PowerUp_ItemRegen_Level", 1), 1, 5);
+    m_itemRegen.Level          = m_persistedItemRegenLevel;
     m_itemRegen.BaseCooldown   = PlayerPrefs::GetFloat("PowerUp_ItemRegen_BaseCooldown", m_itemRegen.BaseCooldown);
     m_itemRegen.CooldownReductionPerLevel = PlayerPrefs::GetFloat("PowerUp_ItemRegen_CooldownReduction", m_itemRegen.CooldownReductionPerLevel);
 }
@@ -251,20 +334,20 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetInt("Economy_Coins", m_coins);
 
     // MultiBall
-    PlayerPrefs::SetInt("PowerUp_MultiBall_Level", m_multiBall.Level);
+    PlayerPrefs::SetInt("PowerUp_MultiBall_Level", GetPersistedLevel(PowerUpType::MultiBall));
     PlayerPrefs::SetInt("PowerUp_MultiBall_BaseExtra", m_multiBall.BaseExtraBalls);
     PlayerPrefs::SetInt("PowerUp_MultiBall_MaxTotal", m_multiBall.MaxTotalBalls);
     PlayerPrefs::SetFloat("PowerUp_MultiBall_SplitAngle", m_multiBall.SplitAngleDeg);
 
     // Expand
-    PlayerPrefs::SetInt("PowerUp_Expand_Level", m_expand.Level);
+    PlayerPrefs::SetInt("PowerUp_Expand_Level", GetPersistedLevel(PowerUpType::ExpandPaddle));
     PlayerPrefs::SetFloat("PowerUp_Expand_BaseDuration", m_expand.BaseDuration);
     PlayerPrefs::SetFloat("PowerUp_Expand_DurationPerLvl", m_expand.DurationPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Expand_BaseScale", m_expand.BaseScale);
     PlayerPrefs::SetFloat("PowerUp_Expand_ScaleStep", m_expand.ScaleStepPerLevel);
 
     // Shrink
-    PlayerPrefs::SetInt("PowerUp_Shrink_Level", m_shrink.Level);
+    PlayerPrefs::SetInt("PowerUp_Shrink_Level", GetPersistedLevel(PowerUpType::ShrinkPaddle));
     PlayerPrefs::SetFloat("PowerUp_Shrink_BaseDuration", m_shrink.BaseDuration);
     PlayerPrefs::SetFloat("PowerUp_Shrink_DurationPerLvl", m_shrink.DurationPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Shrink_BaseScale", m_shrink.BaseScale);
@@ -272,16 +355,17 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetFloat("PowerUp_Shrink_SpeedStep", m_shrink.SpeedBonusStepPerLevel);
 
     // Storm (Thunderstorm)
-    PlayerPrefs::SetInt("PowerUp_Storm_Level", m_storm.Level);
+    int stormPersisted = GetPersistedLevel(PowerUpType::Storm);
+    PlayerPrefs::SetInt("PowerUp_Storm_Level", stormPersisted);
     PlayerPrefs::SetFloat("PowerUp_Storm_StrikeRadius", m_storm.StrikeRadius);
     // Backward compatibility sync
-    PlayerPrefs::SetInt("PowerUp_Laser_Level", m_storm.Level);
+    PlayerPrefs::SetInt("PowerUp_Laser_Level", stormPersisted);
     PlayerPrefs::SetFloat("PowerUp_Laser_BaseDuration", static_cast<float>(m_storm.GetEffectiveStrikes()));
     PlayerPrefs::SetFloat("PowerUp_Laser_BaseCooldown", m_storm.GetEffectiveCooldown());
     PlayerPrefs::SetFloat("PowerUp_Laser_ProjSpeed", m_storm.ProjectileSpeed);
 
     // Tempo
-    PlayerPrefs::SetInt("PowerUp_Tempo_Level", m_tempo.Level);
+    PlayerPrefs::SetInt("PowerUp_Tempo_Level", GetPersistedLevel(PowerUpType::TempoBall));
     PlayerPrefs::SetFloat("PowerUp_Tempo_BaseDuration", m_tempo.BaseDuration);
     PlayerPrefs::SetFloat("PowerUp_Tempo_DurationPerLvl", m_tempo.DurationPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Tempo_FastSpeed", m_tempo.FastSpeed);
@@ -291,12 +375,12 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetFloat("PowerUp_Tempo_SlowZoneBottomY", m_tempo.SlowZoneBottomY);
 
     // Extra Life
-    PlayerPrefs::SetInt("PowerUp_Life_Level", m_life.Level);
+    PlayerPrefs::SetInt("PowerUp_Life_Level", GetPersistedLevel(PowerUpType::ExtraLife));
     PlayerPrefs::SetInt("PowerUp_Life_Granted", m_life.LivesGranted);
     PlayerPrefs::SetInt("PowerUp_Life_Cap", m_life.MaxLivesCap);
 
     // Big Ball
-    PlayerPrefs::SetInt("PowerUp_Big_Level", m_big.Level);
+    PlayerPrefs::SetInt("PowerUp_Big_Level", GetPersistedLevel(PowerUpType::BigBall));
     PlayerPrefs::SetFloat("PowerUp_Big_BaseDuration", m_big.BaseDuration);
     PlayerPrefs::SetFloat("PowerUp_Big_DurationPerLvl", m_big.DurationPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Big_BaseScale", m_big.BaseScale);
@@ -305,7 +389,7 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetBool("PowerUp_Big_OneHitKill", m_big.OneHitKill);
 
     // Fire Ball
-    PlayerPrefs::SetInt("PowerUp_Fire_Level", m_fireBall.Level);
+    PlayerPrefs::SetInt("PowerUp_Fire_Level", GetPersistedLevel(PowerUpType::FireBall));
     PlayerPrefs::SetFloat("PowerUp_Fire_BaseScale", m_fireBall.BaseScale);
     PlayerPrefs::SetFloat("PowerUp_Fire_ScaleBonus", m_fireBall.ScaleBonusPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Fire_BaseAoE", m_fireBall.BaseAoERadius);
@@ -313,20 +397,20 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetFloat("PowerUp_Fire_FuseDuration", m_fireBall.FuseDuration);
 
     // Sticky Paddle
-    PlayerPrefs::SetInt("PowerUp_Sticky_Level", m_sticky.Level);
+    PlayerPrefs::SetInt("PowerUp_Sticky_Level", GetPersistedLevel(PowerUpType::StickyPaddle));
     PlayerPrefs::SetFloat("PowerUp_Sticky_BaseDuration", m_sticky.BaseDuration);
     PlayerPrefs::SetFloat("PowerUp_Sticky_DurationPerLvl", m_sticky.DurationPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Sticky_AutoLaunch", m_sticky.AutoLaunchDelay);
 
     // Bottom Barrier
-    PlayerPrefs::SetInt("PowerUp_Barrier_Level", m_barrier.Level);
+    PlayerPrefs::SetInt("PowerUp_Barrier_Level", GetPersistedLevel(PowerUpType::BottomBarrier));
     PlayerPrefs::SetFloat("PowerUp_Barrier_BaseDuration", m_barrier.BaseDuration);
     PlayerPrefs::SetFloat("PowerUp_Barrier_DurationPerLvl", m_barrier.DurationPerLevel);
     PlayerPrefs::SetInt("PowerUp_Barrier_BaseCharges", m_barrier.BaseCharges);
     PlayerPrefs::SetInt("PowerUp_Barrier_ChargesPerLvl", m_barrier.ChargesPerLevel);
 
     // Magnet Paddle
-    PlayerPrefs::SetInt("PowerUp_Magnet_Level", m_magnet.Level);
+    PlayerPrefs::SetInt("PowerUp_Magnet_Level", GetPersistedLevel(PowerUpType::MagnetPaddle));
     PlayerPrefs::SetFloat("PowerUp_Magnet_BaseDuration", m_magnet.BaseDuration);
     PlayerPrefs::SetFloat("PowerUp_Magnet_DurationPerLvl", m_magnet.DurationPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Magnet_Radius", m_magnet.MagnetRadius);
@@ -334,13 +418,13 @@ void PowerUpManager::SaveToPrefs()
     PlayerPrefs::SetFloat("PowerUp_Magnet_PullBonus", m_magnet.PullSpeedPerLevel);
 
     // Ghost Ball
-    PlayerPrefs::SetInt("PowerUp_Ghost_Level", m_ghost.Level);
+    PlayerPrefs::SetInt("PowerUp_Ghost_Level", GetPersistedLevel(PowerUpType::GhostBall));
     PlayerPrefs::SetFloat("PowerUp_Ghost_BaseDuration", m_ghost.BaseDuration);
     PlayerPrefs::SetFloat("PowerUp_Ghost_DurationPerLvl", m_ghost.DurationPerLevel);
     PlayerPrefs::SetFloat("PowerUp_Ghost_Alpha", m_ghost.Alpha);
 
     // Item Brick Regen
-    PlayerPrefs::SetInt("PowerUp_ItemRegen_Level", m_itemRegen.Level);
+    PlayerPrefs::SetInt("PowerUp_ItemRegen_Level", GetPersistedLevel(PowerUpType::ItemRegen));
     PlayerPrefs::SetFloat("PowerUp_ItemRegen_BaseCooldown", m_itemRegen.BaseCooldown);
     PlayerPrefs::SetFloat("PowerUp_ItemRegen_CooldownReduction", m_itemRegen.CooldownReductionPerLevel);
 
@@ -363,6 +447,20 @@ void PowerUpManager::ResetToDefaults()
     m_ghost     = GhostBallConfig{};
     m_itemRegen = ItemBrickRegenConfig{};
     m_coins     = 0;
+
+    m_persistedMultiBallLevel = 1;
+    m_persistedExpandLevel    = 1;
+    m_persistedShrinkLevel    = 1;
+    m_persistedStormLevel     = 1;
+    m_persistedTempoLevel     = 1;
+    m_persistedLifeLevel      = 1;
+    m_persistedBigLevel       = 1;
+    m_persistedFireBallLevel  = 1;
+    m_persistedStickyLevel    = 1;
+    m_persistedBarrierLevel   = 1;
+    m_persistedMagnetLevel    = 1;
+    m_persistedGhostLevel     = 1;
+    m_persistedItemRegenLevel = 1;
 
     SaveToPrefs();
 }

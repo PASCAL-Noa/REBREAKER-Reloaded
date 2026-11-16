@@ -33,6 +33,7 @@ enum class ChannelType : int
     Workshop,
     Leaderboard,
     Achievements,
+    CustomGame,
     Sandbox,
     Settings,
     Count
@@ -249,6 +250,8 @@ private:
     Entity  m_workshopPageText = NULL_ENTITY;
     Entity  m_workshopProfileNameText = NULL_ENTITY;
     Entity  m_workshopProfileStatsText = NULL_ENTITY;
+    Entity  m_workshopEndlessPerkBtns[4]{NULL_ENTITY, NULL_ENTITY, NULL_ENTITY, NULL_ENTITY};
+    Entity  m_workshopEndlessPerkTexts[4]{NULL_ENTITY, NULL_ENTITY, NULL_ENTITY, NULL_ENTITY};
     Entity  m_resetSaveBtn = NULL_ENTITY;
     Entity  m_activeModal = NULL_ENTITY;
 

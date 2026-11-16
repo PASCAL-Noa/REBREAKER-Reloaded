@@ -380,9 +380,9 @@ void PreviewScene::OnInit(GameContext& context)
         m_previewMode = PreviewMode::PowerUp;
     }
 
-    if (m_previewMode == PreviewMode::PowerUp)
+    if (!m_isEmbeddedMode && m_previewMode == PreviewMode::PowerUp)
     {
-        PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, 1);
+        PowerUpManager::Get().SetLevelTransient(kPreviewItems[m_currentItemIndex].Type, m_previewLevel);
     }
 
     ResetPreview();
@@ -419,6 +419,9 @@ void PreviewScene::OnDestroy(GameContext& context)
 {
     m_countdownTimer = 0.0f;
     m_countdownGoTimer = 0.0f;
+    // Restore persistent levels so preview transient mutations never leak
+    PowerUpManager::Get().ClearTransientOverrides();
+    PowerUpManager::Get().LoadFromPrefs();
     GameScene::OnDestroy(context);
 }
 
@@ -458,6 +461,7 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         }
         if (context.Input.IsKeyPress(KeyCode::Escape) || context.Input.IsJoystickButtonPress(0, 6))
         {
+            PowerUpManager::Get().ClearTransientOverrides();
             context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
             return;
@@ -914,7 +918,7 @@ void PreviewScene::NextItem()
     {
         m_currentItemIndex = (m_currentItemIndex + 1) % kPreviewItemCount;
         m_previewLevel = 1;
-        PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, 1);
+        PowerUpManager::Get().SetLevelTransient(kPreviewItems[m_currentItemIndex].Type, 1);
     }
     else
     {
@@ -935,7 +939,7 @@ void PreviewScene::PrevItem()
     {
         m_currentItemIndex = (m_currentItemIndex + kPreviewItemCount - 1) % kPreviewItemCount;
         m_previewLevel = 1;
-        PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, 1);
+        PowerUpManager::Get().SetLevelTransient(kPreviewItems[m_currentItemIndex].Type, 1);
     }
     else
     {
@@ -967,7 +971,7 @@ void PreviewScene::LevelUp()
         m_previewLevel++;
         if (m_previewMode == PreviewMode::PowerUp)
         {
-            PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, m_previewLevel);
+            PowerUpManager::Get().SetLevelTransient(kPreviewItems[m_currentItemIndex].Type, m_previewLevel);
         }
         if (mp_context && m_bounceSfxId != 0 && !m_isEmbeddedMode)
         {
@@ -984,7 +988,7 @@ void PreviewScene::LevelDown()
         m_previewLevel--;
         if (m_previewMode == PreviewMode::PowerUp)
         {
-            PowerUpManager::Get().SetLevel(kPreviewItems[m_currentItemIndex].Type, m_previewLevel);
+            PowerUpManager::Get().SetLevelTransient(kPreviewItems[m_currentItemIndex].Type, m_previewLevel);
         }
         if (mp_context && m_bounceSfxId != 0 && !m_isEmbeddedMode)
         {

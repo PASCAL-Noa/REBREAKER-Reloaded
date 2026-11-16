@@ -65,6 +65,8 @@ public:
     [[nodiscard]] int     GetLives() const { return m_lives; }
     [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
     [[nodiscard]] bool    CanUnpause() const;
+    [[nodiscard]] bool    IsPaused() const;
+    virtual void          RenderSceneSpecificHUD(GameContext& context) { (void)context; }
     void    FullReset();
 
     // Level Management & Progression
@@ -130,6 +132,7 @@ public:
     [[nodiscard]] bool  IsUltimateActive() const;
     void  AddUltimateCharge(float amount);
     void  SetUltimateCharge(float charge);
+    void  DrainUltimateCharge(float amount);
     virtual void TryTriggerUltimate();
 
     // Visual Malus & Screen Disruption API (#83)
@@ -167,7 +170,9 @@ protected:
     virtual void PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
 
     void    HandleDeath();
-    void    HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY, bool isLaser = false, bool isExplosion = false, int damage = 1);
+    virtual void HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY, bool isLaser = false, bool isExplosion = false, int damage = 1);
+    [[nodiscard]] virtual float GetBasePaddleScaleX() const { return 1.0f; }
+    [[nodiscard]] virtual float GetBasePaddleSpeedMultiplier() const { return 1.0f; }
     void    DetonateBombBrick(Entity bombEntity);
     void    HandlePaddleCollision(Entity ballEntity);
     void    HandleBallBottomCollision(Entity ballEntity);

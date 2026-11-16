@@ -395,8 +395,10 @@ public:
 
     // Leveling & Upgrades API
     int  GetLevel(PowerUpType type) const;
+    int  GetPersistedLevel(PowerUpType type) const;
     void SetLevel(PowerUpType type, int level);
     void SetLevelTransient(PowerUpType type, int level);
+    void ClearTransientOverrides();
     bool CanUpgrade(PowerUpType type) const;
     bool Upgrade(PowerUpType type);
     int  GetUpgradeCost(PowerUpType type) const;
@@ -421,6 +423,22 @@ public:
 
 private:
     PowerUpManager();
+
+    void SetPersistedLevel(PowerUpType type, int level);
+
+    int m_persistedMultiBallLevel = 1;
+    int m_persistedExpandLevel = 1;
+    int m_persistedShrinkLevel = 1;
+    int m_persistedStormLevel = 1;
+    int m_persistedTempoLevel = 1;
+    int m_persistedLifeLevel = 1;
+    int m_persistedBigLevel = 1;
+    int m_persistedFireBallLevel = 1;
+    int m_persistedStickyLevel = 1;
+    int m_persistedBarrierLevel = 1;
+    int m_persistedMagnetLevel = 1;
+    int m_persistedGhostLevel = 1;
+    int m_persistedItemRegenLevel = 1;
 
     MultiBallConfig     m_multiBall;
     ExpandPaddleConfig  m_expand;

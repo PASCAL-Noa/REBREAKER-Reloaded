@@ -18,6 +18,7 @@ struct BrickComponent
     uint32_t    ScoreValue = 0;
     uint32_t    HitPoints = 1;
     uint32_t    MaxHitPoints = 1;
+    uint8_t     ArmorTier = 0;
     bool        IsSpecial = false;
     bool        IsUnbreakable = false;
     bool        IsBomb = false;

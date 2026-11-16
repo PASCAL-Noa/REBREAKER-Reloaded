@@ -13,7 +13,8 @@ enum class ArenaEventType : int
     CameraEarthquake = 5,
     SolarFlareBlackout = 6,
     MeteorShower = 7,
-    Count = 8,
+    UltimateLockdown = 8,
+    Count = 9,
 
     // Backward compatibility aliases
     TemporalFluxSlow = TemporalFlux,
@@ -39,6 +40,7 @@ inline const char* GetArenaEventName(ArenaEventType type)
         case ArenaEventType::CameraEarthquake:   return "CAMERA EARTHQUAKE";
         case ArenaEventType::SolarFlareBlackout: return "SOLAR FLARE / BLACKOUT";
         case ArenaEventType::MeteorShower:       return "METEOR SHOWER";
+        case ArenaEventType::UltimateLockdown:   return "EMP ULTIMATE LOCKDOWN";
         default:                                 return "NONE";
     }
 }
@@ -54,6 +56,7 @@ inline const char* GetArenaEventDescription(ArenaEventType type)
         case ArenaEventType::CameraEarthquake:   return "Violent camera vibration and turbulent ball agitation";
         case ArenaEventType::SolarFlareBlackout: return "Dynamic darkness sweep and sweeping searchlights";
         case ArenaEventType::MeteorShower:       return "Environmental meteor projectiles raining from above";
+        case ArenaEventType::UltimateLockdown:   return "Electromagnetic pulse disabling Ultimate Ability activations for 45s";
         default:                                 return "Arena is stable";
     }
 }
@@ -69,6 +72,7 @@ inline Color GetArenaEventColor(ArenaEventType type)
         case ArenaEventType::CameraEarthquake:   return Color{255, 65, 80, 255};   // Crimson Red
         case ArenaEventType::SolarFlareBlackout: return Color{255, 230, 90, 255};  // Solar Gold
         case ArenaEventType::MeteorShower:       return Color{255, 100, 35, 255};  // Fiery Orange
+        case ArenaEventType::UltimateLockdown:   return Color{0, 235, 255, 255};   // EMP Cyan
         default:                                 return Colors::White;
     }
 }

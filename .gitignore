@@ -39,8 +39,11 @@
 
 # debug information files
 *.dwo
+*.log
 /.idea
 /.vs
 /out
+out/build/
+vcpkg_installed/
 playerprefs.json
 leaderboard.json

@@ -5,8 +5,8 @@
 
 struct PlayerPrefsTestFixture
 {
-    std::filesystem::path prefsPath{"playerprefs.json"};
-    std::filesystem::path backupPath{"playerprefs.json.testbackup"};
+    std::filesystem::path prefsPath{PlayerPrefs::GetFilePath()};
+    std::filesystem::path backupPath{PlayerPrefs::GetFilePath() + ".testbackup"};
     bool hadOriginal = false;
 
     PlayerPrefsTestFixture()
@@ -24,7 +24,7 @@ struct PlayerPrefsTestFixture
     {
         std::error_code ec;
         std::filesystem::remove(prefsPath, ec);
-        std::filesystem::remove("playerprefs.json.tmp", ec);
+        std::filesystem::remove(prefsPath.string() + ".tmp", ec);
 
         if (hadOriginal)
         {
@@ -76,8 +76,9 @@ TEST_SUITE("PlayerPrefs Atomic Persistence Tests")
 
         // Verify file was written to disk
         std::error_code ec;
-        CHECK(std::filesystem::exists("playerprefs.json", ec));
-        CHECK(!std::filesystem::exists("playerprefs.json.tmp", ec));
+        std::string pPath = PlayerPrefs::GetFilePath();
+        CHECK(std::filesystem::exists(pPath, ec));
+        CHECK(!std::filesystem::exists(pPath + ".tmp", ec));
 
         // Overwrite in-memory values
         PlayerPrefs::SetInt("high_score", 0);
@@ -114,9 +115,10 @@ TEST_SUITE("PlayerPrefs Atomic Persistence Tests")
         PlayerPrefs::SetInt("recovered_key", 777);
         PlayerPrefs::Save();
 
-        // Simulate crash: rename playerprefs.json to playerprefs.json.tmp
+        // Simulate crash: rename prefs file to .tmp
         std::error_code ec;
-        std::filesystem::rename("playerprefs.json", "playerprefs.json.tmp", ec);
+        std::string pPath = PlayerPrefs::GetFilePath();
+        std::filesystem::rename(pPath, pPath + ".tmp", ec);
         REQUIRE(!ec);
 
         // Clear memory

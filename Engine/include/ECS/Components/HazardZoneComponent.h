@@ -8,7 +8,8 @@ enum class HazardEffectType : uint8_t
     ScreenGlitch = 1,
     CameraTilt = 2,
     CameraZoomPulse = 3,
-    TemporalAudioWarp = 4
+    TemporalAudioWarp = 4,
+    UltimateDrain = 5
 };
 
 struct HazardZoneComponent

@@ -21,6 +21,89 @@ static std::recursive_mutex& GetPrefsMutex()
 
 json PlayerPrefs::s_Data = json::object();
 const std::string PlayerPrefs::s_FilePath = "playerprefs.json";
+std::string PlayerPrefs::s_CustomFilePath = "";
+
+void PlayerPrefs::SetCustomFilePath(const std::string& path)
+{
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
+    s_CustomFilePath = path;
+}
+
+std::string PlayerPrefs::GetFilePath()
+{
+    std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
+    if (!s_CustomFilePath.empty())
+    {
+        return s_CustomFilePath;
+    }
+    return s_FilePath;
+}
+
+static std::filesystem::path GetExecutableDir()
+{
+#if defined(_WIN32)
+    wchar_t buffer[MAX_PATH];
+    DWORD len = GetModuleFileNameW(NULL, buffer, MAX_PATH);
+    if (len > 0)
+    {
+        return std::filesystem::path(buffer).parent_path();
+    }
+#endif
+    return std::filesystem::current_path();
+}
+
+static bool AtomicSaveToFile(const std::filesystem::path& targetPath, const json& data)
+{
+    try
+    {
+        std::filesystem::path tmpPath = targetPath;
+        tmpPath += ".tmp";
+
+        std::ofstream file(tmpPath);
+        if (!file.is_open())
+        {
+            std::cerr << "Failed to open temporary file for PlayerPrefs: " << tmpPath.string() << std::endl;
+            return false;
+        }
+
+        file << data.dump(4);
+        file.close();
+
+#if defined(_WIN32)
+        if (!MoveFileExW(tmpPath.c_str(), targetPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        {
+            std::error_code ec;
+            std::filesystem::copy_file(tmpPath, targetPath, std::filesystem::copy_options::overwrite_existing, ec);
+            std::filesystem::remove(tmpPath, ec);
+            if (ec)
+            {
+                std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
+                return false;
+            }
+        }
+#else
+        std::error_code ec;
+        std::filesystem::copy_file(tmpPath, targetPath, std::filesystem::copy_options::overwrite_existing, ec);
+        std::filesystem::remove(tmpPath, ec);
+        if (ec)
+        {
+            std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
+            return false;
+        }
+#endif
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Exception while saving PlayerPrefs: " << e.what() << std::endl;
+        return false;
+    }
+    catch (...)
+    {
+        std::cerr << "Unknown exception while saving PlayerPrefs." << std::endl;
+        return false;
+    }
+}
 
 void PlayerPrefs::SetInt(const std::string& key, int value)
 {
@@ -93,83 +176,134 @@ std::string PlayerPrefs::GetString(const std::string& key, const std::string& de
 void PlayerPrefs::Save()
 {
     std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
-    try
+    if (!s_CustomFilePath.empty())
     {
-        std::string tmpFilePath = s_FilePath + ".tmp";
-        std::ofstream file(tmpFilePath);
-        if (file.is_open())
-        {
-            file << s_Data.dump(4);
-            file.close();
-
-#if defined(_WIN32)
-            std::filesystem::path srcPath(tmpFilePath);
-            std::filesystem::path dstPath(s_FilePath);
-
-            // MoveFileExW with MOVEFILE_REPLACE_EXISTING performs an atomic replacement on NTFS
-            if (!MoveFileExW(srcPath.c_str(), dstPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-            {
-                // Fallback to std::filesystem::copy_file with overwrite_existing
-                std::error_code ec;
-                std::filesystem::copy_file(srcPath, dstPath, std::filesystem::copy_options::overwrite_existing, ec);
-                std::filesystem::remove(srcPath, ec);
-                if (ec)
-                {
-                    std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
-                }
-            }
-#else
-            std::error_code ec;
-            std::filesystem::copy_file(tmpFilePath, s_FilePath, std::filesystem::copy_options::overwrite_existing, ec);
-            std::filesystem::remove(tmpFilePath, ec);
-            if (ec)
-            {
-                std::cerr << "Failed to atomically save PlayerPrefs: " << ec.message() << std::endl;
-            }
-#endif
-        }
-        else
-        {
-            std::cerr << "Failed to open temporary file for PlayerPrefs: " << tmpFilePath << std::endl;
-        }
+        AtomicSaveToFile(std::filesystem::path(s_CustomFilePath), s_Data);
+        return;
     }
-    catch (const std::exception& e)
+
+    std::filesystem::path cwdPath = std::filesystem::current_path() / s_FilePath;
+    AtomicSaveToFile(cwdPath, s_Data);
+
+    std::filesystem::path exeDir = GetExecutableDir();
+    std::filesystem::path exePath = exeDir / s_FilePath;
+    std::error_code ec;
+    if (!std::filesystem::equivalent(cwdPath.parent_path(), exeDir, ec))
     {
-        std::cerr << "Exception while saving PlayerPrefs: " << e.what() << std::endl;
-    }
-    catch (...)
-    {
-        std::cerr << "Unknown exception while saving PlayerPrefs." << std::endl;
+        AtomicSaveToFile(exePath, s_Data);
     }
 }
 
 void PlayerPrefs::Load()
 {
     std::lock_guard<std::recursive_mutex> lock(GetPrefsMutex());
-    std::string tmpFilePath = s_FilePath + ".tmp";
-    std::error_code ec;
-    if (!std::filesystem::exists(s_FilePath, ec) && std::filesystem::exists(tmpFilePath, ec))
+    if (!s_CustomFilePath.empty())
     {
-        std::filesystem::copy_file(tmpFilePath, s_FilePath, std::filesystem::copy_options::overwrite_existing, ec);
-    }
-
-    std::ifstream file(s_FilePath);
-    if (file.is_open())
-    {
-        try
+        std::string tmpFilePath = s_CustomFilePath + ".tmp";
+        std::error_code ec;
+        if (!std::filesystem::exists(s_CustomFilePath, ec) && std::filesystem::exists(tmpFilePath, ec))
         {
-            file >> s_Data;
-            if (!s_Data.is_object())
+            std::filesystem::copy_file(tmpFilePath, s_CustomFilePath, std::filesystem::copy_options::overwrite_existing, ec);
+        }
+
+        std::ifstream file(s_CustomFilePath);
+        if (file.is_open())
+        {
+            try
             {
+                file >> s_Data;
+                if (!s_Data.is_object())
+                {
+                    s_Data = json::object();
+                }
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << "Failed to parse PlayerPrefs (" << s_CustomFilePath << "): " << e.what() << std::endl;
                 s_Data = json::object();
             }
+            file.close();
         }
-        catch (const std::exception& e)
+        else
         {
-            std::cerr << "Failed to parse PlayerPrefs: " << e.what() << std::endl;
             s_Data = json::object();
         }
-        file.close();
+        return;
+    }
+
+    std::filesystem::path cwdPath = std::filesystem::current_path() / s_FilePath;
+    std::filesystem::path exeDir = GetExecutableDir();
+    std::filesystem::path exePath = exeDir / s_FilePath;
+
+    auto tryLoadJson = [](const std::filesystem::path& path) -> json {
+        std::error_code ec;
+        std::filesystem::path tmpPath = path;
+        tmpPath += ".tmp";
+        if (!std::filesystem::exists(path, ec) && std::filesystem::exists(tmpPath, ec))
+        {
+            std::filesystem::copy_file(tmpPath, path, std::filesystem::copy_options::overwrite_existing, ec);
+        }
+
+        std::ifstream f(path);
+        if (f.is_open())
+        {
+            try
+            {
+                json j;
+                f >> j;
+                if (j.is_object())
+                {
+                    f.close();
+                    return j;
+                }
+            }
+            catch (...) {}
+            f.close();
+        }
+        return json::object();
+    };
+
+    json cwdData = tryLoadJson(cwdPath);
+    json exeData = json::object();
+    std::error_code ec;
+    bool differentDirs = !std::filesystem::equivalent(cwdPath.parent_path(), exeDir, ec);
+    if (differentDirs)
+    {
+        exeData = tryLoadJson(exePath);
+    }
+
+    auto getScoreOrCoins = [](const json& j) -> int64_t {
+        if (!j.is_object()) return 0;
+        int64_t score = 0;
+        if (j.contains("Economy_Coins") && j["Economy_Coins"].is_number_integer())
+            score += j["Economy_Coins"].get<int64_t>();
+        if (j.contains("HighScore") && j["HighScore"].is_number_integer())
+            score += j["HighScore"].get<int64_t>();
+        if (j.contains("Endless_HighScore") && j["Endless_HighScore"].is_number_integer())
+            score += j["Endless_HighScore"].get<int64_t>();
+        return score;
+    };
+
+    int64_t cwdScore = getScoreOrCoins(cwdData);
+    int64_t exeScore = getScoreOrCoins(exeData);
+
+    if (exeScore > cwdScore)
+    {
+        s_Data = std::move(exeData);
+        AtomicSaveToFile(cwdPath, s_Data);
+    }
+    else if (!cwdData.empty())
+    {
+        s_Data = std::move(cwdData);
+        if (differentDirs && exeScore < cwdScore)
+        {
+            AtomicSaveToFile(exePath, s_Data);
+        }
+    }
+    else if (!exeData.empty())
+    {
+        s_Data = std::move(exeData);
+        AtomicSaveToFile(cwdPath, s_Data);
     }
     else
     {

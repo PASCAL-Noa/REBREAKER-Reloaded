@@ -1,0 +1,9 @@
+out/build/
+.vs/
+.idea/
+vcpkg_installed/
+*.obj
+*.pch
+*.pdb
+*.log
+

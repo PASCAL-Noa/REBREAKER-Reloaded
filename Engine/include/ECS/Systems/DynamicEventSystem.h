@@ -61,6 +61,7 @@ public:
     [[nodiscard]] float           GetProgress() const noexcept;
     [[nodiscard]] bool            IsEventActive() const noexcept { return m_state == ArenaEventState::Active; }
     [[nodiscard]] bool            IsWarningActive() const noexcept { return m_state == ArenaEventState::Warning; }
+    [[nodiscard]] bool            IsUltimateBlocked() const noexcept { return m_state == ArenaEventState::Active && m_currentEvent == ArenaEventType::UltimateLockdown; }
 
     // Physical Alterations
     [[nodiscard]] float           GetTimeScale() const noexcept { return m_timeScale; }

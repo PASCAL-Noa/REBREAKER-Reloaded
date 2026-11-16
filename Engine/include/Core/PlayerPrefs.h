@@ -24,7 +24,11 @@ public:
     static void     DeleteAll();
     static bool     HasKey(const std::string& key);
 
+    static void         SetCustomFilePath(const std::string& path);
+    static std::string  GetFilePath();
+
 private:
-    static json     s_Data;
+    static json         s_Data;
     static const std::string    s_FilePath;
+    static std::string  s_CustomFilePath;
 };
