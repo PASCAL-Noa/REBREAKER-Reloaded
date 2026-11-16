@@ -782,14 +782,20 @@ std::string AudioMixer::GetCurrentAudioDevice() const
 bool AudioMixer::SetAudioDevice(const std::string& name) const
 {
     std::string targetDevice = name;
+    auto def = sf::PlaybackDevice::getDefaultDevice();
     if (targetDevice.empty() || targetDevice == "Default Device" || targetDevice == "< DEFAULT DEVICE >")
     {
-        auto def = sf::PlaybackDevice::getDefaultDevice();
         targetDevice = def.value_or("");
     }
 
     auto dev = sf::PlaybackDevice::getDevice();
     if (dev.has_value() && !targetDevice.empty() && dev.value() == targetDevice)
+    {
+        return true;
+    }
+
+    // If no custom device has been explicitly bound, the active stream is already the system default
+    if (!dev.has_value() && def.has_value() && targetDevice == def.value())
     {
         return true;
     }

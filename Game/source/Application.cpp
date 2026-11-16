@@ -24,7 +24,9 @@ Application::Application(const WindowConfig& config)
 void Application::Init()
 {
     std::string savedDevice = PlayerPrefs::GetString("Audio_Device", "");
-    if (!savedDevice.empty() && savedDevice != "Default Device")
+    auto defaultDev = sf::PlaybackDevice::getDefaultDevice();
+    if (!savedDevice.empty() && savedDevice != "Default Device" &&
+        (!defaultDev.has_value() || savedDevice != defaultDev.value()))
     {
         m_audioMixer.SetAudioDevice(savedDevice);
     }

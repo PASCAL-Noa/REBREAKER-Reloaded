@@ -240,11 +240,13 @@ void PlayerPrefs::Load()
 
     auto tryLoadJson = [](const std::filesystem::path& path) -> json {
         std::error_code ec;
-        std::filesystem::path tmpPath = path;
-        tmpPath += ".tmp";
-        if (!std::filesystem::exists(path, ec) && std::filesystem::exists(tmpPath, ec))
+        if (!std::filesystem::exists(path, ec))
         {
-            std::filesystem::copy_file(tmpPath, path, std::filesystem::copy_options::overwrite_existing, ec);
+            std::filesystem::path tmpPath = path.string() + ".tmp";
+            if (std::filesystem::exists(tmpPath, ec))
+            {
+                std::filesystem::copy_file(tmpPath, path, std::filesystem::copy_options::overwrite_existing, ec);
+            }
         }
 
         std::ifstream f(path);

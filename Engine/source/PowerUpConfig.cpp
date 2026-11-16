@@ -212,8 +212,7 @@ bool PowerUpManager::SpendCoins(int amount)
 
 void PowerUpManager::LoadFromPrefs()
 {
-    PlayerPrefs::Load();
-
+    // Preferences are preloaded by main() into memory. Read values directly.
     m_coins = PlayerPrefs::GetInt("Economy_Coins", 0);
 
     // MultiBall
