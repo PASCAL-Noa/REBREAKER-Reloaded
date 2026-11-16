@@ -126,7 +126,10 @@ void GameUIController::ShowState(GameUIState state)
             ClearLevelSelectCards();
         }
 
-        m_settingsController.Close();
+        if (m_settingsController.IsOpen())
+        {
+            m_settingsController.Close();
+        }
     }
 
     if (m_powerUpTesterCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_powerUpTesterCanvas))
@@ -1617,7 +1620,10 @@ bool GameUIController::IsModalOrSubMenuOpen() const
 
 void GameUIController::CloseSettingsLayout()
 {
-    m_settingsController.Close();
+    if (m_settingsController.IsOpen())
+    {
+        m_settingsController.Close();
+    }
     if (m_pauseCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_pauseCanvas))
     {
         m_registry.GetComponent<CanvasComponent>(m_pauseCanvas).IsEnabled = true;

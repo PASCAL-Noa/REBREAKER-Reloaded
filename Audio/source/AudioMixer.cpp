@@ -159,13 +159,17 @@ void AudioMixer::Update(float dt) const
             if (mp_impl->fadingTrack.volumeTween && mp_impl->fadingTrack.volumeTween->IsFinished())
             {
                 mp_impl->fadingTrack.volumeTween.reset();
-                if (mp_impl->fadingTrack.music)
+                std::unique_ptr<sf::Music> oldFading;
                 {
                     std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-                    mp_impl->fadingTrack.music->stop();
-                    mp_impl->fadingTrack.music.reset();
+                    oldFading = std::move(mp_impl->fadingTrack.music);
                 }
                 mp_impl->fadingTrack = MusicTrack{};
+                if (oldFading)
+                {
+                    oldFading->stop();
+                    oldFading.reset();
+                }
             }
         }
         else
@@ -459,11 +463,15 @@ void AudioMixer::FadeToMusic(const std::string& filepath, const TweenConfig<floa
     if (mp_impl->activeTrack.music &&
         mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
     {
-        if (mp_impl->fadingTrack.music)
+        std::unique_ptr<sf::Music> oldFading;
         {
             std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-            mp_impl->fadingTrack.music->stop();
-            mp_impl->fadingTrack.music.reset();
+            oldFading = std::move(mp_impl->fadingTrack.music);
+        }
+        if (oldFading)
+        {
+            oldFading->stop();
+            oldFading.reset();
         }
         mp_impl->fadingTrack = std::move(mp_impl->activeTrack);
         mp_impl->activeTrack = MusicTrack{};
@@ -555,11 +563,15 @@ void AudioMixer::FadeOutMusic(const TweenConfig<float>& config) const
         return;
     }
 
-    if (mp_impl->fadingTrack.music)
+    std::unique_ptr<sf::Music> oldFading;
     {
         std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-        mp_impl->fadingTrack.music->stop();
-        mp_impl->fadingTrack.music.reset();
+        oldFading = std::move(mp_impl->fadingTrack.music);
+    }
+    if (oldFading)
+    {
+        oldFading->stop();
+        oldFading.reset();
     }
 
     mp_impl->fadingTrack = std::move(mp_impl->activeTrack);
@@ -602,21 +614,27 @@ void AudioMixer::StopMusic() const
 {
     if (!mp_impl) return;
 
-    std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-
-    if (mp_impl->activeTrack.music)
+    std::unique_ptr<sf::Music> activeMusic;
+    std::unique_ptr<sf::Music> fadingMusic;
     {
-        mp_impl->activeTrack.music->stop();
-        mp_impl->activeTrack.music.reset();
-    }
-    mp_impl->activeTrack = MusicTrack{};
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+        activeMusic = std::move(mp_impl->activeTrack.music);
+        mp_impl->activeTrack = MusicTrack{};
 
-    if (mp_impl->fadingTrack.music)
-    {
-        mp_impl->fadingTrack.music->stop();
-        mp_impl->fadingTrack.music.reset();
+        fadingMusic = std::move(mp_impl->fadingTrack.music);
+        mp_impl->fadingTrack = MusicTrack{};
     }
-    mp_impl->fadingTrack = MusicTrack{};
+
+    if (activeMusic)
+    {
+        activeMusic->stop();
+        activeMusic.reset();
+    }
+    if (fadingMusic)
+    {
+        fadingMusic->stop();
+        fadingMusic.reset();
+    }
 }
 
 void AudioMixer::TriggerDucking(float duckAmount, float restoreDuration) const

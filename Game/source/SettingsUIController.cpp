@@ -76,7 +76,12 @@ void SettingsUIController::Open()
 
 void SettingsUIController::Close()
 {
+    if (m_isClosing) return;
     if (!m_registry || m_settingsCanvas == NULL_ENTITY) return;
+
+    const bool wasOpen = IsOpen();
+
+    m_isClosing = true;
 
     if (m_registry->HasComponent<CanvasComponent>(m_settingsCanvas))
     {
@@ -101,7 +106,10 @@ void SettingsUIController::Close()
         UpdateInputButtons();
     }
 
-    if (m_onClose)
+    m_isClosing = false;
+
+    // Only notify parent callback if the settings modal was actually open
+    if (wasOpen && m_onClose)
     {
         m_onClose();
     }

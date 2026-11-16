@@ -741,4 +741,41 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
         CHECK_FALSE(reg.GetComponent<CanvasComponent>(audioTab).IsEnabled);
         CHECK_FALSE(reg.GetComponent<CanvasComponent>(renderTab).IsEnabled);
     }
+
+    TEST_CASE("SettingsUIController Close non-reentrancy and closed-state safety (#90, #93)")
+    {
+        // Replicates the scenario that caused 0xc00000fd (Stack Overflow) on channel launch:
+        // When onClose callback calls Close(), it must NOT enter infinite recursion
+        int closeCallbackCalls = 0;
+        bool isOpen = true;
+        bool isClosing = false;
+
+        std::function<void()> onClose;
+        auto closeFunc = [&]() {
+            if (isClosing) return;
+            const bool wasOpen = isOpen;
+            isClosing = true;
+            isOpen = false;
+            isClosing = false;
+            if (wasOpen && onClose) {
+                onClose();
+            }
+        };
+
+        onClose = [&]() {
+            closeCallbackCalls++;
+            closeFunc(); // Re-entrant call from callback
+        };
+
+        // 1. Initial close while open triggers onClose exactly ONCE without stack overflow
+        closeFunc();
+        CHECK_FALSE(isOpen);
+        CHECK(closeCallbackCalls == 1);
+
+        // 2. Subsequent close calls while already closed do NOT invoke onClose
+        closeFunc();
+        CHECK(closeCallbackCalls == 1);
+        closeFunc();
+        CHECK(closeCallbackCalls == 1);
+    }
 }

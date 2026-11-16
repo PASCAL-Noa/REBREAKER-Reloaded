@@ -82,4 +82,6 @@ private:
 
     // Gamerules Tab Widgets
     Entity              m_arenaEventsBtn = NULL_ENTITY;
+
+    bool                m_isClosing = false;
 };

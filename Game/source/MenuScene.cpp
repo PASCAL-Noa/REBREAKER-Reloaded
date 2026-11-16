@@ -770,7 +770,10 @@ void MenuScene::CloseModals()
         }
     }
 
-    m_settingsController.Close();
+    if (m_settingsController.IsOpen())
+    {
+        m_settingsController.Close();
+    }
     for (Entity canvas : {m_leaderboardCanvas, m_debugCanvas, m_workshopCanvas})
     {
         if (canvas != NULL_ENTITY && m_registry.IsAlive(canvas) && m_registry.HasComponent<CanvasComponent>(canvas))
