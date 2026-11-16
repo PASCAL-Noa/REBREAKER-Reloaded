@@ -23,6 +23,7 @@ public:
     Application& operator=(const Application&) = delete;
 
     void Run();
+    bool RunSmokeTest();
 
 private:
     void Init();

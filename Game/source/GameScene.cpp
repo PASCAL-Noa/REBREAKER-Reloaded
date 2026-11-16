@@ -4604,29 +4604,18 @@ void GameScene::ClearActiveUltimates()
     {
         m_plasmaActiveTimer = 0.0f;
         m_plasmaAnimTime = 0.0f;
-        if (mp_context)
+        if (mp_context && m_musicEnabled)
         {
-            if (m_musicEnabled)
+            if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
             {
-                if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
-                {
-                    mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f, 60.0f, false);
-                }
-                else
-                {
-                    RestorePostUltimateMusic();
-                }
+                mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f, 60.0f, false);
             }
             else
             {
-                std::string cur = mp_context->Audio.GetCurrentMusicPath();
-                if (cur.find("plasma_ultimate") != std::string::npos)
-                {
-                    mp_context->Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
-                }
+                RestorePostUltimateMusic();
             }
-            m_prePlasmaMusicPath.clear();
         }
+        m_prePlasmaMusicPath.clear();
     }
 
     if (m_discoTimer > 0.0f || !m_preDiscoMusicPath.empty() || !m_preDiscoBrickTints.empty())
@@ -4639,29 +4628,18 @@ void GameScene::ClearActiveUltimates()
         m_discoMirrorBall.Scale = 1.35f;
         m_discoMirrorBall.TargetScale = 1.35f;
 
-        if (mp_context)
+        if (mp_context && m_musicEnabled)
         {
-            if (m_musicEnabled)
+            if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
             {
-                if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
-                {
-                    mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f, 60.0f, false);
-                }
-                else
-                {
-                    RestorePostUltimateMusic();
-                }
+                mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f, 60.0f, false);
             }
             else
             {
-                std::string cur = mp_context->Audio.GetCurrentMusicPath();
-                if (cur.find("disco_ultimate") != std::string::npos)
-                {
-                    mp_context->Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
-                }
+                RestorePostUltimateMusic();
             }
-            m_preDiscoMusicPath.clear();
         }
+        m_preDiscoMusicPath.clear();
     }
     m_discoRainbowHue = 0.0f;
     m_discoGrandFinaleBannerTimer = 0.0f;

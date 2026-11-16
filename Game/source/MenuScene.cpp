@@ -679,20 +679,14 @@ void MenuScene::OnDestroy(GameContext& context)
     if (m_previewScene)
     {
         m_previewScene->OnDestroy(context);
-        m_previewScene.reset();
     }
     for (int i = 0; i < 3; ++i)
     {
         if (m_ultimatePreviewScenes[i])
         {
             m_ultimatePreviewScenes[i]->OnDestroy(context);
-            m_ultimatePreviewScenes[i].reset();
         }
-        m_ultimateCardTextures[i].reset();
     }
-    m_previewTexture.reset();
-    m_ultimatePreviewTexture.reset();
-    m_tvScreenTexture.reset();
     DefaultScene::OnDestroy(context);
 }
 

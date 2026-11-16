@@ -421,8 +421,19 @@ void PreviewScene::OnDestroy(GameContext& context)
     m_countdownGoTimer = 0.0f;
     // Restore persistent levels so preview transient mutations never leak
     PowerUpManager::Get().ClearTransientOverrides();
-    PowerUpManager::Get().LoadFromPrefs();
-    GameScene::OnDestroy(context);
+    if (!m_isEmbeddedMode)
+    {
+        PowerUpManager::Get().LoadFromPrefs();
+        GameScene::OnDestroy(context);
+    }
+    else
+    {
+        ClearActiveUltimates();
+        ClearVisualMalus();
+        m_collisionSub.Reset();
+        m_powerUpSub.Reset();
+        m_nextLevelSub.Reset();
+    }
 }
 
 void PreviewScene::OnUpdate(float dt, GameContext& context)

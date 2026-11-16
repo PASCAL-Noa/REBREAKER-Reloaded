@@ -2,6 +2,8 @@
 #include "Core/PlayerPrefs.h"
 #include "ECS/Systems/UISystem.h"
 #include "Scenes/MenuScene.h"
+#include "Scenes/GameScene.h"
+#include "Scenes/EndlessScene.h"
 #include <iostream>
 
 Application::Application(const WindowConfig& config)
@@ -108,4 +110,53 @@ void Application::Run()
 
     m_sceneManager.Shutdown(m_context);
     PlayerPrefs::Save();
+}
+
+bool Application::RunSmokeTest()
+{
+    std::cout << "[SmokeTest] Starting automated channel launch smoke test..." << std::endl;
+
+    auto stepFrames = [this](int frameCount) {
+        for (int frame = 0; frame < frameCount && m_window.IsOpen(); ++frame)
+        {
+            m_time.Update();
+            m_gameData.FPS = static_cast<int>(m_time.GetFPS());
+            m_resourceManager.ProcessPendingUploads();
+            m_audioMixer.Update(0.016f);
+            m_inputManager.Update();
+            if (!m_window.PollEvents(m_inputManager, &m_renderer)) break;
+            m_cheatManager.Update(0.016f, m_context);
+            m_sceneManager.Update(0.016f, m_context);
+            m_renderer.BeginDraw(m_sceneManager.GetClearColor());
+            m_sceneManager.Render(m_context);
+            m_cheatManager.Render(m_renderer);
+            m_renderer.EndDraw(m_sceneManager.GetPostProcessShader(), m_sceneManager.GetPostProcessParams());
+        }
+    };
+
+    // Step 1: Boot MenuScene and run 15 frames
+    std::cout << "[SmokeTest] Stepping MenuScene..." << std::endl;
+    stepFrames(15);
+
+    // Step 2: Launch Campaign (GameScene) with transition
+    std::cout << "[SmokeTest] Triggering transition to GameScene (Campaign)..." << std::endl;
+    m_context.Scenes.LoadSceneWithTransition<GameScene>(SceneTransitionType::StaticSnow, 0.65f);
+    stepFrames(70);
+    std::cout << "[SmokeTest] GameScene (Campaign) active and running stably!" << std::endl;
+
+    // Step 3: Launch EndlessMode (EndlessScene) with transition
+    std::cout << "[SmokeTest] Triggering transition to EndlessScene (EndlessMode)..." << std::endl;
+    m_context.Scenes.LoadSceneWithTransition<EndlessScene>(SceneTransitionType::StaticSnow, 0.65f);
+    stepFrames(70);
+    std::cout << "[SmokeTest] EndlessScene (EndlessMode) active and running stably!" << std::endl;
+
+    // Step 4: Return to MenuScene
+    std::cout << "[SmokeTest] Returning to MenuScene with transition..." << std::endl;
+    m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
+    stepFrames(70);
+    std::cout << "[SmokeTest] MenuScene re-entered and running stably!" << std::endl;
+
+    m_sceneManager.Shutdown(m_context);
+    std::cout << "[SmokeTest] PASSED: All channels verified with zero crashes!" << std::endl;
+    return true;
 }

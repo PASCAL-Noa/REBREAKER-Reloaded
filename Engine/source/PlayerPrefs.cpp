@@ -242,7 +242,8 @@ void PlayerPrefs::Load()
         std::error_code ec;
         if (!std::filesystem::exists(path, ec))
         {
-            std::filesystem::path tmpPath = path.string() + ".tmp";
+            std::filesystem::path tmpPath = path;
+            tmpPath += ".tmp";
             if (std::filesystem::exists(tmpPath, ec))
             {
                 std::filesystem::copy_file(tmpPath, path, std::filesystem::copy_options::overwrite_existing, ec);

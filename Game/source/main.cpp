@@ -115,7 +115,7 @@ static LONG WINAPI CustomCrashHandler(EXCEPTION_POINTERS* pEx)
 #include <exception>
 #include <fstream>
 
-int main()
+int main(int argc, char* argv[])
 {
 #ifdef _WIN32
     SetUnhandledExceptionFilter(CustomCrashHandler);
@@ -175,6 +175,26 @@ int main()
         if (resH <= 0) resH = PlayerPrefs::GetInt("WindowHeight", 1080);
         if (resH <= 0) resH = 1080;
         config.Height = resH;
+
+        bool isSmokeTest = false;
+        for (int i = 1; i < argc; ++i)
+        {
+            if (std::string(argv[i]) == "--smoke-test")
+            {
+                isSmokeTest = true;
+                break;
+            }
+        }
+
+        if (isSmokeTest)
+        {
+            config.Width = 1280;
+            config.Height = 720;
+            config.Mode = WindowMode::Windowed;
+            Application app(config);
+            bool success = app.RunSmokeTest();
+            return success ? 0 : 1;
+        }
 
         const bool fs = PlayerPrefs::GetBool("Fullscreen", false);
         config.Mode = fs ? WindowMode::Fullscreen : WindowMode::Windowed;
