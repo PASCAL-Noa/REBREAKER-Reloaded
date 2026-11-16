@@ -105,4 +105,4 @@ void FileLevelGenerator::Update(float dt, Registry& registry, GameContext& conte
     (void)dt;
     (void)registry;
     (void)context;
-}
+}

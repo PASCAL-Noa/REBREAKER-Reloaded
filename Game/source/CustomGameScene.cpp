@@ -2,7 +2,6 @@
 #include "Scenes/MenuScene.h"
 #include "Scenes/EndlessScene.h"
 #include "Scenes/GameScene.h"
-#include "Scenes/TetrisScene.h"
 #include "Core/GameContext.h"
 #include "Core/GameRules.h"
 #include "Core/SceneManager.h"
@@ -161,11 +160,7 @@ void CustomGameScene::LaunchCustomMatch(GameContext& context)
 
     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
 
-    if (m_gameMode == CustomTargetGameMode::Tetris)
-    {
-        context.Scenes.LoadSceneWithTransition<TetrisScene>(SceneTransitionType::StaticSnow, 0.65f);
-    }
-    else if (m_gameMode == CustomTargetGameMode::Endless)
+    if (m_gameMode == CustomTargetGameMode::Endless)
     {
         context.Scenes.LoadSceneWithTransition<EndlessScene>(SceneTransitionType::StaticSnow, 0.65f);
     }
@@ -209,8 +204,7 @@ void CustomGameScene::HandleInput(GameContext& context)
     {
         if (m_selectedRow == 0) // Mode selector
         {
-            int nextMode = (static_cast<int>(m_gameMode) + 1) % 3;
-            m_gameMode = static_cast<CustomTargetGameMode>(nextMode);
+            m_gameMode = (m_gameMode == CustomTargetGameMode::Endless) ? CustomTargetGameMode::Campaign : CustomTargetGameMode::Endless;
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 60.0f);
         }
         else if (m_selectedRow == 1) // Difficulty Preset
@@ -304,8 +298,7 @@ void CustomGameScene::RenderUI(GameContext& context) const
     // Row 0: Target Game Mode
     bool isRow0 = (m_selectedRow == 0);
     Color row0Col = isRow0 ? Colors::Gold : Color{210, 225, 245, 240};
-    std::string modeText = (m_gameMode == CustomTargetGameMode::Endless) ? "PROCEDURAL ENDLESS" :
-                           (m_gameMode == CustomTargetGameMode::Tetris  ? "TETRIS MATRIX GIMMICK" : "CLASSIC CAMPAIGN");
+    std::string modeText = (m_gameMode == CustomTargetGameMode::Endless) ? "PROCEDURAL ENDLESS" : "CLASSIC CAMPAIGN";
     context.Render.DrawText("TARGET GAME MODE:", m_fontId, 22.0f, Transform2D{Vector2f{leftColX, startY}}, row0Col);
     context.Render.DrawTextCentered("< " + modeText + " >", m_fontId, 22.0f, Transform2D{Vector2f{rightColX, startY}}, isRow0 ? Colors::Cyan : Color{80, 220, 255, 255});
 
