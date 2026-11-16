@@ -98,29 +98,51 @@ The `Renderer` provides simplified zero-allocation drawing routines:
 
 ## 3. Audio Subsystem (`Audio/`)
 
-Located in `Audio/include/AudioMixer.h`, the audio engine is optimized for high-volume arcade soundscapes.
+Located in `Audio/include/AudioMixer.h`, the audio engine is optimized for high-volume arcade soundscapes, multi-channel voice pooling, concurrent-safe background music crossfading, dynamic audio ducking, and temporal pitch distortion.
 
 ```mermaid
-graph LR
+graph TD
     Master[Master Bus Volume] --> SFX[SFX Channel Bus]
     Master --> Music[Music Channel Bus]
 
     SFX --> P1[Voice Pool 1..32]
-    Music --> BGM[Streaming BGM Source]
+    SFX --> Looping[Looping Audio Map: Laser, Burn, Hum]
+    SFX --> Ducking[Dynamic Explosion Ducking Attenuation]
+
+    Music --> Crossfade[BGM Dual Crossfade Controller]
+    Crossfade --> ActiveTrack[Active Track Stream]
+    Crossfade --> FadingTrack[Fading Track Stream]
+
+    Mutex[ResourceManager::GetAudioDecodeMutex] -.->|Thread Safety Guard| ActiveTrack
+    Mutex -.->|Thread Safety Guard| FadingTrack
 ```
 
-### 3.1 Multi-Voice SFX Pooling
-- Maintains a pool of pre-allocated SFX voices (up to 32 simultaneous sound instances).
-- Voice stealing policy: when all channels are active, the voice with lowest remaining duration is recycled.
-- Parameters per voice: `Volume` (0..100%), `Pitch` (0.5..2.0x for retro pitch bends), `Pan` (-1.0 left to +1.0 right).
+### 3.1 Multi-Voice SFX Pooling & Cooldown Throttling
+- **Voice Stealing & Pooling**: Maintains a pool of pre-allocated SFX voices (up to 32 simultaneous sound instances). When exhausted, the voice with lowest remaining playback duration is recycled.
+- **Trigger Rate Limiting**: Cooldown throttling per `soundId` (minimum 30ms between triggers) prevents acoustic clipping and harshness during dense multi-brick explosions.
+- **Parameters per Voice**:
+  - `Volume` ($0..100\%$, combined with master and SFX bus scales).
+  - `Pitch` ($0.5..2.0\times$ for dynamic pitch ramping during brick streaks).
+  - `Pan` ($-1.0$ full left to $+1.0$ full right, mapped to ball X coordinate relative to arena width).
 
-### 3.2 Music Streaming & Transitions
-- Continuous background music streaming via SFML sound stream.
-- Supports smooth volume fading: `FadeToMusic(path, fadeDuration, targetVolume, loop)`.
+### 3.2 Dual-Track Crossfading & Vorbis Thread Safety
+- **Crossfading State Machine**: Background music transitions employ dual concurrent tracks (`activeTrack` and `fadingTrack`). When `FadeToMusic(path, duration, volume, loop)` is invoked:
+  1. The active track is transferred to `fadingTrack` with a smooth volume fade-out tween (`outConfig`).
+  2. The incoming track is initialized as `activeTrack` with a fade-in tween (`inConfig`).
+  3. When fading completes or a track stops, the stream is cleanly joined and deallocated.
+- **Vorbis Codebook Mutex Protection (`GetAudioDecodeMutex`)**:
+  - In SFML 3 and `libvorbis` (`sharedbook.c`), opening an OGG file (`openFromFile`) and destroying a stream (`~Music()` / `vorbis_book_clear`) access shared static codebook tables.
+  - To prevent fatal heap corruption (`0xC0000374 / STATUS_HEAP_CORRUPTION`), all `sf::Music::openFromFile` calls AND stream deallocations (`reset()`) are strictly synchronized through `ResourceManager::GetAudioDecodeMutex()`.
+  - Stream playback is stopped (`stop()`) prior to mutex acquisition to prevent audio device thread deadlocks.
 
-### 3.3 Audio Device Enumeration
+### 3.3 Dynamic Ducking & Temporal Distortion
+- **Ducking (`TriggerDucking`)**: Explosions and boss impacts temporarily duck background music volume by 30-50% with an exponential restore curve, keeping foreground audio punchy and readable.
+- **Temporal Distortion (`TriggerTemporalAudioDistortion`)**: During time-warp and slow-motion states (e.g. hazard zones, glitch malus), all sound effects and music smoothly pitch-shift down to $0.5\times$ through continuous interpolation, returning cleanly upon recovery (`RestoreTemporalAudio`).
+
+### 3.4 Audio Device Enumeration & Safe Hot-Swapping
 - Queries OS hardware via SFML audio API: `GetAvailableAudioDevices()`.
 - Hot-swaps output device at runtime: `SetAudioDevice(deviceName)`.
+- Compares against system default device before switching to avoid redundant WASAPI hardware re-initialization crashes.
 
 ---
 

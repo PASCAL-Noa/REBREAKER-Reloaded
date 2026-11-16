@@ -2,7 +2,7 @@
 
 [![C++20](https://img.shields.io/badge/Language-C%2B%2B20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![SFML 3](https://img.shields.io/badge/Render-SFML%203.0.2-green.svg)](https://www.sfml-dev.org/)
-[![Tests](https://img.shields.io/badge/Unit%20Tests-153%20Passed%20(100%25)-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Unit%20Tests-155%20Passed%20(100%25)-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)]()
 
 > **The classic arcade brick-breaker reinvented.** Built in modern C++20 with an authentic 1980s woodgrain CRT television aesthetic, a high-performance Entity-Component-System (ECS) engine, dynamic super-weapons, and deep persistent progression.
@@ -73,7 +73,7 @@ REBREAKER-Reloaded/
 ├── Game/               # Game scenes (MenuScene, GameScene, EndlessScene), Bricks, Power-ups
 ├── Resources/          # Audio tracks, SFX, sprites, fonts, shaders, and level JSONs
 ├── SaveData/           # Runtime persistent state (prefs.json, profile.json, leaderboard.json)
-├── Tests/              # 153 doctest unit and integration test suites
+├── Tests/              # 155 doctest unit and integration test suites
 └── Docs/               # Exhaustive technical documentation manuals
     ├── ARCHITECTURE.md          # Multi-layer architecture & ECS design
     ├── ENGINE_SUBSYSTEMS.md     # Core, Render, Audio, and Math deep-dive
@@ -134,14 +134,20 @@ All gameplay rules, collision models, profile serialization, and UI controllers 
 
 ```
 ===============================================================================
-[doctest] test cases:  153 |  153 passed | 0 failed | 0 skipped
-[doctest] assertions: 2107 | 2107 passed | 0 failed |
+[doctest] test cases:  155 |  155 passed | 0 failed | 0 skipped
+[doctest] assertions: 2122 | 2122 passed | 0 failed |
 [doctest] Status: SUCCESS!
 ```
 
 To run all unit tests:
 ```powershell
 ./out/build/x64-Debug/bin/RebreakerTests.exe
+```
+
+### End-to-End Scene Transition Smoke Test
+The game engine features an integrated headless-capable smoke test to programmatically verify all channel transitions (`MenuScene` $\rightarrow$ `GameScene` $\rightarrow$ `EndlessScene` $\rightarrow$ `MenuScene`) under live SFML rendering:
+```powershell
+./out/build/x64-Debug/bin/RebreakerReload.exe --smoke-test
 ```
 
 ---

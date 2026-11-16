@@ -126,6 +126,16 @@ When rebinding an action (`MoveLeft`, `MoveRight`, `LaunchBall`, `Pause`):
 3. **Capture & Debounce**: Keyboard key captures via `context.Input.GetLastKeyPressed()`; gamepad triggers via `context.Input.GetAnyGamepadInputTriggered(0)`. A $150\text{ms}$ debounce window ensures the button used to activate rebinding is not immediately re-captured.
 4. **Persistence**: New bindings are committed to `InputRemapManager` and immediately saved to `PlayerPrefs`.
 
+### 3.2 Re-Entrancy Guard & Stack Overflow Prevention
+- **Context**: In nested UI structures, dismissing modal dialogs via `Close()` frequently triggers downstream closing cascades (e.g. `CloseSettingsLayout()` triggering `Close()` in response to state change events).
+- **Infinite Recursion Defense**: `SettingsUIController::Close()` employs an explicit re-entrancy boolean guard (`m_isClosing`) combined with an active state verification (`bool wasOpen = IsOpen()`). If `Close()` is called recursively or when already closed, the method returns immediately, eliminating stack exhaustion crashes (`0xC00000FD / STATUS_STACK_OVERFLOW`).
+- **Call-Site Idempotence**: All invocations across `GameUIController` and `MenuScene` wrap dismissals with `if (m_settingsController.IsOpen()) m_settingsController.Close();`.
+
+### 3.3 Strict Tab Canvas Isolation
+- **Background Bleed Elimination**: Tab canvases (Audio, Video, Inputs, Rules, Cheats) are created as independent ECS canvas entities. At initialization, all tab canvases are explicitly disabled (`IsEnabled = false`).
+- **Guard on Tab Switching**: `OpenSettingsTab(Entity tabCanvas)` verifies `IsOpen()` before enabling any sub-tab canvas, guaranteeing that settings UI elements can never bleed into or overlay the Retro TV Main Menu or active gameplay viewports.
+- **Atomic Modal Teardown**: Calling `Close()` forcibly sets `IsEnabled = false` across both the root modal canvas and all five sub-tab canvases.
+
 ---
 
 ## 4. Workshop Shop & Permanent Progression

@@ -80,6 +80,29 @@ sequenceDiagram
 2. **Event Dispatch Prioritization**: Window events and input mapping are updated strictly before scene updates.
 3. **Render Decoupling**: Gameplay simulation operates in world coordinates; rendering projects through `Camera2D` or virtual screen metrics (such as the Retro CRT 1920x1080 canvas).
 
+### 3.1 Scene Lifecycle & Two-Phase Transitions (`SceneManager`)
+
+Scene transitions (e.g. `SceneTransitionType::StaticSnow`, `SceneTransitionType::FadeBlack`) are managed through a two-phase tweening lifecycle:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Covering: LoadSceneWithTransition<T>()
+    Covering --> MidpointReached: TransitionProgress == 1.0 (Screen 100% masked)
+    state MidpointReached {
+        [*] --> CurrentScene_OnDestroy
+        CurrentScene_OnDestroy --> CurrentScene_Reset
+        CurrentScene_Reset --> PendingScene_Instantiate
+        PendingScene_Instantiate --> NewScene_OnInit
+    }
+    MidpointReached --> Uncovering: StartUncoveringTween()
+    Uncovering --> Idle: TransitionProgress == 0.0 (Uncover completed)
+```
+
+- **Deterministic Teardown Rule**: During `OnDestroy()`, scenes must never manually deallocate (`reset()`) resources shared with the active renderer (such as active `sf::RenderTexture` FBOs or background music streams). All class member deallocations are safely deferred to standard C++ destructor execution (`~Scene()`) after `OnDestroy()` returns.
+- **Embedded Mode Isolation**: Sub-scenes embedded inside UI widgets (such as Workshop `PreviewScene`s) are flagged with `m_isEmbeddedMode = true`. When destroyed, embedded scenes clear only their local ECS entities and scoped subscriptions without touching global music playlists or re-triggering file persistence.
+- **Automated Verification Harness (`--smoke-test`)**: The engine integrates an automated smoke-test command (`RebreakerReload.exe --smoke-test`) that programmatically validates the full cycle `MenuScene` $\rightarrow$ `GameScene` $\rightarrow$ `EndlessScene` $\rightarrow$ `MenuScene` under real SFML window and OpenGL render conditions without manual user input.
+
 ---
 
 ## 4. Entity-Component-System (ECS) Architecture
