@@ -1,9 +1,12 @@
 #include "Core/PlayerPrefs.h"
+#include "Core/json.hpp"
 #include <fstream>
 #include <iostream>
 #include <filesystem>
 #include <cmath>
 #include <mutex>
+
+using json = nlohmann::json;
 
 static std::recursive_mutex& GetPrefsMutex()
 {
@@ -19,7 +22,7 @@ static std::recursive_mutex& GetPrefsMutex()
     #include <windows.h>
 #endif
 
-json PlayerPrefs::s_Data = json::object();
+static json s_Data = json::object();
 const std::string PlayerPrefs::s_FilePath = "playerprefs.json";
 std::string PlayerPrefs::s_CustomFilePath = "";
 

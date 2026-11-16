@@ -194,3 +194,4 @@ m_registry.AddComponent<TweenComponent>(entity, TweenComponent{
     .Ease = EasingFunctions::EasingType::EaseOutBounce
 });
 ```
+

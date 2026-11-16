@@ -146,6 +146,13 @@ void Window::ApplyConfig(const WindowConfig &config)
     }
 
     m_window.create(vm, m_config.Title, sfStyle, sfState);
+    if (!m_window.isOpen() && m_config.Mode == WindowMode::Fullscreen)
+    {
+        m_config.Mode = WindowMode::Windowed;
+        sfStyle = sf::Style::Default;
+        sfState = sf::State::Windowed;
+        m_window.create(sf::VideoMode({m_config.Width, m_config.Height}), m_config.Title, sfStyle, sfState);
+    }
     const sf::Vector2u actualSize = m_window.getSize();
     m_config.Width = actualSize.x;
     m_config.Height = actualSize.y;

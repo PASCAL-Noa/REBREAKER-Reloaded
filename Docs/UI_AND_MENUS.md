@@ -158,3 +158,4 @@ graph LR
 
 ### 5.2 Floating Text Feedback (`TextFeedback`)
 Whenever a brick streak or combo threshold is hit, a floating neon text label spawns in world space at the collision site, ascends smoothly with an ease-out curve, and fades to zero alpha over $0.8\text{s}$.
+

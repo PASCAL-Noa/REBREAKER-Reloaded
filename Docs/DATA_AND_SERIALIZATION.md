@@ -194,3 +194,4 @@ Located in `Game/include/LeaderboardManager.h`, manages high score tables stored
 - Records are sorted descending by `score`.
 - Tie-breaker: higher `levelReached`, followed by earliest timestamp.
 - High score tables keep the Top 10 records persistently.
+

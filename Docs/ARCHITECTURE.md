@@ -208,3 +208,4 @@ struct GameContext {
 ```
 
 This guarantees consistent access to core services without relying on error-prone static singletons, simplifying mocking and automated testing.
+

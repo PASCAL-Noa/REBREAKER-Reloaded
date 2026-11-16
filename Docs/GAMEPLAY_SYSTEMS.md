@@ -210,3 +210,4 @@ flowchart LR
 #### 3. Lucky Rain (`ExecutePowerUpRain`)
 - Triggers a torrential cascade of lucky glowing question-mark capsules falling across the entire grid width.
 - Up to 15 simultaneous power-up capsules rain down, activating multiple concurrent buffs.
+
