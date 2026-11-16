@@ -137,6 +137,20 @@ bool TetrisMatrix::MoveRight()
     return false;
 }
 
+bool TetrisMatrix::MoveTowardsColumn(int targetCol)
+{
+    if (m_currentType == TetrominoType::None) return false;
+    if (m_currentX < targetCol)
+    {
+        return MoveRight();
+    }
+    else if (m_currentX > targetCol)
+    {
+        return MoveLeft();
+    }
+    return false;
+}
+
 bool TetrisMatrix::StepDown()
 {
     if (m_currentType == TetrominoType::None) return false;

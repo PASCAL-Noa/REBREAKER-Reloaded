@@ -135,6 +135,15 @@ TEST_SUITE("TetrisMatrix Core Logic & Gimmick Stage Engine")
         {
             CHECK(y < TetrisMatrix::HEIGHT);
         }
+
+        // Test MoveTowardsColumn tracking
+        TetrisMatrix trackingMatrix;
+        CHECK(trackingMatrix.SpawnPiece(TetrominoType::I));
+        int startX = trackingMatrix.GetCurrentX();
+        CHECK(trackingMatrix.MoveTowardsColumn(startX + 2));
+        CHECK(trackingMatrix.GetCurrentX() == startX + 1);
+        while (trackingMatrix.MoveTowardsColumn(0)) {}
+        CHECK(trackingMatrix.GetCurrentX() <= startX);
     }
 
     TEST_CASE("5. Ghost Piece Calculation and Hard Drop")

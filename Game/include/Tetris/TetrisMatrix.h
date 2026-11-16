@@ -57,6 +57,7 @@ public:
     
     bool MoveLeft();
     bool MoveRight();
+    bool MoveTowardsColumn(int targetCol);
     bool StepDown();
     bool RotateClockwise();
     bool RotateCounterClockwise();

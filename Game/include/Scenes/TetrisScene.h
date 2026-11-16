@@ -25,6 +25,9 @@ public:
     [[nodiscard]] int GetLinesCleared() const noexcept { return m_linesCleared; }
     [[nodiscard]] int GetTargetLines() const noexcept { return m_targetLines; }
     [[nodiscard]] bool IsStageWon() const noexcept { return m_stageWon; }
+    [[nodiscard]] bool IsOverdriveActive() const noexcept { return m_overdriveTimer > 0.0f; }
+    [[nodiscard]] bool IsMagneticLocked() const noexcept { return m_magneticLocked; }
+    [[nodiscard]] int GetActiveGuideCol() const noexcept { return m_activeGuideCol; }
     [[nodiscard]] const TetrisMatrix& GetMatrix() const noexcept { return m_matrix; }
 
 protected:
@@ -33,6 +36,8 @@ protected:
 
 private:
     void HandlePlayerInput(GameContext& context);
+    void UpdatePaddleTracking(float dt, GameContext& context);
+    void CheckBallTetrominoCollision(GameContext& context);
     void StepMatrixLogic(float dt, GameContext& context);
     void SyncSettledBricks(const std::vector<std::pair<int, int>>& settled);
     void ProcessLineClears(GameContext& context);
@@ -42,10 +47,17 @@ private:
 
     TetrisMatrix m_matrix;
 
-    // Progression
-    int  m_linesCleared = 0;
-    int  m_targetLines = 10;
-    bool m_stageWon = false;
+    // Progression & Fusion Mechanics
+    int   m_linesCleared = 0;
+    int   m_targetLines = 10;
+    bool  m_stageWon = false;
+    bool  m_magneticTracking = true;
+    bool  m_magneticLocked = false;
+    float m_manualOverrideTimer = 0.0f;
+    float m_columnTrackTimer = 0.0f;
+    float m_overdriveTimer = 0.0f;
+    int   m_activeGuideCol = 4;
+    float m_trickshotFlashTimer = 0.0f;
 
     // Timers & Active Falling Piece
     float m_dropTimer = 0.0f;

@@ -242,6 +242,9 @@ void TetrisScene::OnGameOverExit()
     m_matrix.Reset();
     m_linesCleared = 0;
     m_stageWon = false;
+    m_overdriveTimer = 0.0f;
+    m_manualOverrideTimer = 0.0f;
+    m_magneticLocked = false;
     m_dangerGraceTimer = 0.0f;
     m_dangerActive = false;
     m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
@@ -273,33 +276,64 @@ void TetrisScene::OnUpdate(float dt, GameContext& context)
     {
         m_lineClearBannerTimer -= dt;
     }
+    if (m_overdriveTimer > 0.0f)
+    {
+        m_overdriveTimer -= dt;
+    }
+    if (m_trickshotFlashTimer > 0.0f)
+    {
+        m_trickshotFlashTimer -= dt;
+    }
 
+    UpdatePaddleTracking(dt, context);
     HandlePlayerInput(context);
+    CheckBallTetrominoCollision(context);
     StepMatrixLogic(dt, context);
+}
+
+void TetrisScene::UpdatePaddleTracking(float dt, GameContext& context)
+{
+    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+    {
+        float paddleX = m_registry.GetComponent<Transform2D>(m_paddle).Position.X;
+        const float totalW = static_cast<float>(TetrisMatrix::WIDTH) * m_cellSize.X;
+        const float matrixLeft = m_matrixOrigin.X - (totalW * 0.5f);
+        int targetCol = static_cast<int>(std::floor((paddleX - matrixLeft) / m_cellSize.X));
+        targetCol = std::clamp(targetCol, 0, TetrisMatrix::WIDTH - 1);
+        m_activeGuideCol = targetCol;
+
+        // Holding Shift or Gamepad LB locks the magnetic beam in place
+        m_magneticLocked = context.Input.IsKeyDown(KeyCode::LShift) ||
+                           context.Input.IsKeyDown(KeyCode::RShift) ||
+                           context.Input.IsJoystickButtonDown(0, 4);
+
+        if (m_manualOverrideTimer > 0.0f)
+        {
+            m_manualOverrideTimer -= dt;
+        }
+        else if (!m_magneticLocked && m_magneticTracking)
+        {
+            m_columnTrackTimer += dt;
+            if (m_columnTrackTimer >= 0.04f)
+            {
+                m_columnTrackTimer = 0.0f;
+                m_matrix.MoveTowardsColumn(targetCol);
+            }
+        }
+    }
 }
 
 void TetrisScene::HandlePlayerInput(GameContext& context)
 {
     if (IsPaused() || m_stageWon || IsCountdownActive()) return;
 
-    // Horizontal Movement (Left / Right arrows or Q / E)
-    if (context.Input.IsKeyPress(KeyCode::Left) || context.Input.IsKeyPress(KeyCode::Q))
-    {
-        if (m_matrix.MoveLeft() && m_moveSfxId != 0)
-        {
-            context.Audio.PlaySfx(m_moveSfxId, 45.0f);
-        }
-    }
-    else if (context.Input.IsKeyPress(KeyCode::Right) || context.Input.IsKeyPress(KeyCode::E))
-    {
-        if (m_matrix.MoveRight() && m_moveSfxId != 0)
-        {
-            context.Audio.PlaySfx(m_moveSfxId, 45.0f);
-        }
-    }
-
-    // Rotation (Up arrow or W)
-    if (context.Input.IsKeyPress(KeyCode::Up) || context.Input.IsKeyPress(KeyCode::W))
+    // 1. ROTATE CLOCKWISE: Right Click / W / Up Arrow / Gamepad Y (3) / Gamepad B (1)
+    const bool rotateCw = context.Input.IsMouseButtonPress(MouseButton::Right) ||
+                          context.Input.IsKeyPress(KeyCode::Up) ||
+                          context.Input.IsKeyPress(KeyCode::W) ||
+                          context.Input.IsJoystickButtonPress(0, 3) ||
+                          context.Input.IsJoystickButtonPress(0, 1);
+    if (rotateCw)
     {
         if (m_matrix.RotateClockwise() && m_rotateSfxId != 0)
         {
@@ -307,20 +341,24 @@ void TetrisScene::HandlePlayerInput(GameContext& context)
         }
     }
 
-    // Soft Drop (Down arrow or S)
-    if (context.Input.IsKeyDown(KeyCode::Down) || context.Input.IsKeyDown(KeyCode::S))
+    // 2. ROTATE COUNTER-CLOCKWISE: Q / Gamepad X (2)
+    if (context.Input.IsKeyPress(KeyCode::Q) || context.Input.IsJoystickButtonPress(0, 2))
     {
-        m_dropInterval = 0.08f;
-    }
-    else
-    {
-        m_dropInterval = std::max(0.30f, 0.85f - static_cast<float>(m_linesCleared) * 0.045f);
+        if (m_matrix.RotateCounterClockwise() && m_rotateSfxId != 0)
+        {
+            context.Audio.PlaySfx(m_rotateSfxId, 55.0f);
+        }
     }
 
-    // Hard Drop (Space key when ball is already in play)
-    if (context.Input.IsKeyPress(KeyCode::Space))
+    // 3. HARD DROP / SLAM: Space (when ball in play) / S / Down / Middle Mouse / Gamepad A (0)
+    const bool hardDrop = (m_ballState == BallState::Active && context.Input.IsKeyPress(KeyCode::Space)) ||
+                          context.Input.IsKeyPress(KeyCode::S) ||
+                          context.Input.IsKeyPress(KeyCode::Down) ||
+                          context.Input.IsMouseButtonPress(MouseButton::Middle) ||
+                          context.Input.IsJoystickButtonPress(0, 0);
+    if (hardDrop)
     {
-        if (m_ballState == BallState::Active && m_matrix.HasActivePiece())
+        if (m_matrix.HasActivePiece())
         {
             auto settled = m_matrix.HardDrop();
             if (!settled.empty())
@@ -330,6 +368,109 @@ void TetrisScene::HandlePlayerInput(GameContext& context)
                 ProcessLineClears(context);
                 m_matrix.SpawnNextPiece();
                 m_dropTimer = 0.0f;
+                m_lockDelayTimer = 0.0f;
+            }
+        }
+    }
+
+    // 4. SOFT DROP: Down or S speeds up gravity
+    if (context.Input.IsKeyDown(KeyCode::Down) || context.Input.IsKeyDown(KeyCode::S))
+    {
+        m_dropInterval = 0.08f;
+    }
+    else
+    {
+        m_dropInterval = std::max(0.40f, 1.05f - static_cast<float>(m_linesCleared) * 0.05f);
+    }
+
+    // 5. MANUAL NUDGE: Left / Right arrows
+    if (context.Input.IsKeyPress(KeyCode::Left))
+    {
+        m_manualOverrideTimer = 1.0f;
+        if (m_matrix.MoveLeft() && m_moveSfxId != 0)
+        {
+            context.Audio.PlaySfx(m_moveSfxId, 45.0f);
+        }
+    }
+    else if (context.Input.IsKeyPress(KeyCode::Right))
+    {
+        m_manualOverrideTimer = 1.0f;
+        if (m_matrix.MoveRight() && m_moveSfxId != 0)
+        {
+            context.Audio.PlaySfx(m_moveSfxId, 45.0f);
+        }
+    }
+}
+
+void TetrisScene::CheckBallTetrominoCollision(GameContext& context)
+{
+    if (m_ballState != BallState::Active || !m_matrix.HasActivePiece()) return;
+
+    std::vector<Entity> activeBalls;
+    if (mp_ballSystem)
+    {
+        activeBalls = mp_ballSystem->GetBalls();
+    }
+    else if (m_registry.IsAlive(m_ball))
+    {
+        activeBalls.push_back(m_ball);
+    }
+
+    const auto activeBlocks = m_matrix.GetActivePieceBlocks();
+    if (activeBlocks.empty()) return;
+
+    for (Entity ballEntity : activeBalls)
+    {
+        if (!m_registry.IsAlive(ballEntity) ||
+            !m_registry.HasComponent<Transform2D>(ballEntity) ||
+            !m_registry.HasComponent<RigidBody>(ballEntity))
+        {
+            continue;
+        }
+
+        auto& ballTrans = m_registry.GetComponent<Transform2D>(ballEntity);
+        auto& ballRb = m_registry.GetComponent<RigidBody>(ballEntity);
+        const float ballRadius = 12.0f;
+
+        for (const auto& [gx, gy] : activeBlocks)
+        {
+            Vector2f blockPos = TetrisMatrix::GridToWorld(gx, gy, m_matrixOrigin, m_cellSize);
+            const float halfW = m_cellSize.X * 0.5f;
+            const float halfH = m_cellSize.Y * 0.5f;
+
+            float closestX = std::clamp(ballTrans.Position.X, blockPos.X - halfW, blockPos.X + halfW);
+            float closestY = std::clamp(ballTrans.Position.Y, blockPos.Y - halfH, blockPos.Y + halfH);
+
+            float dx = ballTrans.Position.X - closestX;
+            float dy = ballTrans.Position.Y - closestY;
+            float distSq = dx * dx + dy * dy;
+
+            if (distSq < (ballRadius * ballRadius))
+            {
+                // Reflect velocity
+                if (std::abs(dx) > std::abs(dy))
+                {
+                    ballRb.Velocity.X = (dx >= 0.0f) ? std::abs(ballRb.Velocity.X) : -std::abs(ballRb.Velocity.X);
+                }
+                else
+                {
+                    ballRb.Velocity.Y = (dy >= 0.0f) ? std::abs(ballRb.Velocity.Y) : -std::abs(ballRb.Velocity.Y);
+                }
+
+                // Trickshot rotation!
+                if (m_matrix.RotateClockwise() && m_rotateSfxId != 0)
+                {
+                    context.Audio.PlaySfx(m_rotateSfxId, 75.0f);
+                }
+
+                SpawnExplosionParticles(Vector2f{closestX, closestY}, Colors::Cyan, 8);
+                m_scoreManager.AddScore(250);
+                m_lastClearBanner = "TRICKSHOT ROTATION! +250";
+                m_lastClearColor = Colors::Cyan;
+                m_lineClearBannerTimer = 1.2f;
+                m_trickshotFlashTimer = 0.15f;
+                TriggerPostProcessFlash(0.15f, 0.12f, Colors::Cyan, 0.25f);
+                return;
             }
         }
     }
@@ -348,23 +489,36 @@ void TetrisScene::StepMatrixLogic(float dt, GameContext& context)
         m_dropTimer = 0.0f;
         if (!m_matrix.StepDown())
         {
-            m_lockDelayTimer += dt;
-            if (m_lockDelayTimer >= kLockDelayDuration)
-            {
-                auto settled = m_matrix.SettlePiece();
-                if (!settled.empty())
-                {
-                    if (m_dropSfxId != 0) context.Audio.PlaySfx(m_dropSfxId, 55.0f);
-                    SyncSettledBricks(settled);
-                    ProcessLineClears(context);
-                    m_matrix.SpawnNextPiece();
-                    m_lockDelayTimer = 0.0f;
-                }
-            }
+            m_lockDelayTimer += dt + m_dropInterval;
         }
         else
         {
             m_lockDelayTimer = 0.0f;
+        }
+    }
+    else
+    {
+        if (!m_matrix.CanPlace(m_matrix.GetCurrentType(), m_matrix.GetCurrentX(), m_matrix.GetCurrentY() + 1, m_matrix.GetCurrentRotation()))
+        {
+            m_lockDelayTimer += dt;
+        }
+        else
+        {
+            m_lockDelayTimer = 0.0f;
+        }
+    }
+
+    if (m_lockDelayTimer >= kLockDelayDuration)
+    {
+        auto settled = m_matrix.SettlePiece();
+        if (!settled.empty())
+        {
+            if (m_dropSfxId != 0) context.Audio.PlaySfx(m_dropSfxId, 55.0f);
+            SyncSettledBricks(settled);
+            ProcessLineClears(context);
+            m_matrix.SpawnNextPiece();
+            m_lockDelayTimer = 0.0f;
+            m_dropTimer = 0.0f;
         }
     }
 
@@ -466,6 +620,9 @@ void TetrisScene::ProcessLineClears(GameContext& context)
     m_lineClearBannerTimer = 2.2f;
     AddUltimateCharge(static_cast<float>(lineCount) * 15.0f);
 
+    // Overdrive Supercharge on Line Clears!
+    m_overdriveTimer = 5.0f + static_cast<float>(lineCount) * 1.5f;
+
     // Audio SFX
     if (lineCount >= 4 && m_tetrisSfxId != 0)
     {
@@ -516,6 +673,12 @@ void TetrisScene::ProcessLineClears(GameContext& context)
 
 void TetrisScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLaser, bool isExplosion, int damage)
 {
+    if (m_overdriveTimer > 0.0f)
+    {
+        damage += 2;
+        m_scoreManager.AddScore(150);
+    }
+
     GameScene::HandleBrickCollision(entity, ballEntity, isLaser, isExplosion, damage);
 
     // If brick was destroyed by ball or powerup, remove it from matrix to create a gap!
@@ -574,7 +737,18 @@ void TetrisScene::RenderTetrisPlayfield(GameContext& context)
         context.Render.DrawRectangle(totalW, 1.0f, Transform2D{Vector2f{m_matrixOrigin.X, gy}}, Color{35, 60, 95, 45});
     }
 
-    // 2. Danger Laser Line across the arena near paddle threshold
+    // 2. Vertical Magnetic Projection Beam aligned with paddle
+    float beamX = startX + (static_cast<float>(m_activeGuideCol) + 0.5f) * m_cellSize.X;
+    uint8_t beamAlpha = m_magneticLocked ?
+        static_cast<uint8_t>(40.0f + 20.0f * std::sin(m_animTimer * 10.0f)) :
+        static_cast<uint8_t>(25.0f + 15.0f * std::sin(m_animTimer * 5.0f));
+    Color beamColor = m_magneticLocked ? Color{255, 180, 40, beamAlpha} : Color{0, 240, 255, beamAlpha};
+    Color beamBorder = m_magneticLocked ? Color{255, 200, 80, 90} : Color{0, 240, 255, 80};
+
+    context.Render.DrawRectangle(m_cellSize.X - 2.0f, totalH, Transform2D{Vector2f{beamX, m_matrixOrigin.Y}}, beamColor);
+    context.Render.DrawRectangleOutline(m_cellSize.X - 2.0f, totalH, Transform2D{Vector2f{beamX, m_matrixOrigin.Y}}, beamBorder, 1.0f);
+
+    // 3. Danger Laser Line across the arena near paddle threshold
     Vector2f dangerPos = TetrisMatrix::GridToWorld(0, TetrisMatrix::BOTTOM_DANGER_ROW, m_matrixOrigin, m_cellSize);
     float dangerY = dangerPos.Y - (m_cellSize.Y * 0.5f);
 
@@ -583,7 +757,7 @@ void TetrisScene::RenderTetrisPlayfield(GameContext& context)
 
     context.Render.DrawRectangle(totalW + 60.0f, 3.0f, Transform2D{Vector2f{m_matrixOrigin.X, dangerY}}, dangerLaserColor);
 
-    // 3. Ghost Piece (Landing Preview)
+    // 4. Ghost Piece (Landing Preview)
     if (m_matrix.HasActivePiece())
     {
         auto ghostBlocks = m_matrix.GetGhostPieceBlocks();
@@ -596,12 +770,13 @@ void TetrisScene::RenderTetrisPlayfield(GameContext& context)
             context.Render.DrawRectangleOutline(m_cellSize.X - 2.0f, m_cellSize.Y - 2.0f, Transform2D{worldPos}, ghostCol, 1.5f);
         }
 
-        // 4. Active Falling Tetromino
+        // 5. Active Falling Tetromino
         auto activeBlocks = m_matrix.GetActivePieceBlocks();
+        Color drawPieceCol = (m_trickshotFlashTimer > 0.0f) ? Colors::White : pieceCol;
         for (const auto& [ax, ay] : activeBlocks)
         {
             Vector2f worldPos = TetrisMatrix::GridToWorld(ax, ay, m_matrixOrigin, m_cellSize);
-            context.Render.DrawRectangle(m_cellSize.X - 2.0f, m_cellSize.Y - 2.0f, Transform2D{worldPos}, pieceCol);
+            context.Render.DrawRectangle(m_cellSize.X - 2.0f, m_cellSize.Y - 2.0f, Transform2D{worldPos}, drawPieceCol);
             context.Render.DrawRectangleOutline(m_cellSize.X - 2.0f, m_cellSize.Y - 2.0f, Transform2D{worldPos}, Colors::White, 1.5f);
         }
     }
@@ -636,6 +811,14 @@ void TetrisScene::RenderTetrisHUD(GameContext& context) const
         float filledW = barW * fillRatio;
         float filledX = screenCenterX - (barW * 0.5f) + (filledW * 0.5f);
         context.Render.DrawRectangle(filledW, barH, Transform2D{Vector2f{filledX, barY}}, Colors::Gold);
+    }
+
+    // Overdrive Supercharge Indicator
+    if (m_overdriveTimer > 0.0f)
+    {
+        std::string odText = "★ NEON OVERDRIVE x2 (" + std::to_string(static_cast<int>(std::ceil(m_overdriveTimer))) + "s) ★";
+        Color odCol = (std::sin(m_animTimer * 16.0f) > 0.0f) ? Colors::Gold : Color{0, 255, 240, 255};
+        context.Render.DrawTextCentered(odText, m_fontId, 20.0f, Transform2D{Vector2f{screenCenterX, 115.0f}}, odCol);
     }
 
     // Right Side: NEXT PIECE Preview Box
@@ -674,6 +857,14 @@ void TetrisScene::RenderTetrisHUD(GameContext& context) const
         int remainingSec = std::max(0, static_cast<int>(std::ceil(7.0f - m_dangerGraceTimer)));
         std::string dangerText = "WARNING: MATRIX OVERFLOW! EVACUATE ROW IN " + std::to_string(remainingSec) + "s!";
         Color alertCol = (std::sin(m_animTimer * 14.0f) > 0.0f) ? Color{255, 30, 60, 255} : Colors::Gold;
-        context.Render.DrawTextCentered(dangerText, m_fontId, 20.0f, Transform2D{Vector2f{screenCenterX, 130.0f}}, alertCol);
+        context.Render.DrawTextCentered(dangerText, m_fontId, 20.0f, Transform2D{Vector2f{screenCenterX, 145.0f}}, alertCol);
     }
+
+    // Bottom Control Guide Banner
+    const float bottomPanelY = viewSize.Y - 24.0f;
+    context.Render.DrawRectangle(viewSize.X - 100.0f, 32.0f, Transform2D{Vector2f{screenCenterX, bottomPanelY}}, Color{10, 15, 26, 220});
+    context.Render.DrawRectangleOutline(viewSize.X - 100.0f, 32.0f, Transform2D{Vector2f{screenCenterX, bottomPanelY}}, Color{35, 75, 130, 200}, 1.2f);
+
+    std::string tips = "[SOURIS / A-D] GUIDER | [CLIC DROIT / W] PIVOTER | [ESPACE / S] SLAM DROP | [SHIFT] VERROUILLER | BALLE = RICOCHET & TRICKSHOT";
+    context.Render.DrawTextCentered(tips, m_fontId, 13.5f, Transform2D{Vector2f{screenCenterX, bottomPanelY}}, Color{180, 225, 255, 240});
 }
