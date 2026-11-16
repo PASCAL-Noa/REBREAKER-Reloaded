@@ -45,11 +45,11 @@ void ProceduralEndlessGenerator::GenerateRandomSeed() noexcept
 
 float ProceduralEndlessGenerator::GetCreepInterval() const noexcept
 {
-    // Interval between downward row drops: 18.0s at Wave 1 down to 9.0s at Wave 12+
-    float baseInterval = (18.0f - static_cast<float>(m_currentWave - 1) * 0.75f) * m_creepIntervalMultiplier;
+    // Interval between downward row drops: 11.0s at Wave 1 down to 6.5s at Wave 12+
+    float baseInterval = (11.0f - static_cast<float>(m_currentWave - 1) * 0.40f) * m_creepIntervalMultiplier;
     // Intra-wave creep acceleration: drops up to 35% faster near the end of the wave as time runs down
     float intraWaveFactor = 1.0f - 0.35f * GetWaveTimeProgress();
-    return std::max(4.5f, baseInterval * intraWaveFactor);
+    return std::max(4.0f, baseInterval * intraWaveFactor);
 }
 
 float ProceduralEndlessGenerator::GetCreepProgress() const noexcept
@@ -160,8 +160,8 @@ bool ProceduralEndlessGenerator::EvaluateProceduralCell(int col, int row, float 
         return true;
     }
 
-    // Volatile explosive bomb clusters
-    if (score > 0.60f && (cellHash % 8 == 0))
+    // Volatile explosive bomb clusters (and early explosive tension on Wave 1)
+    if ((score > 0.60f && (cellHash % 8 == 0)) || (wave == 1 && row == 1 && symCol == 2))
     {
         outType = BrickType::Bomb;
         return true;
@@ -260,7 +260,7 @@ int ProceduralEndlessGenerator::GenerateWave(int waveNumber, Registry& registry,
 
         const HazardEffectType effectCycle[] = {
             HazardEffectType::ScreenGlitch,     // Triple-vision chromatic glitch
-            HazardEffectType::UltimateDrain,    // Drains the ultimate ability bar!
+            HazardEffectType::SpeedSurge,       // Kinetic acceleration shockwave
             HazardEffectType::CameraTilt,
             HazardEffectType::CameraZoomPulse,
             HazardEffectType::TemporalAudioWarp,

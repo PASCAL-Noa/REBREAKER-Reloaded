@@ -656,17 +656,13 @@ void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
         m_registry.GetComponent<TextComponent>(m_submitNameBtn).Text = "SAVE";
     }
 
-    if (m_gameOverLevelSelectBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_gameOverLevelSelectBtn))
-    {
-        m_registry.GetComponent<RectTransform>(m_gameOverLevelSelectBtn).IsActive = true;
-    }
     if (m_replayBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_replayBtn))
     {
-        m_registry.GetComponent<RectTransform>(m_replayBtn).Position = {-260.0f, 310.0f};
+        m_registry.GetComponent<RectTransform>(m_replayBtn).Position = {-160.0f, 310.0f};
     }
     if (m_gameOverMainMenuBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_gameOverMainMenuBtn))
     {
-        m_registry.GetComponent<RectTransform>(m_gameOverMainMenuBtn).Position = {260.0f, 310.0f};
+        m_registry.GetComponent<RectTransform>(m_gameOverMainMenuBtn).Position = {160.0f, 310.0f};
     }
 
     if (!defaultName.empty())
@@ -733,11 +729,6 @@ void GameUIController::SetupVictory(uint32_t finalScore)
         m_registry.GetComponent<TextComponent>(m_submitNameBtn).Text = "SAVE";
     }
 
-    // Hide Level Select button when completing the final level
-    if (m_gameOverLevelSelectBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_gameOverLevelSelectBtn))
-    {
-        m_registry.GetComponent<RectTransform>(m_gameOverLevelSelectBtn).IsActive = false;
-    }
     if (m_replayBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_replayBtn))
     {
         m_registry.GetComponent<RectTransform>(m_replayBtn).Position = {-160.0f, 310.0f};
@@ -1005,18 +996,7 @@ void GameUIController::CreatePauseMenu()
         .OnClick = [this]() {
             m_scene.ResumeGame();
         },
-        .Position = {0, -90.0f},
-        .FontId = m_fontId
-    });
-
-    // Level Select Button
-    UIFactory::CreateButton(m_registry, m_pauseCanvas, ButtonDescriptor{
-        .Text = "LEVEL SELECT",
-        .OnClick = [this]() {
-            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
-            OpenLevelSelectModal(m_pauseCanvas);
-        },
-        .Position = {0, -10.0f},
+        .Position = {0, -60.0f},
         .FontId = m_fontId
     });
 
@@ -1034,7 +1014,7 @@ void GameUIController::CreatePauseMenu()
             settingsCanvas.IsEnabled = true;
             OpenSettingsTab(m_audioCanvas);
         },
-        .Position = {0, 70.0f},
+        .Position = {0, 20.0f},
         .FontId = m_fontId
     });
 
@@ -1046,7 +1026,7 @@ void GameUIController::CreatePauseMenu()
             MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
-        .Position = {0, 150.0f},
+        .Position = {0, 100.0f},
         .FontId = m_fontId
     });
 
@@ -2067,33 +2047,11 @@ void GameUIController::CreateGameOverMenu()
             }
             m_scene.OnReplayRequested();
         },
-        .Position = {-260.0f, 310.0f},
+        .Position = {-160.0f, 310.0f},
         .Size = {240.0f, 56.0f},
         .DefaultColor = Color{65, 65, 90, 255},
         .HoverColor = Color{95, 95, 130, 255},
         .PressedColor = Color{35, 35, 50, 255},
-        .TextColor = Colors::White,
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .AnchorPoint = Anchor::Center
-    });
-
-    // Level Select Button
-    m_gameOverLevelSelectBtn = UIFactory::CreateButton(m_registry, m_gameOverCanvas, ButtonDescriptor{
-        .Text = "LEVEL SELECT",
-        .OnClick = [this]() {
-            if (!TryConfirmNameBeforeProceeding())
-            {
-                return;
-            }
-            if (m_bounceSfxId != 0) m_context.Audio.PlaySfx(m_bounceSfxId, 80.0f);
-            OpenLevelSelectModal(m_gameOverCanvas);
-        },
-        .Position = {0.0f, 310.0f},
-        .Size = {240.0f, 56.0f},
-        .DefaultColor = Color{35, 65, 90, 255},
-        .HoverColor = Color{50, 95, 135, 255},
-        .PressedColor = Color{25, 45, 65, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
         .FontSize = 26.0f,
@@ -2112,7 +2070,7 @@ void GameUIController::CreateGameOverMenu()
             MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
-        .Position = {260.0f, 310.0f},
+        .Position = {160.0f, 310.0f},
         .Size = {240.0f, 56.0f},
         .DefaultColor = Color{95, 45, 45, 255},
         .HoverColor = Color{135, 65, 65, 255},

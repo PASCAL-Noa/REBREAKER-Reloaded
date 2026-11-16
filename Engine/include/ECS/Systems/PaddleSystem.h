@@ -33,6 +33,9 @@ public:
     void SetLaunchSpeed(float speed) { m_launchSpeed = speed; }
     [[nodiscard]] float GetLaunchSpeed() const { return m_launchSpeed; }
 
+    void SetAutoLaunchDelay(float delay) { m_autoLaunchDelay = delay; }
+    [[nodiscard]] float GetAutoLaunchDelay() const { return m_autoLaunchDelay; }
+
     // Callbacks
     void SetOnTriggerStormCallback(std::function<void(Entity paddle)> cb) { m_onTriggerStorm = std::move(cb); }
     void SetOnFireLaserCallback(std::function<void(Entity paddle)> cb) { SetOnTriggerStormCallback(std::move(cb)); }
@@ -47,6 +50,8 @@ private:
     Entity       m_attachedPaddle = NULL_ENTITY;
     Entity       m_attachedBall = NULL_ENTITY;
     float        m_launchSpeed = 640.0f;
+    float        m_autoLaunchDelay = 0.8f;
+    float        m_attachedTimer = 0.0f;
 
     std::function<void(Entity)> m_onTriggerStorm;
     std::function<void(Entity)> m_onFireLaser;

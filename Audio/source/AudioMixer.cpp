@@ -379,11 +379,12 @@ void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop)
 
     StopMusic();
 
+    const std::string resolved = ResourceManager::ResolveFilePath(filepath);
     auto newMusic = std::make_unique<sf::Music>();
     bool opened = false;
     {
         std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-        opened = newMusic->openFromFile(filepath);
+        opened = newMusic->openFromFile(resolved);
     }
     if (opened)
     {
@@ -487,11 +488,12 @@ void AudioMixer::FadeToMusic(const std::string& filepath, const TweenConfig<floa
     }
 
     // 2. Open and fade in new track using TweenConfig
+    const std::string resolved = ResourceManager::ResolveFilePath(filepath);
     auto newMusic = std::make_unique<sf::Music>();
     bool opened = false;
     {
         std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-        opened = newMusic->openFromFile(filepath);
+        opened = newMusic->openFromFile(resolved);
     }
     if (opened)
     {

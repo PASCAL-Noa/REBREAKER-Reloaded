@@ -633,6 +633,10 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
                 if (mp_paddleSystem)
                 {
                     mp_paddleSystem->SetInputEnabled(true);
+                    if (mp_paddleSystem->IsBallAttached())
+                    {
+                        mp_paddleSystem->LaunchBall();
+                    }
                 }
 
                 if (mp_state_machine)
@@ -921,35 +925,38 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     {
         camPos = m_registry.GetComponent<Camera2D>(m_camera).Position;
     }
-    m_ambientBackground.OnUpdate(dt, paddlePos, camPos);
-
-    // 3. Post-process parameter decay towards resting baseline
-    constexpr float kBaseCA = 0.005f;
-    constexpr float kBaseVig = 0.25f;
-    const Color kBaseVigColor{0, 0, 0, 255};
-
-    if (m_postProcessParams.ChromaticAberration > kBaseCA)
+    if (currentState != static_cast<int>(SceneState::Paused))
     {
-        m_postProcessParams.ChromaticAberration = std::max(kBaseCA, m_postProcessParams.ChromaticAberration - dt * 0.05f);
-    }
-    if (m_postProcessParams.VignetteIntensity > kBaseVig)
-    {
-        m_postProcessParams.VignetteIntensity = std::max(kBaseVig, m_postProcessParams.VignetteIntensity - dt * 0.9f);
-    }
-    if (m_postProcessParams.FlashIntensity > 0.0f)
-    {
-        m_postProcessParams.FlashIntensity = std::max(0.0f, m_postProcessParams.FlashIntensity - dt * 1.3f);
-    }
+        m_ambientBackground.OnUpdate(dt, paddlePos, camPos);
 
-    const float decayAlpha = std::clamp(dt * 3.5f, 0.0f, 1.0f);
-    m_postProcessParams.VignetteColor.r = static_cast<uint8_t>(m_postProcessParams.VignetteColor.r + (kBaseVigColor.r - m_postProcessParams.VignetteColor.r) * decayAlpha);
-    m_postProcessParams.VignetteColor.g = static_cast<uint8_t>(m_postProcessParams.VignetteColor.g + (kBaseVigColor.g - m_postProcessParams.VignetteColor.g) * decayAlpha);
-    m_postProcessParams.VignetteColor.b = static_cast<uint8_t>(m_postProcessParams.VignetteColor.b + (kBaseVigColor.b - m_postProcessParams.VignetteColor.b) * decayAlpha);
+        // 3. Post-process parameter decay towards resting baseline
+        constexpr float kBaseCA = 0.005f;
+        constexpr float kBaseVig = 0.25f;
+        const Color kBaseVigColor{0, 0, 0, 255};
+
+        if (m_postProcessParams.ChromaticAberration > kBaseCA)
+        {
+            m_postProcessParams.ChromaticAberration = std::max(kBaseCA, m_postProcessParams.ChromaticAberration - dt * 0.05f);
+        }
+        if (m_postProcessParams.VignetteIntensity > kBaseVig)
+        {
+            m_postProcessParams.VignetteIntensity = std::max(kBaseVig, m_postProcessParams.VignetteIntensity - dt * 0.9f);
+        }
+        if (m_postProcessParams.FlashIntensity > 0.0f)
+        {
+            m_postProcessParams.FlashIntensity = std::max(0.0f, m_postProcessParams.FlashIntensity - dt * 1.3f);
+        }
+
+        const float decayAlpha = std::clamp(dt * 3.5f, 0.0f, 1.0f);
+        m_postProcessParams.VignetteColor.r = static_cast<uint8_t>(m_postProcessParams.VignetteColor.r + (kBaseVigColor.r - m_postProcessParams.VignetteColor.r) * decayAlpha);
+        m_postProcessParams.VignetteColor.g = static_cast<uint8_t>(m_postProcessParams.VignetteColor.g + (kBaseVigColor.g - m_postProcessParams.VignetteColor.g) * decayAlpha);
+        m_postProcessParams.VignetteColor.b = static_cast<uint8_t>(m_postProcessParams.VignetteColor.b + (kBaseVigColor.b - m_postProcessParams.VignetteColor.b) * decayAlpha);
+    }
 
     // Update screen disruption and stage hazard zones (#83)
-    UpdateVisualMalus(dt);
     if (currentState == static_cast<int>(SceneState::Playing))
     {
+        UpdateVisualMalus(dt);
         UpdateHazardZones(dt);
     }
 
@@ -1050,10 +1057,57 @@ void GameScene::OnRender(GameContext& context)
         if (!hz.IsActive) return;
         Vector2f effectiveSize = zBox.GetEffectiveSize(zTrans.Scale);
         float pulse = (std::sin(m_gameplayTime * 6.0f) + 1.0f) * 0.5f;
+
         Color zoneFill{255, 30, 80, static_cast<uint8_t>(25 + 20 * pulse)};
         Color zoneBorder{255, 50, 100, static_cast<uint8_t>(120 + 80 * pulse)};
+        std::string label = "[!] HAZARD [!]";
+
+        switch (hz.Effect)
+        {
+            case HazardEffectType::SpeedSurge:
+                zoneFill = Color{0, 210, 255, static_cast<uint8_t>(30 + 25 * pulse)};
+                zoneBorder = Color{0, 240, 255, static_cast<uint8_t>(160 + 80 * pulse)};
+                label = "[!] SPEED SURGE [!]";
+                break;
+            case HazardEffectType::ScreenGlitch:
+                zoneFill = Color{220, 30, 200, static_cast<uint8_t>(30 + 25 * pulse)};
+                zoneBorder = Color{255, 50, 220, static_cast<uint8_t>(160 + 80 * pulse)};
+                label = "[!] GLITCH FIELD [!]";
+                break;
+            case HazardEffectType::CameraTilt:
+                zoneFill = Color{255, 140, 20, static_cast<uint8_t>(30 + 25 * pulse)};
+                zoneBorder = Color{255, 180, 40, static_cast<uint8_t>(160 + 80 * pulse)};
+                label = "[!] GRAVITY TILT [!]";
+                break;
+            case HazardEffectType::CameraZoomPulse:
+                zoneFill = Color{160, 40, 240, static_cast<uint8_t>(30 + 25 * pulse)};
+                zoneBorder = Color{190, 70, 255, static_cast<uint8_t>(160 + 80 * pulse)};
+                label = "[!] PULSE FIELD [!]";
+                break;
+            case HazardEffectType::TemporalAudioWarp:
+                zoneFill = Color{80, 80, 255, static_cast<uint8_t>(30 + 25 * pulse)};
+                zoneBorder = Color{120, 120, 255, static_cast<uint8_t>(160 + 80 * pulse)};
+                label = "[!] TIME WARP [!]";
+                break;
+            case HazardEffectType::UltimateDrain:
+                zoneFill = Color{240, 20, 100, static_cast<uint8_t>(30 + 25 * pulse)};
+                zoneBorder = Color{255, 40, 120, static_cast<uint8_t>(160 + 80 * pulse)};
+                label = "[!] ENERGY DRAIN [!]";
+                break;
+            case HazardEffectType::AllMaluses:
+            default:
+                zoneFill = Color{255, 30, 80, static_cast<uint8_t>(30 + 25 * pulse)};
+                zoneBorder = Color{255, 60, 100, static_cast<uint8_t>(160 + 80 * pulse)};
+                label = "[!] CHAOS ZONE [!]";
+                break;
+        }
+
         context.Render.DrawRectangle(effectiveSize.X, effectiveSize.Y, zTrans, zoneFill);
-        context.Render.DrawRectangleOutline(effectiveSize.X, effectiveSize.Y, zTrans, zoneBorder, 2.0f);
+        context.Render.DrawRectangleOutline(effectiveSize.X, effectiveSize.Y, zTrans, zoneBorder, 2.5f);
+        if (m_fontId != 0)
+        {
+            context.Render.DrawTextCentered(label, m_fontId, 16.0f, zTrans, Color{zoneBorder.r, zoneBorder.g, zoneBorder.b, 235});
+        }
     });
 
     // Sticky Paddle rhythm indicator for caught balls
@@ -3249,7 +3303,7 @@ uint32_t GameScene::GetPowerUpOrbTexture(PowerUpType type) const
 uint32_t GameScene::GetHazardTexture(HazardEffectType effect) const
 {
     if (effect == HazardEffectType::CameraTilt) return m_hazardGravityTexId;
-    if (effect == HazardEffectType::TemporalAudioWarp) return m_hazardElectricTexId;
+    if (effect == HazardEffectType::TemporalAudioWarp || effect == HazardEffectType::SpeedSurge) return m_hazardElectricTexId;
     return m_hazardPatternTexId;
 }
 
@@ -4491,6 +4545,8 @@ void GameScene::DrainUltimateCharge(float amount)
 {
     m_ultimateCharge = std::max(0.0f, m_ultimateCharge - amount);
     m_ultimateReady = (m_ultimateCharge >= m_ultimateMaxCharge);
+    m_ultimateDrainFlashTimer = 1.0f;
+    TriggerPostProcessFlash(0.025f, 0.5f, Color{255, 30, 80, 255}, 0.2f, Color{255, 70, 120, 255});
 }
 
 void GameScene::TryTriggerUltimate()
@@ -5008,6 +5064,12 @@ void GameScene::ExecutePowerUpRain(int level)
 
 void GameScene::UpdateUltimateAbilities(float dt)
 {
+    if (m_ultimateDrainFlashTimer > 0.0f)
+    {
+        m_ultimateDrainFlashTimer -= dt;
+        if (m_ultimateDrainFlashTimer < 0.0f) m_ultimateDrainFlashTimer = 0.0f;
+    }
+
     if (mp_context && mp_context->Rules.GetRule(Rule::Gameplay::InfiniteUltimate))
     {
         m_ultimateCharge = m_ultimateMaxCharge;
@@ -5969,7 +6031,12 @@ void GameScene::RenderUltimateMeterHUD(GameContext& context)
 
     bool ultActive = IsUltimateActive();
     Color borderColor{40, 75, 120, 220};
-    if (m_ultimateReady)
+    if (m_ultimateDrainFlashTimer > 0.0f)
+    {
+        float pulse = (std::sin(m_gameplayTime * 18.0f) + 1.0f) * 0.5f;
+        borderColor = Color{255, static_cast<uint8_t>(30 + 30 * pulse), static_cast<uint8_t>(70 * pulse), 255};
+    }
+    else if (m_ultimateReady)
     {
         float pulse = (std::sin(m_ultimateReadyPulseTime * 8.0f) + 1.0f) * 0.5f;
         borderColor = Color{255, static_cast<uint8_t>(200 + 55 * pulse), static_cast<uint8_t>(50 * pulse), 255};
@@ -5979,16 +6046,18 @@ void GameScene::RenderUltimateMeterHUD(GameContext& context)
         float pulse = (std::sin(m_gameplayTime * 8.0f) + 1.0f) * 0.5f;
         borderColor = Color{0, static_cast<uint8_t>(180 + 75 * pulse), 255, 255};
     }
-    context.Render.DrawRectangleOutline(barWidth + 8.0f, barHeight + 8.0f, bgTrans, borderColor, (m_ultimateReady || ultActive) ? -2.5f : -1.5f);
+    context.Render.DrawRectangleOutline(barWidth + 8.0f, barHeight + 8.0f, bgTrans, borderColor, (m_ultimateDrainFlashTimer > 0.0f || m_ultimateReady || ultActive) ? -2.5f : -1.5f);
 
     float fillRatio = std::clamp(m_ultimateCharge / m_ultimateMaxCharge, 0.0f, 1.0f);
     if (fillRatio > 0.0f)
     {
         float filledW = barWidth * fillRatio;
         float filledCenterX = centerX - (barWidth - filledW) * 0.5f;
-        Color barColor = m_ultimateReady 
-            ? Color{255, 225, 50, 255} 
-            : Color{0, 210, 255, 230};
+        Color barColor = (m_ultimateDrainFlashTimer > 0.0f)
+            ? Color{255, 60, 100, 240}
+            : (m_ultimateReady 
+                ? Color{255, 225, 50, 255} 
+                : Color{0, 210, 255, 230});
         context.Render.DrawRectangle(filledW, barHeight, Transform2D{Vector2f{filledCenterX, centerY}}, barColor);
     }
 
@@ -6001,7 +6070,14 @@ void GameScene::RenderUltimateMeterHUD(GameContext& context)
     std::string ultLabel;
     UltimateAbilityType ultType = ProfileManager::Get().GetEquippedUltimate();
     std::string ultName = ProfileManager::Get().GetUltimateName(ultType);
-    if (m_ultimateReady)
+    if (m_ultimateDrainFlashTimer > 0.0f)
+    {
+        ultLabel = "[!] ENERGY DRAINED: -10% [!]";
+        float pulse = (std::sin(m_gameplayTime * 18.0f) + 1.0f) * 0.5f;
+        Color textColor{255, static_cast<uint8_t>(60 + 50 * pulse), static_cast<uint8_t>(90 * pulse), 255};
+        context.Render.DrawTextCentered(ultLabel, m_fontId, 24.0f, Transform2D{Vector2f{centerX, centerY + 28.0f}}, textColor);
+    }
+    else if (m_ultimateReady)
     {
         ultLabel = "[ ULTIMATE READY : PRESS SPACE ]";
         float pulse = (std::sin(m_ultimateReadyPulseTime * 10.0f) + 1.0f) * 0.5f;
@@ -6584,6 +6660,7 @@ Entity GameScene::SpawnHazardZone(const Vector2f& position, const Vector2f& size
     {
         Color tint = Color{255, 255, 255, 175};
         if (effect == HazardEffectType::UltimateDrain) tint = Color{235, 45, 255, 215};
+        else if (effect == HazardEffectType::SpeedSurge) tint = Color{0, 240, 255, 210};
         else if (effect == HazardEffectType::ScreenGlitch) tint = Color{0, 235, 255, 190};
         else if (effect == HazardEffectType::CameraTilt) tint = Color{255, 180, 40, 190};
         m_registry.AddComponent<SpriteComponent>(zone, SpriteComponent{hazardTex, tint, -1});
@@ -6763,8 +6840,28 @@ void GameScene::UpdateHazardZones(const float dt)
                 case HazardEffectType::TemporalAudioWarp:
                     TriggerTemporalAudioDistortion(0.88f, 0.15f, hz.Duration);
                     break;
+                case HazardEffectType::SpeedSurge:
+                    if (mp_ballSystem)
+                    {
+                        for (Entity b : mp_ballSystem->GetBalls())
+                        {
+                            if (!m_registry.IsAlive(b) || !m_registry.HasComponent<RigidBody>(b)) continue;
+                            auto& rb = m_registry.GetComponent<RigidBody>(b);
+                            float speedSq = rb.Velocity.X * rb.Velocity.X + rb.Velocity.Y * rb.Velocity.Y;
+                            if (speedSq > 1.0f && speedSq < 950.0f * 950.0f)
+                            {
+                                rb.Velocity = rb.Velocity * 1.25f;
+                            }
+                        }
+                    }
+                    TriggerPostProcessFlash(0.02f, 0.45f, Color{0, 220, 255, 255}, 0.2f, Color{255, 255, 255, 255});
+                    if (m_audioEnabled && m_bounceSfxId != 0 && mp_context)
+                    {
+                        mp_context->Audio.PlaySfx(m_bounceSfxId, 120.0f, 0.6f);
+                    }
+                    break;
                 case HazardEffectType::UltimateDrain:
-                    DrainUltimateCharge(40.0f);
+                    DrainUltimateCharge(10.0f);
                     TriggerPostProcessFlash(0.025f, 0.55f, Color{190, 20, 240, 255}, 0.25f, Color{240, 50, 255, 255});
                     if (m_audioEnabled && m_bounceSfxId != 0 && mp_context)
                     {

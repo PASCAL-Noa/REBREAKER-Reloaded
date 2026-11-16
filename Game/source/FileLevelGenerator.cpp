@@ -18,7 +18,7 @@ int FileLevelGenerator::Generate(Registry& registry, GameContext& context, uint3
     }
     else
     {
-        std::ifstream file(m_filepath);
+        std::ifstream file(ResourceManager::ResolveFilePath(m_filepath));
         if (!file.is_open()) return 0;
         std::stringstream ss;
         ss << file.rdbuf();
@@ -105,4 +105,4 @@ void FileLevelGenerator::Update(float dt, Registry& registry, GameContext& conte
     (void)dt;
     (void)registry;
     (void)context;
-}
+}

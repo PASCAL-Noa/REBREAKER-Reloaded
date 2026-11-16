@@ -1077,9 +1077,9 @@ void MenuScene::InitTVChannels()
         .BaseSize = cardSize
     });
 
-    // 2: Tetris Endless
+    // 2: Endless Mode
     m_tvChannels.push_back(TVChannel{
-        .Type = ChannelType::TetrisEndless,
+        .Type = ChannelType::EndlessMode,
         .ChannelNumber = "CH 03",
         .Title = "ENDLESS",
         .Subtitle = "SURVIVAL MATRIX",
@@ -2147,7 +2147,7 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
     case ChannelType::LevelSelect:
         context.Scenes.LoadSceneWithTransition<LevelSelectScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
-    case ChannelType::TetrisEndless:
+    case ChannelType::EndlessMode:
         context.Scenes.LoadSceneWithTransition<EndlessScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::Workshop:
@@ -2511,7 +2511,7 @@ void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch,
         context.Render.DrawLine(reticlePos - Vector2f{0.0f, 12.0f * sc}, reticlePos + Vector2f{0.0f, 12.0f * sc}, Color{255, 220, 70, 200}, 1.0f * sc);
         break;
     }
-    case ChannelType::TetrisEndless:
+    case ChannelType::EndlessMode:
     {
         // Doom / Mortal Kombat style inferno flames with flashing ENDLESS title
         // 1. Fiery inferno flames background

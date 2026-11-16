@@ -19,6 +19,7 @@
 #include "ECS/Components/SpriteComponent.h"
 #include "ECS/Components/PaddleComponent.h"
 #include "ECS/Components/BallComponent.h"
+#include "ECS/Components/RigidBody.h"
 #include "ECS/Components/BrickComponent.h"
 #include "ECS/Components/LightSourceComponent.h"
 #include "ECS/Systems/BallSystem.h"
@@ -65,7 +66,8 @@ namespace
         HazardEffectType::CameraTilt,
         HazardEffectType::CameraZoomPulse,
         HazardEffectType::TemporalAudioWarp,
-        HazardEffectType::UltimateDrain
+        HazardEffectType::UltimateDrain,
+        HazardEffectType::SpeedSurge
     };
     constexpr int kMalusCount = sizeof(kAllMaluses) / sizeof(kAllMaluses[0]);
 
@@ -150,6 +152,7 @@ namespace
             case HazardEffectType::CameraZoomPulse:   return "MALUS: ZOOM PULSE";
             case HazardEffectType::TemporalAudioWarp: return "MALUS: AUDIO WARP";
             case HazardEffectType::UltimateDrain:     return "MALUS: ULTIMATE DRAIN";
+            case HazardEffectType::SpeedSurge:        return "HAZARD: SPEED SURGE";
             default:                                  return "MALUS";
         }
     }
@@ -164,6 +167,7 @@ namespace
             case HazardEffectType::CameraZoomPulse:   return Color{135, 45, 185, 255};
             case HazardEffectType::TemporalAudioWarp: return Color{95, 55, 185, 255};
             case HazardEffectType::UltimateDrain:     return Color{215, 30, 255, 255};
+            case HazardEffectType::SpeedSurge:        return Color{0, 230, 255, 255};
             default:                                  return Color{200, 40, 80, 255};
         }
     }
@@ -658,6 +662,20 @@ void SandboxScene::TriggerSelectedMalus()
             {
                 mp_context->Audio.PlaySfx(m_bounceSfxId, 60.0f, 0.45f);
             }
+            break;
+        case HazardEffectType::SpeedSurge:
+            if (mp_ballSystem)
+            {
+                for (Entity b : mp_ballSystem->GetBalls())
+                {
+                    if (m_registry.IsAlive(b) && m_registry.HasComponent<RigidBody>(b))
+                    {
+                        auto& rb = m_registry.GetComponent<RigidBody>(b);
+                        rb.Velocity = rb.Velocity * 1.30f;
+                    }
+                }
+            }
+            TriggerPostProcessFlash(0.02f, 0.45f, Color{0, 220, 255, 255}, 0.2f, Color{255, 255, 255, 255});
             break;
         case HazardEffectType::AllMaluses:
         default:

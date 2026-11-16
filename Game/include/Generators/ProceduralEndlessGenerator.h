@@ -38,17 +38,17 @@ public:
     [[nodiscard]] uint32_t GetSeed() const noexcept { return m_seed; }
     void GenerateRandomSeed() noexcept;
 
-    // Wave Duration Mathematical Formula (Wave 1 = 60s, Wave 100 = 480s, capped at 600s max)
+    // Wave Duration Mathematical Formula (Wave 1 = 40s, Wave 100 = 480s, capped at 600s max)
     [[nodiscard]] static float GetWaveTargetDuration(int waveNumber) noexcept
     {
         if (waveNumber <= 1)
         {
-            return 60.0f; // Wave 1: 1 minute (60s)
+            return 40.0f; // Wave 1: 40s (punchy warmup)
         }
         if (waveNumber <= 100)
         {
-            // Linear progression: 60s at wave 1 to 480s (8 minutes) at wave 100
-            return 60.0f + (static_cast<float>(waveNumber - 1) / 99.0f) * 420.0f;
+            // Linear progression: 40s at wave 1 to 480s (8 minutes) at wave 100
+            return 40.0f + (static_cast<float>(waveNumber - 1) / 99.0f) * 440.0f;
         }
         // Beyond wave 100: progressive scaling up to 600s (10 minutes max per wave)
         return std::min(600.0f, 480.0f + static_cast<float>(waveNumber - 100) * 4.0f);

@@ -83,7 +83,11 @@ void PaddleSystem::OnUpdate(float dt)
                 const float paddleHalfH = paddleCollider.GetEffectiveSize(paddleTrans.Scale).Y * 0.5f;
                 ballTransform.Position = Vector2f{paddleTrans.Position.X, paddleTrans.Position.Y - paddleHalfH - ballRadius - 2.0f};
 
-                if (m_inputEnabled && m_context.Input.IsActionTriggered(InputAction::LaunchBall))
+                m_attachedTimer += dt;
+                const bool launchRequested = m_inputEnabled && m_context.Input.IsActionTriggered(InputAction::LaunchBall);
+                const bool autoLaunchTriggered = m_inputEnabled && (m_autoLaunchDelay > 0.0f && m_attachedTimer >= m_autoLaunchDelay);
+
+                if (launchRequested || autoLaunchTriggered)
                 {
                     LaunchBall();
                 }
@@ -92,6 +96,7 @@ void PaddleSystem::OnUpdate(float dt)
             {
                 m_isBallAttached = false;
                 m_attachedBall = NULL_ENTITY;
+                m_attachedTimer = 0.0f;
             }
         }
     });
@@ -102,6 +107,7 @@ void PaddleSystem::AttachBall(Entity paddle, Entity ball)
     m_attachedPaddle = paddle;
     m_attachedBall = ball;
     m_isBallAttached = true;
+    m_attachedTimer = 0.0f;
 
     if (m_registry.IsAlive(ball) && m_registry.HasComponent<RigidBody>(ball))
     {
@@ -123,7 +129,24 @@ void PaddleSystem::LaunchBall()
     if (m_registry.IsAlive(m_attachedBall) && m_registry.HasComponent<RigidBody>(m_attachedBall))
     {
         auto& ballRb = m_registry.GetComponent<RigidBody>(m_attachedBall);
-        Vector2f launchDir = Vector2f{500.0f, -400.0f}.Normalized();
+
+        // Calculate launch direction oriented dynamically based on paddle X position
+        float paddleX = 0.0f;
+        if (m_attachedPaddle != NULL_ENTITY && m_registry.IsAlive(m_attachedPaddle) && m_registry.HasComponent<Transform2D>(m_attachedPaddle))
+        {
+            paddleX = m_registry.GetComponent<Transform2D>(m_attachedPaddle).Position.X;
+        }
+
+        // Proportional angle: paddle to the left (X < 0) angles left, paddle to the right (X > 0) angles right
+        float factor = std::clamp(paddleX / 450.0f, -0.8f, 0.8f);
+        if (std::abs(factor) < 0.25f)
+        {
+            factor = (paddleX < 0.0f) ? -0.35f : 0.35f;
+        }
+        constexpr float kMaxLaunchAngle = 55.0f * 3.14159265f / 180.0f;
+        const float launchAngle = factor * kMaxLaunchAngle;
+        Vector2f launchDir = Vector2f{std::sin(launchAngle), -std::cos(launchAngle)}.Normalized();
+
         ballRb.Velocity = launchDir * m_launchSpeed;
         ballRb.IsKinematic = false;
     }
@@ -131,6 +154,7 @@ void PaddleSystem::LaunchBall()
     Entity launchedBall = m_attachedBall;
     m_isBallAttached = false;
     m_attachedBall = NULL_ENTITY;
+    m_attachedTimer = 0.0f;
 
     if (m_onBallLaunched)
     {
@@ -142,4 +166,5 @@ void PaddleSystem::DetachBall()
 {
     m_isBallAttached = false;
     m_attachedBall = NULL_ENTITY;
+    m_attachedTimer = 0.0f;
 }

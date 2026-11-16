@@ -52,6 +52,7 @@ public:
 
     [[nodiscard]] static uint32_t                   GetResourceId(const std::string& filepath);
     [[nodiscard]] static std::string                GetExtension(const std::string& filepath);
+    [[nodiscard]] static std::string                ResolveFilePath(const std::string& filepath);
     [[nodiscard]] static std::mutex&                GetAudioDecodeMutex();
     [[nodiscard]] static std::mutex&                GetFontDecodeMutex();
 
