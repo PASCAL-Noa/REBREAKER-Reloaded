@@ -11,6 +11,7 @@
 #include "Core/InputActions.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Core/ProfileManager.h"
+#include "UI/SettingsUIController.h"
 
 namespace sf { class RenderTexture; }
 class PreviewScene;
@@ -193,14 +194,6 @@ private:
     void    RenderPowerOffAnimation(GameContext& context) const;
 
     void    CreateMainMenuUI(const GameContext& context);
-    void    CreateSettingsLayout(const GameContext& context);
-    void    CreateAudioTab(const GameContext& context);
-    void    CreateRenderTab(const GameContext& context);
-    void    CreateInputsTab(const GameContext& context);
-    void    CreateGamerulesTab(const GameContext& context);
-    void    CreateCheatsTab(const GameContext& context);
-    void    OpenSettingsTab(Entity targetCanvas);
-    void    UpdateInputButtons();
 
     void    CreateLeaderboardModal(const GameContext& context);
     void    CreateDebugModal(const GameContext& context);
@@ -227,17 +220,8 @@ private:
     void    OpenDescriptionModal();
     void    CloseDescriptionModal();
 
-    void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
-
     Entity  m_mainCanvas = NULL_ENTITY;
-    Entity  m_settingsCanvas = NULL_ENTITY;
-    Entity  m_audioCanvas = NULL_ENTITY;
-    Entity  m_renderCanvas = NULL_ENTITY;
-    Entity  m_inputsCanvas = NULL_ENTITY;
-    Entity  m_gamerulesCanvas = NULL_ENTITY;
-    Entity  m_cheatsCanvas = NULL_ENTITY;
-    Entity  m_activeTabCanvas = NULL_ENTITY;
-    Entity  m_cheatsTabBtn = NULL_ENTITY;
+    SettingsUIController m_settingsController;
     Entity  m_leaderboardCanvas = NULL_ENTITY;
     Entity  m_debugCanvas = NULL_ENTITY;
     Entity  m_workshopCanvas = NULL_ENTITY;
@@ -293,28 +277,6 @@ private:
     Entity  m_workshopScrollUpBtn = NULL_ENTITY;
     Entity  m_workshopScrollDownBtn = NULL_ENTITY;
 
-    // Settings widgets
-    Entity  m_fsBtn = NULL_ENTITY;
-    Entity  m_vsyncBtn = NULL_ENTITY;
-    Entity  m_shaderBtn = NULL_ENTITY;
-    Entity  m_particlesBtn = NULL_ENTITY;
-    Entity  m_audioDeviceBtn = NULL_ENTITY;
-    std::vector<Entity> m_masterVolumeBars;
-    std::vector<Entity> m_sfxVolumeBars;
-    std::vector<Entity> m_musicVolumeBars;
-
-    // Inputs rebinding widgets
-    Entity  m_inputDeviceBtn = NULL_ENTITY;
-    Entity  m_leftRebindBtn = NULL_ENTITY;
-    Entity  m_rightRebindBtn = NULL_ENTITY;
-    Entity  m_launchRebindBtn = NULL_ENTITY;
-    Entity  m_pauseRebindBtn = NULL_ENTITY;
-    Entity  m_resetDefaultsBtn = NULL_ENTITY;
-    Entity  m_rebindStatusText = NULL_ENTITY;
-    InputAction m_rebindAction = InputAction::Count;
-    bool    m_isRebinding = false;
-    bool    m_rebindGamepadMode = false;
-    float   m_rebindTimer = 0.0f;
 
     LeaderboardManager  m_leaderboard;
     LevelManager        m_levelManager;

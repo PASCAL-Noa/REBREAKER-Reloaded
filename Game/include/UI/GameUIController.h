@@ -8,6 +8,7 @@
 #include "LeaderboardManager.h"
 #include "LevelThumbnail.h"
 #include "Core/InputActions.h"
+#include "UI/SettingsUIController.h"
 #include <vector>
 #include <string>
 #include <memory>
@@ -65,7 +66,7 @@ public:
     void RenderCountdown(GameContext& context);
 
     [[nodiscard]] bool IsModalOrSubMenuOpen() const;
-    [[nodiscard]] bool IsRebinding() const noexcept { return m_isRebinding; }
+    [[nodiscard]] bool IsRebinding() const noexcept { return m_settingsController.IsRebinding(); }
     void CloseSettingsLayout();
     void OpenLevelSelectModal(Entity sourceCanvas);
     void CloseLevelSelectModal();
@@ -79,12 +80,6 @@ private:
     // UI Builders
     void CreateHUD();
     void CreatePauseMenu();
-    void CreateSettingsLayout();
-    void CreateAudioTab();
-    void CreateRenderTab();
-    void CreateInputsTab();
-    void CreateGamerulesTab();
-    void CreateCheatsTab();
     void CreateLevelSelectModal();
     void RebuildLevelSelectCards();
     void ClearLevelSelectCards();
@@ -93,13 +88,11 @@ private:
     void CreateLevelClearMenu();
     void CreateVictoryMenu();
 
-    void OpenSettingsTab(Entity targetCanvas);
-    void UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
-    void UpdateInputButtons();
-
     Registry&       m_registry;
     GameContext&    m_context;
     GameScene&      m_scene;
+
+    SettingsUIController m_settingsController;
 
     uint32_t        m_fontId = 0;
     uint32_t        m_heartTexId = 0;
@@ -112,13 +105,6 @@ private:
     // Canvases
     Entity          m_uiCanvas = NULL_ENTITY;
     Entity          m_pauseCanvas = NULL_ENTITY;
-    Entity          m_settingsLayoutCanvas = NULL_ENTITY;
-    Entity          m_audioCanvas = NULL_ENTITY;
-    Entity          m_renderCanvas = NULL_ENTITY;
-    Entity          m_inputsCanvas = NULL_ENTITY;
-    Entity          m_gamerulesCanvas = NULL_ENTITY;
-    Entity          m_cheatsCanvas = NULL_ENTITY;
-    Entity          m_activeTabCanvas = NULL_ENTITY;
     Entity          m_gameOverCanvas = NULL_ENTITY;
     Entity          m_levelClearCanvas = NULL_ENTITY;
     Entity          m_victoryCanvas = NULL_ENTITY;
@@ -128,30 +114,6 @@ private:
     Entity          m_scoreTextEntity = NULL_ENTITY;
     Entity          m_explodingHeart = NULL_ENTITY;
     std::vector<Entity> m_heartEntities;
-
-    // Settings widgets
-    Entity          m_fsBtn = NULL_ENTITY;
-    Entity          m_shaderBtn = NULL_ENTITY;
-    Entity          m_particlesBtn = NULL_ENTITY;
-    Entity          m_arenaEventsBtn = NULL_ENTITY;
-    Entity          m_cheatsTabBtn = NULL_ENTITY;
-    Entity          m_audioDeviceBtn = NULL_ENTITY;
-    std::vector<Entity> m_masterVolumeBars;
-    std::vector<Entity> m_sfxVolumeBars;
-    std::vector<Entity> m_musicVolumeBars;
-
-    // Inputs rebinding widgets
-    Entity          m_inputDeviceBtn = NULL_ENTITY;
-    Entity          m_leftRebindBtn = NULL_ENTITY;
-    Entity          m_rightRebindBtn = NULL_ENTITY;
-    Entity          m_launchRebindBtn = NULL_ENTITY;
-    Entity          m_pauseRebindBtn = NULL_ENTITY;
-    Entity          m_resetDefaultsBtn = NULL_ENTITY;
-    Entity          m_rebindStatusText = NULL_ENTITY;
-    InputAction     m_rebindAction = InputAction::Count;
-    bool            m_isRebinding = false;
-    bool            m_rebindGamepadMode = false;
-    float           m_rebindTimer = 0.0f;
 
     // PowerUp tester widgets
     bool            m_powerUpTesterActive = false;
