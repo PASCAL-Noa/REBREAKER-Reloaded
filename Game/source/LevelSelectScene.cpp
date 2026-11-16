@@ -2,6 +2,7 @@
 #include "Scenes/GameScene.h"
 #include "Scenes/MenuScene.h"
 #include "Scenes/CustomGameScene.h"
+#include "Scenes/TetrisScene.h"
 #include "Core/GameContext.h"
 #include "Core/GameData.h"
 #include "Core/SceneManager.h"
@@ -91,6 +92,13 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
     {
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
         context.Scenes.LoadSceneWithTransition<CustomGameScene>(SceneTransitionType::StaticSnow, 0.65f);
+        return;
+    }
+
+    if (context.Input.IsKeyPress(KeyCode::T))
+    {
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        context.Scenes.LoadSceneWithTransition<TetrisScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
     }
 
@@ -207,11 +215,21 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
 
     // Custom Match button click
     if (mouseClicked &&
-        centeredMouse.X >= 20.0f && centeredMouse.X <= 260.0f &&
+        centeredMouse.X >= -115.0f && centeredMouse.X <= 115.0f &&
         centeredMouse.Y >= backY - 26.0f && centeredMouse.Y <= backY + 26.0f)
     {
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
         context.Scenes.LoadSceneWithTransition<CustomGameScene>(SceneTransitionType::StaticSnow, 0.65f);
+        return;
+    }
+
+    // Tetris Gimmick button click
+    if (mouseClicked &&
+        centeredMouse.X >= 145.0f && centeredMouse.X <= 375.0f &&
+        centeredMouse.Y >= backY - 26.0f && centeredMouse.Y <= backY + 26.0f)
+    {
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
+        context.Scenes.LoadSceneWithTransition<TetrisScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
     }
 
@@ -386,24 +404,31 @@ void LevelSelectScene::RenderThumbnailsAndEffects(const GameContext& context) co
             Color{180, 200, 230, 220});
     }
 
-    // --- 4. BACK & CUSTOM MATCH BUTTONS ---
+    // --- 4. BACK, CUSTOM MATCH & TETRIS BUTTONS ---
     const float backY = screenCenterY + 330.0f;
-    const float btnW = 240.0f;
+    const float btnW = 230.0f;
     const float btnH = 50.0f;
 
     // Back Button
-    context.Render.DrawRectangle(btnW, btnH, Transform2D{Vector2f{screenCenterX - 135.0f, backY}}, Color{95, 35, 42, 255});
-    context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{Vector2f{screenCenterX - 135.0f, backY}}, Color{180, 60, 70, 200}, 2.0f);
-    context.Render.DrawTextCentered("<- RETOUR [ECHAP]", m_fontId, 22.0f,
-        Transform2D{Vector2f{screenCenterX - 135.0f, backY}},
+    context.Render.DrawRectangle(btnW, btnH, Transform2D{Vector2f{screenCenterX - 260.0f, backY}}, Color{95, 35, 42, 255});
+    context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{Vector2f{screenCenterX - 260.0f, backY}}, Color{180, 60, 70, 200}, 2.0f);
+    context.Render.DrawTextCentered("<- RETOUR [ECHAP]", m_fontId, 20.0f,
+        Transform2D{Vector2f{screenCenterX - 260.0f, backY}},
         Colors::White);
 
     // Custom Match Button
-    context.Render.DrawRectangle(btnW, btnH, Transform2D{Vector2f{screenCenterX + 135.0f, backY}}, Color{28, 55, 95, 255});
-    context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{Vector2f{screenCenterX + 135.0f, backY}}, Colors::Gold, 2.0f);
-    context.Render.DrawTextCentered("PARTIE PERSO [C]", m_fontId, 22.0f,
-        Transform2D{Vector2f{screenCenterX + 135.0f, backY}},
+    context.Render.DrawRectangle(btnW, btnH, Transform2D{Vector2f{screenCenterX, backY}}, Color{28, 55, 95, 255});
+    context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{Vector2f{screenCenterX, backY}}, Colors::Gold, 2.0f);
+    context.Render.DrawTextCentered("PARTIE PERSO [C]", m_fontId, 20.0f,
+        Transform2D{Vector2f{screenCenterX, backY}},
         Colors::Gold);
+
+    // Tetris Gimmick Button
+    context.Render.DrawRectangle(btnW, btnH, Transform2D{Vector2f{screenCenterX + 260.0f, backY}}, Color{18, 48, 65, 255});
+    context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{Vector2f{screenCenterX + 260.0f, backY}}, Color{0, 240, 255, 255}, 2.0f);
+    context.Render.DrawTextCentered("TETRIS STAGE [T]", m_fontId, 20.0f,
+        Transform2D{Vector2f{screenCenterX + 260.0f, backY}},
+        Color{0, 240, 255, 255});
 }
 
 void LevelSelectScene::OnRender(GameContext& context)

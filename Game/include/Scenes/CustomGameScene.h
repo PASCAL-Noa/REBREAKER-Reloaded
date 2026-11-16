@@ -18,7 +18,8 @@ enum class CustomDifficultyPreset : int
 enum class CustomTargetGameMode : int
 {
     Endless = 0,
-    Campaign = 1
+    Campaign = 1,
+    Tetris = 2
 };
 
 struct CustomRuleOption

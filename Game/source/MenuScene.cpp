@@ -1,6 +1,7 @@
 #include "Scenes/MenuScene.h"
 #include "Scenes/GameScene.h"
 #include "Scenes/EndlessScene.h"
+#include "Scenes/TetrisScene.h"
 #include "Scenes/CustomGameScene.h"
 #include "Scenes/PreviewScene.h"
 #include <SFML/Graphics/RenderTexture.hpp>
@@ -1077,15 +1078,15 @@ void MenuScene::InitTVChannels()
         .BaseSize = cardSize
     });
 
-    // 2: Tetris Endless
+    // 2: Tetris Matrix Gimmick Stage
     m_tvChannels.push_back(TVChannel{
         .Type = ChannelType::TetrisEndless,
         .ChannelNumber = "CH 03",
-        .Title = "ENDLESS",
-        .Subtitle = "SURVIVAL MATRIX",
-        .Description = "Test your endurance against endless falling brick matrices and accelerating physics.",
-        .ThemeColor = Color{245, 65, 115, 255},
-        .CardBgColor = Color{28, 16, 26, 245},
+        .Title = "TETRIS",
+        .Subtitle = "ARCADE MATRIX",
+        .Description = "Classic Breakout fused with falling tetrominoes, authentic line clears, danger laser, and retro 8-bit chiptune vibes.",
+        .ThemeColor = Color{0, 240, 255, 255},
+        .CardBgColor = Color{15, 24, 42, 245},
         .Position = Vector2f{colX[2], rowY[0]},
         .Size = cardSize,
         .BasePosition = Vector2f{colX[2], rowY[0]},
@@ -2148,7 +2149,7 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
         context.Scenes.LoadSceneWithTransition<LevelSelectScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::TetrisEndless:
-        context.Scenes.LoadSceneWithTransition<EndlessScene>(SceneTransitionType::StaticSnow, 0.65f);
+        context.Scenes.LoadSceneWithTransition<TetrisScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::Workshop:
         m_channelSwitchGlitch = 0.0f;
@@ -2513,57 +2514,38 @@ void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch,
     }
     case ChannelType::TetrisEndless:
     {
-        // Doom / Mortal Kombat style inferno flames with flashing ENDLESS title
-        // 1. Fiery inferno flames background
-        const float flameBaseY = pos.Y + 36.0f * sc;
-        constexpr int kFlameTongues = 11;
-        for (int k = 0; k < kFlameTongues; ++k)
+        // Authentic Neon Retro Tetris Matrix with falling colorful tetrominoes
+        const float bSize = 12.0f * sc;
+        const float gridTopY = pos.Y - 25.0f * sc;
+
+        // Subtle matrix grid outline
+        context.Render.DrawRectangle(80.0f * sc, 75.0f * sc, Transform2D{Vector2f{pos.X, pos.Y - 2.0f * sc}}, Color{10, 18, 32, 200});
+        context.Render.DrawRectangleOutline(80.0f * sc, 75.0f * sc, Transform2D{Vector2f{pos.X, pos.Y - 2.0f * sc}}, Color{0, 200, 255, 120}, 1.2f * sc);
+
+        // Falling Cyan I-piece (4 blocks)
+        float dropOffset = std::fmod(m_animTime * 35.0f, 60.0f * sc);
+        Vector2f iPos{pos.X - 18.0f * sc, gridTopY + dropOffset};
+        for (int k = 0; k < 3; ++k)
         {
-            float fx = pos.X + (static_cast<float>(k) - 5.0f) * (12.0f * sc);
-            float fHeight = (28.0f + 16.0f * std::sin(m_animTime * 6.5f + k * 1.25f) + 8.0f * std::cos(m_animTime * 9.0f + k * 2.1f)) * sc;
-            float sway = std::sin(m_animTime * 7.5f + k * 1.4f) * 4.0f * sc;
-            Vector2f tip{fx + sway, flameBaseY - fHeight};
-            float bW = 11.0f * sc;
-
-            // Outer crimson/blood flame tongue
-            context.Render.DrawLine(Vector2f{fx - bW * 0.5f, flameBaseY}, tip, Color{195, 25, 12, 215}, 4.0f * sc);
-            context.Render.DrawLine(Vector2f{fx + bW * 0.5f, flameBaseY}, tip, Color{195, 25, 12, 215}, 4.0f * sc);
-            context.Render.DrawLine(Vector2f{fx, flameBaseY}, tip, Color{240, 75, 18, 230}, 6.0f * sc);
-
-            // Inner searing yellow-orange core
-            Vector2f innerTip{fx + sway * 0.55f, flameBaseY - fHeight * 0.65f};
-            context.Render.DrawLine(Vector2f{fx, flameBaseY}, innerTip, Color{255, 225, 60, 245}, 3.5f * sc);
+            context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{Vector2f{iPos.X, iPos.Y + static_cast<float>(k) * bSize}}, Color{0, 240, 255, 230});
         }
 
-        // 2. Rising glowing embers
-        for (int e = 0; e < 6; ++e)
-        {
-            float eProgress = std::fmod(m_animTime * 1.6f + static_cast<float>(e) * 0.35f, 1.0f);
-            float ex = pos.X + std::sin(static_cast<float>(e) * 2.3f + m_animTime * 3.5f) * 45.0f * sc;
-            float ey = flameBaseY - eProgress * 68.0f * sc;
-            uint8_t eAlpha = static_cast<uint8_t>((1.0f - eProgress) * 255.0f);
-            context.Render.DrawCircle(1.8f * sc, Transform2D{Vector2f{ex, ey}}, Color{255, 205, 70, eAlpha});
-        }
+        // Settled Magenta T-piece
+        Vector2f tPos{pos.X + 16.0f * sc, pos.Y + 12.0f * sc};
+        context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{tPos}, Color{195, 45, 255, 230});
+        context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{tPos + Vector2f{-bSize, 0.0f}}, Color{195, 45, 255, 230});
+        context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{tPos + Vector2f{bSize, 0.0f}}, Color{195, 45, 255, 230});
+        context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{tPos + Vector2f{0.0f, -bSize}}, Color{195, 45, 255, 230});
 
-        // 3. Brutalist "ENDLESS" title with Doom / Mortal Kombat blinking strobe
-        Vector2f titlePos = pos + Vector2f{0.0f, -8.0f * sc};
+        // Settled Solar Yellow O-piece
+        Vector2f oPos{pos.X - 14.0f * sc, pos.Y + 22.0f * sc};
+        context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{oPos}, Color{255, 225, 30, 230});
+        context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{oPos + Vector2f{bSize, 0.0f}}, Color{255, 225, 30, 230});
 
-        // Flashing strobe logic: rapid pulse between searing white-gold and blood crimson
-        float flashPhase = std::fmod(m_animTime * 4.5f, 1.0f);
-        bool isStrobe = (flashPhase < 0.28f);
-
-        Color titleCol = isStrobe ? Color{255, 255, 225, 255} : Color{255, 65, 25, 255};
-        Color accentCol = isStrobe ? Color{255, 240, 100, 255} : Color{215, 30, 15, 230};
-
-        // Charred drop shadow
-        context.Render.DrawTextCentered("ENDLESS", m_fontId, 22.0f * sc, Transform2D{titlePos + Vector2f{2.0f * sc, 2.5f * sc}}, Color{15, 2, 4, 255});
-
-        // Fiery top & bottom bracket lines
-        context.Render.DrawLine(titlePos + Vector2f{-52.0f * sc, -14.0f * sc}, titlePos + Vector2f{52.0f * sc, -14.0f * sc}, accentCol, 2.2f * sc);
-        context.Render.DrawLine(titlePos + Vector2f{-52.0f * sc, 14.0f * sc}, titlePos + Vector2f{52.0f * sc, 14.0f * sc}, accentCol, 2.2f * sc);
-
-        // Blinking title
-        context.Render.DrawTextCentered("ENDLESS", m_fontId, 22.0f * sc, Transform2D{titlePos}, titleCol);
+        // Glowing Title
+        Vector2f titlePos = pos + Vector2f{0.0f, -14.0f * sc};
+        context.Render.DrawTextCentered("TETRIS", m_fontId, 22.0f * sc, Transform2D{titlePos + Vector2f{1.5f * sc, 1.5f * sc}}, Color{10, 15, 30, 240});
+        context.Render.DrawTextCentered("TETRIS", m_fontId, 22.0f * sc, Transform2D{titlePos}, Color{0, 240, 255, 255});
         break;
     }
     case ChannelType::Workshop:
