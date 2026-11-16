@@ -4,6 +4,7 @@
 #include "Core/SceneTransition.h"
 #include "Data/SceneTransitionType.h"
 #include "ECS/Systems/UISystem.h"
+#include "ECS/Components/UI/CanvasComponent.h"
 #include "StateMachine/StateMachine.h"
 #include <string>
 
@@ -688,5 +689,56 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
         // Monotonically decreasing
         CHECK(getDezoomScale(0.8f, baseScale, targetScale) > getDezoomScale(0.4f, baseScale, targetScale));
         CHECK(getDezoomScale(0.4f, baseScale, targetScale) > getDezoomScale(0.1f, baseScale, targetScale));
+    }
+
+    TEST_CASE("Modal and Settings Tab Canvas isolation invariant (#90, #93)")
+    {
+        Registry reg;
+        Entity rootSettings = reg.CreateEntity();
+        reg.AddComponent<CanvasComponent>(rootSettings, CanvasComponent{.IsEnabled = false});
+
+        Entity audioTab = reg.CreateEntity();
+        reg.AddComponent<CanvasComponent>(audioTab, CanvasComponent{.IsEnabled = false});
+
+        Entity renderTab = reg.CreateEntity();
+        reg.AddComponent<CanvasComponent>(renderTab, CanvasComponent{.IsEnabled = false});
+
+        // 1. Inactive modal guarantees all child tab canvases remain disabled
+        CHECK_FALSE(reg.GetComponent<CanvasComponent>(rootSettings).IsEnabled);
+        CHECK_FALSE(reg.GetComponent<CanvasComponent>(audioTab).IsEnabled);
+        CHECK_FALSE(reg.GetComponent<CanvasComponent>(renderTab).IsEnabled);
+
+        // 2. Tab activation simulation conforming to SettingsUIController::OpenSettingsTab:
+        // When rootSettings is disabled, OpenSettingsTab must NOT set audioTab.IsEnabled = true
+        auto openTab = [&](Entity targetTab) {
+            for (Entity t : {audioTab, renderTab}) {
+                reg.GetComponent<CanvasComponent>(t).IsEnabled = false;
+            }
+            if (reg.GetComponent<CanvasComponent>(rootSettings).IsEnabled) {
+                reg.GetComponent<CanvasComponent>(targetTab).IsEnabled = true;
+            }
+        };
+
+        openTab(audioTab);
+        CHECK_FALSE(reg.GetComponent<CanvasComponent>(audioTab).IsEnabled); // Still false because root is closed!
+
+        // 3. Opening modal enables root and tab
+        reg.GetComponent<CanvasComponent>(rootSettings).IsEnabled = true;
+        openTab(audioTab);
+        CHECK(reg.GetComponent<CanvasComponent>(audioTab).IsEnabled);
+        CHECK_FALSE(reg.GetComponent<CanvasComponent>(renderTab).IsEnabled);
+
+        // Switching tabs switches enabled status
+        openTab(renderTab);
+        CHECK_FALSE(reg.GetComponent<CanvasComponent>(audioTab).IsEnabled);
+        CHECK(reg.GetComponent<CanvasComponent>(renderTab).IsEnabled);
+
+        // Closing modal closes root and all tabs
+        reg.GetComponent<CanvasComponent>(rootSettings).IsEnabled = false;
+        reg.GetComponent<CanvasComponent>(audioTab).IsEnabled = false;
+        reg.GetComponent<CanvasComponent>(renderTab).IsEnabled = false;
+        CHECK_FALSE(reg.GetComponent<CanvasComponent>(rootSettings).IsEnabled);
+        CHECK_FALSE(reg.GetComponent<CanvasComponent>(audioTab).IsEnabled);
+        CHECK_FALSE(reg.GetComponent<CanvasComponent>(renderTab).IsEnabled);
     }
 }

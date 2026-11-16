@@ -39,8 +39,15 @@ void SettingsUIController::Create(Registry& registry,
     CreateGamerulesTab();
     CreateCheatsTab();
 
-    // Default to Audio tab on initial creation
-    OpenSettingsTab(m_audioCanvas);
+    // Default to Audio tab on initial creation, but ensure all canvases are strictly disabled!
+    m_activeTabCanvas = m_audioCanvas;
+    for (Entity tab : {m_settingsCanvas, m_audioCanvas, m_renderCanvas, m_inputsCanvas, m_gamerulesCanvas, m_cheatsCanvas})
+    {
+        if (tab != NULL_ENTITY && m_registry->HasComponent<CanvasComponent>(tab))
+        {
+            m_registry->GetComponent<CanvasComponent>(tab).IsEnabled = false;
+        }
+    }
 }
 
 void SettingsUIController::Open()
@@ -62,15 +69,9 @@ void SettingsUIController::Open()
     // Ensure audio volume bars match current mixer state
     SyncAudioVolume();
 
-    // Refresh active tab or fallback to audio tab
-    if (m_activeTabCanvas != NULL_ENTITY)
-    {
-        OpenSettingsTab(m_activeTabCanvas);
-    }
-    else
-    {
-        OpenSettingsTab(m_audioCanvas);
-    }
+    // Open active tab or fallback to audio tab
+    Entity target = (m_activeTabCanvas != NULL_ENTITY) ? m_activeTabCanvas : m_audioCanvas;
+    OpenSettingsTab(target);
 }
 
 void SettingsUIController::Close()
@@ -82,10 +83,13 @@ void SettingsUIController::Close()
         m_registry->GetComponent<CanvasComponent>(m_settingsCanvas).IsEnabled = false;
     }
 
-    // Deactivate all tab canvases
-    if (m_activeTabCanvas != NULL_ENTITY && m_registry->HasComponent<CanvasComponent>(m_activeTabCanvas))
+    // Deactivate ALL tab canvases unconditionally
+    for (Entity tab : {m_audioCanvas, m_renderCanvas, m_inputsCanvas, m_gamerulesCanvas, m_cheatsCanvas})
     {
-        m_registry->GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
+        if (tab != NULL_ENTITY && m_registry->HasComponent<CanvasComponent>(tab))
+        {
+            m_registry->GetComponent<CanvasComponent>(tab).IsEnabled = false;
+        }
     }
 
     // Cancel any active rebinding session
@@ -122,23 +126,19 @@ void SettingsUIController::OpenSettingsTab(Entity targetCanvas)
 {
     if (!m_registry) return;
 
-    if (m_activeTabCanvas == targetCanvas && targetCanvas != NULL_ENTITY)
+    // Always deactivate all tabs first
+    for (Entity tab : {m_audioCanvas, m_renderCanvas, m_inputsCanvas, m_gamerulesCanvas, m_cheatsCanvas})
     {
-        if (m_registry->HasComponent<CanvasComponent>(targetCanvas))
+        if (tab != NULL_ENTITY && m_registry->HasComponent<CanvasComponent>(tab))
         {
-            m_registry->GetComponent<CanvasComponent>(targetCanvas).IsEnabled = true;
+            m_registry->GetComponent<CanvasComponent>(tab).IsEnabled = false;
         }
-        return;
-    }
-
-    if (m_activeTabCanvas != NULL_ENTITY && m_registry->HasComponent<CanvasComponent>(m_activeTabCanvas))
-    {
-        m_registry->GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = false;
     }
 
     m_activeTabCanvas = targetCanvas;
 
-    if (m_activeTabCanvas != NULL_ENTITY && m_registry->HasComponent<CanvasComponent>(m_activeTabCanvas))
+    // Only enable target canvas if the settings modal itself is currently open
+    if (IsOpen() && m_activeTabCanvas != NULL_ENTITY && m_registry->HasComponent<CanvasComponent>(m_activeTabCanvas))
     {
         m_registry->GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = true;
     }
