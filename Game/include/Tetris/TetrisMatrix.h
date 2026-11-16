@@ -108,3 +108,4 @@ private:
     uint32_t m_rngSeed = 1337420u;
     int m_totalLinesCleared = 0;
 };
+

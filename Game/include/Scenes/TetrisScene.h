@@ -19,10 +19,12 @@ public:
 
     [[nodiscard]] bool HasNextLevel() const override { return false; }
     void OnGameOverEnter() override;
+    void OnGameOverExit() override;
     void OnVictoryEnter() override;
 
     [[nodiscard]] int GetLinesCleared() const noexcept { return m_linesCleared; }
     [[nodiscard]] int GetTargetLines() const noexcept { return m_targetLines; }
+    [[nodiscard]] bool IsStageWon() const noexcept { return m_stageWon; }
     [[nodiscard]] const TetrisMatrix& GetMatrix() const noexcept { return m_matrix; }
 
 protected:
@@ -34,6 +36,7 @@ private:
     void StepMatrixLogic(float dt, GameContext& context);
     void SyncSettledBricks(const std::vector<std::pair<int, int>>& settled);
     void ProcessLineClears(GameContext& context);
+    void SpawnInitialPlayfield();
     void RenderTetrisPlayfield(GameContext& context);
     void RenderTetrisHUD(GameContext& context) const;
 

@@ -9,6 +9,11 @@
 #include "Events/GameplayEvents.h"
 #include "Core/GameContext.h"
 #include "AudioMixer.h"
+#include "StateMachine/Transition.h"
+#include "StateMachine/Condition.h"
+#include "Conditions/GameConditions.h"
+#include "Actions/GameOverAction.h"
+#include "Actions/VictoryAction.h"
 #include <algorithm>
 #include <cmath>
 
@@ -34,17 +39,18 @@ void TetrisScene::OnInit(GameContext& context)
     // 1. Base GameScene initialization
     GameScene::OnInit(context);
 
-    // 2. Set lives and clear standard campaign level bricks
-    m_lives = 3;
-    context.Events.Publish(LivesChangedEvent(m_lives));
-
+    // 2. Clear any default campaign level bricks
     m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
         m_registry.DestroyEntityDeferred(e);
     });
     m_registry.ProcessDeferredCommands();
     m_brickCount = 0;
 
-    // 3. Load Theme Music and Retro SFX
+    // 3. Reset lives
+    m_lives = 3;
+    context.Events.Publish(LivesChangedEvent(m_lives));
+
+    // 4. Load Theme Music and Retro SFX
     m_moveSfxId = context.Resources.LoadResource("Resources/audio/sfx/tetris_move.wav");
     m_rotateSfxId = context.Resources.LoadResource("Resources/audio/sfx/tetris_rotate.wav");
     m_dropSfxId = context.Resources.LoadResource("Resources/audio/sfx/tetris_drop.wav");
@@ -54,10 +60,8 @@ void TetrisScene::OnInit(GameContext& context)
 
     context.Audio.PlayMusic("Resources/audio/music/tetris_8bit_theme.wav", 65.0f, true);
 
-    // 4. Initialize Tetris Matrix and spawn first tetromino
+    // 5. Initialize Tetris Matrix and spawn initial playfield bricks
     m_matrix.Reset();
-    m_matrix.SpawnNextPiece();
-
     m_linesCleared = 0;
     m_targetLines = 10;
     m_stageWon = false;
@@ -66,6 +70,159 @@ void TetrisScene::OnInit(GameContext& context)
     m_lockDelayTimer = 0.0f;
     m_dangerGraceTimer = 0.0f;
     m_dangerActive = false;
+
+    SpawnInitialPlayfield();
+    m_matrix.SpawnNextPiece();
+
+    // 6. Custom State Machine strictly isolated for Tetris Mode:
+    // Victory only triggers when lines cleared reaches target (m_linesCleared >= m_targetLines)!
+    // NEVER when m_brickCount <= 0!
+    class TetrisVictoryCondition : public Condition<GameScene>
+    {
+    public:
+        bool OnTest(GameScene* pOwner) override
+        {
+            auto* pTetris = dynamic_cast<TetrisScene*>(pOwner);
+            return pTetris && pTetris->IsStageWon();
+        }
+    };
+
+    class TetrisPauseToCountdownCondition : public Condition<GameScene>
+    {
+    public:
+        bool OnTest(GameScene* pOwner) override
+        {
+            if (!pOwner || !pOwner->CanUnpause()) return false;
+            if (!pOwner->IsCountdownActive()) return false;
+            return pOwner->GetContext()->Input.IsActionTriggered(InputAction::Pause) ||
+                   pOwner->GetContext()->Input.IsKeyPress(KeyCode::Escape) ||
+                   pOwner->GetContext()->Input.IsJoystickButtonPress(0, 1);
+        }
+    };
+
+    class TetrisPauseToPlayCondition : public Condition<GameScene>
+    {
+    public:
+        bool OnTest(GameScene* pOwner) override
+        {
+            if (!pOwner || !pOwner->CanUnpause()) return false;
+            if (pOwner->IsCountdownActive()) return false;
+            return pOwner->GetContext()->Input.IsActionTriggered(InputAction::Pause) ||
+                   pOwner->GetContext()->Input.IsKeyPress(KeyCode::Escape) ||
+                   pOwner->GetContext()->Input.IsJoystickButtonPress(0, 1);
+        }
+    };
+
+    class TetrisCountdownCompleteCondition : public Condition<GameScene>
+    {
+    public:
+        bool OnTest(GameScene* pOwner) override
+        {
+            return pOwner && pOwner->IsCountdownComplete();
+        }
+    };
+
+    class TetrisPlayToPauseCondition : public Condition<GameScene>
+    {
+    public:
+        bool OnTest(GameScene* pOwner) override
+        {
+            if (!pOwner) return false;
+            return pOwner->GetContext()->Input.IsActionTriggered(InputAction::Pause) ||
+                   pOwner->GetContext()->Input.IsKeyPress(KeyCode::Escape);
+        }
+    };
+
+    mp_state_machine = std::make_unique<StateMachine<GameScene>>(this, 6);
+
+    State<GameScene>* countdownState = mp_state_machine->CreateState(static_cast<int>(SceneState::Countdown));
+    countdownState->AddTransition(new Transition<GameScene>(new TetrisCountdownCompleteCondition(), static_cast<int>(SceneState::Playing)));
+    countdownState->AddTransition(new Transition<GameScene>(new TetrisPlayToPauseCondition(), static_cast<int>(SceneState::Paused)));
+
+    State<GameScene>* playingState = mp_state_machine->CreateState(static_cast<int>(SceneState::Playing));
+    playingState->AddTransition(new Transition<GameScene>(new TetrisPlayToPauseCondition(), static_cast<int>(SceneState::Paused)));
+    playingState->AddTransition(new Transition<GameScene>(new LivesCondition<GameScene>(), static_cast<int>(SceneState::GameOver)));
+    playingState->AddTransition(new Transition<GameScene>(new TetrisVictoryCondition(), static_cast<int>(SceneState::Victory)));
+
+    State<GameScene>* pauseState = mp_state_machine->CreateState(static_cast<int>(SceneState::Paused));
+    pauseState->AddTransition(new Transition<GameScene>(new TetrisPauseToCountdownCondition(), static_cast<int>(SceneState::Countdown)));
+    pauseState->AddTransition(new Transition<GameScene>(new TetrisPauseToPlayCondition(), static_cast<int>(SceneState::Playing)));
+
+    State<GameScene>* gameOverState = mp_state_machine->CreateState(static_cast<int>(SceneState::GameOver));
+    gameOverState->AddAction(new GameOverAction<GameScene>());
+    gameOverState->AddTransition(new Transition<GameScene>(new GameOverReplayCondition<GameScene>(), static_cast<int>(SceneState::Countdown)));
+
+    State<GameScene>* victoryState = mp_state_machine->CreateState(static_cast<int>(SceneState::Victory));
+    victoryState->AddAction(new VictoryAction<GameScene>());
+    victoryState->AddTransition(new Transition<GameScene>(new GameOverReplayCondition<GameScene>(), static_cast<int>(SceneState::Countdown)));
+
+    StartCountdown();
+}
+
+void TetrisScene::SpawnInitialPlayfield()
+{
+    // Seed an authentic starter brick pattern in bottom rows
+    // Row 19 (near bottom floor): fill 8 cells, leaving col 4 and 9 as targets to complete!
+    const int starterCols19[] = {0, 1, 2, 3, 5, 6, 7, 8};
+    for (int col : starterCols19)
+    {
+        TetrominoType t = (col < 4) ? TetrominoType::I : (col < 8 ? TetrominoType::T : TetrominoType::O);
+        TetrisCell cell{};
+        cell.Occupied = true;
+        cell.Type = t;
+        cell.CellColor = TetrisMatrix::GetPieceColor(t);
+        m_matrix.SetCell(col, 19, cell);
+
+        Vector2f worldPos = TetrisMatrix::GridToWorld(col, 19, m_matrixOrigin, m_cellSize);
+        Entity brick = m_registry.CreateEntity();
+        m_registry.AddComponent<Transform2D>(brick, Transform2D{worldPos});
+        m_registry.AddComponent<BoxCollider>(brick, BoxCollider{Vector2f{m_cellSize.X - 2.0f, m_cellSize.Y - 2.0f}, Vector2f{0.0f, 0.0f}, false, false});
+        m_registry.AddComponent<RigidBody>(brick, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
+        m_registry.AddComponent<TweenComponent>(brick, TweenComponent{});
+
+        BrickComponent comp;
+        comp.Type = BrickType::Light;
+        comp.HitPoints = 1;
+        comp.MaxHitPoints = 1;
+        comp.ScoreValue = 120;
+        m_registry.AddComponent<BrickComponent>(brick, comp);
+        m_registry.AddComponent<SpriteComponent>(brick, SpriteComponent{m_brickTexId, cell.CellColor});
+
+        cell.BrickEntity = brick;
+        m_matrix.SetCell(col, 19, cell);
+        m_brickCount++;
+    }
+
+    // Row 18: fill 6 cells (columns 0, 1, 2, 6, 7, 8)
+    const int starterCols18[] = {0, 1, 2, 6, 7, 8};
+    for (int col : starterCols18)
+    {
+        TetrominoType t = (col < 3) ? TetrominoType::S : TetrominoType::L;
+        TetrisCell cell{};
+        cell.Occupied = true;
+        cell.Type = t;
+        cell.CellColor = TetrisMatrix::GetPieceColor(t);
+        m_matrix.SetCell(col, 18, cell);
+
+        Vector2f worldPos = TetrisMatrix::GridToWorld(col, 18, m_matrixOrigin, m_cellSize);
+        Entity brick = m_registry.CreateEntity();
+        m_registry.AddComponent<Transform2D>(brick, Transform2D{worldPos});
+        m_registry.AddComponent<BoxCollider>(brick, BoxCollider{Vector2f{m_cellSize.X - 2.0f, m_cellSize.Y - 2.0f}, Vector2f{0.0f, 0.0f}, false, false});
+        m_registry.AddComponent<RigidBody>(brick, RigidBody{Vector2f{0.0f, 0.0f}, 1.0f, 1.0f, true});
+        m_registry.AddComponent<TweenComponent>(brick, TweenComponent{});
+
+        BrickComponent comp;
+        comp.Type = BrickType::Light;
+        comp.HitPoints = 1;
+        comp.MaxHitPoints = 1;
+        comp.ScoreValue = 120;
+        m_registry.AddComponent<BrickComponent>(brick, comp);
+        m_registry.AddComponent<SpriteComponent>(brick, SpriteComponent{m_brickTexId, cell.CellColor});
+
+        cell.BrickEntity = brick;
+        m_matrix.SetCell(col, 18, cell);
+        m_brickCount++;
+    }
 }
 
 void TetrisScene::OnDestroy(GameContext& context)
@@ -78,6 +235,24 @@ void TetrisScene::OnGameOverEnter()
     GameScene::OnGameOverEnter();
 }
 
+void TetrisScene::OnGameOverExit()
+{
+    GameScene::OnGameOverExit();
+    // Replay sequence: reset matrix and playfield
+    m_matrix.Reset();
+    m_linesCleared = 0;
+    m_stageWon = false;
+    m_dangerGraceTimer = 0.0f;
+    m_dangerActive = false;
+    m_registry.View<BrickComponent>([this](const Entity e, BrickComponent&) {
+        m_registry.DestroyEntityDeferred(e);
+    });
+    m_registry.ProcessDeferredCommands();
+    m_brickCount = 0;
+    SpawnInitialPlayfield();
+    m_matrix.SpawnNextPiece();
+}
+
 void TetrisScene::OnVictoryEnter()
 {
     GameScene::OnVictoryEnter();
@@ -88,7 +263,7 @@ void TetrisScene::OnUpdate(float dt, GameContext& context)
 {
     GameScene::OnUpdate(dt, context);
 
-    if (IsPaused() || m_stageWon)
+    if (IsPaused() || m_stageWon || IsCountdownActive())
     {
         return;
     }
@@ -105,7 +280,7 @@ void TetrisScene::OnUpdate(float dt, GameContext& context)
 
 void TetrisScene::HandlePlayerInput(GameContext& context)
 {
-    if (IsPaused() || m_stageWon) return;
+    if (IsPaused() || m_stageWon || IsCountdownActive()) return;
 
     // Horizontal Movement (Left / Right arrows or Q / E)
     if (context.Input.IsKeyPress(KeyCode::Left) || context.Input.IsKeyPress(KeyCode::Q))
@@ -143,7 +318,7 @@ void TetrisScene::HandlePlayerInput(GameContext& context)
     }
 
     // Hard Drop (Space key when ball is already in play)
-    if (context.Input.IsKeyPress(KeyCode::Space) && !IsCountdownActive())
+    if (context.Input.IsKeyPress(KeyCode::Space))
     {
         if (m_ballState == BallState::Active && m_matrix.HasActivePiece())
         {
@@ -331,7 +506,7 @@ void TetrisScene::ProcessLineClears(GameContext& context)
         }
     }
 
-    // Victory Check
+    // Victory Check: Stage won when target lines are cleared!
     if (m_linesCleared >= m_targetLines && !m_stageWon)
     {
         m_stageWon = true;

@@ -1042,11 +1042,11 @@ void MenuScene::CreateMainMenuUI(const GameContext& /*context*/)
 void MenuScene::InitTVChannels()
 {
     m_tvChannels.clear();
-    m_tvChannels.reserve(8);
+    m_tvChannels.reserve(10);
 
-    const float colX[4] = {295.0f, 630.0f, 965.0f, 1300.0f};
+    const float colX[5] = {280.0f, 540.0f, 800.0f, 1060.0f, 1320.0f};
     const float rowY[2] = {310.0f, 535.0f};
-    const Vector2f cardSize{280.0f, 185.0f};
+    const Vector2f cardSize{220.0f, 185.0f};
 
     // 0: Campaign
     m_tvChannels.push_back(TVChannel{
@@ -1078,40 +1078,55 @@ void MenuScene::InitTVChannels()
         .BaseSize = cardSize
     });
 
-    // 2: Tetris Matrix Gimmick Stage
+    // 2: Endless Survival Mode
     m_tvChannels.push_back(TVChannel{
         .Type = ChannelType::TetrisEndless,
         .ChannelNumber = "CH 03",
-        .Title = "TETRIS",
-        .Subtitle = "ARCADE MATRIX",
-        .Description = "Classic Breakout fused with falling tetrominoes, authentic line clears, danger laser, and retro 8-bit chiptune vibes.",
-        .ThemeColor = Color{0, 240, 255, 255},
-        .CardBgColor = Color{15, 24, 42, 245},
+        .Title = "ENDLESS",
+        .Subtitle = "SURVIVAL MATRIX",
+        .Description = "Test your endurance against endless falling brick matrices, draft perks, and survive accelerating waves.",
+        .ThemeColor = Color{245, 65, 115, 255},
+        .CardBgColor = Color{28, 16, 26, 245},
         .Position = Vector2f{colX[2], rowY[0]},
         .Size = cardSize,
         .BasePosition = Vector2f{colX[2], rowY[0]},
         .BaseSize = cardSize
     });
 
-    // 3: Workshop
+    // 3: Tetris Matrix Gimmick Stage
     m_tvChannels.push_back(TVChannel{
-        .Type = ChannelType::Workshop,
+        .Type = ChannelType::TetrisMatrix,
         .ChannelNumber = "CH 04",
-        .Title = "WORKSHOP",
-        .Subtitle = "UPGRADES & TECH",
-        .Description = "Upgrade paddle chassis, test devastating ultimates, and tune ball physics.",
-        .ThemeColor = Color{255, 215, 60, 255},
-        .CardBgColor = Color{28, 25, 16, 245},
+        .Title = "TETRIS",
+        .Subtitle = "ARCADE MATRIX",
+        .Description = "Classic Breakout fused with falling tetrominoes, authentic line clears, danger laser, and retro 8-bit chiptune vibes.",
+        .ThemeColor = Color{0, 240, 255, 255},
+        .CardBgColor = Color{15, 24, 42, 245},
         .Position = Vector2f{colX[3], rowY[0]},
         .Size = cardSize,
         .BasePosition = Vector2f{colX[3], rowY[0]},
         .BaseSize = cardSize
     });
 
-    // 4: Leaderboard
+    // 4: Workshop
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Workshop,
+        .ChannelNumber = "CH 05",
+        .Title = "WORKSHOP",
+        .Subtitle = "UPGRADES & TECH",
+        .Description = "Upgrade paddle chassis, test devastating ultimates, and tune ball physics.",
+        .ThemeColor = Color{255, 215, 60, 255},
+        .CardBgColor = Color{28, 25, 16, 245},
+        .Position = Vector2f{colX[4], rowY[0]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[4], rowY[0]},
+        .BaseSize = cardSize
+    });
+
+    // 5: Leaderboard
     m_tvChannels.push_back(TVChannel{
         .Type = ChannelType::Leaderboard,
-        .ChannelNumber = "CH 05",
+        .ChannelNumber = "CH 06",
         .Title = "LEADERBOARD",
         .Subtitle = "ARCADE RANKINGS",
         .Description = "View global arcade rankings, stage records, and personal best scores.",
@@ -1123,10 +1138,10 @@ void MenuScene::InitTVChannels()
         .BaseSize = cardSize
     });
 
-    // 5: Achievements
+    // 6: Achievements
     m_tvChannels.push_back(TVChannel{
         .Type = ChannelType::Achievements,
-        .ChannelNumber = "CH 06",
+        .ChannelNumber = "CH 07",
         .Title = "PROFILE",
         .Subtitle = "CAREER STATS",
         .Description = "Inspect unlocked badges, career stats, prestige rank, and performance medals.",
@@ -1138,33 +1153,48 @@ void MenuScene::InitTVChannels()
         .BaseSize = cardSize
     });
 
-    // 6: Sandbox
+    // 7: Custom Match Lab
     m_tvChannels.push_back(TVChannel{
-        .Type = ChannelType::Sandbox,
-        .ChannelNumber = "CH 07",
-        .Title = "SANDBOX ROOM",
-        .Subtitle = "PHYSICS LAB",
-        .Description = "Freeform physics playground to spawn bricks, test weapons, and experiment.",
-        .ThemeColor = Color{60, 190, 255, 255},
-        .CardBgColor = Color{16, 24, 32, 245},
+        .Type = ChannelType::CustomGame,
+        .ChannelNumber = "CH 08",
+        .Title = "CUSTOM LAB",
+        .Subtitle = "RULES & MODES",
+        .Description = "Configure hazards, screen glitch, camera tilt, audio warp, and custom match difficulty presets.",
+        .ThemeColor = Colors::Gold,
+        .CardBgColor = Color{24, 24, 16, 245},
         .Position = Vector2f{colX[2], rowY[1]},
         .Size = cardSize,
         .BasePosition = Vector2f{colX[2], rowY[1]},
         .BaseSize = cardSize
     });
 
-    // 7: Settings
+    // 8: Sandbox
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Sandbox,
+        .ChannelNumber = "CH 09",
+        .Title = "SANDBOX ROOM",
+        .Subtitle = "PHYSICS LAB",
+        .Description = "Freeform physics playground to spawn bricks, test weapons, and experiment.",
+        .ThemeColor = Color{60, 190, 255, 255},
+        .CardBgColor = Color{16, 24, 32, 245},
+        .Position = Vector2f{colX[3], rowY[1]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[3], rowY[1]},
+        .BaseSize = cardSize
+    });
+
+    // 9: Settings
     m_tvChannels.push_back(TVChannel{
         .Type = ChannelType::Settings,
-        .ChannelNumber = "CH 08",
+        .ChannelNumber = "CH 10",
         .Title = "SETTINGS",
         .Subtitle = "SYSTEM OPTIONS",
         .Description = "Configure CRT shaders, master audio mixing, input bindings, and display modes.",
         .ThemeColor = Color{180, 205, 230, 255},
         .CardBgColor = Color{20, 24, 30, 245},
-        .Position = Vector2f{colX[3], rowY[1]},
+        .Position = Vector2f{colX[4], rowY[1]},
         .Size = cardSize,
-        .BasePosition = Vector2f{colX[3], rowY[1]},
+        .BasePosition = Vector2f{colX[4], rowY[1]},
         .BaseSize = cardSize
     });
 }
@@ -2060,35 +2090,35 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         }
     }
 
-    // 7. Keyboard / Gamepad 4x2 Navigation
+    // 7. Keyboard / Gamepad 5x2 Navigation
     if (m_navDebounceTimer <= 0.0f)
     {
         int prevSelected = m_selectedChannel;
-        int col = m_selectedChannel % 4;
-        int row = m_selectedChannel / 4;
+        int col = m_selectedChannel % 5;
+        int row = m_selectedChannel / 5;
 
         if (context.Input.IsMenuLeftTriggered())
         {
-            col = (col + 3) % 4;
-            m_selectedChannel = row * 4 + col;
+            col = (col + 4) % 5;
+            m_selectedChannel = row * 5 + col;
             m_navDebounceTimer = 0.20f;
         }
         else if (context.Input.IsMenuRightTriggered())
         {
-            col = (col + 1) % 4;
-            m_selectedChannel = row * 4 + col;
+            col = (col + 1) % 5;
+            m_selectedChannel = row * 5 + col;
             m_navDebounceTimer = 0.20f;
         }
         else if (context.Input.IsMenuUpTriggered())
         {
             row = (row + 1) % 2;
-            m_selectedChannel = row * 4 + col;
+            m_selectedChannel = row * 5 + col;
             m_navDebounceTimer = 0.20f;
         }
         else if (context.Input.IsMenuDownTriggered())
         {
             row = (row + 1) % 2;
-            m_selectedChannel = row * 4 + col;
+            m_selectedChannel = row * 5 + col;
             m_navDebounceTimer = 0.20f;
         }
 
@@ -2098,7 +2128,19 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         }
     }
 
-    // Custom Game Mode Shortcut [C]
+    // Direct Mode Shortcuts: [E] Endless, [T] Tetris, [C] Custom
+    if (context.Input.IsKeyPress(KeyCode::E))
+    {
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+        context.Scenes.LoadSceneWithTransition<EndlessScene>(SceneTransitionType::StaticSnow, 0.65f);
+        return;
+    }
+    if (context.Input.IsKeyPress(KeyCode::T))
+    {
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+        context.Scenes.LoadSceneWithTransition<TetrisScene>(SceneTransitionType::StaticSnow, 0.65f);
+        return;
+    }
     if (context.Input.IsKeyPress(KeyCode::C))
     {
         if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
@@ -2149,6 +2191,9 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
         context.Scenes.LoadSceneWithTransition<LevelSelectScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::TetrisEndless:
+        context.Scenes.LoadSceneWithTransition<EndlessScene>(SceneTransitionType::StaticSnow, 0.65f);
+        break;
+    case ChannelType::TetrisMatrix:
         context.Scenes.LoadSceneWithTransition<TetrisScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::Workshop:
@@ -2514,38 +2559,76 @@ void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch,
     }
     case ChannelType::TetrisEndless:
     {
+        // Doom / Mortal Kombat style inferno flames with flashing ENDLESS title
+        const float flameBaseY = pos.Y + 36.0f * sc;
+        constexpr int kFlameTongues = 11;
+        for (int k = 0; k < kFlameTongues; ++k)
+        {
+            float fx = pos.X + (static_cast<float>(k) - 5.0f) * (9.5f * sc);
+            float fHeight = (28.0f + 16.0f * std::sin(m_animTime * 6.5f + k * 1.25f) + 8.0f * std::cos(m_animTime * 9.0f + k * 2.1f)) * sc;
+            float sway = std::sin(m_animTime * 7.5f + k * 1.4f) * 4.0f * sc;
+            Vector2f tip{fx + sway, flameBaseY - fHeight};
+            float bW = 9.5f * sc;
+
+            context.Render.DrawLine(Vector2f{fx - bW * 0.5f, flameBaseY}, tip, Color{195, 25, 12, 215}, 3.5f * sc);
+            context.Render.DrawLine(Vector2f{fx + bW * 0.5f, flameBaseY}, tip, Color{195, 25, 12, 215}, 3.5f * sc);
+            context.Render.DrawLine(Vector2f{fx, flameBaseY}, tip, Color{240, 75, 18, 230}, 5.5f * sc);
+
+            Vector2f innerTip{fx + sway * 0.55f, flameBaseY - fHeight * 0.65f};
+            context.Render.DrawLine(Vector2f{fx, flameBaseY}, innerTip, Color{255, 225, 60, 245}, 3.0f * sc);
+        }
+
+        for (int e = 0; e < 6; ++e)
+        {
+            float eProgress = std::fmod(m_animTime * 1.6f + static_cast<float>(e) * 0.35f, 1.0f);
+            float ex = pos.X + std::sin(static_cast<float>(e) * 2.3f + m_animTime * 3.5f) * 42.0f * sc;
+            float ey = flameBaseY - eProgress * 65.0f * sc;
+            uint8_t eAlpha = static_cast<uint8_t>((1.0f - eProgress) * 255.0f);
+            context.Render.DrawCircle(1.8f * sc, Transform2D{Vector2f{ex, ey}}, Color{255, 205, 70, eAlpha});
+        }
+
+        Vector2f titlePos = pos + Vector2f{0.0f, -8.0f * sc};
+        float flashPhase = std::fmod(m_animTime * 4.5f, 1.0f);
+        bool isStrobe = (flashPhase < 0.28f);
+
+        Color titleCol = isStrobe ? Color{255, 255, 225, 255} : Color{255, 65, 25, 255};
+        Color accentCol = isStrobe ? Color{255, 240, 100, 255} : Color{215, 30, 15, 230};
+
+        context.Render.DrawTextCentered("ENDLESS", m_fontId, 19.0f * sc, Transform2D{titlePos + Vector2f{1.5f * sc, 2.0f * sc}}, Color{15, 2, 4, 255});
+        context.Render.DrawLine(titlePos + Vector2f{-45.0f * sc, -11.0f * sc}, titlePos + Vector2f{45.0f * sc, -11.0f * sc}, accentCol, 2.0f * sc);
+        context.Render.DrawLine(titlePos + Vector2f{-45.0f * sc, 11.0f * sc}, titlePos + Vector2f{45.0f * sc, 11.0f * sc}, accentCol, 2.0f * sc);
+        context.Render.DrawTextCentered("ENDLESS", m_fontId, 19.0f * sc, Transform2D{titlePos}, titleCol);
+        break;
+    }
+    case ChannelType::TetrisMatrix:
+    {
         // Authentic Neon Retro Tetris Matrix with falling colorful tetrominoes
-        const float bSize = 12.0f * sc;
-        const float gridTopY = pos.Y - 25.0f * sc;
+        const float bSize = 11.0f * sc;
+        const float gridTopY = pos.Y - 24.0f * sc;
 
-        // Subtle matrix grid outline
-        context.Render.DrawRectangle(80.0f * sc, 75.0f * sc, Transform2D{Vector2f{pos.X, pos.Y - 2.0f * sc}}, Color{10, 18, 32, 200});
-        context.Render.DrawRectangleOutline(80.0f * sc, 75.0f * sc, Transform2D{Vector2f{pos.X, pos.Y - 2.0f * sc}}, Color{0, 200, 255, 120}, 1.2f * sc);
+        context.Render.DrawRectangle(74.0f * sc, 70.0f * sc, Transform2D{Vector2f{pos.X, pos.Y - 2.0f * sc}}, Color{10, 18, 32, 200});
+        context.Render.DrawRectangleOutline(74.0f * sc, 70.0f * sc, Transform2D{Vector2f{pos.X, pos.Y - 2.0f * sc}}, Color{0, 200, 255, 120}, 1.2f * sc);
 
-        // Falling Cyan I-piece (4 blocks)
-        float dropOffset = std::fmod(m_animTime * 35.0f, 60.0f * sc);
-        Vector2f iPos{pos.X - 18.0f * sc, gridTopY + dropOffset};
+        float dropOffset = std::fmod(m_animTime * 35.0f, 55.0f * sc);
+        Vector2f iPos{pos.X - 16.0f * sc, gridTopY + dropOffset};
         for (int k = 0; k < 3; ++k)
         {
             context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{Vector2f{iPos.X, iPos.Y + static_cast<float>(k) * bSize}}, Color{0, 240, 255, 230});
         }
 
-        // Settled Magenta T-piece
-        Vector2f tPos{pos.X + 16.0f * sc, pos.Y + 12.0f * sc};
+        Vector2f tPos{pos.X + 14.0f * sc, pos.Y + 10.0f * sc};
         context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{tPos}, Color{195, 45, 255, 230});
         context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{tPos + Vector2f{-bSize, 0.0f}}, Color{195, 45, 255, 230});
         context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{tPos + Vector2f{bSize, 0.0f}}, Color{195, 45, 255, 230});
         context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{tPos + Vector2f{0.0f, -bSize}}, Color{195, 45, 255, 230});
 
-        // Settled Solar Yellow O-piece
-        Vector2f oPos{pos.X - 14.0f * sc, pos.Y + 22.0f * sc};
+        Vector2f oPos{pos.X - 12.0f * sc, pos.Y + 20.0f * sc};
         context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{oPos}, Color{255, 225, 30, 230});
         context.Render.DrawRectangle(bSize - 1.5f * sc, bSize - 1.5f * sc, Transform2D{oPos + Vector2f{bSize, 0.0f}}, Color{255, 225, 30, 230});
 
-        // Glowing Title
         Vector2f titlePos = pos + Vector2f{0.0f, -14.0f * sc};
-        context.Render.DrawTextCentered("TETRIS", m_fontId, 22.0f * sc, Transform2D{titlePos + Vector2f{1.5f * sc, 1.5f * sc}}, Color{10, 15, 30, 240});
-        context.Render.DrawTextCentered("TETRIS", m_fontId, 22.0f * sc, Transform2D{titlePos}, Color{0, 240, 255, 255});
+        context.Render.DrawTextCentered("TETRIS", m_fontId, 19.0f * sc, Transform2D{titlePos + Vector2f{1.5f * sc, 1.5f * sc}}, Color{10, 15, 30, 240});
+        context.Render.DrawTextCentered("TETRIS", m_fontId, 19.0f * sc, Transform2D{titlePos}, Color{0, 240, 255, 255});
         break;
     }
     case ChannelType::Workshop:
@@ -2709,9 +2792,17 @@ void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch,
     }
     case ChannelType::CustomGame:
     {
-        context.Render.DrawRectangle(95.0f * sc, 58.0f * sc, Transform2D{pos}, Color{16, 24, 36, 220});
-        context.Render.DrawRectangleOutline(95.0f * sc, 58.0f * sc, Transform2D{pos}, Colors::Gold, 1.2f * sc);
-        context.Render.DrawTextCentered("CUSTOM LAB", m_fontId, 18.0f * sc, Transform2D{pos}, Colors::Gold);
+        Vector2f labPos = pos + Vector2f{0.0f, -2.0f * sc};
+        context.Render.DrawRectangle(65.0f * sc, 48.0f * sc, Transform2D{labPos}, Color{20, 24, 35, 210});
+        context.Render.DrawRectangleOutline(65.0f * sc, 48.0f * sc, Transform2D{labPos}, Colors::Gold, 1.2f * sc);
+
+        for (int s = 0; s < 3; ++s)
+        {
+            float sy = labPos.Y - 14.0f * sc + static_cast<float>(s) * (14.0f * sc);
+            context.Render.DrawRectangle(45.0f * sc, 2.0f * sc, Transform2D{Vector2f{labPos.X, sy}}, Color{60, 85, 120, 200});
+            float knobX = labPos.X - 12.0f * sc + std::sin(m_animTime * 2.5f + static_cast<float>(s) * 1.5f) * (14.0f * sc);
+            context.Render.DrawCircle(3.0f * sc, Transform2D{Vector2f{knobX, sy}}, Colors::Gold);
+        }
         break;
     }
     case ChannelType::Settings:

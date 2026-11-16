@@ -30,6 +30,7 @@ enum class ChannelType : int
     Campaign = 0,
     LevelSelect,
     TetrisEndless,
+    TetrisMatrix,
     Workshop,
     Leaderboard,
     Achievements,
