@@ -1,5 +1,6 @@
 #include "Scenes/MenuScene.h"
 #include "Scenes/GameScene.h"
+#include "Scenes/StoryScene.h"
 #include "Scenes/EndlessScene.h"
 #include "Scenes/CustomGameScene.h"
 #include "Scenes/PreviewScene.h"
@@ -76,7 +77,6 @@ void MenuScene::OnInit(GameContext& context)
     m_fireTexId = context.Resources.LoadResource("Resources/sprite/fire.png");
     m_heartTexId = context.Resources.LoadResource("Resources/sprite/heart.png");
 
-
     // 2D Sprite Asset Pipeline: Workshop Power-Up Badges (#88)
     m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::MultiBall)]    = context.Resources.LoadResource("Resources/sprite/workshop/badge_multiball.png");
     m_workshopBadgeTexIds[static_cast<size_t>(PowerUpType::ExpandPaddle)] = context.Resources.LoadResource("Resources/sprite/workshop/badge_expand.png");
@@ -114,7 +114,6 @@ void MenuScene::OnInit(GameContext& context)
     UpdateTVLayout(context);
     m_masterVolume = context.Audio.GetMasterVolume();
     m_volumeKnobAngle = (m_masterVolume / 100.0f) * 270.0f - 135.0f;
-
 
     CreateMainMenuUI(context);
     m_settingsController.Create(m_registry, const_cast<GameContext&>(context), m_fontId, m_clickSfxId, [this]() {
@@ -2035,7 +2034,7 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
     switch (ch.Type)
     {
     case ChannelType::Campaign:
-        context.Scenes.LoadSceneWithTransition<GameScene>(SceneTransitionType::StaticSnow, 0.65f);
+        context.Scenes.LoadSceneWithTransition<StoryScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::LevelSelect:
         context.Scenes.LoadSceneWithTransition<LevelSelectScene>(SceneTransitionType::StaticSnow, 0.65f);

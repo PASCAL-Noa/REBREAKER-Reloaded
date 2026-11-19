@@ -19,6 +19,7 @@
 #include "Data/PostProcessParams.h"
 #include "ECS/Components/LightSourceComponent.h"
 #include "ECS/Components/HazardZoneComponent.h"
+#include "ECS/Components/PaddleDurabilityComponent.h"
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -63,11 +64,12 @@ public:
 
     [[nodiscard]] const GameContext*    GetContext() const { return mp_context; }
     [[nodiscard]] int     GetLives() const { return m_lives; }
+    [[nodiscard]] virtual bool IsGameOver() const { return m_lives <= 0; }
     [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
     [[nodiscard]] bool    CanUnpause() const;
     [[nodiscard]] bool    IsPaused() const;
     virtual void          RenderSceneSpecificHUD(GameContext& context) { (void)context; }
-    void    FullReset();
+    virtual void          FullReset();
 
     // Level Management & Progression
     [[nodiscard]] LevelManager&       GetLevelManager() { return m_levelManager; }
@@ -228,7 +230,7 @@ protected:
     uint32_t    m_countdownWhooshSfxId = 0;
 
     // 2D Sprite Asset Pipeline: Spherical Power-Up Orbs & Hazards (#88)
-    uint32_t    m_orbTexIds[16] = {0};
+    uint32_t    m_orbTexIds[24] = {0};
     uint32_t    m_hazardPatternTexId = 0;
     uint32_t    m_hazardElectricTexId = 0;
     uint32_t    m_hazardGravityTexId = 0;

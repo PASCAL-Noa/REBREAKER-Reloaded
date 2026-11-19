@@ -80,8 +80,21 @@ private:
     bool                m_rebindGamepadMode = false;
     float               m_rebindTimer = 0.0f;
 
+    void RefreshGamerulesUI();
+
     // Gamerules Tab Widgets
+    Entity              m_gamerulesModeBtn = NULL_ENTITY;
     Entity              m_arenaEventsBtn = NULL_ENTITY;
+    Entity              m_hazardZonesBtn = NULL_ENTITY;
+    Entity              m_ultimateDrainBtn = NULL_ENTITY;
+    Entity              m_screenGlitchBtn = NULL_ENTITY;
+    Entity              m_cameraTiltBtn = NULL_ENTITY;
+    Entity              m_zoomPulseBtn = NULL_ENTITY;
+    Entity              m_audioWarpBtn = NULL_ENTITY;
+    Entity              m_empLockdownBtn = NULL_ENTITY;
+    Entity              m_creepingCeilingBtn = NULL_ENTITY;
+    Entity              m_infiniteLivesBtn = NULL_ENTITY;
+    Entity              m_infiniteUltimateBtn = NULL_ENTITY;
 
     bool                m_isClosing = false;
 };

@@ -17,7 +17,9 @@ enum class PowerUpType : uint8_t
     GhostBall,
     ItemRegen,
     LaserPaddle = Storm,
-    GlitchMalus = 14
+    GlitchMalus = 14,
+    RepairKit = 15,
+    ShieldBarrier = 16
 };
 
 struct PowerUpComponent

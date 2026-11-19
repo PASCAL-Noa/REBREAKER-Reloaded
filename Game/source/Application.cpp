@@ -3,6 +3,7 @@
 #include "ECS/Systems/UISystem.h"
 #include "Scenes/MenuScene.h"
 #include "Scenes/GameScene.h"
+#include "Scenes/StoryScene.h"
 #include "Scenes/EndlessScene.h"
 #include <iostream>
 
@@ -82,6 +83,7 @@ void Application::Init()
     m_context.Rules.RegisterRule(Rule::Gameplay::HazardAudioWarpEnabled, "Hazard: Audio Warp", PlayerPrefs::GetBool("EnableHazardAudioWarp", true), RuleAccess::Public);
     m_context.Rules.RegisterRule(Rule::Gameplay::UltimateLockdownEnabled, "Event: EMP Lockdown", PlayerPrefs::GetBool("EnableUltimateLockdown", true), RuleAccess::Public);
     m_context.Rules.RegisterRule(Rule::Gameplay::EndlessCreepingCeiling, "Endless: Creeping Ceiling", PlayerPrefs::GetBool("EnableCreepingCeiling", true), RuleAccess::Public);
+    m_context.Rules.RegisterRule(Rule::Gameplay::ManualOverride, "Gamerules Manual Override", PlayerPrefs::GetBool("GamerulesManualOverride", false), RuleAccess::Public);
 
     m_sceneManager.LoadScene<MenuScene>();
 }
@@ -138,11 +140,17 @@ bool Application::RunSmokeTest()
     std::cout << "[SmokeTest] Stepping MenuScene..." << std::endl;
     stepFrames(15);
 
-    // Step 2: Launch Campaign (GameScene) with transition
-    std::cout << "[SmokeTest] Triggering transition to GameScene (Campaign)..." << std::endl;
+    // Step 2: Launch Campaign (StoryScene) with transition
+    std::cout << "[SmokeTest] Triggering transition to StoryScene (StoryMode)..." << std::endl;
+    m_context.Scenes.LoadSceneWithTransition<StoryScene>(SceneTransitionType::StaticSnow, 0.65f);
+    stepFrames(70);
+    std::cout << "[SmokeTest] StoryScene (StoryMode) active and running stably!" << std::endl;
+
+    // Step 3: Launch Classic GameScene with transition
+    std::cout << "[SmokeTest] Triggering transition to GameScene (Classic)..." << std::endl;
     m_context.Scenes.LoadSceneWithTransition<GameScene>(SceneTransitionType::StaticSnow, 0.65f);
     stepFrames(70);
-    std::cout << "[SmokeTest] GameScene (Campaign) active and running stably!" << std::endl;
+    std::cout << "[SmokeTest] GameScene (Classic) active and running stably!" << std::endl;
 
     // Step 3: Launch EndlessMode (EndlessScene) with transition
     std::cout << "[SmokeTest] Triggering transition to EndlessScene (EndlessMode)..." << std::endl;

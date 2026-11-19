@@ -226,6 +226,8 @@ void GameScene::OnInit(GameContext& context)
     m_orbTexIds[static_cast<size_t>(PowerUpType::GhostBall)]    = context.Resources.LoadResource("Resources/sprite/orbs/orb_ghost.png");
     m_orbTexIds[static_cast<size_t>(PowerUpType::ItemRegen)]    = context.Resources.LoadResource("Resources/sprite/orbs/orb_regen.png");
     m_orbTexIds[static_cast<size_t>(PowerUpType::GlitchMalus)]  = context.Resources.LoadResource("Resources/sprite/orbs/orb_glitch.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::RepairKit)]    = context.Resources.LoadResource("Resources/sprite/orbs/orb_regen.png");
+    m_orbTexIds[static_cast<size_t>(PowerUpType::ShieldBarrier)]= context.Resources.LoadResource("Resources/sprite/orbs/orb_barrier.png");
 
     // 2D Sprite Asset Pipeline: Stage Hazards (#88)
     m_hazardPatternTexId  = context.Resources.LoadResource("Resources/sprite/hazards/hazard_zone_pattern.png");
@@ -293,7 +295,6 @@ void GameScene::OnInit(GameContext& context)
             m_uiController->SpawnPowerUpText(e.Type, paddleTrans.Position, m_registry.GetComponent<Camera2D>(m_camera));
         }
     });
-
 
     m_nextLevelSub = context.Events.SubscribeScoped<NextLevelEvent>([this](const NextLevelEvent&)
     {
@@ -1997,6 +1998,23 @@ void GameScene::LoadLevel(int levelIndex, bool preserveStats)
     m_levelManager.SetLevel(levelIndex);
     ApplyLevelTheme(m_levelManager.GetCurrentLevelNumber());
 
+    // Gamerules Sync:
+    // If ManualOverride is false, the level sets the GameRules.
+    // If ManualOverride is true, user settings in Settings override level rules.
+    if (mp_context)
+    {
+        const bool manualOverride = mp_context->Rules.GetRule(Rule::Gameplay::ManualOverride);
+        if (!manualOverride)
+        {
+            // By default in campaign/classic mode, arena events and hazard zones are enabled based on level difficulty
+            const int lvl = m_levelManager.GetCurrentLevelNumber();
+            mp_context->Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, lvl >= 2);
+            mp_context->Rules.SetRule(Rule::Gameplay::HazardZonesEnabled, lvl >= 3);
+            mp_context->Rules.SetRule(Rule::Gameplay::InfiniteLives, false);
+            mp_context->Rules.SetRule(Rule::Gameplay::InfiniteUltimate, false);
+        }
+    }
+
     if (!preserveStats)
     {
         m_scoreManager.Reset();
@@ -3286,6 +3304,8 @@ Color GameScene::GetPowerUpColor(PowerUpType type)
         case PowerUpType::MagnetPaddle: return Color{220, 60, 255, 255};
         case PowerUpType::GhostBall:    return Color{160, 240, 255, 255};
         case PowerUpType::GlitchMalus:  return Color{255, 30, 90, 255};
+        case PowerUpType::RepairKit:    return Color{50, 255, 120, 255};
+        case PowerUpType::ShieldBarrier: return Color{60, 180, 255, 255};
         default:                        return Colors::White;
     }
 }
@@ -3987,6 +4007,30 @@ void GameScene::ApplyPowerUp(PowerUpType type)
         {
             TriggerVisualMalus(1.3f, true, true, true);
             TriggerTemporalAudioDistortion(0.88f, 0.15f, 1.3f);
+            break;
+        }
+        case PowerUpType::RepairKit:
+        {
+            if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+            {
+                m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle).Repair(30.0f);
+            }
+            if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+            {
+                SpawnExplosionParticles(m_registry.GetComponent<Transform2D>(m_paddle).Position, Color{50, 255, 120, 255}, 25);
+            }
+            break;
+        }
+        case PowerUpType::ShieldBarrier:
+        {
+            if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+            {
+                m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle).AddShield(40.0f, 12.0f);
+            }
+            if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+            {
+                SpawnExplosionParticles(m_registry.GetComponent<Transform2D>(m_paddle).Position, Color{60, 180, 255, 255}, 25);
+            }
             break;
         }
         case PowerUpType::ItemRegen:

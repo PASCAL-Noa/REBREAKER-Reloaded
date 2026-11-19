@@ -149,6 +149,10 @@ void SettingsUIController::OpenSettingsTab(Entity targetCanvas)
     if (IsOpen() && m_activeTabCanvas != NULL_ENTITY && m_registry->HasComponent<CanvasComponent>(m_activeTabCanvas))
     {
         m_registry->GetComponent<CanvasComponent>(m_activeTabCanvas).IsEnabled = true;
+        if (m_activeTabCanvas == m_gamerulesCanvas)
+        {
+            RefreshGamerulesUI();
+        }
     }
 }
 
@@ -844,6 +848,40 @@ void SettingsUIController::UpdateInputButtons()
     }
 }
 
+void SettingsUIController::RefreshGamerulesUI()
+{
+    if (!m_registry || !m_context) return;
+
+    const bool manual = m_context->Rules.GetRule(Rule::Gameplay::ManualOverride);
+
+    // 1. Mode Button Text & Color
+    if (m_gamerulesModeBtn != NULL_ENTITY && m_registry->HasComponent<TextComponent>(m_gamerulesModeBtn))
+    {
+        m_registry->GetComponent<TextComponent>(m_gamerulesModeBtn).Text = manual ? "GAMERULES MODE: [MANUAL]" : "GAMERULES MODE: [AUTO]";
+    }
+
+    auto updateToggle = [&](Entity btn, Rule::Gameplay rule, const std::string& prefix)
+    {
+        if (btn != NULL_ENTITY && m_registry->HasComponent<TextComponent>(btn))
+        {
+            const bool val = m_context->Rules.GetRule(rule);
+            m_registry->GetComponent<TextComponent>(btn).Text = prefix + (val ? ": ON" : ": OFF");
+        }
+    };
+
+    updateToggle(m_arenaEventsBtn, Rule::Gameplay::ArenaEventsEnabled, "ARENA EVENTS");
+    updateToggle(m_hazardZonesBtn, Rule::Gameplay::HazardZonesEnabled, "HAZARD ZONES");
+    updateToggle(m_ultimateDrainBtn, Rule::Gameplay::HazardUltimateDrainEnabled, "ULTIMATE DRAIN");
+    updateToggle(m_screenGlitchBtn, Rule::Gameplay::HazardScreenGlitchEnabled, "SCREEN GLITCH");
+    updateToggle(m_cameraTiltBtn, Rule::Gameplay::HazardCameraTiltEnabled, "CAMERA TILT");
+    updateToggle(m_zoomPulseBtn, Rule::Gameplay::HazardZoomPulseEnabled, "ZOOM PULSE");
+    updateToggle(m_audioWarpBtn, Rule::Gameplay::HazardAudioWarpEnabled, "AUDIO WARP");
+    updateToggle(m_empLockdownBtn, Rule::Gameplay::UltimateLockdownEnabled, "EMP LOCKDOWN");
+    updateToggle(m_creepingCeilingBtn, Rule::Gameplay::EndlessCreepingCeiling, "CREEPING CEILING");
+    updateToggle(m_infiniteLivesBtn, Rule::Gameplay::InfiniteLives, "INFINITE LIVES");
+    updateToggle(m_infiniteUltimateBtn, Rule::Gameplay::InfiniteUltimate, "INFINITE ULTIMATE");
+}
+
 void SettingsUIController::CreateGamerulesTab()
 {
     float viewX = m_context->Render.GetLogicalViewSize().X;
@@ -855,37 +893,77 @@ void SettingsUIController::CreateGamerulesTab()
     m_registry->AddComponent<CanvasComponent>(m_gamerulesCanvas, CanvasComponent{.IsEnabled = false});
     m_registry->AddComponent<TweenComponent>(m_gamerulesCanvas, TweenComponent{});
 
+    // Tab Title strictly aligned with AUDIO, RENDER, INPUTS (-viewY * 0.2f)
     UIFactory::CreateText(*m_registry, m_gamerulesCanvas, TextDescriptor{
-        .Text = "GAMERULES",
+        .Text = "GAMERULES CONFIGURATION",
         .Position = {rightPanelX, -viewY * 0.2f},
         .FontId = m_fontId,
         .FontSize = 40.0f
     });
 
-    UIFactory::CreateButton(*m_registry, m_gamerulesCanvas, ButtonDescriptor{
-        .Text = "Difficulty",
-        .Position = {rightPanelX, -viewY * 0.1f},
-        .FontId = m_fontId
+    // Master Mode Toggle: [AUTO] vs [MANUAL]
+    const bool isManual = m_context->Rules.GetRule(Rule::Gameplay::ManualOverride);
+    m_gamerulesModeBtn = UIFactory::CreateButton(*m_registry, m_gamerulesCanvas, ButtonDescriptor{
+        .Text = isManual ? "GAMERULES MODE: [MANUAL]" : "GAMERULES MODE: [AUTO]",
+        .OnClick = [this]() {
+            bool state = m_context->Rules.GetRule(Rule::Gameplay::ManualOverride);
+            m_context->Rules.SetRule(Rule::Gameplay::ManualOverride, !state);
+            PlayerPrefs::SetBool("GamerulesManualOverride", !state);
+            PlayerPrefs::Save();
+            RefreshGamerulesUI();
+        },
+        .Position = {rightPanelX, -viewY * 0.11f},
+        .Size = {480.0f, 44.0f},
+        .DefaultColor = Color{40, 70, 110, 255},
+        .HoverColor = Color{60, 100, 150, 255},
+        .FontId = m_fontId,
+        .FontSize = 22.0f
     });
 
-    const bool isEvents = m_context->Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled);
-    m_arenaEventsBtn = UIFactory::CreateButton(*m_registry, m_gamerulesCanvas, ButtonDescriptor{
-        .Text = isEvents ? "ARENA EVENTS: ON" : "ARENA EVENTS: OFF",
-        .OnClick = [this]() {
-            bool state = m_context->Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled);
-            m_context->Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, !state);
-            if (m_arenaEventsBtn != NULL_ENTITY && m_registry->HasComponent<TextComponent>(m_arenaEventsBtn)) {
-                m_registry->GetComponent<TextComponent>(m_arenaEventsBtn).Text = !state ? "ARENA EVENTS: ON" : "ARENA EVENTS: OFF";
-            }
-        },
-        .Position = {rightPanelX, 0.0f},
-        .FontId = m_fontId
-    });
+    // Two-column layout for Gamerule toggles
+    const float colLeftX = rightPanelX - 220.0f;
+    const float colRightX = rightPanelX + 220.0f;
+    const float btnW = 380.0f;
+    const float btnH = 42.0f;
+    const float startY = -viewY * 0.02f;
+    const float rowStep = 48.0f;
+
+    auto makeToggle = [this, btnW, btnH](float x, float y, Rule::Gameplay rule, const std::string& prefix) -> Entity
+    {
+        const bool val = m_context->Rules.GetRule(rule);
+        return UIFactory::CreateButton(*m_registry, m_gamerulesCanvas, ButtonDescriptor{
+            .Text = prefix + (val ? ": ON" : ": OFF"),
+            .OnClick = [this, rule, prefix]() {
+                bool s = m_context->Rules.GetRule(rule);
+                m_context->Rules.SetRule(rule, !s);
+                RefreshGamerulesUI();
+            },
+            .Position = {x, y},
+            .Size = {btnW, btnH},
+            .FontId = m_fontId,
+            .FontSize = 22.0f
+        });
+    };
+
+    // Left Column
+    m_arenaEventsBtn      = makeToggle(colLeftX, startY + rowStep * 0.0f, Rule::Gameplay::ArenaEventsEnabled, "ARENA EVENTS");
+    m_hazardZonesBtn      = makeToggle(colLeftX, startY + rowStep * 1.0f, Rule::Gameplay::HazardZonesEnabled, "HAZARD ZONES");
+    m_ultimateDrainBtn    = makeToggle(colLeftX, startY + rowStep * 2.0f, Rule::Gameplay::HazardUltimateDrainEnabled, "ULTIMATE DRAIN");
+    m_screenGlitchBtn     = makeToggle(colLeftX, startY + rowStep * 3.0f, Rule::Gameplay::HazardScreenGlitchEnabled, "SCREEN GLITCH");
+    m_cameraTiltBtn       = makeToggle(colLeftX, startY + rowStep * 4.0f, Rule::Gameplay::HazardCameraTiltEnabled, "CAMERA TILT");
+    m_zoomPulseBtn        = makeToggle(colLeftX, startY + rowStep * 5.0f, Rule::Gameplay::HazardZoomPulseEnabled, "ZOOM PULSE");
+
+    // Right Column
+    m_audioWarpBtn        = makeToggle(colRightX, startY + rowStep * 0.0f, Rule::Gameplay::HazardAudioWarpEnabled, "AUDIO WARP");
+    m_empLockdownBtn      = makeToggle(colRightX, startY + rowStep * 1.0f, Rule::Gameplay::UltimateLockdownEnabled, "EMP LOCKDOWN");
+    m_creepingCeilingBtn  = makeToggle(colRightX, startY + rowStep * 2.0f, Rule::Gameplay::EndlessCreepingCeiling, "CREEPING CEILING");
+    m_infiniteLivesBtn    = makeToggle(colRightX, startY + rowStep * 3.0f, Rule::Gameplay::InfiniteLives, "INFINITE LIVES");
+    m_infiniteUltimateBtn = makeToggle(colRightX, startY + rowStep * 4.0f, Rule::Gameplay::InfiniteUltimate, "INFINITE ULTIMATE");
 
     UIFactory::CreatePanel(*m_registry, m_gamerulesCanvas, PanelDescriptor{
-      .Position = {rightPanelX, 0.0f},
-      .Size = {rightPanelWidth, viewY},
-      .Tint = Colors::Transparent
+        .Position = {rightPanelX, 0.0f},
+        .Size = {rightPanelWidth, viewY},
+        .Tint = Colors::Transparent
     });
 }
 

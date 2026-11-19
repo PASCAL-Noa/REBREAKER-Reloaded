@@ -5,7 +5,17 @@ template<typename T>
 class LivesCondition : public Condition<T>
 {
 public:
-    bool OnTest(T* pOwner) override {return pOwner->GetLives() <= 0; }
+    bool OnTest(T* pOwner) override
+    {
+        if constexpr (requires { pOwner->IsGameOver(); })
+        {
+            return pOwner->IsGameOver();
+        }
+        else
+        {
+            return pOwner->GetLives() <= 0;
+        }
+    }
 };
 
 template<typename T>
