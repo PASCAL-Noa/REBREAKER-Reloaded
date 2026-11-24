@@ -13,6 +13,7 @@
 #include "ECS/Components/RigidBody.h"
 #include "ECS/Components/SpriteComponent.h"
 #include "ECS/Components/BrickComponent.h"
+#include "Factories/BrickFactory.h"
 #include "ECS/Systems/PhysicsSystem.h"
 #include "ECS/Systems/RenderSystem.h"
 #include "ECS/Systems/DynamicEventSystem.h"
@@ -679,6 +680,11 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
             {
                 return;
             }
+            if (m_uiController && m_uiController->HasQuitOverride())
+            {
+                m_uiController->TriggerQuitOverride();
+                return;
+            }
             context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             MenuScene::SetReturnWithDezoom(true);
             context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
@@ -961,7 +967,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         UpdateHazardZones(dt);
     }
 
-    const bool canControlPaddle = (currentState == static_cast<int>(SceneState::Playing) || currentState == static_cast<int>(SceneState::LevelTransition)) && !m_countdownActive;
+    const bool canControlPaddle = (currentState == static_cast<int>(SceneState::Playing)) && !m_countdownActive;
     if (mp_paddleSystem)
     {
         mp_paddleSystem->SetInputEnabled(canControlPaddle);
@@ -987,6 +993,13 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         {
             mp_eventSystem->RestoreStandardPhysics();
         }
+    }
+
+    if (currentState != static_cast<int>(SceneState::Paused) &&
+        currentState != static_cast<int>(SceneState::GameOver) &&
+        currentState != static_cast<int>(SceneState::Victory))
+    {
+        UpdateDescendingBricks(dt, context);
     }
 
     if (currentState != static_cast<int>(SceneState::Paused))
@@ -1034,6 +1047,8 @@ void GameScene::OnRender(GameContext& context)
     RenderDiscoBackgroundMusicNotes(context);
 
     m_systemManager.OnRender();
+
+    RenderTopSpawnLight(context);
 
     context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{800.0f, -450.0f}, Colors::White, 2.0f);
     context.Render.DrawLine(Vector2f{-800.0f, -450.0f}, Vector2f{-800.0f, 450.0f}, Colors::White, 2.0f);
@@ -1498,6 +1513,12 @@ void GameScene::OnRender(GameContext& context)
         {
             mp_eventSystem->RenderSearchlights(context);
             mp_eventSystem->RenderAlarmLights(context);
+        }
+
+        if (m_topSpawnLightAlpha > 0.01f)
+        {
+            const Color topCol = GetTopSpawnLightColor(255);
+            context.Render.DrawCapsuleLight(Vector2f{-740.0f, -445.0f}, Vector2f{740.0f, -445.0f}, 230.0f, topCol, 1.35f * m_topSpawnLightAlpha, BlendMode::Add);
         }
 
         context.Render.EndLightingPass(BlendMode::Multiply);
@@ -1987,16 +2008,9 @@ void GameScene::LoadLevel(int levelIndex, bool preserveStats)
 {
     ClearActiveUltimates();
     ClearVisualMalus();
-    if (mp_eventSystem)
-    {
-        mp_eventSystem->ResetLifecycle();
-        const int lvl = m_levelManager.GetCurrentLevelNumber();
-        const float minInterval = std::max(14.0f, 30.0f - lvl * 1.5f);
-        const float maxInterval = std::max(minInterval + 5.0f, 45.0f - lvl * 2.0f);
-        mp_eventSystem->SetIntervalRange(minInterval, maxInterval);
-    }
     m_levelManager.SetLevel(levelIndex);
-    ApplyLevelTheme(m_levelManager.GetCurrentLevelNumber());
+    const int lvl = m_levelManager.GetCurrentLevelNumber();
+    ApplyLevelTheme(lvl);
 
     // Gamerules Sync:
     // If ManualOverride is false, the level sets the GameRules.
@@ -2006,13 +2020,23 @@ void GameScene::LoadLevel(int levelIndex, bool preserveStats)
         const bool manualOverride = mp_context->Rules.GetRule(Rule::Gameplay::ManualOverride);
         if (!manualOverride)
         {
-            // By default in campaign/classic mode, arena events and hazard zones are enabled based on level difficulty
-            const int lvl = m_levelManager.GetCurrentLevelNumber();
-            mp_context->Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, lvl >= 2);
-            mp_context->Rules.SetRule(Rule::Gameplay::HazardZonesEnabled, lvl >= 3);
+            mp_context->Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, true);
+            mp_context->Rules.SetRule(Rule::Gameplay::HazardZonesEnabled, lvl >= 2);
             mp_context->Rules.SetRule(Rule::Gameplay::InfiniteLives, false);
             mp_context->Rules.SetRule(Rule::Gameplay::InfiniteUltimate, false);
         }
+    }
+
+    if (mp_eventSystem)
+    {
+        if (mp_context)
+        {
+            mp_eventSystem->SetEnabled(mp_context->Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled));
+        }
+        const float minInterval = std::max(12.0f, 22.0f - lvl * 1.0f);
+        const float maxInterval = std::max(minInterval + 5.0f, 32.0f - lvl * 1.5f);
+        mp_eventSystem->SetIntervalRange(minInterval, maxInterval);
+        mp_eventSystem->ResetLifecycle();
     }
 
     if (!preserveStats)
@@ -2066,13 +2090,30 @@ void GameScene::AdvanceToNextLevel()
     m_levelManager.NextLevel();
 
     LoadLevel(m_levelManager.GetCurrentLevelIndex(), /*preserveStats=*/true);
-
-    m_levelTransitionTimer = 10.0f;
 }
 
 void GameScene::StartLevelTransition()
 {
     ClearActiveUltimates();
+    ClearVisualMalus();
+    RestoreTemporalAudio(0.08f);
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->StopActiveEvent();
+    }
+    m_scoreManager.BreakCombo();
+
+    const int curLevel = m_levelManager.GetCurrentLevelNumber();
+    m_levelManager.SetHighScoreForLevel(curLevel, m_scoreManager.GetScore());
+    m_levelManager.SetHighestClearedLevel(curLevel);
+    m_levelManager.UnlockLevel(curLevel + 1);
+
+    ResetBallAndPaddle();
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetInputEnabled(false);
+    }
+
     if (mp_context)
     {
         if (m_musicEnabled) mp_context->Audio.FadeOutMusic(0.8f);
@@ -2082,7 +2123,6 @@ void GameScene::StartLevelTransition()
         }
     }
 
-    AdvanceToNextLevel();
     m_levelTransitionTimer = 10.0f;
 }
 
@@ -2093,6 +2133,7 @@ void GameScene::UpdateLevelTransition()
 void GameScene::CompleteLevelTransition()
 {
     m_levelTransitionTimer = 0.0f;
+    AdvanceToNextLevel();
     if (mp_context && m_musicEnabled)
     {
         m_playlist.PlayNext(*mp_context, 1.5f);
@@ -2359,19 +2400,19 @@ void GameScene::HandleInput(const float /*dt*/, const GameContext& context)
         }
     }
 
-    if (context.Input.IsKeyPress(KeyCode::Numpad1) || (testerActive && context.Input.IsKeyPress(KeyCode::Num1))) ApplyPowerUp(PowerUpType::MultiBall);
-    if (context.Input.IsKeyPress(KeyCode::Numpad2) || (testerActive && context.Input.IsKeyPress(KeyCode::Num2))) ApplyPowerUp(PowerUpType::ExpandPaddle);
-    if (context.Input.IsKeyPress(KeyCode::Numpad3) || (testerActive && context.Input.IsKeyPress(KeyCode::Num3))) ApplyPowerUp(PowerUpType::ShrinkPaddle);
-    if (context.Input.IsKeyPress(KeyCode::Numpad4) || (testerActive && context.Input.IsKeyPress(KeyCode::Num4))) ApplyPowerUp(PowerUpType::Storm);
-    if (context.Input.IsKeyPress(KeyCode::Numpad5) || (testerActive && context.Input.IsKeyPress(KeyCode::Num5))) ApplyPowerUp(PowerUpType::TempoBall);
-    if (context.Input.IsKeyPress(KeyCode::Numpad6) || (testerActive && context.Input.IsKeyPress(KeyCode::Num6))) ApplyPowerUp(PowerUpType::ExtraLife);
-    if (context.Input.IsKeyPress(KeyCode::Numpad7) || (testerActive && context.Input.IsKeyPress(KeyCode::Num7))) ApplyPowerUp(PowerUpType::BigBall);
-    if (context.Input.IsKeyPress(KeyCode::Numpad8) || (testerActive && context.Input.IsKeyPress(KeyCode::Num8))) ApplyPowerUp(PowerUpType::FireBall);
-    if (testerActive && context.Input.IsKeyPress(KeyCode::Num9)) ApplyPowerUp(PowerUpType::StickyPaddle);
-    if (testerActive && context.Input.IsKeyPress(KeyCode::Num0)) ApplyPowerUp(PowerUpType::BottomBarrier);
-    if (testerActive && context.Input.IsKeyPress(KeyCode::M)) ApplyPowerUp(PowerUpType::MagnetPaddle);
-    if (testerActive && context.Input.IsKeyPress(KeyCode::H)) ApplyPowerUp(PowerUpType::GhostBall);
-    if (testerActive && context.Input.IsKeyPress(KeyCode::K)) ApplyPowerUp(PowerUpType::GlitchMalus);
+    if (context.Input.IsKeyPress(KeyCode::Numpad1) || (testerActive && context.Input.IsKeyPress(KeyCode::Num1))) TriggerDebugPowerUp(PowerUpType::MultiBall);
+    if (context.Input.IsKeyPress(KeyCode::Numpad2) || (testerActive && context.Input.IsKeyPress(KeyCode::Num2))) TriggerDebugPowerUp(PowerUpType::ExpandPaddle);
+    if (context.Input.IsKeyPress(KeyCode::Numpad3) || (testerActive && context.Input.IsKeyPress(KeyCode::Num3))) TriggerDebugPowerUp(PowerUpType::ShrinkPaddle);
+    if (context.Input.IsKeyPress(KeyCode::Numpad4) || (testerActive && context.Input.IsKeyPress(KeyCode::Num4))) TriggerDebugPowerUp(PowerUpType::Storm);
+    if (context.Input.IsKeyPress(KeyCode::Numpad5) || (testerActive && context.Input.IsKeyPress(KeyCode::Num5))) TriggerDebugPowerUp(PowerUpType::TempoBall);
+    if (context.Input.IsKeyPress(KeyCode::Numpad6) || (testerActive && context.Input.IsKeyPress(KeyCode::Num6))) TriggerDebugPowerUp(PowerUpType::ExtraLife);
+    if (context.Input.IsKeyPress(KeyCode::Numpad7) || (testerActive && context.Input.IsKeyPress(KeyCode::Num7))) TriggerDebugPowerUp(PowerUpType::BigBall);
+    if (context.Input.IsKeyPress(KeyCode::Numpad8) || (testerActive && context.Input.IsKeyPress(KeyCode::Num8))) TriggerDebugPowerUp(PowerUpType::FireBall);
+    if (testerActive && context.Input.IsKeyPress(KeyCode::Num9)) TriggerDebugPowerUp(PowerUpType::StickyPaddle);
+    if (testerActive && context.Input.IsKeyPress(KeyCode::Num0)) TriggerDebugPowerUp(PowerUpType::BottomBarrier);
+    if (testerActive && context.Input.IsKeyPress(KeyCode::M)) TriggerDebugPowerUp(PowerUpType::MagnetPaddle);
+    if (testerActive && context.Input.IsKeyPress(KeyCode::H)) TriggerDebugPowerUp(PowerUpType::GhostBall);
+    if (testerActive && context.Input.IsKeyPress(KeyCode::K)) TriggerDebugPowerUp(PowerUpType::GlitchMalus);
     if (testerActive && context.Input.IsKeyPress(KeyCode::J)) SpawnHazardZone(Vector2f{0.0f, -100.0f}, Vector2f{240.0f, 70.0f}, HazardEffectType::AllMaluses, 4.0f);
     if ((testerActive && context.Input.IsKeyPress(KeyCode::P)))
     {
@@ -2979,7 +3020,14 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
                 auto& sprite = m_registry.GetComponent<SpriteComponent>(entity);
 
                 SpawnExplosionParticles(transform.Position, sprite.Tint);
-                SpawnPowerUp(transform.Position);
+                if (brick.HasForcedPowerUp)
+                {
+                    SpawnSpecificPowerUp(transform.Position, brick.ForcedPowerUp);
+                }
+                else
+                {
+                    SpawnPowerUp(transform.Position);
+                }
 
                 brick.IsRegenerating = true;
                 brick.RegenCooldown = PowerUpManager::Get().ItemRegen().GetEffectiveCooldown();
@@ -3083,7 +3131,14 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
             if (brick.IsSpecial)
             {
-                SpawnPowerUp(transform.Position);
+                if (brick.HasForcedPowerUp)
+                {
+                    SpawnSpecificPowerUp(transform.Position, brick.ForcedPowerUp);
+                }
+                else
+                {
+                    SpawnPowerUp(transform.Position);
+                }
             }
         }
         
@@ -3369,6 +3424,11 @@ void GameScene::SpawnPowerUp(const Vector2f& position)
         roll -= entry.Weight;
     }
 
+    SpawnSpecificPowerUp(position, type);
+}
+
+void GameScene::SpawnSpecificPowerUp(const Vector2f& position, PowerUpType type)
+{
     Entity capsule = m_registry.CreateEntity();
     m_registry.AddComponent<Transform2D>(capsule, Transform2D{position, 0.0f, Vector2f{1.0f, 1.0f}});
     m_registry.AddComponent<BoxCollider>(capsule, BoxCollider{Vector2f{36.0f, 36.0f}, Vector2f{0.0f, 0.0f}, false, true});
@@ -3654,6 +3714,11 @@ void GameScene::FireLasers()
     TriggerStormStrike();
 }
 
+void GameScene::TriggerDebugPowerUp(PowerUpType type)
+{
+    ApplyPowerUp(type);
+}
+
 void GameScene::ApplyPowerUp(PowerUpType type)
 {
     const auto& paddleTransform = m_registry.GetComponent<Transform2D>(m_paddle);
@@ -3862,33 +3927,7 @@ void GameScene::ApplyPowerUp(PowerUpType type)
             bool infiniteLives = mp_context ? mp_context->Rules.GetRule(Rule::Gameplay::InfiniteLives) : false;
             if (!infiniteLives)
             {
-                int lvl = std::clamp(cfg.Level, 1, 5);
-                switch (lvl)
-                {
-                    case 1:
-                        // Niv 1 : +1 vie (plafonné à 9 / 3 coeurs verts)
-                        m_lives = std::min(m_lives + 1, 9);
-                        break;
-                    case 2:
-                        // Niv 2 : +2 vies
-                        m_lives = std::min(m_lives + 2, 9);
-                        break;
-                    case 3:
-                        // Niv 3 : +1 vie jaune (garantit au moins 1 coeur jaune = santé 4, ou +1 si déjà supérieur)
-                        m_lives = std::clamp(std::max(m_lives + 1, 4), 1, 9);
-                        break;
-                    case 4:
-                        // Niv 4 : +2 vies jaunes (garantit au moins 2 coeurs jaunes = santé 5, ou +2 si déjà supérieur)
-                        m_lives = std::clamp(std::max(m_lives + 2, 5), 1, 9);
-                        break;
-                    case 5:
-                        // Niv 5 : +3 vies vertes (bouclier max : 3 coeurs verts = 9)
-                        m_lives = 9;
-                        break;
-                    default:
-                        m_lives = std::min(m_lives + 1, 9);
-                        break;
-                }
+                m_lives = cfg.ComputeNextLives(m_lives);
                 if (mp_context)
                 {
                     mp_context->Events.Publish(LivesChangedEvent(m_lives));
@@ -6900,5 +6939,195 @@ void GameScene::UpdateHazardZones(const float dt)
             TriggerPostProcessFlash(0.015f, 0.35f, Color{80, 20, 45, 255}, 0.15f);
         }
     });
+}
+
+Color GameScene::HsvToRgb(float h, float s, float v, uint8_t a)
+{
+    float hue = std::fmod(h, 1.0f);
+    if (hue < 0.0f) hue += 1.0f;
+    float sat = std::clamp(s, 0.0f, 1.0f);
+    float val = std::clamp(v, 0.0f, 1.0f);
+
+    float c = val * sat;
+    float x = c * (1.0f - std::abs(std::fmod(hue * 6.0f, 2.0f) - 1.0f));
+    float m = val - c;
+
+    float rf = 0.0f, gf = 0.0f, bf = 0.0f;
+    float sector = hue * 6.0f;
+    if (sector < 1.0f)      { rf = c; gf = x; bf = 0.0f; }
+    else if (sector < 2.0f) { rf = x; gf = c; bf = 0.0f; }
+    else if (sector < 3.0f) { rf = 0.0f; gf = c; bf = x; }
+    else if (sector < 4.0f) { rf = 0.0f; gf = x; bf = c; }
+    else if (sector < 5.0f) { rf = x; gf = 0.0f; bf = c; }
+    else                    { rf = c; gf = 0.0f; bf = x; }
+
+    return Color{
+        static_cast<uint8_t>(std::clamp((rf + m) * 255.0f, 0.0f, 255.0f)),
+        static_cast<uint8_t>(std::clamp((gf + m) * 255.0f, 0.0f, 255.0f)),
+        static_cast<uint8_t>(std::clamp((bf + m) * 255.0f, 0.0f, 255.0f)),
+        a
+    };
+}
+
+Color GameScene::GetTopSpawnLightColor(uint8_t alpha) const
+{
+    // Gentle pastel-vibrant hue sweep across all colors
+    return HsvToRgb(m_topSpawnLightHue, 0.72f, 1.0f, alpha);
+}
+
+void GameScene::BeginBrickDescent(Entity brickEntity, float targetY, float startOffsetY, float speed)
+{
+    if (!m_registry.IsAlive(brickEntity) || !m_registry.HasComponent<Transform2D>(brickEntity) || !m_registry.HasComponent<BrickComponent>(brickEntity))
+    {
+        return;
+    }
+
+    auto& t = m_registry.GetComponent<Transform2D>(brickEntity);
+    auto& brick = m_registry.GetComponent<BrickComponent>(brickEntity);
+
+    brick.IsDescending = true;
+    brick.DescendTargetY = targetY;
+    brick.DescendSpeed = std::max(80.0f, speed);
+
+    float startY = targetY - std::max(80.0f, startOffsetY);
+    if (startY > -465.0f)
+    {
+        startY = -465.0f;
+    }
+    t.Position.Y = startY;
+
+    if (m_registry.HasComponent<BoxCollider>(brickEntity) && !brick.IsRegenerating)
+    {
+        m_registry.GetComponent<BoxCollider>(brickEntity).IsTrigger = (t.Position.Y < -440.0f);
+    }
+}
+
+bool GameScene::IsAnyBrickDescending()
+{
+    bool any = false;
+    m_registry.View<BrickComponent>([&any](Entity, const BrickComponent& brick) {
+        if (brick.IsDescending)
+        {
+            any = true;
+        }
+    });
+    return any;
+}
+
+void GameScene::UpdateDescendingBricks(float dt, GameContext& context)
+{
+    // Slowly and smoothly cycle hue through all colors
+    m_topSpawnLightHue = std::fmod(m_topSpawnLightHue + dt * 0.12f, 1.0f);
+
+    bool anyDescending = false;
+    m_registry.View<Transform2D, BrickComponent>([&](Entity e, Transform2D& t, BrickComponent& brick) {
+        if (!brick.IsDescending) return;
+
+        anyDescending = true;
+        t.Position.Y += brick.DescendSpeed * dt;
+        if (t.Position.Y >= brick.DescendTargetY)
+        {
+            t.Position.Y = brick.DescendTargetY;
+            brick.IsDescending = false;
+        }
+
+        if (m_registry.HasComponent<BoxCollider>(e) && !brick.IsRegenerating)
+        {
+            m_registry.GetComponent<BoxCollider>(e).IsTrigger = (t.Position.Y < -440.0f);
+        }
+    });
+
+    if (anyDescending)
+    {
+        m_topSpawnLightAlpha = std::min(1.0f, m_topSpawnLightAlpha + dt * 4.5f);
+    }
+    else
+    {
+        m_topSpawnLightAlpha = std::max(0.0f, m_topSpawnLightAlpha - dt * 2.4f);
+    }
+
+    if (anyDescending && m_topSpawnLightAlpha > 0.10f && m_particleSystem &&
+        context.Rules.GetRule(Rule::Graphics::EnableParticles))
+    {
+        m_topSpawnParticleTimer += dt;
+        constexpr float kSpawnInterval = 0.038f;
+        while (m_topSpawnParticleTimer >= kSpawnInterval)
+        {
+            m_topSpawnParticleTimer -= kSpawnInterval;
+
+            static std::mt19937 rng(std::random_device{}());
+            std::uniform_real_distribution<float> xDist(-760.0f, 760.0f);
+            std::uniform_real_distribution<float> yDist(-448.0f, -424.0f);
+            std::uniform_real_distribution<float> vxDist(-18.0f, 18.0f);
+            std::uniform_real_distribution<float> vyDist(38.0f, 110.0f);
+            std::uniform_real_distribution<float> lifeDist(0.55f, 1.05f);
+            std::uniform_real_distribution<float> sizeDist(4.0f, 8.0f);
+
+            const uint8_t pAlpha = static_cast<uint8_t>(std::clamp(195.0f * m_topSpawnLightAlpha, 40.0f, 220.0f));
+            const Color pColor = GetTopSpawnLightColor(pAlpha);
+
+            for (int i = 0; i < 2; ++i)
+            {
+                Vector2f spawnPos{xDist(rng), yDist(rng)};
+                Vector2f vel{vxDist(rng), vyDist(rng)};
+                m_particleSystem->Spawn(spawnPos, vel, lifeDist(rng), sizeDist(rng), pColor);
+            }
+        }
+    }
+    else if (!anyDescending)
+    {
+        m_topSpawnParticleTimer = 0.0f;
+    }
+}
+
+void GameScene::RenderTopSpawnLight(GameContext& context)
+{
+    if (m_topSpawnLightAlpha <= 0.01f) return;
+
+    const Color baseCol = GetTopSpawnLightColor(255);
+    const uint8_t alphaTop = static_cast<uint8_t>(std::clamp(78.0f * m_topSpawnLightAlpha, 0.0f, 110.0f));
+    const uint8_t alphaMid = static_cast<uint8_t>(std::clamp(28.0f * m_topSpawnLightAlpha, 0.0f, 60.0f));
+
+    const Color topCol{baseCol.r, baseCol.g, baseCol.b, alphaTop};
+    const Color midCol{baseCol.r, baseCol.g, baseCol.b, alphaMid};
+    const Color zeroCol{baseCol.r, baseCol.g, baseCol.b, 0};
+
+    constexpr float leftX = -798.0f;
+    constexpr float rightX = 798.0f;
+    constexpr float yTop = -450.0f;
+    constexpr float yMid = -375.0f;
+    constexpr float yBot = -245.0f;
+
+    // Two-band smooth vertical gradient glow along top ceiling
+    std::vector<Vertex> glowVerts = {
+        // Upper bright feather band
+        Vertex{leftX,  yTop, topCol, 0.0f, 0.0f},
+        Vertex{rightX, yTop, topCol, 0.0f, 0.0f},
+        Vertex{rightX, yMid, midCol, 0.0f, 0.0f},
+
+        Vertex{rightX, yMid, midCol, 0.0f, 0.0f},
+        Vertex{leftX,  yMid, midCol, 0.0f, 0.0f},
+        Vertex{leftX,  yTop, topCol, 0.0f, 0.0f},
+
+        // Lower wide soft dissipation band
+        Vertex{leftX,  yMid, midCol,  0.0f, 0.0f},
+        Vertex{rightX, yMid, midCol,  0.0f, 0.0f},
+        Vertex{rightX, yBot, zeroCol, 0.0f, 0.0f},
+
+        Vertex{rightX, yBot, zeroCol, 0.0f, 0.0f},
+        Vertex{leftX,  yBot, zeroCol, 0.0f, 0.0f},
+        Vertex{leftX,  yMid, midCol,  0.0f, 0.0f}
+    };
+    context.Render.DrawVertices(glowVerts, PrimitiveType::Triangles, 0, BlendMode::Add);
+
+    // Soft additive point lobes along the top ceiling for atmospheric diffusion
+    const Color lobeCol{baseCol.r, baseCol.g, baseCol.b, static_cast<uint8_t>(std::clamp(140.0f * m_topSpawnLightAlpha, 0.0f, 180.0f))};
+    context.Render.DrawPointLight(Vector2f{-460.0f, -445.0f}, 320.0f, lobeCol, 0.48f * m_topSpawnLightAlpha, BlendMode::Add);
+    context.Render.DrawPointLight(Vector2f{   0.0f, -445.0f}, 360.0f, lobeCol, 0.56f * m_topSpawnLightAlpha, BlendMode::Add);
+    context.Render.DrawPointLight(Vector2f{ 460.0f, -445.0f}, 320.0f, lobeCol, 0.48f * m_topSpawnLightAlpha, BlendMode::Add);
+
+    // Subtle luminous ceiling hairline
+    const Color lineCol{baseCol.r, baseCol.g, baseCol.b, static_cast<uint8_t>(std::clamp(190.0f * m_topSpawnLightAlpha, 0.0f, 220.0f))};
+    context.Render.DrawLine(Vector2f{leftX, -448.5f}, Vector2f{rightX, -448.5f}, lineCol, 3.0f);
 }
 

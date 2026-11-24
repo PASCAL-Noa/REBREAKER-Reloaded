@@ -195,6 +195,34 @@ struct ExtraLifeConfig
     int LivesGranted = 1;
     int MaxLivesCap = 9;
 
+    int GetEffectiveCap() const {
+        switch (std::clamp(Level, 1, MaxLevel)) {
+            case 1: return 4; // Unlocks 1st yellow heart
+            case 2: return 5;
+            case 3: return 6;
+            case 4: return 7; // Unlocks 1st green heart
+            case 5: return 9; // 3 green hearts max cap
+            default: return 4;
+        }
+    }
+
+    int GetEffectiveLivesGranted() const {
+        switch (std::clamp(Level, 1, MaxLevel)) {
+            case 1: return 1;
+            case 2: return 2;
+            case 3: return 3;
+            case 4: return 4;
+            case 5: return 6;
+            default: return 1;
+        }
+    }
+
+    int ComputeNextLives(int currentLives) const {
+        int cap = GetEffectiveCap();
+        if (currentLives >= cap) return currentLives;
+        return std::min(currentLives + GetEffectiveLivesGranted(), cap);
+    }
+
     int GetUpgradeCost() const {
         return 200 * Level;
     }

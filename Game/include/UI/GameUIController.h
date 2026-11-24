@@ -56,6 +56,10 @@ public:
     void NavigatePowerUpTester(int delta);
     void ActivatePowerUpTesterSelected();
     [[nodiscard]] int GetPowerUpTesterIndex() const noexcept { return m_powerUpTesterIndex; }
+    void SetOnQuitOverride(std::function<void()> callback) { m_onQuitOverride = std::move(callback); }
+    [[nodiscard]] bool HasQuitOverride() const noexcept { return static_cast<bool>(m_onQuitOverride); }
+    void TriggerQuitOverride() { if (m_onQuitOverride) m_onQuitOverride(); }
+    void SetDisableGameOverUI(bool disable) noexcept { m_disableGameOverUI = disable; }
 
     // Text feedback
     void SpawnComboText(const Vector2f& worldPos, int comboMultiplier, const Camera2D& camera);
@@ -159,4 +163,6 @@ private:
     ScopedSubscription m_stateSub;
     ScopedSubscription m_scoreSub;
     ScopedSubscription m_livesSub;
+    std::function<void()> m_onQuitOverride;
+    bool m_disableGameOverUI = false;
 };

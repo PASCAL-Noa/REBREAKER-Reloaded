@@ -5,8 +5,27 @@
 #include "ECS/Components/SpriteComponent.h"
 #include "ECS/Components/TweenComponent.h"
 #include "ECS/Components/LightSourceComponent.h"
+#include <algorithm>
 
-Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type, bool isSpecial, uint32_t texId, uint8_t armorTier)
+Color BrickFactory::GetColorForHitPoints(int hitPoints)
+{
+    const int clamped = std::clamp(hitPoints, 1, 9);
+    switch (clamped)
+    {
+        case 1:  return Color{65, 225, 95, 255};   // 1 PV : Emerald Green
+        case 2:  return Color{250, 215, 45, 255};  // 2 PV : Solar Yellow
+        case 3:  return Color{245, 65, 65, 255};   // 3 PV : Crimson Red
+        case 4:  return Color{255, 135, 35, 255};  // 4 PV : Blaze Orange
+        case 5:  return Color{40, 225, 255, 255};  // 5 PV : Electric Cyan
+        case 6:  return Color{55, 125, 255, 255};  // 6 PV : Royal Azure
+        case 7:  return Color{175, 70, 255, 255};  // 7 PV : Plasma Violet
+        case 8:  return Color{255, 65, 195, 255};  // 8 PV : Neon Magenta
+        case 9:  return Color{255, 235, 140, 255}; // 9 PV : Radiant Diamond Gold
+        default: return Colors::White;
+    }
+}
+
+Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type, bool isSpecial, uint32_t texId, uint8_t armorTier, int customHitPoints)
 {
     Entity brick = registry.CreateEntity();
     registry.AddComponent<Transform2D>(brick, Transform2D{Vector2f{x, y}});
@@ -82,7 +101,18 @@ Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type
             tint = Colors::White;
             break;
     }
-    
+
+    if (customHitPoints > 0 && !comp.IsUnbreakable)
+    {
+        const int hp = std::clamp(customHitPoints, 1, 9);
+        comp.HitPoints = static_cast<uint32_t>(hp);
+        comp.ScoreValue = static_cast<uint32_t>(hp * 60);
+        if (type == BrickType::Light || type == BrickType::Medium || type == BrickType::Hard)
+        {
+            tint = GetColorForHitPoints(hp);
+        }
+    }
+
     comp.MaxHitPoints = comp.HitPoints;
 
     registry.AddComponent<BrickComponent>(brick, comp);

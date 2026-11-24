@@ -32,6 +32,8 @@ enum class ChannelType : int
     LevelSelect,
     EndlessMode,
     Workshop,
+    LevelMaker,
+    Robostock,
     Leaderboard,
     Achievements,
     CustomGame,
@@ -130,6 +132,7 @@ public:
 
     static void SetReturnWithDezoom(bool enable) { s_returnWithDezoom = enable; }
     static bool IsReturnWithDezoom() { return s_returnWithDezoom; }
+    static void SetReturnChannelType(ChannelType type) { s_returnChannelType = type; s_hasReturnChannel = true; }
 
 protected:
     [[nodiscard]] bool PreservesMusicOnDestroy() const override { return true; }
@@ -358,6 +361,8 @@ private:
     float               m_returnTimer = 0.0f;
     float               m_returnProgress = 0.0f;
     inline static bool  s_returnWithDezoom = false;
+    inline static ChannelType s_returnChannelType = ChannelType::Campaign;
+    inline static bool  s_hasReturnChannel = false;
 
     // Campaign Gameplay Preview (10s live loop with current level layout)
     float               m_campaignPreviewTimer = 0.0f;

@@ -2,6 +2,10 @@
 #include "Factories/BrickFactory.h"
 #include "Resources/ResourceManager.h"
 #include "Core/GameContext.h"
+#include "ECS/Components/Transform2D.h"
+#include "ECS/Components/BrickComponent.h"
+#include "ECS/Components/BoxCollider.h"
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
@@ -32,7 +36,7 @@ int FileLevelGenerator::Generate(Registry& registry, GameContext& context, uint3
     const float bWidth = 100.0f;
     const float bHeight = 30.0f;
     const float startX = -605.0f;
-    const float startY = -350.0f;
+    const float startY = -310.0f;
     const float pad = 10.0f;
 
     int row = 0;
@@ -89,7 +93,20 @@ int FileLevelGenerator::Generate(Registry& registry, GameContext& context, uint3
             float x = startX + static_cast<float>(col) * (bWidth + pad);
             float y = startY + static_cast<float>(row) * (bHeight + pad);
 
-            BrickFactory::Create(registry, x, y, type, isSpecial, brickTexId);
+            Entity b = BrickFactory::Create(registry, x, y, type, isSpecial, brickTexId);
+            if (registry.IsAlive(b) && registry.HasComponent<Transform2D>(b) && registry.HasComponent<BrickComponent>(b))
+            {
+                auto& bComp = registry.GetComponent<BrickComponent>(b);
+                auto& bTrans = registry.GetComponent<Transform2D>(b);
+                bComp.IsDescending = true;
+                bComp.DescendTargetY = y;
+                bComp.DescendSpeed = 380.0f;
+                bTrans.Position.Y = std::min(-475.0f, y - 340.0f);
+                if (registry.HasComponent<BoxCollider>(b))
+                {
+                    registry.GetComponent<BoxCollider>(b).IsTrigger = true;
+                }
+            }
             if (type != BrickType::Metal && type != BrickType::Special)
             {
                 brickCount++;

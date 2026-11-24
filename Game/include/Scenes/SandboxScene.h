@@ -31,6 +31,7 @@ public:
     void OnDestroy(GameContext& context) override;
 
     // Safety and Loop Overrides
+    void StartCountdown() override;
     void OnGameOverEnter() override;
     void OnVictoryEnter() override;
     [[nodiscard]] bool HasNextLevel() const override { return false; }
@@ -61,11 +62,16 @@ public:
     void NextPowerUp();
     void PreviousPowerUp();
     void TriggerSelectedPowerUp();
+    void TriggerDebugPowerUp(PowerUpType type) override;
     void SpawnPowerUpCapsule(PowerUpType type, const Vector2f& position);
     void SetSpawnCapsuleMode(bool spawnCapsule) noexcept { m_spawnCapsuleMode = spawnCapsule; }
     [[nodiscard]] bool IsSpawnCapsuleMode() const noexcept { return m_spawnCapsuleMode; }
     void ToggleSpawnCapsuleMode() noexcept { m_spawnCapsuleMode = !m_spawnCapsuleMode; }
     void ClearAllPowerUpEffects();
+    void LevelUpSelectedPowerUp();
+    void LevelDownSelectedPowerUp();
+    void SetSelectedPowerUpLevel(int level);
+    void ResetAllPowerUpLevels();
     void MaximizeAllPowerUpLevels();
 
     // Ultimate Abilities Module
@@ -96,6 +102,7 @@ public:
     [[nodiscard]] bool IsPaletteVisible() const noexcept { return m_paletteVisible; }
 
 protected:
+    void HandleInput(float dt, const GameContext& context) override;
     void HandleSandboxInput(const GameContext& context);
     void CreateStreamDeckUI(const GameContext& context);
     void UpdateSandboxUIDisplay();
@@ -103,8 +110,8 @@ protected:
 private:
     PlaygroundLayout m_currentLayout = PlaygroundLayout::TacticalMix;
     LightingMode     m_lightingMode = LightingMode::Lit;
-    bool             m_safetyBarrierEnabled = true;
-    bool             m_spawnCapsuleMode = false;
+    bool             m_safetyBarrierEnabled = false;
+    bool             m_spawnCapsuleMode = true;
     bool             m_paletteVisible = false;
 
     int              m_selectedPowerUpIdx = 0;
@@ -117,6 +124,8 @@ private:
 
     // Stream Deck Display Buttons / Pads
     Entity           m_btnPowerUpLCD = NULL_ENTITY;
+    Entity           m_btnPowerUpLevelDown = NULL_ENTITY;
+    Entity           m_btnPowerUpLevelUp = NULL_ENTITY;
     Entity           m_btnSpawnMode = NULL_ENTITY;
     Entity           m_btnUltimateLCD = NULL_ENTITY;
     Entity           m_btnMalusLCD = NULL_ENTITY;

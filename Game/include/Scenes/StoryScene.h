@@ -20,11 +20,16 @@ public:
 
     // Victory & Defeat condition overrides
     [[nodiscard]] bool IsGameOver() const override;
+    [[nodiscard]] bool IsLevelCleared() const override;
+    [[nodiscard]] int  GetCurrentLevel() const override { return m_currentChapterIndex + 1; }
+    [[nodiscard]] int  GetLevelCount() const override { return static_cast<int>(m_chapters.size()); }
     [[nodiscard]] bool HasNextLevel() const override;
-    void AdvanceToNextLevel();
+    void AdvanceToNextLevel() override;
+    void StartLevelTransition() override;
     void FullReset() override;
     void OnGameOverEnter() override;
     void OnGameOverExit() override;
+    void OnVictoryEnter() override;
     void OnVictoryExit() override;
 
     // Paddle modifiers overrides
@@ -58,6 +63,7 @@ private:
     void SetupChapterPlayfield(int chapterIndex);
     void StartChapterDialogue(bool isIntro);
     void CompleteChapter();
+    void GrantChapterRewards();
 
     // Boss Combat Loop
     void UpdateBoss(float dt, GameContext& context);
@@ -127,6 +133,8 @@ private:
     float               m_bossLaserSweepTimer = 0.0f;
     float               m_bossDefeatCinematicTimer = 0.0f;
     int                 m_bossExplosionIndex = 0;
+    bool                m_chapterRewardsGranted = false;
+    bool                m_bossDefeated = false;
 
     // Textures & Audio
     uint32_t m_bossChassisTexId = 0;

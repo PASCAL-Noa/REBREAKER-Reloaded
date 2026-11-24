@@ -8,6 +8,8 @@
 #include "Scenes/LevelSelectScene.h"
 #include "Scenes/Sandbox.h"
 #include "Scenes/SandboxScene.h"
+#include "Scenes/EditorScene.h"
+#include "Scenes/RobostockScene.h"
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleAudio.h"
 #include "Scenes/SampleStateMachine.h"
@@ -188,6 +190,19 @@ void MenuScene::OnInit(GameContext& context)
     PowerUpManager::Get().ClearTransientOverrides();
 
     context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+
+    if (s_hasReturnChannel)
+    {
+        for (size_t i = 0; i < m_tvChannels.size(); ++i)
+        {
+            if (m_tvChannels[i].Type == s_returnChannelType)
+            {
+                m_selectedChannel = static_cast<int>(i);
+                break;
+            }
+        }
+        s_hasReturnChannel = false;
+    }
 
     if (s_returnWithDezoom)
     {
@@ -933,11 +948,11 @@ void MenuScene::CreateMainMenuUI(const GameContext& /*context*/)
 void MenuScene::InitTVChannels()
 {
     m_tvChannels.clear();
-    m_tvChannels.reserve(8);
+    m_tvChannels.reserve(9);
 
-    const float colX[4] = {295.0f, 630.0f, 965.0f, 1300.0f};
-    const float rowY[2] = {310.0f, 535.0f};
-    const Vector2f cardSize{280.0f, 185.0f};
+    const float colX[3] = {400.0f, 800.0f, 1200.0f};
+    const float rowY[3] = {295.0f, 520.0f, 745.0f};
+    const Vector2f cardSize{355.0f, 196.0f};
 
     // 0: Campaign
     m_tvChannels.push_back(TVChannel{
@@ -993,69 +1008,84 @@ void MenuScene::InitTVChannels()
         .Description = "Upgrade paddle chassis, test devastating ultimates, and tune ball physics.",
         .ThemeColor = Color{255, 215, 60, 255},
         .CardBgColor = Color{28, 25, 16, 245},
-        .Position = Vector2f{colX[3], rowY[0]},
-        .Size = cardSize,
-        .BasePosition = Vector2f{colX[3], rowY[0]},
-        .BaseSize = cardSize
-    });
-
-    // 4: Leaderboard
-    m_tvChannels.push_back(TVChannel{
-        .Type = ChannelType::Leaderboard,
-        .ChannelNumber = "CH 05",
-        .Title = "LEADERBOARD",
-        .Subtitle = "ARCADE RANKINGS",
-        .Description = "View global arcade rankings, stage records, and personal best scores.",
-        .ThemeColor = Color{165, 105, 255, 255},
-        .CardBgColor = Color{24, 18, 32, 245},
         .Position = Vector2f{colX[0], rowY[1]},
         .Size = cardSize,
         .BasePosition = Vector2f{colX[0], rowY[1]},
         .BaseSize = cardSize
     });
 
-    // 5: Achievements
+    // 4: Level Maker / Creative Studio
     m_tvChannels.push_back(TVChannel{
-        .Type = ChannelType::Achievements,
-        .ChannelNumber = "CH 06",
-        .Title = "PROFILE",
-        .Subtitle = "CAREER STATS",
-        .Description = "Inspect unlocked badges, career stats, prestige rank, and performance medals.",
-        .ThemeColor = Color{50, 225, 140, 255},
-        .CardBgColor = Color{16, 28, 22, 245},
+        .Type = ChannelType::LevelMaker,
+        .ChannelNumber = "CH 05",
+        .Title = "LEVEL MAKER",
+        .Subtitle = "CREATIVE STUDIO",
+        .Description = "Sculpt custom stages, configure lighting, orchestrate temporal event queues, and test in real-time.",
+        .ThemeColor = Color{255, 205, 50, 255},
+        .CardBgColor = Color{28, 22, 14, 245},
         .Position = Vector2f{colX[1], rowY[1]},
         .Size = cardSize,
         .BasePosition = Vector2f{colX[1], rowY[1]},
         .BaseSize = cardSize
     });
 
-    // 6: Sandbox
+    // 5: Robostock / Coursebot Custom Vault
     m_tvChannels.push_back(TVChannel{
-        .Type = ChannelType::Sandbox,
-        .ChannelNumber = "CH 07",
-        .Title = "SANDBOX ROOM",
-        .Subtitle = "PHYSICS LAB",
-        .Description = "Freeform physics playground to spawn bricks, test weapons, and experiment.",
-        .ThemeColor = Color{60, 190, 255, 255},
-        .CardBgColor = Color{16, 24, 32, 245},
+        .Type = ChannelType::Robostock,
+        .ChannelNumber = "CH 06",
+        .Title = "ROBOSTOCK",
+        .Subtitle = "NIVEAUX & LISTES",
+        .Description = "Coffre de niveaux personnalises avec apercu miniature, tri glisser-deposer et listes speciales.",
+        .ThemeColor = Color{65, 235, 195, 255},
+        .CardBgColor = Color{16, 28, 30, 245},
         .Position = Vector2f{colX[2], rowY[1]},
         .Size = cardSize,
         .BasePosition = Vector2f{colX[2], rowY[1]},
         .BaseSize = cardSize
     });
 
-    // 7: Settings
+    // 6: Leaderboard
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Leaderboard,
+        .ChannelNumber = "CH 07",
+        .Title = "LEADERBOARD",
+        .Subtitle = "ARCADE RANKINGS",
+        .Description = "View global arcade rankings, stage records, and personal best scores.",
+        .ThemeColor = Color{165, 105, 255, 255},
+        .CardBgColor = Color{24, 18, 32, 245},
+        .Position = Vector2f{colX[0], rowY[2]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[0], rowY[2]},
+        .BaseSize = cardSize
+    });
+
+    // 7: Achievements / Profile
+    m_tvChannels.push_back(TVChannel{
+        .Type = ChannelType::Achievements,
+        .ChannelNumber = "CH 08",
+        .Title = "PROFILE",
+        .Subtitle = "CAREER STATS",
+        .Description = "Inspect unlocked badges, career stats, prestige rank, and performance medals.",
+        .ThemeColor = Color{50, 225, 140, 255},
+        .CardBgColor = Color{16, 28, 22, 245},
+        .Position = Vector2f{colX[1], rowY[2]},
+        .Size = cardSize,
+        .BasePosition = Vector2f{colX[1], rowY[2]},
+        .BaseSize = cardSize
+    });
+
+    // 8: Settings
     m_tvChannels.push_back(TVChannel{
         .Type = ChannelType::Settings,
-        .ChannelNumber = "CH 08",
+        .ChannelNumber = "CH 09",
         .Title = "SETTINGS",
         .Subtitle = "SYSTEM OPTIONS",
         .Description = "Configure CRT shaders, master audio mixing, input bindings, and display modes.",
         .ThemeColor = Color{180, 205, 230, 255},
         .CardBgColor = Color{20, 24, 30, 245},
-        .Position = Vector2f{colX[3], rowY[1]},
+        .Position = Vector2f{colX[2], rowY[2]},
         .Size = cardSize,
-        .BasePosition = Vector2f{colX[3], rowY[1]},
+        .BasePosition = Vector2f{colX[2], rowY[2]},
         .BaseSize = cardSize
     });
 }
@@ -1951,35 +1981,35 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
         }
     }
 
-    // 7. Keyboard / Gamepad 4x2 Navigation
+    // 7. Keyboard / Gamepad 3x3 Navigation
     if (m_navDebounceTimer <= 0.0f)
     {
         int prevSelected = m_selectedChannel;
-        int col = m_selectedChannel % 4;
-        int row = m_selectedChannel / 4;
+        int col = m_selectedChannel % 3;
+        int row = m_selectedChannel / 3;
 
         if (context.Input.IsMenuLeftTriggered())
         {
-            col = (col + 3) % 4;
-            m_selectedChannel = row * 4 + col;
+            col = (col + 2) % 3;
+            m_selectedChannel = row * 3 + col;
             m_navDebounceTimer = 0.20f;
         }
         else if (context.Input.IsMenuRightTriggered())
         {
-            col = (col + 1) % 4;
-            m_selectedChannel = row * 4 + col;
+            col = (col + 1) % 3;
+            m_selectedChannel = row * 3 + col;
             m_navDebounceTimer = 0.20f;
         }
         else if (context.Input.IsMenuUpTriggered())
         {
-            row = (row + 1) % 2;
-            m_selectedChannel = row * 4 + col;
+            row = (row + 2) % 3;
+            m_selectedChannel = row * 3 + col;
             m_navDebounceTimer = 0.20f;
         }
         else if (context.Input.IsMenuDownTriggered())
         {
-            row = (row + 1) % 2;
-            m_selectedChannel = row * 4 + col;
+            row = (row + 1) % 3;
+            m_selectedChannel = row * 3 + col;
             m_navDebounceTimer = 0.20f;
         }
 
@@ -1994,6 +2024,14 @@ void MenuScene::UpdateTVControls(float dt, GameContext& context)
     {
         if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
         context.Scenes.LoadSceneWithTransition<CustomGameScene>(SceneTransitionType::StaticSnow, 0.65f);
+        return;
+    }
+
+    // Sandbox Physics Lab Shortcut [B]
+    if (context.Input.IsKeyPress(KeyCode::B))
+    {
+        if (m_tvSwitchSfxId != 0) context.Audio.PlaySfx(m_tvSwitchSfxId, 12.0f);
+        context.Scenes.LoadSceneWithTransition<SandboxScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
     }
 
@@ -2055,6 +2093,12 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
         m_channelSwitchGlitch = 0.0f;
         OpenModal(m_workshopCanvas);
         OpenWorkshopTab(m_workshopProfileCanvas);
+        break;
+    case ChannelType::LevelMaker:
+        context.Scenes.LoadSceneWithTransition<EditorScene>(SceneTransitionType::StaticSnow, 0.65f);
+        break;
+    case ChannelType::Robostock:
+        context.Scenes.LoadSceneWithTransition<RobostockScene>(SceneTransitionType::StaticSnow, 0.65f);
         break;
     case ChannelType::CustomGame:
         context.Scenes.LoadSceneWithTransition<CustomGameScene>(SceneTransitionType::StaticSnow, 0.65f);
@@ -2340,10 +2384,10 @@ void MenuScene::RenderChannelGrid(GameContext& context)
     }
 
     // 3. CRT Screen Bottom Status Bar with Custom Match shortcut
-    const Vector2f footerPos{695.0f, 705.0f};
+    const Vector2f footerPos{695.0f, 835.0f};
     context.Render.DrawRectangle(920.0f, 36.0f, Transform2D{footerPos}, Color{16, 24, 38, 235});
     context.Render.DrawRectangleOutline(920.0f, 36.0f, Transform2D{footerPos}, Color{70, 160, 245, 200}, 1.5f);
-    context.Render.DrawTextCentered("[C] CUSTOM MATCH LAB   |   [ENTER] SELECT   |   [ESC] SLEEP", m_fontId, 17.0f, Transform2D{footerPos}, Color{220, 235, 255, 245});
+    context.Render.DrawTextCentered("[C] CUSTOM MATCH   |   [B] SANDBOX LAB   |   [ENTER] SELECT   |   [ESC] SLEEP", m_fontId, 16.0f, Transform2D{footerPos}, Color{220, 235, 255, 245});
 }
 
 void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float sc) const
@@ -2585,6 +2629,77 @@ void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch,
         float fillW = 76.0f * sc * fillP;
         float fillX = barPos.X - 38.0f * sc + fillW * 0.5f;
         context.Render.DrawRectangle(fillW, 5.0f * sc, Transform2D{Vector2f{fillX, barPos.Y}}, Color{50, 235, 140, 240});
+        break;
+    }
+    case ChannelType::LevelMaker:
+    {
+        // Blueprint Drafting Grid & Glowing Brick Blocks
+        for (int l = -3; l <= 3; ++l)
+        {
+            float lx = pos.X + static_cast<float>(l) * 16.0f * sc;
+            context.Render.DrawLine(Vector2f{lx, pos.Y - 24.0f * sc}, Vector2f{lx, pos.Y + 24.0f * sc}, Color{255, 205, 50, 45}, 1.0f * sc);
+        }
+        for (int r = -2; r <= 2; ++r)
+        {
+            float ly = pos.Y + static_cast<float>(r) * 10.0f * sc;
+            context.Render.DrawLine(Vector2f{pos.X - 48.0f * sc, ly}, Vector2f{pos.X + 48.0f * sc, ly}, Color{255, 205, 50, 45}, 1.0f * sc);
+        }
+        // Three colorful showcase brick blocks
+        context.Render.DrawRectangle(28.0f * sc, 12.0f * sc, Transform2D{pos + Vector2f{-20.0f * sc, -7.0f * sc}}, Color{80, 210, 255, 225});
+        context.Render.DrawRectangleOutline(28.0f * sc, 12.0f * sc, Transform2D{pos + Vector2f{-20.0f * sc, -7.0f * sc}}, Colors::White, 1.0f * sc);
+
+        context.Render.DrawRectangle(28.0f * sc, 12.0f * sc, Transform2D{pos + Vector2f{16.0f * sc, -7.0f * sc}}, Color{255, 175, 45, 225});
+        context.Render.DrawRectangleOutline(28.0f * sc, 12.0f * sc, Transform2D{pos + Vector2f{16.0f * sc, -7.0f * sc}}, Colors::White, 1.0f * sc);
+
+        context.Render.DrawRectangle(28.0f * sc, 12.0f * sc, Transform2D{pos + Vector2f{-2.0f * sc, 9.0f * sc}}, Color{235, 65, 85, 225});
+        context.Render.DrawRectangleOutline(28.0f * sc, 12.0f * sc, Transform2D{pos + Vector2f{-2.0f * sc, 9.0f * sc}}, Colors::White, 1.0f * sc);
+
+        // Drafting badge / tool label
+        context.Render.DrawTextCentered("STUDIO", m_fontId, 9.0f * sc, Transform2D{pos + Vector2f{0.0f, -1.0f * sc}}, Color{255, 235, 120, 255});
+        break;
+    }
+    case ChannelType::Robostock:
+    {
+        // Coursebot / Robostock: Robotic head + slotted level cartridges with mini brick matrix
+        const float bob = std::sin(m_animTime * 2.8f) * 2.5f * sc;
+        const Vector2f botPos = pos + Vector2f{-30.0f * sc, 2.0f * sc + bob};
+
+        // Antenna
+        context.Render.DrawLine(botPos + Vector2f{0.0f, -20.0f * sc}, botPos + Vector2f{0.0f, -30.0f * sc}, Color{65, 235, 195, 220}, 2.0f * sc);
+        const uint8_t ledPulse = static_cast<uint8_t>(165 + 90 * (0.5f + 0.5f * std::sin(m_animTime * 6.0f)));
+        context.Render.DrawCircle(3.8f * sc, Transform2D{botPos + Vector2f{0.0f, -32.0f * sc}}, Color{255, 210, 60, ledPulse});
+
+        // Robot head chassis
+        context.Render.DrawRectangle(40.0f * sc, 34.0f * sc, Transform2D{botPos}, Color{36, 52, 58, 255});
+        context.Render.DrawRectangleOutline(40.0f * sc, 34.0f * sc, Transform2D{botPos}, Color{65, 235, 195, 240}, 1.8f * sc);
+
+        // Visor + eyes
+        context.Render.DrawRectangle(30.0f * sc, 12.0f * sc, Transform2D{botPos + Vector2f{0.0f, -4.0f * sc}}, Color{10, 18, 22, 255});
+        context.Render.DrawCircle(3.2f * sc, Transform2D{botPos + Vector2f{-7.5f * sc, -4.0f * sc}}, Color{80, 255, 215, 255});
+        context.Render.DrawCircle(3.2f * sc, Transform2D{botPos + Vector2f{7.5f * sc, -4.0f * sc}}, Color{80, 255, 215, 255});
+
+        // Tape mouth grille
+        context.Render.DrawRectangle(20.0f * sc, 5.0f * sc, Transform2D{botPos + Vector2f{0.0f, 8.5f * sc}}, Color{255, 200, 65, 230});
+
+        // Right-side stacked level cartridges with mini brick preview
+        const Vector2f cartPos = pos + Vector2f{24.0f * sc, 0.0f};
+        context.Render.DrawRectangle(54.0f * sc, 42.0f * sc, Transform2D{cartPos}, Color{14, 22, 28, 240});
+        context.Render.DrawRectangleOutline(54.0f * sc, 42.0f * sc, Transform2D{cartPos}, Color{65, 235, 195, 210}, 1.5f * sc);
+
+        const Color rowCols[3] = {
+            Color{255, 95, 95, 240},
+            Color{255, 215, 65, 240},
+            Color{75, 230, 165, 240}
+        };
+        for (int r = 0; r < 3; ++r)
+        {
+            for (int c = 0; c < 4; ++c)
+            {
+                if ((r == 2 && (c == 1 || c == 2))) continue;
+                const Vector2f bp = cartPos + Vector2f{(-16.5f + static_cast<float>(c) * 11.0f) * sc, (-11.0f + static_cast<float>(r) * 8.0f) * sc};
+                context.Render.DrawRectangle(8.5f * sc, 5.0f * sc, Transform2D{bp}, rowCols[r]);
+            }
+        }
         break;
     }
     case ChannelType::Sandbox:

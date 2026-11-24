@@ -196,8 +196,26 @@ int main(int argc, char* argv[])
             return success ? 0 : 1;
         }
 
-        const bool fs = PlayerPrefs::GetBool("Fullscreen", false);
-        config.Mode = fs ? WindowMode::Fullscreen : WindowMode::Windowed;
+        config.VSync = PlayerPrefs::GetBool("VSync", false);
+
+        const std::string displayMode = PlayerPrefs::GetString("DisplayMode", "");
+        if (displayMode == "Exclusive")
+        {
+            config.Mode = WindowMode::Fullscreen;
+        }
+        else if (displayMode == "Borderless")
+        {
+            config.Mode = WindowMode::Borderless;
+        }
+        else if (displayMode == "Windowed")
+        {
+            config.Mode = WindowMode::Windowed;
+        }
+        else
+        {
+            const bool fs = PlayerPrefs::GetBool("Fullscreen", false);
+            config.Mode = fs ? WindowMode::Borderless : WindowMode::Windowed;
+        }
 
         Application app(config);
         app.Run();

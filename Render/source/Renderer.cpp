@@ -84,9 +84,13 @@ void Renderer::EndDraw(uint32_t postProcessShaderId, const PostProcessParams& pa
 {
     m_renderTexture.display();
 
-    m_window.Clear();
-
     const sf::Vector2u winSize = m_window.GetNative().getSize();
+    if (winSize.x == 0 || winSize.y == 0)
+    {
+        return;
+    }
+
+    m_window.Clear();
     m_window.GetNative().setView(sf::View(sf::FloatRect({0.f, 0.f}, {static_cast<float>(winSize.x), static_cast<float>(winSize.y)})));
     
     sf::Sprite renderSprite(m_renderTexture.getTexture());

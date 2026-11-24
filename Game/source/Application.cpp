@@ -5,6 +5,9 @@
 #include "Scenes/GameScene.h"
 #include "Scenes/StoryScene.h"
 #include "Scenes/EndlessScene.h"
+#include "Scenes/EditorScene.h"
+#include "Scenes/RobostockScene.h"
+#include <algorithm>
 #include <iostream>
 
 Application::Application(const WindowConfig& config)
@@ -26,15 +29,26 @@ Application::Application(const WindowConfig& config)
 
 void Application::Init()
 {
-    std::string savedDevice = PlayerPrefs::GetString("Audio_Device", "");
-    auto defaultDev = sf::PlaybackDevice::getDefaultDevice();
-    if (!savedDevice.empty() && savedDevice != "Default Device" &&
-        (!defaultDev.has_value() || savedDevice != defaultDev.value()))
-    {
-        m_audioMixer.SetAudioDevice(savedDevice);
-    }
-
     bool prefsNeedSave = false;
+    std::string savedDevice = PlayerPrefs::GetString("Audio_Device", "");
+    if (!savedDevice.empty() && savedDevice != "Default Device")
+    {
+        auto available = m_audioMixer.GetAvailableAudioDevices();
+        if (std::find(available.begin(), available.end(), savedDevice) == available.end())
+        {
+            PlayerPrefs::SetString("Audio_Device", "");
+            savedDevice.clear();
+            prefsNeedSave = true;
+        }
+        else
+        {
+            auto defaultDev = sf::PlaybackDevice::getDefaultDevice();
+            if (!defaultDev.has_value() || savedDevice != defaultDev.value())
+            {
+                m_audioMixer.SetAudioDevice(savedDevice);
+            }
+        }
+    }
     if (!PlayerPrefs::HasKey("MasterVolume"))
     {
         PlayerPrefs::SetFloat("MasterVolume", 80.0f);
@@ -158,7 +172,19 @@ bool Application::RunSmokeTest()
     stepFrames(70);
     std::cout << "[SmokeTest] EndlessScene (EndlessMode) active and running stably!" << std::endl;
 
-    // Step 4: Return to MenuScene
+    // Step 4: Launch LevelMaker (EditorScene) with transition
+    std::cout << "[SmokeTest] Triggering transition to EditorScene (LevelMaker)..." << std::endl;
+    m_context.Scenes.LoadSceneWithTransition<EditorScene>(SceneTransitionType::StaticSnow, 0.55f);
+    stepFrames(60);
+    std::cout << "[SmokeTest] EditorScene active and running stably!" << std::endl;
+
+    // Step 5: Launch RobostockScene with transition
+    std::cout << "[SmokeTest] Triggering transition to RobostockScene..." << std::endl;
+    m_context.Scenes.LoadSceneWithTransition<RobostockScene>(SceneTransitionType::StaticSnow, 0.55f);
+    stepFrames(60);
+    std::cout << "[SmokeTest] RobostockScene active and running stably!" << std::endl;
+
+    // Step 6: Return to MenuScene
     std::cout << "[SmokeTest] Returning to MenuScene with transition..." << std::endl;
     m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
     stepFrames(70);

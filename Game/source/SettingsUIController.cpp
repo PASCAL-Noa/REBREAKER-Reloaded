@@ -459,7 +459,7 @@ void SettingsUIController::CreateAudioTab()
     });
 
     auto formatDeviceText = [](const std::string& rawName) -> std::string {
-        if (rawName.empty()) return "< DEFAULT DEVICE >";
+        if (rawName.empty() || rawName == "Default Device") return "< DEFAULT DEVICE >";
         std::string shortName = rawName;
         if (shortName.length() > 24)
         {
@@ -469,12 +469,15 @@ void SettingsUIController::CreateAudioTab()
     };
 
     m_audioDeviceBtn = UIFactory::CreateButton(*m_registry, m_audioCanvas, ButtonDescriptor{
-        .Text = formatDeviceText(m_context->Audio.GetCurrentAudioDevice()),
+        .Text = formatDeviceText(PlayerPrefs::GetString("Audio_Device", "")),
         .OnClick = [this, formatDeviceText]() {
-            auto devices = m_context->Audio.GetAvailableAudioDevices();
-            if (devices.empty()) return;
+            std::vector<std::string> devices = {"Default Device"};
+            auto hwDevices = m_context->Audio.GetAvailableAudioDevices();
+            devices.insert(devices.end(), hwDevices.begin(), hwDevices.end());
 
-            std::string current = m_context->Audio.GetCurrentAudioDevice();
+            std::string current = PlayerPrefs::GetString("Audio_Device", "Default Device");
+            if (current.empty()) current = "Default Device";
+
             size_t currentIdx = 0;
             for (size_t i = 0; i < devices.size(); ++i)
             {
@@ -488,7 +491,7 @@ void SettingsUIController::CreateAudioTab()
             std::string newDevice = devices[nextIdx];
             if (m_context->Audio.SetAudioDevice(newDevice))
             {
-                PlayerPrefs::SetString("Audio_Device", newDevice);
+                PlayerPrefs::SetString("Audio_Device", newDevice == "Default Device" ? "" : newDevice);
                 PlayerPrefs::Save();
                 if (m_clickSfxId != 0) m_context->Audio.PlaySfx(m_clickSfxId, 35.0f);
             }
@@ -531,35 +534,62 @@ void SettingsUIController::CreateRenderTab()
         .FontSize = 40.0f
     });
 
-    bool isFullscreen = m_context->Render.GetWindow().GetConfig().Mode == WindowMode::Fullscreen;
-    std::string fsText = isFullscreen ? "FULL-SCREEN: ON" : "FULL-SCREEN: OFF";
+    auto formatDisplayModeText = [](WindowMode mode) -> std::string {
+        switch (mode)
+        {
+            case WindowMode::Borderless: return "DISPLAY: BORDERLESS";
+            case WindowMode::Fullscreen: return "DISPLAY: FULLSCREEN";
+            case WindowMode::Windowed:
+            default:                     return "DISPLAY: WINDOWED";
+        }
+    };
 
+    WindowMode currentMode = m_context->Render.GetWindow().GetConfig().Mode;
     m_fsBtn = UIFactory::CreateButton(*m_registry, m_renderCanvas, ButtonDescriptor{
-        .Text = fsText,
-        .OnClick = [this]() {
+        .Text = formatDisplayModeText(currentMode),
+        .OnClick = [this, formatDisplayModeText]() {
             WindowConfig config = m_context->Render.GetWindow().GetConfig();
-            if (config.Mode == WindowMode::Fullscreen) {
+            if (config.Mode == WindowMode::Windowed)
+            {
+                config.Mode = WindowMode::Borderless;
+                PlayerPrefs::SetString("DisplayMode", "Borderless");
+                PlayerPrefs::SetBool("Fullscreen", true);
+            }
+            else if (config.Mode == WindowMode::Borderless)
+            {
+                config.Mode = WindowMode::Fullscreen;
+                int resW = PlayerPrefs::GetInt("ResolutionWidth", 1920);
+                int resH = PlayerPrefs::GetInt("ResolutionHeight", 1080);
+                if (resW > 0 && resH > 0)
+                {
+                    config.Width = static_cast<unsigned int>(resW);
+                    config.Height = static_cast<unsigned int>(resH);
+                }
+                PlayerPrefs::SetString("DisplayMode", "Exclusive");
+                PlayerPrefs::SetBool("Fullscreen", true);
+            }
+            else
+            {
                 config.Mode = WindowMode::Windowed;
                 int resW = PlayerPrefs::GetInt("ResolutionWidth", 1920);
                 int resH = PlayerPrefs::GetInt("ResolutionHeight", 1080);
-                if (resW > 0 && resH > 0) {
-                    config.Width = resW;
-                    config.Height = resH;
+                if (resW > 0 && resH > 0)
+                {
+                    config.Width = static_cast<unsigned int>(resW);
+                    config.Height = static_cast<unsigned int>(resH);
                 }
+                PlayerPrefs::SetString("DisplayMode", "Windowed");
                 PlayerPrefs::SetBool("Fullscreen", false);
-                if (m_registry->HasComponent<TextComponent>(m_fsBtn)) {
-                    m_registry->GetComponent<TextComponent>(m_fsBtn).Text = "FULL-SCREEN: OFF";
-                }
-            } else {
-                config.Mode = WindowMode::Fullscreen;
-                PlayerPrefs::SetBool("Fullscreen", true);
-                if (m_registry->HasComponent<TextComponent>(m_fsBtn)) {
-                    m_registry->GetComponent<TextComponent>(m_fsBtn).Text = "FULL-SCREEN: ON";
-                }
             }
+
             PlayerPrefs::Save();
             m_context->Render.GetWindow().ApplyConfig(config);
-            m_context->Render.OnWindowResized(config.Width, config.Height);
+            const WindowConfig& applied = m_context->Render.GetWindow().GetConfig();
+            m_context->Render.OnWindowResized(applied.Width, applied.Height);
+            if (m_registry->HasComponent<TextComponent>(m_fsBtn))
+            {
+                m_registry->GetComponent<TextComponent>(m_fsBtn).Text = formatDisplayModeText(applied.Mode);
+            }
         },
         .Position = {rightPanelX - 250.0f, -viewY * 0.1f},
         .Size = {400.0f, 60.0f},
@@ -588,8 +618,12 @@ void SettingsUIController::CreateRenderTab()
                 PlayerPrefs::SetInt("ResolutionHeight", static_cast<int>(config.Height));
                 PlayerPrefs::SetInt("WindowHeight", static_cast<int>(config.Height));
                 PlayerPrefs::Save();
-                m_context->Render.GetWindow().ApplyConfig(config);
-                m_context->Render.OnWindowResized(config.Width, config.Height);
+                if (config.Mode != WindowMode::Borderless)
+                {
+                    m_context->Render.GetWindow().ApplyConfig(config);
+                    const WindowConfig& applied = m_context->Render.GetWindow().GetConfig();
+                    m_context->Render.OnWindowResized(applied.Width, applied.Height);
+                }
             }
         },
         .Position = {rightPanelX + 250.0f, -viewY * 0.1f},
@@ -625,6 +659,23 @@ void SettingsUIController::CreateRenderTab()
             }
         },
         .Position = {rightPanelX + 250.0f, viewY * 0.1f},
+        .Size = {400.0f, 60.0f},
+        .FontId = m_fontId
+    });
+
+    bool isVsync = PlayerPrefs::GetBool("VSync", false);
+    m_vsyncBtn = UIFactory::CreateButton(*m_registry, m_renderCanvas, ButtonDescriptor{
+        .Text = isVsync ? "VSYNC: ON" : "VSYNC: OFF",
+        .OnClick = [this]() {
+            bool nextVsync = !m_context->Render.GetWindow().GetConfig().VSync;
+            m_context->Render.GetWindow().SetVSync(nextVsync);
+            PlayerPrefs::SetBool("VSync", nextVsync);
+            PlayerPrefs::Save();
+            if (m_registry->HasComponent<TextComponent>(m_vsyncBtn)) {
+                m_registry->GetComponent<TextComponent>(m_vsyncBtn).Text = nextVsync ? "VSYNC: ON" : "VSYNC: OFF";
+            }
+        },
+        .Position = {rightPanelX - 250.0f, viewY * 0.22f},
         .Size = {400.0f, 60.0f},
         .FontId = m_fontId
     });
@@ -928,14 +979,21 @@ void SettingsUIController::CreateGamerulesTab()
     const float startY = -viewY * 0.02f;
     const float rowStep = 48.0f;
 
-    auto makeToggle = [this, btnW, btnH](float x, float y, Rule::Gameplay rule, const std::string& prefix) -> Entity
+    auto makeToggle = [this, btnW, btnH](float x, float y, Rule::Gameplay rule, const std::string& prefix, const char* prefKey = nullptr) -> Entity
     {
         const bool val = m_context->Rules.GetRule(rule);
         return UIFactory::CreateButton(*m_registry, m_gamerulesCanvas, ButtonDescriptor{
             .Text = prefix + (val ? ": ON" : ": OFF"),
-            .OnClick = [this, rule, prefix]() {
-                bool s = m_context->Rules.GetRule(rule);
-                m_context->Rules.SetRule(rule, !s);
+            .OnClick = [this, rule, prefKey]() {
+                bool nextVal = !m_context->Rules.GetRule(rule);
+                m_context->Rules.SetRule(rule, nextVal);
+                m_context->Rules.SetRule(Rule::Gameplay::ManualOverride, true);
+                PlayerPrefs::SetBool("GamerulesManualOverride", true);
+                if (prefKey)
+                {
+                    PlayerPrefs::SetBool(prefKey, nextVal);
+                }
+                PlayerPrefs::Save();
                 RefreshGamerulesUI();
             },
             .Position = {x, y},
@@ -946,17 +1004,17 @@ void SettingsUIController::CreateGamerulesTab()
     };
 
     // Left Column
-    m_arenaEventsBtn      = makeToggle(colLeftX, startY + rowStep * 0.0f, Rule::Gameplay::ArenaEventsEnabled, "ARENA EVENTS");
-    m_hazardZonesBtn      = makeToggle(colLeftX, startY + rowStep * 1.0f, Rule::Gameplay::HazardZonesEnabled, "HAZARD ZONES");
-    m_ultimateDrainBtn    = makeToggle(colLeftX, startY + rowStep * 2.0f, Rule::Gameplay::HazardUltimateDrainEnabled, "ULTIMATE DRAIN");
-    m_screenGlitchBtn     = makeToggle(colLeftX, startY + rowStep * 3.0f, Rule::Gameplay::HazardScreenGlitchEnabled, "SCREEN GLITCH");
-    m_cameraTiltBtn       = makeToggle(colLeftX, startY + rowStep * 4.0f, Rule::Gameplay::HazardCameraTiltEnabled, "CAMERA TILT");
-    m_zoomPulseBtn        = makeToggle(colLeftX, startY + rowStep * 5.0f, Rule::Gameplay::HazardZoomPulseEnabled, "ZOOM PULSE");
+    m_arenaEventsBtn      = makeToggle(colLeftX, startY + rowStep * 0.0f, Rule::Gameplay::ArenaEventsEnabled, "ARENA EVENTS", "EnableArenaEvents");
+    m_hazardZonesBtn      = makeToggle(colLeftX, startY + rowStep * 1.0f, Rule::Gameplay::HazardZonesEnabled, "HAZARD ZONES", "EnableHazardZones");
+    m_ultimateDrainBtn    = makeToggle(colLeftX, startY + rowStep * 2.0f, Rule::Gameplay::HazardUltimateDrainEnabled, "ULTIMATE DRAIN", "EnableHazardUltimateDrain");
+    m_screenGlitchBtn     = makeToggle(colLeftX, startY + rowStep * 3.0f, Rule::Gameplay::HazardScreenGlitchEnabled, "SCREEN GLITCH", "EnableHazardScreenGlitch");
+    m_cameraTiltBtn       = makeToggle(colLeftX, startY + rowStep * 4.0f, Rule::Gameplay::HazardCameraTiltEnabled, "CAMERA TILT", "EnableHazardCameraTilt");
+    m_zoomPulseBtn        = makeToggle(colLeftX, startY + rowStep * 5.0f, Rule::Gameplay::HazardZoomPulseEnabled, "ZOOM PULSE", "EnableHazardZoomPulse");
 
     // Right Column
-    m_audioWarpBtn        = makeToggle(colRightX, startY + rowStep * 0.0f, Rule::Gameplay::HazardAudioWarpEnabled, "AUDIO WARP");
-    m_empLockdownBtn      = makeToggle(colRightX, startY + rowStep * 1.0f, Rule::Gameplay::UltimateLockdownEnabled, "EMP LOCKDOWN");
-    m_creepingCeilingBtn  = makeToggle(colRightX, startY + rowStep * 2.0f, Rule::Gameplay::EndlessCreepingCeiling, "CREEPING CEILING");
+    m_audioWarpBtn        = makeToggle(colRightX, startY + rowStep * 0.0f, Rule::Gameplay::HazardAudioWarpEnabled, "AUDIO WARP", "EnableHazardAudioWarp");
+    m_empLockdownBtn      = makeToggle(colRightX, startY + rowStep * 1.0f, Rule::Gameplay::UltimateLockdownEnabled, "EMP LOCKDOWN", "EnableUltimateLockdown");
+    m_creepingCeilingBtn  = makeToggle(colRightX, startY + rowStep * 2.0f, Rule::Gameplay::EndlessCreepingCeiling, "CREEPING CEILING", "EnableCreepingCeiling");
     m_infiniteLivesBtn    = makeToggle(colRightX, startY + rowStep * 3.0f, Rule::Gameplay::InfiniteLives, "INFINITE LIVES");
     m_infiniteUltimateBtn = makeToggle(colRightX, startY + rowStep * 4.0f, Rule::Gameplay::InfiniteUltimate, "INFINITE ULTIMATE");
 

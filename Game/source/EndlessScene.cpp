@@ -1,5 +1,6 @@
 #include "Scenes/EndlessScene.h"
 #include "Core/ProfileManager.h"
+#include "Core/GameRules.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/BoxCollider.h"
 #include "ECS/Components/PaddleComponent.h"
@@ -87,10 +88,16 @@ void EndlessScene::OnInit(GameContext& context)
     }
 
     // 5. Calibrate Dynamic Event System for Endless progression
+    if (!context.Rules.GetRule(Rule::Gameplay::ManualOverride))
+    {
+        context.Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, true);
+        context.Rules.SetRule(Rule::Gameplay::HazardZonesEnabled, true);
+    }
     if (mp_eventSystem)
     {
+        mp_eventSystem->SetEnabled(context.Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled));
+        mp_eventSystem->SetIntervalRange(18.0f, 30.0f);
         mp_eventSystem->ResetLifecycle();
-        mp_eventSystem->SetIntervalRange(35.0f, 50.0f);
     }
 
     // 6. Spawn initial wave hazard zones if any (with diverse effects)
@@ -870,15 +877,18 @@ void EndlessScene::RenderEndlessHUD(GameContext& context) const
     float waveTime = m_endlessGenerator.GetWaveTimer();
     float waveTarget = m_endlessGenerator.GetCurrentWaveTargetDuration();
     int wavePct = static_cast<int>(m_endlessGenerator.GetWaveTimeProgress() * 100.0f);
+    int pacePct = static_cast<int>(std::round(m_endlessGenerator.GetGenerationSpeedRatio() * 100.0f));
+    std::string paceStr = (pacePct >= 100) ? "MAX" : (std::to_string(pacePct) + "%");
 
-    // Top-center Endurance HUD Banner with Seed display & Time progression (Brick counter removed per user request)
+    // Top-center Endurance HUD Banner with Seed display, Generation Pace & Time progression
     std::string hudText = "WAVE " + std::to_string(m_endlessGenerator.GetCurrentWave()) +
                           "  |  TIME: " + formatSeconds(waveTime) + " / " + formatSeconds(waveTarget) + " (" + std::to_string(wavePct) + "%)" +
+                          "  |  PACE: " + paceStr +
                           "  |  SURVIVAL: " + GetSurvivalTimeFormatted() +
                           "  |  SCORE: x" + std::to_string(m_endlessScoreMultiplier).substr(0, 4) +
                           "  |  SEED: #" + std::to_string(m_endlessGenerator.GetSeed());
 
-    context.Render.DrawTextCentered(hudText, m_fontId, 22.0f, Transform2D{Vector2f{screenCenterX, 55.0f}}, Colors::Gold);
+    context.Render.DrawTextCentered(hudText, m_fontId, 20.0f, Transform2D{Vector2f{screenCenterX, 55.0f}}, Colors::Gold);
 
     // EMP Ultimate Lockdown Alert
     if (mp_eventSystem && mp_eventSystem->IsUltimateBlocked())

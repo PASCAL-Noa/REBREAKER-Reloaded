@@ -843,26 +843,25 @@ bool AudioMixer::SetAudioDevice(const std::string& name) const
         return true;
     }
 
+    if (targetDevice.empty())
+    {
+        return true;
+    }
+
     try
     {
+        auto available = sf::PlaybackDevice::getAvailableDevices();
+        if (std::find(available.begin(), available.end(), targetDevice) == available.end())
+        {
+            return false;
+        }
+
         StopAll();
 
         // Allow any active miniaudio WASAPI device worker to flush and terminate safely
         std::this_thread::sleep_for(std::chrono::milliseconds(60));
 
         std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-        if (targetDevice.empty())
-        {
-            return true;
-        }
-
-        auto available = sf::PlaybackDevice::getAvailableDevices();
-        if (std::find(available.begin(), available.end(), targetDevice) == available.end())
-        {
-            std::cerr << "[AudioMixer] Warning: Target audio device \"" << targetDevice << "\" not in available devices.\n";
-            return false;
-        }
-
         bool ok = sf::PlaybackDevice::setDevice(targetDevice);
         // Allow the newly opened WASAPI device stream to stabilize before new sounds/music are allocated
         std::this_thread::sleep_for(std::chrono::milliseconds(60));

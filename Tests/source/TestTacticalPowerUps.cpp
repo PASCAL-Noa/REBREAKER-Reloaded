@@ -445,39 +445,65 @@ TEST_SUITE("Tactical Power-Ups Tests")
         CHECK(getHeartTier(9, 1) == 3);
         CHECK(getHeartTier(9, 2) == 3);
 
-        // Power-Up Level 1: +1 life
-        int lives = 3;
-        lives = std::min(lives + 1, 9);
-        CHECK(lives == 4); // 1 Yellow heart unlocked!
+        // Verify BALANCING_SPECS.md levels 1-5 on ExtraLifeConfig
+        auto& mgr = PowerUpManager::Get();
+        mgr.ResetToDefaults();
+
+        // Lv 1: +1 Life | Cap: 4 lives (unlocks 1st yellow heart)
+        mgr.SetLevelTransient(PowerUpType::ExtraLife, 1);
+        CHECK(mgr.Life().GetEffectiveLivesGranted() == 1);
+        CHECK(mgr.Life().GetEffectiveCap() == 4);
+        CHECK(mgr.Life().ComputeNextLives(2) == 3);
+        CHECK(mgr.Life().ComputeNextLives(3) == 4);
+        CHECK(mgr.Life().ComputeNextLives(4) == 4);
+        CHECK(mgr.Life().ComputeNextLives(6) == 6); // never reduces existing higher lives
 
         // Losing a life: Yellow heart downgrades to Red
+        int lives = mgr.Life().ComputeNextLives(3);
+        CHECK(lives == 4);
         lives--;
         CHECK(lives == 3);
         CHECK(getHeartTier(lives, 0) == 1);
         CHECK(getHeartTier(lives, 1) == 1);
         CHECK(getHeartTier(lives, 2) == 1);
 
-        // Power-Up Level 2: +2 lives
-        lives = 3;
-        lives = std::min(lives + 2, 9);
-        CHECK(lives == 5); // 2 Yellow, 1 Red
+        // Lv 2: +2 Lives | Cap: 5 lives
+        mgr.SetLevelTransient(PowerUpType::ExtraLife, 2);
+        CHECK(mgr.Life().GetEffectiveLivesGranted() == 2);
+        CHECK(mgr.Life().GetEffectiveCap() == 5);
+        CHECK(mgr.Life().ComputeNextLives(1) == 3);
+        CHECK(mgr.Life().ComputeNextLives(3) == 5); // 2 Yellow, 1 Red
+        CHECK(mgr.Life().ComputeNextLives(5) == 5);
 
-        // Power-Up Level 3: +1 vie jaune (guarantees at least 1 yellow heart = 4)
-        lives = 1;
-        lives = std::clamp(std::max(lives + 1, 4), 1, 9);
-        CHECK(lives == 4);
+        // Lv 3: +3 Lives | Cap: 6 lives
+        mgr.SetLevelTransient(PowerUpType::ExtraLife, 3);
+        CHECK(mgr.Life().GetEffectiveLivesGranted() == 3);
+        CHECK(mgr.Life().GetEffectiveCap() == 6);
+        CHECK(mgr.Life().ComputeNextLives(1) == 4);
+        CHECK(mgr.Life().ComputeNextLives(3) == 6); // 3 Yellow
+        CHECK(mgr.Life().ComputeNextLives(6) == 6);
 
-        // Power-Up Level 4: +2 vie jaune (guarantees at least 2 yellow hearts = 5)
-        lives = 2;
-        lives = std::clamp(std::max(lives + 2, 5), 1, 9);
-        CHECK(lives == 5);
+        // Lv 4: +4 Lives | Cap: 7 lives (unlocks 1st green heart)
+        mgr.SetLevelTransient(PowerUpType::ExtraLife, 4);
+        CHECK(mgr.Life().GetEffectiveLivesGranted() == 4);
+        CHECK(mgr.Life().GetEffectiveCap() == 7);
+        CHECK(mgr.Life().ComputeNextLives(1) == 5);
+        CHECK(mgr.Life().ComputeNextLives(3) == 7); // 1 Green, 2 Yellow
+        CHECK(mgr.Life().ComputeNextLives(7) == 7);
 
-        // Power-Up Level 5: +3 vie vert (max health = 9)
-        lives = 9;
-        CHECK(lives == 9);
-        CHECK(getHeartTier(lives, 0) == 3);
-        CHECK(getHeartTier(lives, 1) == 3);
-        CHECK(getHeartTier(lives, 2) == 3);
+        // Lv 5: +6 Lives | Cap: 9 lives (3 green hearts)
+        mgr.SetLevelTransient(PowerUpType::ExtraLife, 5);
+        CHECK(mgr.Life().GetEffectiveLivesGranted() == 6);
+        CHECK(mgr.Life().GetEffectiveCap() == 9);
+        CHECK(mgr.Life().ComputeNextLives(1) == 7);
+        CHECK(mgr.Life().ComputeNextLives(3) == 9); // 3 Green (Max Cap)
+        CHECK(mgr.Life().ComputeNextLives(9) == 9);
+        CHECK(getHeartTier(9, 0) == 3);
+        CHECK(getHeartTier(9, 1) == 3);
+        CHECK(getHeartTier(9, 2) == 3);
+
+        mgr.ClearTransientOverrides();
+        mgr.ResetToDefaults();
     }
 }
 

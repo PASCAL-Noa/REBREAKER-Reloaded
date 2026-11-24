@@ -155,10 +155,10 @@ All power-ups can be upgraded from **Level 1 to Level 5** in the Workshop using 
 - **Max Cap**: 9 lives (3 green hearts)
 - **Per-Level Stats**:
   - **Lv 1**: +1 Life | Cap: 4 lives (unlocks 1st yellow heart)
-  - **Lv 2**: +1 Life | Cap: 5 lives
-  - **Lv 3**: +1 Yellow Heart guaranteed | Cap: 6 lives
-  - **Lv 4**: +2 Yellow Hearts guaranteed | Cap: 7 lives (unlocks 1st green heart)
-  - **Lv 5**: +2 Green Hearts | Cap: 9 lives
+  - **Lv 2**: +2 Lives | Cap: 5 lives
+  - **Lv 3**: +3 Lives | Cap: 6 lives
+  - **Lv 4**: +4 Lives | Cap: 7 lives (unlocks 1st green heart)
+  - **Lv 5**: +6 Lives | Cap: 9 lives (3 green hearts)
 
 ### 3.7 Big Ball
 - **Tint**: Heavy Amber (`#FF6E14`)

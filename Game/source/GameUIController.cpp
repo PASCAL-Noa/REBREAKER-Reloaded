@@ -139,7 +139,7 @@ void GameUIController::ShowState(GameUIState state)
 
     if (m_gameOverCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_gameOverCanvas))
     {
-        m_registry.GetComponent<CanvasComponent>(m_gameOverCanvas).IsEnabled = (state == GameUIState::GameOver || state == GameUIState::Victory);
+        m_registry.GetComponent<CanvasComponent>(m_gameOverCanvas).IsEnabled = !m_disableGameOverUI && (state == GameUIState::GameOver || state == GameUIState::Victory);
     }
 
     if (m_levelClearCanvas != NULL_ENTITY && m_registry.HasComponent<CanvasComponent>(m_levelClearCanvas))
@@ -510,6 +510,8 @@ void GameUIController::SetHeartActive(int index, bool active)
 
 void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
 {
+    if (m_disableGameOverUI) return;
+
     std::string defaultName = ProfileManager::Get().GetUsername();
     m_enteredPlayerName = defaultName;
 
@@ -926,6 +928,11 @@ void GameUIController::CreatePauseMenu()
     UIFactory::CreateButton(m_registry, m_pauseCanvas, ButtonDescriptor{
         .Text = "QUIT",
         .OnClick = [this]() {
+            if (m_onQuitOverride)
+            {
+                m_onQuitOverride();
+                return;
+            }
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
@@ -1217,6 +1224,11 @@ void GameUIController::CreateGameOverMenu()
         .OnClick = [this]() {
             if (!TryConfirmNameBeforeProceeding())
             {
+                return;
+            }
+            if (m_onQuitOverride)
+            {
+                m_onQuitOverride();
                 return;
             }
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
@@ -1524,6 +1536,11 @@ void GameUIController::CreateVictoryMenu()
     UIFactory::CreateButton(m_registry, m_victoryCanvas, ButtonDescriptor{
         .Text = "MAIN MENU [ESC]",
         .OnClick = [this]() {
+            if (m_onQuitOverride)
+            {
+                m_onQuitOverride();
+                return;
+            }
             m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
             MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);

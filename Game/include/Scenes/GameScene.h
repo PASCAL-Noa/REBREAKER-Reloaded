@@ -65,6 +65,7 @@ public:
     [[nodiscard]] const GameContext*    GetContext() const { return mp_context; }
     [[nodiscard]] int     GetLives() const { return m_lives; }
     [[nodiscard]] virtual bool IsGameOver() const { return m_lives <= 0; }
+    [[nodiscard]] virtual bool IsLevelCleared() const { return m_brickCount <= 0; }
     [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
     [[nodiscard]] bool    CanUnpause() const;
     [[nodiscard]] bool    IsPaused() const;
@@ -74,14 +75,14 @@ public:
     // Level Management & Progression
     [[nodiscard]] LevelManager&       GetLevelManager() { return m_levelManager; }
     [[nodiscard]] const LevelManager& GetLevelManager() const { return m_levelManager; }
-    [[nodiscard]] int                 GetCurrentLevel() const;
-    [[nodiscard]] int                 GetLevelCount() const;
+    [[nodiscard]] virtual int         GetCurrentLevel() const;
+    [[nodiscard]] virtual int         GetLevelCount() const;
     [[nodiscard]] virtual bool        HasNextLevel() const;
-    void    AdvanceToNextLevel();
-    void    LoadLevel(int levelIndex, bool preserveStats = false);
-    void    StartLevelTransition();
-    void    UpdateLevelTransition();
-    void    CompleteLevelTransition();
+    virtual void AdvanceToNextLevel();
+    virtual void LoadLevel(int levelIndex, bool preserveStats = false);
+    virtual void StartLevelTransition();
+    virtual void UpdateLevelTransition();
+    virtual void CompleteLevelTransition();
     [[nodiscard]] bool                IsLevelTransitionComplete() const;
     [[nodiscard]] float               GetTransitionTimer() const { return m_levelTransitionTimer; }
     void    SetTransitionTimer(float timer) { m_levelTransitionTimer = timer; }
@@ -118,11 +119,12 @@ public:
     [[nodiscard]] bool                      IsTypingName();
     [[nodiscard]] bool                      TryConfirmNameBeforeProceeding();
     void                                    PromptEnterName();
-    void    ResumeGame();
-    void    OnReplayRequested();
+    virtual void ResumeGame();
+    virtual void OnReplayRequested();
 
     // Power-Up Tester callbacks
     virtual void ApplyPowerUp(PowerUpType type);
+    virtual void TriggerDebugPowerUp(PowerUpType type);
     void    SpawnPowerUpAtPaddle();
     void    SpawnAllPowerUps();
     void    RespawnBricks();
@@ -168,7 +170,7 @@ public:
 
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
-    void    HandleInput(float dt, const GameContext& context);
+    virtual void HandleInput(float dt, const GameContext& context);
     virtual void PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
 
     void    HandleDeath();
@@ -186,9 +188,16 @@ protected:
 
     Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
     virtual void SpawnPowerUp(const Vector2f& position);
+    void    SpawnSpecificPowerUp(const Vector2f& position, PowerUpType type);
+    void    BeginBrickDescent(Entity brickEntity, float targetY, float startOffsetY = 220.0f, float speed = 360.0f);
+    void    UpdateDescendingBricks(float dt, GameContext& context);
+    [[nodiscard]] bool  IsAnyBrickDescending();
+    [[nodiscard]] Color GetTopSpawnLightColor(uint8_t alpha = 255) const;
+    void    RenderTopSpawnLight(GameContext& context);
     void    TriggerStormStrike();
     void    FireLasers();
     static Color GetPowerUpColor(PowerUpType type);
+    static Color HsvToRgb(float h, float s, float v, uint8_t a = 255);
 
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
@@ -328,6 +337,11 @@ protected:
     Entity              m_bgTweenEntity = NULL_ENTITY;
     uint32_t            m_currentComboMultiplier = 0;
     float               m_gameplayTime = 0.0f;
+
+    // Top-of-screen smooth color-cycling spawn light & square pixel particles
+    float               m_topSpawnLightHue = 0.0f;
+    float               m_topSpawnLightAlpha = 0.0f;
+    float               m_topSpawnParticleTimer = 0.0f;
 
     // Dynamic decaying light flashes (bombs, fireball explosions)
     struct LightFlash

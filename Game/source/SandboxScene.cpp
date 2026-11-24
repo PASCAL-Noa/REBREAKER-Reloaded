@@ -1,6 +1,7 @@
 #include "Scenes/SandboxScene.h"
 #include "Scenes/MenuScene.h"
 #include "Core/GameContext.h"
+#include "Core/GameRules.h"
 #include "Core/InputManager.h"
 #include "Core/SceneManager.h"
 #include "AudioMixer.h"
@@ -23,7 +24,9 @@
 #include "ECS/Components/BrickComponent.h"
 #include "ECS/Components/LightSourceComponent.h"
 #include "ECS/Systems/BallSystem.h"
+#include "ECS/Systems/PaddleSystem.h"
 #include "ECS/Systems/DynamicEventSystem.h"
+#include "StateMachine/StateMachine.h"
 #include <algorithm>
 
 namespace
@@ -175,17 +178,55 @@ namespace
 
 SandboxScene::SandboxScene()
 {
-    m_lives = 99;
+    m_lives = 3;
     m_musicEnabled = true;
     m_audioEnabled = true;
+    m_safetyBarrierEnabled = false;
+    m_spawnCapsuleMode = true;
+}
+
+void SandboxScene::StartCountdown()
+{
+    m_countdownActive = false;
+    m_countdownTimer = 0.0f;
+    m_countdownGoTimer = 0.0f;
+    m_countdownLastSecond = 0;
+    m_countdownWhooshPlayedForSecond = 0;
+
+    if (mp_state_machine && mp_state_machine->GetCurrentState() != static_cast<int>(SceneState::Playing))
+    {
+        mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+    }
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetInputEnabled(true);
+    }
+    if (m_renderGameUI && mp_context)
+    {
+        mp_context->Events.Publish(GameStateChangedEvent(GameUIState::Playing));
+    }
 }
 
 void SandboxScene::OnInit(GameContext& context)
 {
     GameScene::OnInit(context);
+    PowerUpManager::Get().ClearTransientOverrides();
 
-    m_lives = 99;
-    m_safetyBarrierEnabled = true;
+    // Sandbox / Debug defaults: 3 red hearts, no safety barrier, drop mode by default, manual ball launch, no countdown
+    m_lives = 3;
+    context.Events.Publish(LivesChangedEvent(m_lives));
+
+    m_safetyBarrierEnabled = false;
+    m_bottomBarrierActive = false;
+    m_bottomBarrierDuration = 0.0f;
+    m_bottomBarrierCharges = 0;
+    m_spawnCapsuleMode = true;
+
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetAutoLaunchDelay(0.0f);
+        mp_paddleSystem->SetInputEnabled(true);
+    }
 
     // Apply baseline theme and lighting
     SetLightingMode(LightingMode::Lit);
@@ -212,6 +253,17 @@ void SandboxScene::OnInit(GameContext& context)
 void SandboxScene::OnUpdate(float dt, GameContext& context)
 {
     GameScene::OnUpdate(dt, context);
+
+    if (mp_state_machine)
+    {
+        const int st = mp_state_machine->GetCurrentState();
+        if (st == static_cast<int>(SceneState::GameOver) || st == static_cast<int>(SceneState::Victory))
+        {
+            mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+            context.Events.Publish(GameStateChangedEvent(GameUIState::Playing));
+        }
+    }
+
     HandleSandboxInput(context);
 
     // Keep invincible laser floor active when enabled
@@ -242,14 +294,19 @@ void SandboxScene::OnRender(GameContext& context)
 
 void SandboxScene::OnDestroy(GameContext& context)
 {
+    PowerUpManager::Get().ClearTransientOverrides();
     GameScene::OnDestroy(context);
 }
 
 void SandboxScene::OnGameOverEnter()
 {
-    // Prevent Game Over in Sandbox: smooth auto-recovery
+    // Prevent Game Over in Sandbox: smooth auto-recovery back to 3 red hearts
+    m_lives = 3;
+    if (mp_context)
+    {
+        mp_context->Events.Publish(LivesChangedEvent(m_lives));
+    }
     RespawnBall();
-    m_lives = 99;
 }
 
 void SandboxScene::OnVictoryEnter()
@@ -498,6 +555,11 @@ void SandboxScene::PreviousPowerUp()
 void SandboxScene::TriggerSelectedPowerUp()
 {
     PowerUpType type = kAllPowerUps[m_selectedPowerUpIdx];
+    TriggerDebugPowerUp(type);
+}
+
+void SandboxScene::TriggerDebugPowerUp(PowerUpType type)
+{
     if (m_spawnCapsuleMode)
     {
         Vector2f spawnPos{0.0f, -320.0f};
@@ -509,7 +571,7 @@ void SandboxScene::TriggerSelectedPowerUp()
     }
     else
     {
-        ApplyPowerUp(type);
+        GameScene::ApplyPowerUp(type);
     }
 }
 
@@ -588,12 +650,46 @@ void SandboxScene::ClearAllPowerUpEffects()
     }
 }
 
+void SandboxScene::SetSelectedPowerUpLevel(int level)
+{
+    PowerUpType type = kAllPowerUps[m_selectedPowerUpIdx];
+    int maxLvl = std::max(1, PowerUpManager::Get().GetMaxLevel(type));
+    int clamped = std::clamp(level, 1, maxLvl);
+    PowerUpManager::Get().SetLevelTransient(type, clamped);
+    UpdateSandboxUIDisplay();
+}
+
+void SandboxScene::LevelUpSelectedPowerUp()
+{
+    PowerUpType type = kAllPowerUps[m_selectedPowerUpIdx];
+    int curLvl = PowerUpManager::Get().GetLevel(type);
+    SetSelectedPowerUpLevel(curLvl + 1);
+}
+
+void SandboxScene::LevelDownSelectedPowerUp()
+{
+    PowerUpType type = kAllPowerUps[m_selectedPowerUpIdx];
+    int curLvl = PowerUpManager::Get().GetLevel(type);
+    SetSelectedPowerUpLevel(curLvl - 1);
+}
+
+void SandboxScene::ResetAllPowerUpLevels()
+{
+    for (PowerUpType t : kAllPowerUps)
+    {
+        PowerUpManager::Get().SetLevelTransient(t, 1);
+    }
+    UpdateSandboxUIDisplay();
+}
+
 void SandboxScene::MaximizeAllPowerUpLevels()
 {
     for (PowerUpType t : kAllPowerUps)
     {
-        PowerUpManager::Get().SetLevel(t, 5);
+        int maxLvl = std::max(1, PowerUpManager::Get().GetMaxLevel(t));
+        PowerUpManager::Get().SetLevelTransient(t, maxLvl);
     }
+    UpdateSandboxUIDisplay();
 }
 
 void SandboxScene::NextUltimate()
@@ -787,6 +883,11 @@ void SandboxScene::TogglePalette()
     }
 }
 
+void SandboxScene::HandleInput(float /*dt*/, const GameContext& /*context*/)
+{
+    // Custom input handling for Sandbox is processed in HandleSandboxInput
+}
+
 void SandboxScene::HandleSandboxInput(const GameContext& context)
 {
     // [TAB]: Toggle Streamer Deck console
@@ -823,9 +924,41 @@ void SandboxScene::HandleSandboxInput(const GameContext& context)
     if (context.Input.IsKeyPress(KeyCode::T)) NextArenaEvent();
     if (context.Input.IsKeyPress(KeyCode::Y)) ToggleAutoArenaEvents();
 
-    // Arrows to cycle power-ups / layouts
+    // [V]: Toggle between Drop capsule mode and Instant apply mode
+    if (context.Input.IsKeyPress(KeyCode::V))
+    {
+        ToggleSpawnCapsuleMode();
+        UpdateSandboxUIDisplay();
+    }
+
+    // Power-up numeric keypad & number keys shortcuts (respects Drop mode vs Instant mode)
+    if (context.Input.IsKeyPress(KeyCode::Numpad1) || context.Input.IsKeyPress(KeyCode::Num1)) TriggerDebugPowerUp(PowerUpType::MultiBall);
+    if (context.Input.IsKeyPress(KeyCode::Numpad2) || context.Input.IsKeyPress(KeyCode::Num2)) TriggerDebugPowerUp(PowerUpType::ExpandPaddle);
+    if (context.Input.IsKeyPress(KeyCode::Numpad3) || context.Input.IsKeyPress(KeyCode::Num3)) TriggerDebugPowerUp(PowerUpType::ShrinkPaddle);
+    if (context.Input.IsKeyPress(KeyCode::Numpad4) || context.Input.IsKeyPress(KeyCode::Num4)) TriggerDebugPowerUp(PowerUpType::Storm);
+    if (context.Input.IsKeyPress(KeyCode::Numpad5) || context.Input.IsKeyPress(KeyCode::Num5)) TriggerDebugPowerUp(PowerUpType::TempoBall);
+    if (context.Input.IsKeyPress(KeyCode::Numpad6) || context.Input.IsKeyPress(KeyCode::Num6)) TriggerDebugPowerUp(PowerUpType::ExtraLife);
+    if (context.Input.IsKeyPress(KeyCode::Numpad7) || context.Input.IsKeyPress(KeyCode::Num7)) TriggerDebugPowerUp(PowerUpType::BigBall);
+    if (context.Input.IsKeyPress(KeyCode::Numpad8) || context.Input.IsKeyPress(KeyCode::Num8)) TriggerDebugPowerUp(PowerUpType::FireBall);
+    if (context.Input.IsKeyPress(KeyCode::Numpad9) || context.Input.IsKeyPress(KeyCode::Num9)) TriggerDebugPowerUp(PowerUpType::StickyPaddle);
+    if (context.Input.IsKeyPress(KeyCode::Numpad0) || context.Input.IsKeyPress(KeyCode::Num0)) TriggerDebugPowerUp(PowerUpType::BottomBarrier);
+    if (context.Input.IsKeyPress(KeyCode::Add)) TriggerDebugPowerUp(PowerUpType::MagnetPaddle);
+    if (context.Input.IsKeyPress(KeyCode::Subtract)) TriggerDebugPowerUp(PowerUpType::GhostBall);
+    if (context.Input.IsKeyPress(KeyCode::Multiply) || context.Input.IsKeyPress(KeyCode::O)) SpawnAllPowerUps();
+    if (context.Input.IsKeyPress(KeyCode::Divide)) ClearAllPowerUpEffects();
+
+    // Toggle shader
+    if (context.Input.IsKeyPress(KeyCode::F))
+    {
+        bool shader = context.Rules.GetRule(Rule::Graphics::EnableShader);
+        context.Rules.SetRule(Rule::Graphics::EnableShader, !shader);
+    }
+
+    // Arrows to cycle power-ups & adjust levels
     if (context.Input.IsKeyPress(KeyCode::Left))  PreviousPowerUp();
     if (context.Input.IsKeyPress(KeyCode::Right)) NextPowerUp();
+    if (context.Input.IsKeyPress(KeyCode::Up) || context.Input.IsKeyPress(KeyCode::PageUp))     LevelUpSelectedPowerUp();
+    if (context.Input.IsKeyPress(KeyCode::Down) || context.Input.IsKeyPress(KeyCode::PageDown)) LevelDownSelectedPowerUp();
     if (context.Input.IsKeyPress(KeyCode::Enter)) TriggerSelectedPowerUp();
 }
 
@@ -907,7 +1040,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     constexpr float padH = 38.0f;
 
     // ==========================================
-    // CHANNEL 1: POWER-UP SPINNER & TRIGGER
+    // CHANNEL 1: POWER-UP SPINNER, LEVEL & TRIGGER
     // ==========================================
     constexpr float row1Y = deckY - 180.0f;
 
@@ -915,8 +1048,8 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "<",
         .OnClick = [this]() { PreviousPowerUp(); },
-        .Position = {-375.0f, row1Y},
-        .Size = {44.0f, padH},
+        .Position = {-384.0f, row1Y},
+        .Size = {38.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
         .PressedColor = Color{20, 25, 35, 255},
@@ -930,16 +1063,16 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
 
     // Power-Up LCD Display & Click-Trigger
     m_btnPowerUpLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
-        .Text = "MULTI-BALL (LV.1)",
+        .Text = "MULTI-BALL (LV.1/5)",
         .OnClick = [this]() { TriggerSelectedPowerUp(); },
-        .Position = {-185.0f, row1Y},
-        .Size = {310.0f, padH},
+        .Position = {-244.0f, row1Y},
+        .Size = {230.0f, padH},
         .DefaultColor = Color{0, 140, 195, 255},
         .HoverColor = Color{0, 180, 245, 255},
         .PressedColor = Color{0, 95, 135, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 18.0f,
+        .FontSize = 15.0f,
         .AnchorPoint = Anchor::Center,
         .IgnoreMenuNavigation = true,
         .ZOrder = 12
@@ -949,8 +1082,8 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = ">",
         .OnClick = [this]() { NextPowerUp(); },
-        .Position = {5.0f, row1Y},
-        .Size = {44.0f, padH},
+        .Position = {-104.0f, row1Y},
+        .Size = {38.0f, padH},
         .DefaultColor = Color{35, 42, 60, 255},
         .HoverColor = Color{55, 68, 95, 255},
         .PressedColor = Color{20, 25, 35, 255},
@@ -962,18 +1095,52 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
         .ZOrder = 12
     });
 
+    // Selected Power-Up Level Down
+    m_btnPowerUpLevelDown = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "LV-",
+        .OnClick = [this]() { LevelDownSelectedPowerUp(); },
+        .Position = {-56.0f, row1Y},
+        .Size = {46.0f, padH},
+        .DefaultColor = Color{45, 52, 72, 255},
+        .HoverColor = Color{70, 82, 115, 255},
+        .PressedColor = Color{25, 30, 42, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 15.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Selected Power-Up Level Up
+    m_btnPowerUpLevelUp = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "LV+",
+        .OnClick = [this]() { LevelUpSelectedPowerUp(); },
+        .Position = {-4.0f, row1Y},
+        .Size = {46.0f, padH},
+        .DefaultColor = Color{45, 90, 145, 255},
+        .HoverColor = Color{65, 125, 200, 255},
+        .PressedColor = Color{30, 55, 90, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 15.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
     // Trigger Pad
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "TRIGGER",
         .OnClick = [this]() { TriggerSelectedPowerUp(); },
-        .Position = {90.0f, row1Y},
-        .Size = {100.0f, padH},
+        .Position = {69.0f, row1Y},
+        .Size = {88.0f, padH},
         .DefaultColor = Color{30, 125, 75, 255},
         .HoverColor = Color{45, 175, 105, 255},
         .PressedColor = Color{20, 80, 50, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
-        .FontSize = 16.0f,
+        .FontSize = 15.0f,
         .AnchorPoint = Anchor::Center,
         .IgnoreMenuNavigation = true,
         .ZOrder = 12
@@ -981,16 +1148,16 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
 
     // Mode Toggle Pad (Instant Apply vs Drop Capsule)
     m_btnSpawnMode = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
-        .Text = "MODE: INSTANT",
+        .Text = "MODE: DROP",
         .OnClick = [this]() {
             ToggleSpawnCapsuleMode();
             UpdateSandboxUIDisplay();
         },
-        .Position = {205.0f, row1Y},
-        .Size = {110.0f, padH},
-        .DefaultColor = Color{35, 120, 75, 255},
-        .HoverColor = Color{50, 160, 100, 255},
-        .PressedColor = Color{20, 70, 45, 255},
+        .Position = {173.0f, row1Y},
+        .Size = {108.0f, padH},
+        .DefaultColor = Color{150, 95, 20, 255},
+        .HoverColor = Color{190, 125, 35, 255},
+        .PressedColor = Color{100, 60, 15, 255},
         .TextColor = Colors::White,
         .FontId = m_fontId,
         .FontSize = 14.0f,
@@ -999,15 +1166,29 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
         .ZOrder = 12
     });
 
-    // Max Power-Up Levels
+    // Reset All Power-Up Levels to LV.1
+    UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
+        .Text = "MIN",
+        .OnClick = [this]() { ResetAllPowerUpLevels(); },
+        .Position = {258.0f, row1Y},
+        .Size = {50.0f, padH},
+        .DefaultColor = Color{55, 62, 82, 255},
+        .HoverColor = Color{80, 90, 120, 255},
+        .PressedColor = Color{35, 40, 55, 255},
+        .TextColor = Colors::White,
+        .FontId = m_fontId,
+        .FontSize = 15.0f,
+        .AnchorPoint = Anchor::Center,
+        .IgnoreMenuNavigation = true,
+        .ZOrder = 12
+    });
+
+    // Max All Power-Up Levels
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "MAX",
-        .OnClick = [this]() {
-            MaximizeAllPowerUpLevels();
-            UpdateSandboxUIDisplay();
-        },
-        .Position = {295.0f, row1Y},
-        .Size = {58.0f, padH},
+        .OnClick = [this]() { MaximizeAllPowerUpLevels(); },
+        .Position = {314.0f, row1Y},
+        .Size = {50.0f, padH},
         .DefaultColor = Color{120, 85, 25, 255},
         .HoverColor = Color{165, 120, 35, 255},
         .PressedColor = Color{75, 55, 15, 255},
@@ -1023,8 +1204,8 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "CLEAR",
         .OnClick = [this]() { ClearAllPowerUpEffects(); },
-        .Position = {365.0f, row1Y},
-        .Size = {68.0f, padH},
+        .Position = {375.0f, row1Y},
+        .Size = {60.0f, padH},
         .DefaultColor = Color{65, 65, 75, 255},
         .HoverColor = Color{90, 90, 105, 255},
         .PressedColor = Color{40, 40, 50, 255},
@@ -1575,32 +1756,81 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
 
 void SandboxScene::UpdateSandboxUIDisplay()
 {
-    // Update Power-Up LCD Pad
-    if (m_btnPowerUpLCD != NULL_ENTITY)
+    // Update Power-Up LCD Pad & Level Step Pads
     {
         PowerUpType pt = kAllPowerUps[m_selectedPowerUpIdx];
-        int lvl = PowerUpManager::Get().GetLevel(pt);
-        std::string label = std::string(GetPowerUpDisplayName(pt)) + " (LV." + std::to_string(lvl) + ")";
-        Color col = GetPowerUpDisplayColor(pt);
+        int maxLvl = std::max(1, PowerUpManager::Get().GetMaxLevel(pt));
+        int lvl = std::clamp(PowerUpManager::Get().GetLevel(pt), 1, maxLvl);
 
-        if (m_registry.HasComponent<TextComponent>(m_btnPowerUpLCD))
+        if (m_btnPowerUpLCD != NULL_ENTITY)
         {
-            m_registry.GetComponent<TextComponent>(m_btnPowerUpLCD).Text = label;
+            std::string label = std::string(GetPowerUpDisplayName(pt))
+                + " (LV." + std::to_string(lvl) + "/" + std::to_string(maxLvl) + ")";
+            Color col = GetPowerUpDisplayColor(pt);
+
+            if (m_registry.HasComponent<TextComponent>(m_btnPowerUpLCD))
+            {
+                m_registry.GetComponent<TextComponent>(m_btnPowerUpLCD).Text = label;
+            }
+            if (m_registry.HasComponent<ButtonComponent>(m_btnPowerUpLCD))
+            {
+                auto& btn = m_registry.GetComponent<ButtonComponent>(m_btnPowerUpLCD);
+                btn.DefaultColor = col;
+                btn.HoverColor = Color{
+                    static_cast<uint8_t>(std::min(255, col.r + 35)),
+                    static_cast<uint8_t>(std::min(255, col.g + 35)),
+                    static_cast<uint8_t>(std::min(255, col.b + 35)),
+                    255
+                };
+            }
+            if (m_registry.HasComponent<PanelComponent>(m_btnPowerUpLCD))
+            {
+                m_registry.GetComponent<PanelComponent>(m_btnPowerUpLCD).Tint = col;
+            }
         }
-        if (m_registry.HasComponent<ButtonComponent>(m_btnPowerUpLCD))
+
+        const bool canLevelDown = lvl > 1;
+        if (m_btnPowerUpLevelDown != NULL_ENTITY)
         {
-            auto& btn = m_registry.GetComponent<ButtonComponent>(m_btnPowerUpLCD);
-            btn.DefaultColor = col;
-            btn.HoverColor = Color{
-                static_cast<uint8_t>(std::min(255, col.r + 35)),
-                static_cast<uint8_t>(std::min(255, col.g + 35)),
-                static_cast<uint8_t>(std::min(255, col.b + 35)),
-                255
-            };
+            Color col = canLevelDown ? Color{140, 55, 55, 255} : Color{32, 36, 48, 255};
+            Color hover = canLevelDown ? Color{185, 75, 75, 255} : col;
+            if (m_registry.HasComponent<ButtonComponent>(m_btnPowerUpLevelDown))
+            {
+                auto& btn = m_registry.GetComponent<ButtonComponent>(m_btnPowerUpLevelDown);
+                btn.DefaultColor = col;
+                btn.HoverColor = hover;
+            }
+            if (m_registry.HasComponent<PanelComponent>(m_btnPowerUpLevelDown))
+            {
+                m_registry.GetComponent<PanelComponent>(m_btnPowerUpLevelDown).Tint = col;
+            }
+            if (m_registry.HasComponent<TextComponent>(m_btnPowerUpLevelDown))
+            {
+                m_registry.GetComponent<TextComponent>(m_btnPowerUpLevelDown).Tint =
+                    canLevelDown ? Colors::White : Color{110, 118, 135, 255};
+            }
         }
-        if (m_registry.HasComponent<PanelComponent>(m_btnPowerUpLCD))
+
+        const bool canLevelUp = lvl < maxLvl;
+        if (m_btnPowerUpLevelUp != NULL_ENTITY)
         {
-            m_registry.GetComponent<PanelComponent>(m_btnPowerUpLCD).Tint = col;
+            Color col = canLevelUp ? Color{45, 90, 145, 255} : Color{32, 36, 48, 255};
+            Color hover = canLevelUp ? Color{65, 125, 200, 255} : col;
+            if (m_registry.HasComponent<ButtonComponent>(m_btnPowerUpLevelUp))
+            {
+                auto& btn = m_registry.GetComponent<ButtonComponent>(m_btnPowerUpLevelUp);
+                btn.DefaultColor = col;
+                btn.HoverColor = hover;
+            }
+            if (m_registry.HasComponent<PanelComponent>(m_btnPowerUpLevelUp))
+            {
+                m_registry.GetComponent<PanelComponent>(m_btnPowerUpLevelUp).Tint = col;
+            }
+            if (m_registry.HasComponent<TextComponent>(m_btnPowerUpLevelUp))
+            {
+                m_registry.GetComponent<TextComponent>(m_btnPowerUpLevelUp).Tint =
+                    canLevelUp ? Colors::White : Color{110, 118, 135, 255};
+            }
         }
     }
 

@@ -64,6 +64,7 @@ private:
 
     // Render Tab Widgets
     Entity              m_fsBtn = NULL_ENTITY;
+    Entity              m_vsyncBtn = NULL_ENTITY;
     Entity              m_shaderBtn = NULL_ENTITY;
     Entity              m_particlesBtn = NULL_ENTITY;
 

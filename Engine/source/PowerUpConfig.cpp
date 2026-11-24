@@ -111,6 +111,7 @@ int PowerUpManager::GetMaxLevel(PowerUpType type) const
         case PowerUpType::MagnetPaddle: return m_magnet.MaxLevel;
         case PowerUpType::GhostBall:    return m_ghost.MaxLevel;
         case PowerUpType::ItemRegen:    return m_itemRegen.MaxLevel;
+        case PowerUpType::GlitchMalus:  return 1;
         default:                        return 5;
     }
 }
@@ -131,25 +132,19 @@ void PowerUpManager::SetLevelTransient(PowerUpType type, int level)
 
     switch (type)
     {
-        case PowerUpType::MultiBall:    m_multiBall.Level = clamped; break;
-        case PowerUpType::ExpandPaddle: m_expand.Level = clamped; break;
-        case PowerUpType::ShrinkPaddle: m_shrink.Level = clamped; break;
-        case PowerUpType::Storm:        m_storm.Level = clamped; break;
-        case PowerUpType::TempoBall:    m_tempo.Level = clamped; break;
-        case PowerUpType::ExtraLife:    m_life.Level = clamped; break;
-        case PowerUpType::BigBall:      return; // Handled below
-        default: break;
-    }
-
-    switch (type)
-    {
-        case PowerUpType::BigBall:      m_big.Level = clamped; break;
-        case PowerUpType::FireBall:     m_fireBall.Level = clamped; break;
-        case PowerUpType::StickyPaddle: m_sticky.Level = clamped; break;
+        case PowerUpType::MultiBall:     m_multiBall.Level = clamped; break;
+        case PowerUpType::ExpandPaddle:  m_expand.Level = clamped; break;
+        case PowerUpType::ShrinkPaddle:  m_shrink.Level = clamped; break;
+        case PowerUpType::Storm:         m_storm.Level = clamped; break;
+        case PowerUpType::TempoBall:     m_tempo.Level = clamped; break;
+        case PowerUpType::ExtraLife:     m_life.Level = clamped; break;
+        case PowerUpType::BigBall:       m_big.Level = clamped; break;
+        case PowerUpType::FireBall:      m_fireBall.Level = clamped; break;
+        case PowerUpType::StickyPaddle:  m_sticky.Level = clamped; break;
         case PowerUpType::BottomBarrier: m_barrier.Level = clamped; break;
-        case PowerUpType::MagnetPaddle: m_magnet.Level = clamped; break;
-        case PowerUpType::GhostBall:    m_ghost.Level = clamped; break;
-        case PowerUpType::ItemRegen:    m_itemRegen.Level = clamped; break;
+        case PowerUpType::MagnetPaddle:  m_magnet.Level = clamped; break;
+        case PowerUpType::GhostBall:     m_ghost.Level = clamped; break;
+        case PowerUpType::ItemRegen:     m_itemRegen.Level = clamped; break;
         default: break;
     }
 }
@@ -581,12 +576,12 @@ std::string PowerUpManager::GetTierInfoForLevel(PowerUpType type, int level) con
         case PowerUpType::ExtraLife:
             switch (level)
             {
-                case 1: return "+1 Vie (Restaure 1 coeur / Sur-vie Jaune si plein)";
-                case 2: return "+2 Vies (Restaure 2 coeurs / Sur-vie Jaune)";
-                case 3: return "+1 Vie Jaune (Garantit au moins 1 coeur Jaune renforce)";
-                case 4: return "+2 Vies Jaunes (Garantit au moins 2 coeurs Jaunes renforces)";
-                case 5: return "+3 Vies Vertes (Bouclier Max : 3 coeurs Verts ultimes)";
-                default: return "+1 Vie";
+                case 1: return "+1 Vie | Cap : 4 vies (Debloque 1er coeur Jaune)";
+                case 2: return "+2 Vies | Cap : 5 vies (Jusqu'a 2 coeurs Jaunes)";
+                case 3: return "+3 Vies | Cap : 6 vies (3 coeurs Jaunes)";
+                case 4: return "+4 Vies | Cap : 7 vies (Debloque 1er coeur Vert)";
+                case 5: return "+6 Vies | Cap : 9 vies (3 coeurs Verts max)";
+                default: return "+1 Vie | Cap : 4 vies";
             }
         case PowerUpType::BigBall:
         {
@@ -673,10 +668,10 @@ std::string PowerUpManager::GetNextTierInfo(PowerUpType type) const
         case PowerUpType::TempoBall:
             return "Next: +" + std::to_string(static_cast<int>(m_tempo.SpeedMultiplierPerLevel * 100.0f)) + "% ball speed, +" + std::to_string(static_cast<int>(m_tempo.PaddleSpeedBonusPerLevel * 100.0f)) + "% paddle speed, +" + std::to_string(static_cast<int>(m_tempo.DurationPerLevel)) + "s duration";
         case PowerUpType::ExtraLife:
-            if (lvl == 1) return "Next: +2 vies par capsule";
-            if (lvl == 2) return "Next: +1 coeur Jaune renforce garanti";
-            if (lvl == 3) return "Next: +2 coeurs Jaunes renforces garantis";
-            return "Next: +3 coeurs Verts (Bouclier Max absolu)";
+            if (lvl == 1) return "Next: +2 vies par capsule, Cap 5 vies";
+            if (lvl == 2) return "Next: +3 vies par capsule, Cap 6 vies (3 coeurs Jaunes)";
+            if (lvl == 3) return "Next: +4 vies par capsule, Cap 7 vies (1er coeur Vert)";
+            return "Next: +6 vies par capsule, Cap 9 vies (3 coeurs Verts)";
         case PowerUpType::BigBall:
             return "Next: +" + std::to_string(static_cast<int>(m_big.DurationPerLevel)) + "s duration, +" + std::to_string(static_cast<int>(m_big.ScaleBonusPerLevel * 100.0f)) + "% size";
         case PowerUpType::FireBall:

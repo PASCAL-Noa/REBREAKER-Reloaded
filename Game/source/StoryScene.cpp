@@ -70,6 +70,19 @@ bool StoryScene::IsGameOver() const
     return false;
 }
 
+bool StoryScene::IsLevelCleared() const
+{
+    if (m_currentChapterIndex < 0 || m_currentChapterIndex >= static_cast<int>(m_chapters.size()))
+    {
+        return false;
+    }
+    if (m_chapters[m_currentChapterIndex].IsBossChapter)
+    {
+        return m_bossDefeated;
+    }
+    return m_brickCount <= 0 && !IsCountdownActive();
+}
+
 bool StoryScene::HasNextLevel() const
 {
     return m_currentChapterIndex + 1 < static_cast<int>(m_chapters.size());
@@ -77,10 +90,42 @@ bool StoryScene::HasNextLevel() const
 
 void StoryScene::AdvanceToNextLevel()
 {
+    GrantChapterRewards();
     if (HasNextLevel())
     {
         LoadChapter(m_currentChapterIndex + 1);
     }
+}
+
+void StoryScene::StartLevelTransition()
+{
+    GrantChapterRewards();
+    ClearActiveUltimates();
+    ClearVisualMalus();
+    RestoreTemporalAudio(0.08f);
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->StopActiveEvent();
+    }
+    m_scoreManager.BreakCombo();
+    m_triangleProjectiles.clear();
+
+    ResetBallAndPaddle();
+    if (mp_paddleSystem)
+    {
+        mp_paddleSystem->SetInputEnabled(false);
+    }
+
+    if (mp_context)
+    {
+        if (m_musicEnabled) mp_context->Audio.FadeOutMusic(0.8f);
+        if (m_audioEnabled && m_levelClearSfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_levelClearSfxId, 100.0f);
+        }
+    }
+
+    m_levelTransitionTimer = 10.0f;
 }
 
 void StoryScene::OnGameOverEnter()
@@ -88,6 +133,10 @@ void StoryScene::OnGameOverEnter()
     ClearActiveUltimates();
     ClearVisualMalus();
     RestoreTemporalAudio(0.05f);
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->StopActiveEvent();
+    }
     m_scoreManager.BreakCombo();
 
     uint32_t finalScore = m_scoreManager.GetScore();
@@ -117,6 +166,12 @@ void StoryScene::OnGameOverEnter()
 void StoryScene::OnGameOverExit()
 {
     FullReset();
+}
+
+void StoryScene::OnVictoryEnter()
+{
+    GrantChapterRewards();
+    GameScene::OnVictoryEnter();
 }
 
 void StoryScene::OnVictoryExit()
@@ -214,6 +269,12 @@ void StoryScene::LoadChapter(int chapterIndex)
     m_triangleProjectiles.clear();
     m_turretBricks.clear();
     m_isDialogueActive = false;
+    m_chapterRewardsGranted = false;
+    m_bossDefeated = false;
+    m_bossDefeatCinematicTimer = 0.0f;
+    m_bossExplosionIndex = 0;
+
+    ApplyLevelTheme(m_currentChapterIndex + 1);
 
     // Refill lives if empty/lost
     if (m_lives <= 0)
@@ -247,12 +308,21 @@ void StoryScene::LoadChapter(int chapterIndex)
         const bool manualOverride = mp_context->Rules.GetRule(Rule::Gameplay::ManualOverride);
         if (!manualOverride)
         {
-            const auto& chapter = m_chapters[m_currentChapterIndex];
-            mp_context->Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, chapter.IsBossChapter);
-            mp_context->Rules.SetRule(Rule::Gameplay::HazardZonesEnabled, chapter.IsBossChapter);
+            mp_context->Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, true);
+            mp_context->Rules.SetRule(Rule::Gameplay::HazardZonesEnabled, m_currentChapterIndex >= 1);
             mp_context->Rules.SetRule(Rule::Gameplay::InfiniteLives, false);
             mp_context->Rules.SetRule(Rule::Gameplay::InfiniteUltimate, false);
         }
+    }
+
+    if (mp_eventSystem)
+    {
+        if (mp_context)
+        {
+            mp_eventSystem->SetEnabled(mp_context->Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled));
+        }
+        mp_eventSystem->SetIntervalRange(15.0f, 25.0f);
+        mp_eventSystem->ResetLifecycle();
     }
 
     SetupChapterPlayfield(m_currentChapterIndex);
@@ -299,14 +369,14 @@ void StoryScene::SetupChapterPlayfield(int chapterIndex)
     else
     {
         // Aesthetic, well-spaced Campaign Level Layout
-        const int rows = 5;
+        const int rows = 7;
         const int cols = 10;
         const float brickWidth = 96.0f;
         const float brickHeight = 28.0f;
         const float spacing = 12.0f;
         const float totalW = cols * brickWidth + (cols - 1) * spacing;
         const float startX = -totalW * 0.5f + brickWidth * 0.5f;
-        const float startY = -310.0f;
+        const float startY = -280.0f;
 
         for (int r = 0; r < rows; ++r)
         {
@@ -322,6 +392,7 @@ void StoryScene::SetupChapterPlayfield(int chapterIndex)
                     {
                         m_registry.GetComponent<SpriteComponent>(turret).Tint = Color{255, 45, 55, 255};
                     }
+                    BeginBrickDescent(turret, pos.Y, 340.0f, 380.0f);
                     // Start cooldowns after countdown ends with generous initial stagger (3.5s to 8s)
                     m_turretBricks.push_back(TurretBrick{turret, 3.5f + (c * 0.8f), 3.2f});
                     m_brickCount++;
@@ -338,7 +409,7 @@ void StoryScene::SetupChapterPlayfield(int chapterIndex)
                 else { bType = BrickType::Light; armor = 1; }
 
                 Entity brick = BrickFactory::Create(m_registry, pos.X, pos.Y, bType, isSpecial, m_brickTexId, armor);
-                (void)brick;
+                BeginBrickDescent(brick, pos.Y, 340.0f, 380.0f);
                 m_brickCount++;
             }
         }
@@ -379,6 +450,7 @@ void StoryScene::SpawnBossShieldBricks()
     {
         Vector2f pos{startX + i * (brickW + spacing), y};
         Entity b = BrickFactory::Create(m_registry, pos.X, pos.Y, BrickType::Hard, false, m_brickTexId, 2);
+        BeginBrickDescent(b, pos.Y, 260.0f, 360.0f);
         m_bossShieldBricks.push_back(b);
         m_brickCount++;
     }
@@ -525,8 +597,14 @@ void StoryScene::SkipDialogue()
     }
 }
 
-void StoryScene::CompleteChapter()
+void StoryScene::GrantChapterRewards()
 {
+    if (m_chapterRewardsGranted)
+    {
+        return;
+    }
+    m_chapterRewardsGranted = true;
+
     const auto& chapter = m_chapters[m_currentChapterIndex];
 
     // Grant Lore Unlock
@@ -548,6 +626,11 @@ void StoryScene::CompleteChapter()
         ProfileManager::Get().GrantCosmetic(chapter.UnlockedCosmeticId);
         LoreManager::Get().UnlockLore("lore_boss_clear");
     }
+}
+
+void StoryScene::CompleteChapter()
+{
+    GrantChapterRewards();
 
     if (HasNextLevel())
     {
@@ -564,7 +647,19 @@ void StoryScene::CompleteChapter()
 
 void StoryScene::OnUpdate(float dt, GameContext& context)
 {
-    // Update paddle damage flash timer
+    // Base Gameplay & StateMachine Update
+    GameScene::OnUpdate(dt, context);
+
+    const int curState = mp_state_machine
+        ? mp_state_machine->GetCurrentState()
+        : static_cast<int>(SceneState::Playing);
+
+    if (curState != static_cast<int>(SceneState::Playing) || m_isDialogueActive)
+    {
+        return;
+    }
+
+    // Update paddle damage flash timer only during active play
     if (m_paddleDamageFlashTimer > 0.0f)
     {
         m_paddleDamageFlashTimer -= dt;
@@ -577,9 +672,6 @@ void StoryScene::OnUpdate(float dt, GameContext& context)
             }
         }
     }
-
-    // Base Gameplay Update
-    GameScene::OnUpdate(dt, context);
 
     if (m_lives <= 0 && !m_isPaddleDestroyed)
     {
@@ -621,21 +713,13 @@ void StoryScene::OnUpdate(float dt, GameContext& context)
     UpdateTurretBricks(dt, context);
     UpdateTriangleProjectiles(dt, context);
 
-    // Boss Encounter Loop or Standard Chapter Clear
+    // Boss Encounter Loop (Standard chapters transition automatically via StateMachine + IsLevelCleared)
     if (m_chapters[m_currentChapterIndex].IsBossChapter)
     {
         UpdateBoss(dt, context);
         UpdateBossAttacks(dt, context);
         UpdateBossProjectiles(dt, context);
         CheckBossCollisions(context);
-    }
-    else
-    {
-        // Standard Chapter Clear Condition: all destroyable bricks cleared
-        if (m_brickCount <= 0 && m_brickCount != -1)
-        {
-            CompleteChapter();
-        }
     }
 }
 
@@ -652,6 +736,12 @@ void StoryScene::UpdateTurretBricks(float dt, GameContext& context)
             m_registry.GetComponent<BrickComponent>(it->EntityId).HitPoints == 0)
         {
             it = m_turretBricks.erase(it);
+            continue;
+        }
+
+        if (m_registry.GetComponent<BrickComponent>(it->EntityId).IsDescending)
+        {
+            ++it;
             continue;
         }
 
@@ -1276,7 +1366,8 @@ void StoryScene::CheckBossCollisions(GameContext& context)
 
 void StoryScene::TriggerBossDefeat(GameContext& /*context*/)
 {
-    CompleteChapter();
+    m_bossDefeated = true;
+    GrantChapterRewards();
 }
 
 void StoryScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLaser, bool isExplosion, int damage)
