@@ -301,9 +301,18 @@ public:
         {
             return false;
         }
-        CustomLevelEntry moved = std::move(m_levels[fromIdx]);
-        m_levels.erase(m_levels.begin() + static_cast<std::ptrdiff_t>(fromIdx));
-        m_levels.insert(m_levels.begin() + static_cast<std::ptrdiff_t>(toIdx), std::move(moved));
+        if (fromIdx < toIdx)
+        {
+            std::rotate(m_levels.begin() + static_cast<std::ptrdiff_t>(fromIdx),
+                        m_levels.begin() + static_cast<std::ptrdiff_t>(fromIdx + 1),
+                        m_levels.begin() + static_cast<std::ptrdiff_t>(toIdx + 1));
+        }
+        else
+        {
+            std::rotate(m_levels.begin() + static_cast<std::ptrdiff_t>(toIdx),
+                        m_levels.begin() + static_cast<std::ptrdiff_t>(fromIdx),
+                        m_levels.begin() + static_cast<std::ptrdiff_t>(fromIdx + 1));
+        }
         return Save();
     }
 
@@ -404,9 +413,18 @@ public:
         {
             return false;
         }
-        std::string moved = std::move(it->LevelIds[fromSlot]);
-        it->LevelIds.erase(it->LevelIds.begin() + static_cast<std::ptrdiff_t>(fromSlot));
-        it->LevelIds.insert(it->LevelIds.begin() + static_cast<std::ptrdiff_t>(toSlot), std::move(moved));
+        if (fromSlot < toSlot)
+        {
+            std::rotate(it->LevelIds.begin() + static_cast<std::ptrdiff_t>(fromSlot),
+                        it->LevelIds.begin() + static_cast<std::ptrdiff_t>(fromSlot + 1),
+                        it->LevelIds.begin() + static_cast<std::ptrdiff_t>(toSlot + 1));
+        }
+        else
+        {
+            std::rotate(it->LevelIds.begin() + static_cast<std::ptrdiff_t>(toSlot),
+                        it->LevelIds.begin() + static_cast<std::ptrdiff_t>(fromSlot),
+                        it->LevelIds.begin() + static_cast<std::ptrdiff_t>(fromSlot + 1));
+        }
         return Save();
     }
 

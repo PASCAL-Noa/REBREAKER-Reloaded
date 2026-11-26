@@ -1093,9 +1093,18 @@ public:
         }
         std::sort(delays.begin(), delays.end());
 
-        auto item = m_eventQueue[fromIdx];
-        m_eventQueue.erase(m_eventQueue.begin() + static_cast<std::ptrdiff_t>(fromIdx));
-        m_eventQueue.insert(m_eventQueue.begin() + static_cast<std::ptrdiff_t>(toIdx), item);
+        if (fromIdx < toIdx)
+        {
+            std::rotate(m_eventQueue.begin() + static_cast<std::ptrdiff_t>(fromIdx),
+                        m_eventQueue.begin() + static_cast<std::ptrdiff_t>(fromIdx + 1),
+                        m_eventQueue.begin() + static_cast<std::ptrdiff_t>(toIdx + 1));
+        }
+        else
+        {
+            std::rotate(m_eventQueue.begin() + static_cast<std::ptrdiff_t>(toIdx),
+                        m_eventQueue.begin() + static_cast<std::ptrdiff_t>(fromIdx),
+                        m_eventQueue.begin() + static_cast<std::ptrdiff_t>(fromIdx + 1));
+        }
 
         for (size_t i = 0; i < m_eventQueue.size(); ++i)
         {
