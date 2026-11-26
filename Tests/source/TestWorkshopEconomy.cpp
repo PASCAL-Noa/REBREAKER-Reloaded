@@ -501,10 +501,13 @@ TEST_SUITE("Workshop, Economy & Player Profile Tests")
         // Simulate workshop inspection / embedded preview overriding levels transiently
         pum.SetLevelTransient(PowerUpType::Storm, 1);
         pum.SetLevelTransient(PowerUpType::MultiBall, 2);
+        pum.SetLevelTransient(PowerUpType::BigBall, 3);
 
         // Simulation/preview sees transient levels
         CHECK(pum.GetLevel(PowerUpType::Storm) == 1);
         CHECK(pum.GetLevel(PowerUpType::MultiBall) == 2);
+        CHECK(pum.GetLevel(PowerUpType::BigBall) == 3);
+        CHECK(pum.GetMaxLevel(PowerUpType::GlitchMalus) == 1);
 
         // Persisted levels remain strictly intact
         CHECK(pum.GetPersistedLevel(PowerUpType::Storm) == 5);
@@ -519,6 +522,7 @@ TEST_SUITE("Workshop, Economy & Player Profile Tests")
         pum.ClearTransientOverrides();
         CHECK(pum.GetLevel(PowerUpType::Storm) == 5);
         CHECK(pum.GetLevel(PowerUpType::MultiBall) == 4);
+        CHECK(pum.GetLevel(PowerUpType::BigBall) == 1);
 
         // Reloading from prefs retains true persisted levels
         pum.LoadFromPrefs();

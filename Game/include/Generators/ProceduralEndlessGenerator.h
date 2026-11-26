@@ -74,25 +74,46 @@ public:
     void                OnBrickDestroyed() noexcept;
     void                DecrementBreakableBricks() noexcept { OnBrickDestroyed(); }
 
-    // Downward Creeping API
+    // Downward Creeping & Dynamic Generation Speed API
     [[nodiscard]] bool  IsCreepEnabled() const noexcept { return m_creepEnabled; }
     void                SetCreepEnabled(bool enabled) noexcept { m_creepEnabled = enabled; }
     [[nodiscard]] float GetCreepInterval() const noexcept;
+    [[nodiscard]] float GetReplenishInterval() const noexcept;
+    [[nodiscard]] float GetGenerationSpeedRatio() const noexcept;
+    [[nodiscard]] float GetDifficultyFactor() const noexcept;
+    [[nodiscard]] int   GetMinimumBoardBricks() const noexcept;
+    [[nodiscard]] int   GetTargetBoardBricks() const noexcept;
     [[nodiscard]] float GetCreepTimer() const noexcept { return m_creepTimer; }
     [[nodiscard]] float GetCreepProgress() const noexcept;
     [[nodiscard]] bool  IsDangerActive() const noexcept { return m_dangerActive; }
     [[nodiscard]] float GetLowestBrickY() const noexcept { return m_lowestBrickY; }
     void                MultiplyCreepInterval(float factor) noexcept { m_creepIntervalMultiplier *= factor; }
 
-    // Safety boundaries for endless grid descent
-    static constexpr float kMaxAllowedBrickY = 85.0f;     // Absolute lowest allowed brick Y (Paddle is at Y=300.0f, providing 215px safe buffer)
-    static constexpr float kEmergencyVaporizeY = 120.0f;  // Instant vaporize threshold for any anomalous brick
-    static constexpr float kDangerThresholdY = 65.0f;     // Visual danger pulse threshold
+    // Safety boundaries & generation speed caps for endless grid descent
+    static constexpr float kMaxAllowedBrickY = 140.0f;     // Absolute lowest allowed brick Y (Paddle is at Y=300.0f, providing 160px safe buffer)
+    static constexpr float kEmergencyVaporizeY = 180.0f;  // Instant vaporize threshold for any anomalous brick
+    static constexpr float kDangerThresholdY = 110.0f;    // Visual danger pulse threshold
+    static constexpr float kInitialCreepInterval = 7.5f;
+    static constexpr float kMinCreepInterval = 1.6f;
+    static constexpr float kInitialReplenishCooldown = 1.4f;
+    static constexpr float kMinReplenishCooldown = 0.30f;
 
+    static constexpr int   kGridCols = 12;
+    static constexpr float kBrickWidth = 100.0f;
+    static constexpr float kBrickHeight = 30.0f;
+    static constexpr float kGridPad = 10.0f;
+    static constexpr float kGridStartX = -605.0f;
+    static constexpr float kGridStartY = -350.0f;
+    static constexpr float kColStep = kBrickWidth + kGridPad;
+    static constexpr float kRowStep = kBrickHeight + kGridPad;
+
+    bool CanPushColumn(Registry& registry, int col) const;
+    bool PushColumnTopBrick(Registry& registry, int col, uint32_t brickTexId, float spawnSpeed = -1.0f);
+    int  SpawnAdaptiveBurst(Registry& registry, int desiredCount, uint32_t brickTexId);
     int  SpawnRowAtY(Registry& registry, float targetY, uint32_t brickTexId);
 
     // Emergency Defense
-    bool CheckEmergencyBurn(Registry& registry, float thresholdY = 120.0f);
+    bool CheckEmergencyBurn(Registry& registry, float thresholdY = kEmergencyVaporizeY);
 
     // Hazard Zones spawned by wave
     [[nodiscard]] const std::vector<WaveHazardData>& GetWaveHazards() const noexcept { return m_waveHazards; }
@@ -102,17 +123,19 @@ private:
     void StepDownward(Registry& registry);
     void SpawnTopRow(Registry& registry, uint32_t brickTexId);
     bool EvaluateProceduralCell(int col, int row, float time, int broken, int wave, BrickType& outType, bool& outSpecial) const;
+    BrickType ChooseAdaptiveBrickType(Registry& registry, int col, int rowHint, bool& outSpecial) const;
 
     uint32_t m_seed = 1337420u;
     int   m_currentWave = 1;
     float m_waveTimer = 0.0f;
     float m_waveTargetDuration = 60.0f;
-    int   m_waveTargetBricks = 36;
+    int   m_waveTargetBricks = 56;
     int   m_waveBricksBroken = 0;
     int   m_breakableRemaining = 0;
     int   m_totalBricksBrokenSession = 0;
     float m_elapsedSurvivalTime = 0.0f;
     int   m_continuousRowIndex = 0;
+    int   m_burstIndex = 0;
 
     bool  m_creepEnabled = true;
     float m_creepTimer = 0.0f;

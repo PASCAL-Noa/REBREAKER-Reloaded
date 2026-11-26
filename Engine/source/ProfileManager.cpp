@@ -291,6 +291,20 @@ bool ProfileManager::UnlockCosmetic(const std::string& id)
     return false;
 }
 
+void ProfileManager::GrantCosmetic(const std::string& id)
+{
+    for (auto& item : m_cosmetics)
+    {
+        if (item.Id == id)
+        {
+            item.Unlocked = true;
+            PlayerPrefs::SetBool("Cosmetic_Unlocked_" + id, true);
+            PlayerPrefs::Save();
+            return;
+        }
+    }
+}
+
 std::string ProfileManager::GetEquippedCosmetic(CosmeticSlot slot) const
 {
     std::string key = (slot == CosmeticSlot::PaddleSkin) ? "Equipped_PaddleSkin" :

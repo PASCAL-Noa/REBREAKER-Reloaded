@@ -140,18 +140,38 @@ void Window::ApplyConfig(const WindowConfig &config)
     }
 
     sf::VideoMode vm({m_config.Width, m_config.Height});
-    if (m_config.Mode == WindowMode::Fullscreen && !vm.isValid())
+    if (m_config.Mode == WindowMode::Borderless)
+    {
+        vm = sf::VideoMode::getDesktopMode();
+        sfStyle = sf::Style::None;
+        sfState = sf::State::Windowed;
+    }
+    else if (m_config.Mode == WindowMode::Fullscreen && !vm.isValid())
     {
         vm = sf::VideoMode::getDesktopMode();
     }
 
     m_window.create(vm, m_config.Title, sfStyle, sfState);
+    if (!m_window.isOpen() && (m_config.Mode == WindowMode::Fullscreen || m_config.Mode == WindowMode::Borderless))
+    {
+        m_config.Mode = WindowMode::Windowed;
+        sfStyle = sf::Style::Default;
+        sfState = sf::State::Windowed;
+        m_window.create(sf::VideoMode({m_config.Width, m_config.Height}), m_config.Title, sfStyle, sfState);
+    }
+
+    if (m_config.Mode == WindowMode::Borderless)
+    {
+        m_window.setPosition({0, 0});
+    }
+
     const sf::Vector2u actualSize = m_window.getSize();
     m_config.Width = actualSize.x;
     m_config.Height = actualSize.y;
     m_window.setView(sf::View(sf::FloatRect({0.f, 0.f}, {static_cast<float>(actualSize.x), static_cast<float>(actualSize.y)})));
     m_window.setFramerateLimit(0);
     m_window.setVerticalSyncEnabled(m_config.VSync);
+    (void)m_window.setActive(true);
 }
 
 const WindowConfig& Window::GetConfig() const
@@ -166,6 +186,7 @@ sf::RenderWindow& Window::GetNative()
 
 void Window::SetVSync(bool enabled)
 {
+    m_config.VSync = enabled;
     if (enabled) {
         m_window.setFramerateLimit(0);
     }

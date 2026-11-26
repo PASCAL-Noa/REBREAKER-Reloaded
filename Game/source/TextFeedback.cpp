@@ -6,6 +6,7 @@
 #include "ECS/Components/TweenComponent.h"
 #include "Graphics/Renderer.h"
 #include "TweenEffects/TweenEffects.h"
+#include "PowerUps/PowerUpConfig.h"
 #include <random>
 
 TextFeedback::TextFeedback(Registry& registry, GameContext& context, uint32_t fontId, uint32_t fireTexId)
@@ -172,8 +173,11 @@ void TextFeedback::SpawnPowerUpText(Entity canvasParent, const Vector2f& /*world
             text = "+TEMPO SPEED";
             break;
         case PowerUpType::ExtraLife:
-            text = "+1 LIFE";
+        {
+            const int gained = PowerUpManager::Get().Life().GetEffectiveLivesGranted();
+            text = (gained == 1) ? "+1 LIFE" : ("+" + std::to_string(gained) + " LIVES");
             break;
+        }
         case PowerUpType::BigBall:
             text = "+BIG BALL";
             break;

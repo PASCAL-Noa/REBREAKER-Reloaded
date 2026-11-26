@@ -5,7 +5,17 @@ template<typename T>
 class LivesCondition : public Condition<T>
 {
 public:
-    bool OnTest(T* pOwner) override {return pOwner->GetLives() <= 0; }
+    bool OnTest(T* pOwner) override
+    {
+        if constexpr (requires { pOwner->IsGameOver(); })
+        {
+            return pOwner->IsGameOver();
+        }
+        else
+        {
+            return pOwner->GetLives() <= 0;
+        }
+    }
 };
 
 template<typename T>
@@ -14,13 +24,23 @@ class VictoryCondition : public Condition<T>
 public:
     bool OnTest(T* pOwner) override
     {
-        if constexpr (requires { pOwner->HasNextLevel(); })
+        bool cleared = false;
+        if constexpr (requires { pOwner->IsLevelCleared(); })
         {
-            return pOwner->GetBrickCount() <= 0 && !pOwner->HasNextLevel();
+            cleared = pOwner->IsLevelCleared();
         }
         else
         {
-            return pOwner->GetBrickCount() <= 0;
+            cleared = pOwner->GetBrickCount() <= 0;
+        }
+
+        if constexpr (requires { pOwner->HasNextLevel(); })
+        {
+            return cleared && !pOwner->HasNextLevel();
+        }
+        else
+        {
+            return cleared;
         }
     }
 };
@@ -31,9 +51,19 @@ class LevelClearedCondition : public Condition<T>
 public:
     bool OnTest(T* pOwner) override
     {
+        bool cleared = false;
+        if constexpr (requires { pOwner->IsLevelCleared(); })
+        {
+            cleared = pOwner->IsLevelCleared();
+        }
+        else
+        {
+            cleared = pOwner->GetBrickCount() <= 0;
+        }
+
         if constexpr (requires { pOwner->HasNextLevel(); })
         {
-            return pOwner->GetBrickCount() <= 0 && pOwner->HasNextLevel();
+            return cleared && pOwner->HasNextLevel();
         }
         else
         {

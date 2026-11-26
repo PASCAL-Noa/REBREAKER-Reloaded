@@ -11,6 +11,7 @@
 #include "Core/InputActions.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Core/ProfileManager.h"
+#include "UI/SettingsUIController.h"
 
 namespace sf { class RenderTexture; }
 class PreviewScene;
@@ -31,6 +32,8 @@ enum class ChannelType : int
     LevelSelect,
     EndlessMode,
     Workshop,
+    LevelMaker,
+    Robostock,
     Leaderboard,
     Achievements,
     CustomGame,
@@ -129,6 +132,7 @@ public:
 
     static void SetReturnWithDezoom(bool enable) { s_returnWithDezoom = enable; }
     static bool IsReturnWithDezoom() { return s_returnWithDezoom; }
+    static void SetReturnChannelType(ChannelType type) { s_returnChannelType = type; s_hasReturnChannel = true; }
 
 protected:
     [[nodiscard]] bool PreservesMusicOnDestroy() const override { return true; }
@@ -156,6 +160,23 @@ private:
         float RelY = 0.0f;
         Color BaseColor{80, 200, 255, 255};
         bool Alive = true;
+        bool IsTurret = false;
+        float HitFlash = 0.0f;
+    };
+
+    struct CampaignPreviewSpark
+    {
+        Vector2f RelPos{0.0f, 0.0f};
+        Vector2f RelVel{0.0f, 0.0f};
+        Color    Col{255, 220, 100, 255};
+        float    Life = 0.0f;
+        float    MaxLife = 0.45f;
+    };
+
+    struct CampaignPreviewShot
+    {
+        Vector2f RelPos{0.0f, 0.0f};
+        float    RelVy = 0.46f;
     };
 
     struct MusicNoteParticle
@@ -176,6 +197,10 @@ private:
     void    UpdateCampaignPreviewSimulation(float dt);
     void    UpdateMusicParticles(float dt);
     void    RenderCampaignPreview(GameContext& context, const Vector2f& pos, float sc, bool isZoomed) const;
+    void    RenderStageSelectPreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const;
+    void    RenderLevelEditorPreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const;
+    void    RenderStrixVaultPreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const;
+    void    RenderProfilePreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const;
     void    RenderTwoGears(GameContext& context, const Vector2f& pos, float sc) const;
     void    RenderMusicParticles(GameContext& context) const;
     void    RenderWiiZoomedChannel(GameContext& context);
@@ -187,20 +212,12 @@ private:
     void    RenderCRTBezelAndGlass(GameContext& context) const;
     void    RenderChannelGrid(GameContext& context);
     void    RenderTVScreenContent(GameContext& context);
-    void    RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float scale) const;
+    void    RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float scale, bool isZoomed = false) const;
     void    RenderTVOSD(GameContext& context) const;
     void    RenderPowerOffDialog(GameContext& context);
     void    RenderPowerOffAnimation(GameContext& context) const;
 
     void    CreateMainMenuUI(const GameContext& context);
-    void    CreateSettingsLayout(const GameContext& context);
-    void    CreateAudioTab(const GameContext& context);
-    void    CreateRenderTab(const GameContext& context);
-    void    CreateInputsTab(const GameContext& context);
-    void    CreateGamerulesTab(const GameContext& context);
-    void    CreateCheatsTab(const GameContext& context);
-    void    OpenSettingsTab(Entity targetCanvas);
-    void    UpdateInputButtons();
 
     void    CreateLeaderboardModal(const GameContext& context);
     void    CreateDebugModal(const GameContext& context);
@@ -227,17 +244,8 @@ private:
     void    OpenDescriptionModal();
     void    CloseDescriptionModal();
 
-    void    UpdateVolumeBars(const std::vector<Entity>& bars, float volume);
-
     Entity  m_mainCanvas = NULL_ENTITY;
-    Entity  m_settingsCanvas = NULL_ENTITY;
-    Entity  m_audioCanvas = NULL_ENTITY;
-    Entity  m_renderCanvas = NULL_ENTITY;
-    Entity  m_inputsCanvas = NULL_ENTITY;
-    Entity  m_gamerulesCanvas = NULL_ENTITY;
-    Entity  m_cheatsCanvas = NULL_ENTITY;
-    Entity  m_activeTabCanvas = NULL_ENTITY;
-    Entity  m_cheatsTabBtn = NULL_ENTITY;
+    SettingsUIController m_settingsController;
     Entity  m_leaderboardCanvas = NULL_ENTITY;
     Entity  m_debugCanvas = NULL_ENTITY;
     Entity  m_workshopCanvas = NULL_ENTITY;
@@ -293,28 +301,6 @@ private:
     Entity  m_workshopScrollUpBtn = NULL_ENTITY;
     Entity  m_workshopScrollDownBtn = NULL_ENTITY;
 
-    // Settings widgets
-    Entity  m_fsBtn = NULL_ENTITY;
-    Entity  m_vsyncBtn = NULL_ENTITY;
-    Entity  m_shaderBtn = NULL_ENTITY;
-    Entity  m_particlesBtn = NULL_ENTITY;
-    Entity  m_audioDeviceBtn = NULL_ENTITY;
-    std::vector<Entity> m_masterVolumeBars;
-    std::vector<Entity> m_sfxVolumeBars;
-    std::vector<Entity> m_musicVolumeBars;
-
-    // Inputs rebinding widgets
-    Entity  m_inputDeviceBtn = NULL_ENTITY;
-    Entity  m_leftRebindBtn = NULL_ENTITY;
-    Entity  m_rightRebindBtn = NULL_ENTITY;
-    Entity  m_launchRebindBtn = NULL_ENTITY;
-    Entity  m_pauseRebindBtn = NULL_ENTITY;
-    Entity  m_resetDefaultsBtn = NULL_ENTITY;
-    Entity  m_rebindStatusText = NULL_ENTITY;
-    InputAction m_rebindAction = InputAction::Count;
-    bool    m_isRebinding = false;
-    bool    m_rebindGamepadMode = false;
-    float   m_rebindTimer = 0.0f;
 
     LeaderboardManager  m_leaderboard;
     LevelManager        m_levelManager;
@@ -374,10 +360,9 @@ private:
     float               m_volumeKnobAngle = 45.0f;
     float               m_masterVolume = 100.0f;
     bool                m_showPowerOffDialog = false;
-    int                 m_powerDialogChoice = 0; // 0 = Cancel, 1 = Standby, 2 = Power Off
+    int                 m_powerDialogChoice = 0; // 0 = Cancel, 1 = Power Off
     bool                m_isPoweringOff = false;
     float               m_powerOffTimer = 0.0f;
-    bool                m_isStandby = false;
 
     std::vector<MusicNoteParticle> m_musicParticles;
     float               m_musicParticleTimer = 0.0f;
@@ -396,11 +381,20 @@ private:
     float               m_returnTimer = 0.0f;
     float               m_returnProgress = 0.0f;
     inline static bool  s_returnWithDezoom = false;
+    inline static ChannelType s_returnChannelType = ChannelType::Campaign;
+    inline static bool  s_hasReturnChannel = false;
 
-    // Campaign Gameplay Preview (10s live loop with current level layout)
+    // Campaign Gameplay Preview (live loop with current level layout, debris, trail & turret fire)
     float               m_campaignPreviewTimer = 0.0f;
     int                 m_campaignLoadedLevel = -1;
     std::vector<CampaignPreviewBrick> m_campaignBricks;
+    std::vector<CampaignPreviewSpark> m_campaignSparks;
+    std::vector<CampaignPreviewShot>  m_campaignShots;
+    std::array<Vector2f, 10>          m_campaignBallTrail{};
+    size_t              m_campaignTrailCount = 0;
+    float               m_campaignTrailAccum = 0.0f;
+    float               m_campaignTurretCooldown = 1.6f;
+    float               m_campaignPaddleFlash = 0.0f;
     Vector2f            m_campaignBallPos{0.0f, 0.35f};
     Vector2f            m_campaignBallVel{0.48f, -0.62f};
     float               m_campaignPaddleX = 0.0f;

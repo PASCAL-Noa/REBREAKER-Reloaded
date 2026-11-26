@@ -103,10 +103,17 @@ ArenaEventType DynamicEventSystem::SelectRandomEvent()
     return static_cast<ArenaEventType>(dist(m_rng));
 }
 
-void DynamicEventSystem::TriggerEvent(ArenaEventType type, bool skipWarning)
+void DynamicEventSystem::TriggerEvent(ArenaEventType type, bool skipWarning, bool subtleNotification)
 {
     if (type <= ArenaEventType::None || type >= ArenaEventType::Count) return;
 
+    // Cleanly reset any active event's physics before activating the new event
+    if (m_state == ArenaEventState::Active || m_state == ArenaEventState::Warning)
+    {
+        RestoreStandardPhysics();
+    }
+
+    m_subtleNotification = subtleNotification;
     m_currentEvent = type;
     if (skipWarning)
     {
@@ -118,19 +125,23 @@ void DynamicEventSystem::TriggerEvent(ArenaEventType type, bool skipWarning)
     }
 }
 
-void DynamicEventSystem::TriggerRandomEvent(bool skipWarning)
+ArenaEventType DynamicEventSystem::TriggerRandomEvent(bool skipWarning, bool subtleNotification)
 {
-    TriggerEvent(SelectRandomEvent(), skipWarning);
+    const ArenaEventType chosen = SelectRandomEvent();
+    TriggerEvent(chosen, skipWarning, subtleNotification);
+    return chosen;
 }
 
 void DynamicEventSystem::StopActiveEvent()
 {
+    m_subtleNotification = false;
     RestoreStandardPhysics();
     EnterState(ArenaEventState::Cooldown);
 }
 
 void DynamicEventSystem::ResetLifecycle()
 {
+    m_subtleNotification = false;
     RestoreStandardPhysics();
     EnterState(ArenaEventState::Idle);
 }
@@ -357,7 +368,8 @@ void DynamicEventSystem::RestoreStandardPhysics()
 
 void DynamicEventSystem::UpdateLifecycle(float dt)
 {
-    if (!m_enabled || dt <= 0.0f) return;
+    if (dt <= 0.0f) return;
+    if (!m_enabled && m_state == ArenaEventState::Idle) return;
 
     if (m_stateTimer > 0.0f)
     {
@@ -368,7 +380,7 @@ void DynamicEventSystem::UpdateLifecycle(float dt)
     {
         case ArenaEventState::Idle:
             m_alarmIntensity = 0.0f;
-            if (m_stateTimer <= 0.0f)
+            if (m_enabled && m_stateTimer <= 0.0f)
             {
                 m_currentEvent = SelectRandomEvent();
                 EnterState(ArenaEventState::Warning);
@@ -781,9 +793,10 @@ void DynamicEventSystem::RenderUI(GameContext& context, uint32_t fontId) const
     const float centerY = viewSize.Y * 0.5f;
 
     // --- 1. CENTER-SCREEN RETRO-FUTURISTIC TERMINAL OVERLAY ---
-    // Prominently shown during Warning and the opening 2.5s of Active state
-    const bool showCenterTerminal = (m_state == ArenaEventState::Warning) ||
-                                    (m_state == ArenaEventState::Active && (m_stateDuration - m_stateTimer) < 2.5f);
+    // Prominently shown during Warning and the opening 2.5s of Active state (suppressed for subtle Event Block triggers)
+    const bool showCenterTerminal = !m_subtleNotification &&
+                                    ((m_state == ArenaEventState::Warning) ||
+                                     (m_state == ArenaEventState::Active && (m_stateDuration - m_stateTimer) < 2.5f));
 
     if (showCenterTerminal)
     {

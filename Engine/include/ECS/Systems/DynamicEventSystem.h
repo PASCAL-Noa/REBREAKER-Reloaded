@@ -45,9 +45,9 @@ public:
     void SetCooldownDuration(float duration);
     [[nodiscard]] float GetCooldownDuration() const noexcept { return m_cooldownDuration; }
 
-    // Manual Event Control (Sandbox / Debug / Testing)
-    void TriggerEvent(ArenaEventType type, bool skipWarning = false);
-    void TriggerRandomEvent(bool skipWarning = false);
+    // Manual Event Control (Sandbox / Debug / Testing / Event Blocks)
+    void TriggerEvent(ArenaEventType type, bool skipWarning = false, bool subtleNotification = false);
+    ArenaEventType TriggerRandomEvent(bool skipWarning = false, bool subtleNotification = false);
     void StopActiveEvent();
     void ResetLifecycle();
     void RestoreStandardPhysics();
@@ -110,6 +110,7 @@ private:
 
     GameContext*       mp_context = nullptr;
     bool               m_enabled = true;
+    bool               m_subtleNotification = false;
     ArenaEventState    m_state = ArenaEventState::Idle;
     ArenaEventType     m_currentEvent = ArenaEventType::None;
 

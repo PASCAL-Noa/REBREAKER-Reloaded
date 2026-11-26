@@ -469,10 +469,11 @@ TEST_SUITE("Endless Mode Progression & Roguelite Mechanics Tests")
         int initialBricks = gen.GetBreakableBricksRemaining();
         CHECK(initialBricks > 0);
 
-        // Paddle is at Y = 300.0f
+        // Paddle is at Y = 300.0f (kMaxAllowedBrickY = 140.0f -> >= 160px safe buffer)
         constexpr float kPaddleY = 300.0f;
         CHECK(gen.GetLowestBrickY() <= ProceduralEndlessGenerator::kMaxAllowedBrickY);
-        CHECK(kPaddleY - gen.GetLowestBrickY() > 200.0f);
+        CHECK(kPaddleY - gen.GetLowestBrickY() >= kPaddleY - ProceduralEndlessGenerator::kMaxAllowedBrickY);
+        CHECK(initialBricks >= 40); // Wave 1 should spawn a fuller, denser brick field
 
         // Test Case A: Destroy all bricks to 0 -> Update must immediately replenish rows at top
         registry.View<BrickComponent>([&](Entity e, BrickComponent&) {
@@ -484,11 +485,11 @@ TEST_SUITE("Endless Mode Progression & Roguelite Mechanics Tests")
         gen.Update(0.016f, registry, dummyContext);
         CHECK(gen.GetBreakableBricksRemaining() > 0);
         CHECK(gen.GetLowestBrickY() <= ProceduralEndlessGenerator::kMaxAllowedBrickY);
-        CHECK(kPaddleY - gen.GetLowestBrickY() > 200.0f);
+        CHECK(kPaddleY - gen.GetLowestBrickY() >= kPaddleY - ProceduralEndlessGenerator::kMaxAllowedBrickY);
 
         // Test Case B: Strict safety ceiling on downward creep
-        // Force a brick close to the safety boundary (Y = 80.0f)
-        Entity boundaryBrick = BrickFactory::Create(registry, 0.0f, 80.0f, BrickType::Light, false, 0, 0);
+        // Force a brick close to the safety boundary (Y = 135.0f)
+        Entity boundaryBrick = BrickFactory::Create(registry, 0.0f, 135.0f, BrickType::Light, false, 0, 0);
         (void)boundaryBrick;
 
         // Run Update multiple times simulating creep timer expiration
@@ -497,18 +498,90 @@ TEST_SUITE("Endless Mode Progression & Roguelite Mechanics Tests")
             gen.Update(1.0f, registry, dummyContext);
         }
 
-        // Even after repeated updates, bricks must NEVER cross kMaxAllowedBrickY (85.0f)
+        // Even after repeated updates, bricks must NEVER cross kMaxAllowedBrickY (140.0f)
         registry.View<Transform2D, BrickComponent>([&](Entity, const Transform2D& t, BrickComponent&) {
             CHECK(t.Position.Y <= ProceduralEndlessGenerator::kMaxAllowedBrickY);
-            CHECK(kPaddleY - t.Position.Y >= 215.0f);
+            CHECK(kPaddleY - t.Position.Y >= 160.0f);
         });
 
-        // Test Case C: Emergency Burn eliminates any brick beyond 120.0f
-        Entity rogueBrick = BrickFactory::Create(registry, 0.0f, 150.0f, BrickType::Light, false, 0, 0);
+        // Test Case C: Emergency Burn eliminates any brick beyond kEmergencyVaporizeY (180.0f)
+        Entity rogueBrick = BrickFactory::Create(registry, 0.0f, 195.0f, BrickType::Light, false, 0, 0);
         CHECK(registry.IsAlive(rogueBrick));
         bool burned = gen.CheckEmergencyBurn(registry, ProceduralEndlessGenerator::kEmergencyVaporizeY);
         CHECK(burned);
         CHECK_FALSE(registry.IsAlive(rogueBrick));
+
+        // Test Case D: Progressive generation speed acceleration up to max cap
+        ProceduralEndlessGenerator speedGen(7777u);
+        speedGen.GenerateWave(1, registry, 0);
+        const float wave1Creep = speedGen.GetCreepInterval();
+        const float wave1Replenish = speedGen.GetReplenishInterval();
+        CHECK(speedGen.GetGenerationSpeedRatio() == doctest::Approx(0.0f));
+
+        speedGen.SetCurrentWave(4);
+        CHECK(speedGen.GetCreepInterval() < wave1Creep);
+        CHECK(speedGen.GetReplenishInterval() < wave1Replenish);
+        CHECK(speedGen.GetGenerationSpeedRatio() > 0.0f);
+
+        // High wave clamps cleanly at minimum intervals (max generation speed)
+        speedGen.SetCurrentWave(30);
+        CHECK(speedGen.GetCreepInterval() == doctest::Approx(ProceduralEndlessGenerator::kMinCreepInterval));
+        CHECK(speedGen.GetReplenishInterval() == doctest::Approx(ProceduralEndlessGenerator::kMinReplenishCooldown));
+        CHECK(speedGen.GetGenerationSpeedRatio() == doctest::Approx(1.0f));
+    }
+
+    TEST_CASE("Procedural Endless Generator: Column-aware pushing & adaptive difficulty scaling")
+    {
+        Registry reg;
+        ProceduralEndlessGenerator gen(9001u);
+
+        const float col0X = ProceduralEndlessGenerator::kGridStartX;
+        const float col1X = ProceduralEndlessGenerator::kGridStartX + ProceduralEndlessGenerator::kColStep;
+        const float col5X = ProceduralEndlessGenerator::kGridStartX + 5.0f * ProceduralEndlessGenerator::kColStep;
+
+        // Column 0: contiguous stack at -350 and -310, plus a detached brick below a gap at -150
+        Entity c0Top = BrickFactory::Create(reg, col0X, -350.0f, BrickType::Light, false, 0, 0);
+        Entity c0Mid = BrickFactory::Create(reg, col0X, -310.0f, BrickType::Medium, false, 0, 0);
+        Entity c0Low = BrickFactory::Create(reg, col0X, -150.0f, BrickType::Hard, false, 0, 0);
+
+        // Column 1: brick at -350 (must NOT be moved when pushing column 0)
+        Entity c1Top = BrickFactory::Create(reg, col1X, -350.0f, BrickType::Light, false, 0, 0);
+
+        REQUIRE(gen.CanPushColumn(reg, 0));
+        REQUIRE(gen.PushColumnTopBrick(reg, 0, 0, 340.0f));
+
+        // Connected stack in Column 0 slides down by +40.0f; detached brick below gap and Column 1 stay untouched
+        CHECK(reg.GetComponent<BrickComponent>(c0Top).IsDescending);
+        CHECK(reg.GetComponent<BrickComponent>(c0Top).DescendTargetY == doctest::Approx(-310.0f));
+        CHECK(reg.GetComponent<BrickComponent>(c0Mid).IsDescending);
+        CHECK(reg.GetComponent<BrickComponent>(c0Mid).DescendTargetY == doctest::Approx(-270.0f));
+        CHECK_FALSE(reg.GetComponent<BrickComponent>(c0Low).IsDescending);
+        CHECK(reg.GetComponent<Transform2D>(c0Low).Position.Y == doctest::Approx(-150.0f));
+        CHECK_FALSE(reg.GetComponent<BrickComponent>(c1Top).IsDescending);
+        CHECK(reg.GetComponent<Transform2D>(c1Top).Position.Y == doctest::Approx(-350.0f));
+
+        // Fill Column 0 continuously down to Y = 130 (next push would cross kMaxAllowedBrickY = 140)
+        Registry regFull;
+        for (float y = -350.0f; y <= 130.0f + 1.0f; y += 40.0f)
+        {
+            BrickFactory::Create(regFull, col0X, y, BrickType::Light, false, 0, 0);
+        }
+        BrickFactory::Create(regFull, col5X, -350.0f, BrickType::Light, false, 0, 0);
+
+        // Column 0 is capped, while Column 5 can still push independently!
+        CHECK_FALSE(gen.CanPushColumn(regFull, 0));
+        CHECK(gen.CanPushColumn(regFull, 5));
+        CHECK(gen.PushColumnTopBrick(regFull, 5, 0, 340.0f));
+
+        // Difficulty scaling: minimum and target brick counts increase with wave
+        gen.SetCurrentWave(1);
+        const int wave1Min = gen.GetMinimumBoardBricks();
+        const int wave1Target = gen.GetTargetBoardBricks();
+        CHECK(wave1Target > wave1Min);
+
+        gen.SetCurrentWave(8);
+        CHECK(gen.GetMinimumBoardBricks() > wave1Min);
+        CHECK(gen.GetTargetBoardBricks() > wave1Target);
     }
 
     TEST_CASE_FIXTURE(EndlessModeTestFixture, "Endless procedural seed system generates unique wave variations")

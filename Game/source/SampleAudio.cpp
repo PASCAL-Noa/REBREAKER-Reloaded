@@ -140,7 +140,7 @@ void SampleAudio::OnRender(GameContext& context)
     uiText += "[SPACE (Hold)] Spam Brick Hit (Voice Limiter Test, spam triggers: " + std::to_string(m_spamCount) + ")\n";
     uiText += "[1-4] SFX Fun (Bassem, Putine, Zoo, Faaah)\n";
     uiText += "[5] SFX Brick Hit | [6] SFX Combo (Panned)\n";
-    uiText += "[M] Play Musique | [P] Stop Musique";
+    uiText += "[M] Play Music | [P] Stop Music";
 
     DrawDefaultUI(context, "SAMPLE : AUDIO", uiText);
 }

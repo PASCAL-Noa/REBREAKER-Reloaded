@@ -83,6 +83,7 @@ public:
     [[nodiscard]] const std::vector<CosmeticItem>& GetAvailableCosmetics();
     [[nodiscard]] bool IsCosmeticUnlocked(const std::string& id) const;
     bool UnlockCosmetic(const std::string& id);
+    void GrantCosmetic(const std::string& id);
     [[nodiscard]] std::string GetEquippedCosmetic(CosmeticSlot slot) const;
     void EquipCosmetic(CosmeticSlot slot, const std::string& id);
 

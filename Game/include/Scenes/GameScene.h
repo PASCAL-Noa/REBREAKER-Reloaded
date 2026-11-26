@@ -19,6 +19,7 @@
 #include "Data/PostProcessParams.h"
 #include "ECS/Components/LightSourceComponent.h"
 #include "ECS/Components/HazardZoneComponent.h"
+#include "ECS/Components/PaddleDurabilityComponent.h"
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -59,27 +60,33 @@ public:
     void    TriggerPostProcessFlash(float caIntensity, float vignetteIntensity, const Color& vignetteColor, float flashIntensity = 0.0f, const Color& flashColor = Colors::White);
     void    UpdateComboBackgroundColor(uint32_t comboMultiplier);
     void    ApplyLevelTheme(int levelNumber);
+    void    ApplyCustomLighting(const LevelTheme& theme, const Color& paddleLightColor, float coneAngleDeg, float lightRange, float lightIntensity);
     [[nodiscard]] const LevelTheme& GetCurrentTheme() const { return m_currentTheme; }
 
     [[nodiscard]] const GameContext*    GetContext() const { return mp_context; }
     [[nodiscard]] int     GetLives() const { return m_lives; }
+    [[nodiscard]] virtual bool IsGameOver() const { return m_lives <= 0 && (!m_isPaddleExploding || m_paddleRespawnTimer <= 0.0f); }
+    [[nodiscard]] bool    IsPaddleExploding() const noexcept { return m_isPaddleExploding; }
+    bool    DamagePaddle(float rawDamage, const Vector2f& impactPos, GameContext& context, bool ignoreInvuln = false);
+    void    ResetPaddleDurability(float spawnInvuln = 0.0f);
+    [[nodiscard]] virtual bool IsLevelCleared() const { return m_brickCount <= 0; }
     [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
     [[nodiscard]] bool    CanUnpause() const;
     [[nodiscard]] bool    IsPaused() const;
     virtual void          RenderSceneSpecificHUD(GameContext& context) { (void)context; }
-    void    FullReset();
+    virtual void          FullReset();
 
     // Level Management & Progression
     [[nodiscard]] LevelManager&       GetLevelManager() { return m_levelManager; }
     [[nodiscard]] const LevelManager& GetLevelManager() const { return m_levelManager; }
-    [[nodiscard]] int                 GetCurrentLevel() const;
-    [[nodiscard]] int                 GetLevelCount() const;
+    [[nodiscard]] virtual int         GetCurrentLevel() const;
+    [[nodiscard]] virtual int         GetLevelCount() const;
     [[nodiscard]] virtual bool        HasNextLevel() const;
-    void    AdvanceToNextLevel();
-    void    LoadLevel(int levelIndex, bool preserveStats = false);
-    void    StartLevelTransition();
-    void    UpdateLevelTransition();
-    void    CompleteLevelTransition();
+    virtual void AdvanceToNextLevel();
+    virtual void LoadLevel(int levelIndex, bool preserveStats = false);
+    virtual void StartLevelTransition();
+    virtual void UpdateLevelTransition();
+    virtual void CompleteLevelTransition();
     [[nodiscard]] bool                IsLevelTransitionComplete() const;
     [[nodiscard]] float               GetTransitionTimer() const { return m_levelTransitionTimer; }
     void    SetTransitionTimer(float timer) { m_levelTransitionTimer = timer; }
@@ -93,6 +100,8 @@ public:
 
     // Countdown & Ready Sequence
     virtual void StartCountdown();
+    void SetCountdownSuppressed(bool suppressed) noexcept { m_suppressCountdown = suppressed; }
+    [[nodiscard]] bool  IsCountdownSuppressed() const noexcept { return m_suppressCountdown; }
     [[nodiscard]] bool  IsCountdownActive() const noexcept { return m_countdownActive; }
     [[nodiscard]] bool  IsCountdownComplete() const noexcept { return !m_countdownActive; }
     [[nodiscard]] float GetCountdownTimer() const noexcept { return m_countdownTimer; }
@@ -116,11 +125,12 @@ public:
     [[nodiscard]] bool                      IsTypingName();
     [[nodiscard]] bool                      TryConfirmNameBeforeProceeding();
     void                                    PromptEnterName();
-    void    ResumeGame();
-    void    OnReplayRequested();
+    virtual void ResumeGame();
+    virtual void OnReplayRequested();
 
     // Power-Up Tester callbacks
     virtual void ApplyPowerUp(PowerUpType type);
+    virtual void TriggerDebugPowerUp(PowerUpType type);
     void    SpawnPowerUpAtPaddle();
     void    SpawnAllPowerUps();
     void    RespawnBricks();
@@ -166,7 +176,7 @@ public:
 
 protected:
     Entity  CreateWall(float x, float y, float w, float h);
-    void    HandleInput(float dt, const GameContext& context);
+    virtual void HandleInput(float dt, const GameContext& context);
     virtual void PlaySfx(uint32_t id, float volume = 100.0f, float pitch = 1.0f, float pan = 0.0f) const;
 
     void    HandleDeath();
@@ -184,9 +194,16 @@ protected:
 
     Entity  CreateBall(const Vector2f& position, const Vector2f& velocity);
     virtual void SpawnPowerUp(const Vector2f& position);
+    void    SpawnSpecificPowerUp(const Vector2f& position, PowerUpType type);
+    void    BeginBrickDescent(Entity brickEntity, float targetY, float startOffsetY = 220.0f, float speed = 360.0f);
+    void    UpdateDescendingBricks(float dt, GameContext& context);
+    [[nodiscard]] bool  IsAnyBrickDescending();
+    [[nodiscard]] Color GetTopSpawnLightColor(uint8_t alpha = 255) const;
+    void    RenderTopSpawnLight(GameContext& context);
     void    TriggerStormStrike();
     void    FireLasers();
     static Color GetPowerUpColor(PowerUpType type);
+    static Color HsvToRgb(float h, float s, float v, uint8_t a = 255);
 
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
     void    SpawnBleedParticles(const Vector2f& position);
@@ -194,6 +211,21 @@ protected:
     void    UpdatePaddleSpeed();
     void    UpdateVisualMalus(float dt);
     void    UpdateHazardZones(float dt);
+
+    // Event Bricks & Unified Paddle Damage System
+    void    TriggerEventBrick(Entity entity, const Vector2f& pos);
+    void    UpdateEventBrickFeedback(float dt);
+    void    RenderEventBrickWorldFeedback(GameContext& context);
+    void    RenderEventBrickToastHUD(GameContext& context);
+    void    UpdatePaddleDamageSystem(float dt, GameContext& context);
+    void    RenderPaddleDamageFeedback(GameContext& context);
+    virtual void OnPaddleShattered(GameContext& context) { (void)context; }
+    virtual void OnPaddleRespawned(GameContext& context) { (void)context; }
+    virtual void OnLifeLost(GameContext& context) { (void)context; }
+    [[nodiscard]] bool IsBallDying() const noexcept { return m_ballState == BallState::Dying; }
+    [[nodiscard]] bool IsBallAttached() const noexcept { return m_ballState == BallState::Attached; }
+
+    bool m_arenaEventsAllowed = true;
 
     std::unique_ptr<StateMachine<GameScene>> mp_state_machine;
     Entity  m_ball{};
@@ -228,7 +260,7 @@ protected:
     uint32_t    m_countdownWhooshSfxId = 0;
 
     // 2D Sprite Asset Pipeline: Spherical Power-Up Orbs & Hazards (#88)
-    uint32_t    m_orbTexIds[16] = {0};
+    uint32_t    m_orbTexIds[24] = {0};
     uint32_t    m_hazardPatternTexId = 0;
     uint32_t    m_hazardElectricTexId = 0;
     uint32_t    m_hazardGravityTexId = 0;
@@ -238,6 +270,7 @@ protected:
     int         m_countdownLastSecond = 0;
     int         m_countdownWhooshPlayedForSecond = 0;
     bool        m_countdownActive = false;
+    bool        m_suppressCountdown = false;
 
     LeaderboardManager m_leaderboard;
     ScoreManager       m_scoreManager;
@@ -318,6 +351,7 @@ protected:
     bool                m_musicEnabled = true;
     bool                m_audioEnabled = true;
     bool                m_renderGameUI = true;
+    bool                m_isInUpdateStep = false;
 
     // Ambient background & dynamic shader effects
     AmbientBackground   m_ambientBackground;
@@ -326,6 +360,11 @@ protected:
     Entity              m_bgTweenEntity = NULL_ENTITY;
     uint32_t            m_currentComboMultiplier = 0;
     float               m_gameplayTime = 0.0f;
+
+    // Top-of-screen smooth color-cycling spawn light & square pixel particles
+    float               m_topSpawnLightHue = 0.0f;
+    float               m_topSpawnLightAlpha = 0.0f;
+    float               m_topSpawnParticleTimer = 0.0f;
 
     // Dynamic decaying light flashes (bombs, fireball explosions)
     struct LightFlash
@@ -542,4 +581,59 @@ protected:
     void    RenderLuckyQuestionMarks(GameContext& context);
     void    RenderActiveUltimateVisuals(GameContext& context);
     void    RestoreDiscoBricks();
+
+    // Event Brick Subtle World & HUD Feedback
+    struct EventRipple
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Color    Accent{45, 220, 235, 255};
+        float    Radius = 16.0f;
+        float    MaxRadius = 180.0f;
+        float    Lifetime = 0.55f;
+        float    MaxLifetime = 0.55f;
+    };
+    std::vector<EventRipple> m_eventRipples;
+    std::string m_eventToastTitle;
+    std::string m_eventToastDesc;
+    Color       m_eventToastColor{45, 220, 235, 255};
+    float       m_eventToastTimer = 0.0f;
+    float       m_eventToastMaxDuration = 2.8f;
+
+    // Unified Paddle Damage, Visual Feedback & Life-Based Shatter/Respawn System
+    uint32_t    m_paddleCrackSfxId = 0;
+    bool        m_isPaddleExploding = false;
+    float       m_paddleRespawnTimer = 0.0f;
+    float       m_paddleHitFlashTimer = 0.0f;
+    float       m_paddleShieldFlashTimer = 0.0f;
+    float       m_paddleRecoilY = 0.0f;
+    float       m_paddleRecoilTilt = 0.0f;
+    float       m_paddleSquashTimer = 0.0f;
+    float       m_paddleRematerializeTimer = 0.0f;
+    float       m_paddleCritSparkTimer = 0.0f;
+    float       m_paddleHudRevealTimer = 0.0f;
+    float       m_paddleBeamFeedbackCooldown = 0.0f;
+    float       m_paddleBaseY = 300.0f;
+
+    struct PaddleImpactRipple
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Color    Accent{255, 110, 70, 255};
+        float    Radius = 10.0f;
+        float    MaxRadius = 90.0f;
+        float    Lifetime = 0.35f;
+        float    MaxLifetime = 0.35f;
+    };
+    std::vector<PaddleImpactRipple> m_paddleImpactRipples;
+
+    struct FloatingCallout
+    {
+        Vector2f    Position{0.0f, 0.0f};
+        Vector2f    Velocity{0.0f, -55.0f};
+        std::string Text;
+        Color       Tint{255, 100, 80, 255};
+        float       Lifetime = 0.95f;
+        float       MaxLifetime = 0.95f;
+        float       FontSize = 20.0f;
+    };
+    std::vector<FloatingCallout> m_floatingCallouts;
 };

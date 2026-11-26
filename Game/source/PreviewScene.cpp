@@ -17,6 +17,7 @@
 #include "ECS/Components/TweenComponent.h"
 #include "ECS/Systems/ParticleSystem.h"
 #include "ECS/Systems/GameFeelSystem.h"
+#include "ECS/Systems/DynamicEventSystem.h"
 #include "Generators/FileLevelGenerator.h"
 #include "Graphics/Renderer.h"
 #include "PowerUps/PowerUpConfig.h"
@@ -45,7 +46,7 @@ static const PreviewItemInfo kPreviewItems[] = {
     { PowerUpType::ExpandPaddle,  "EXPAND PADDLE",      "EXP", Color{50, 255, 80, 255} },
     { PowerUpType::ShrinkPaddle,  "SHRINK PADDLE",      "SHR", Color{255, 60, 60, 255} },
     { PowerUpType::ExtraLife,     "EXTRA LIFE",         "LIF", Color{255, 100, 180, 255} },
-    { PowerUpType::GlitchMalus,   "GLITCH MALUS",       "GLT", Color{255, 30, 90, 255} }
+    { PowerUpType::GlitchMalus,   "GLITCH DEBUFF",      "GLT", Color{255, 30, 90, 255} }
 };
 static constexpr size_t kPreviewItemCount = sizeof(kPreviewItems) / sizeof(kPreviewItems[0]);
 
@@ -61,6 +62,7 @@ PreviewScene::PreviewScene()
     m_musicEnabled = false;
     m_audioEnabled = false;
     m_renderGameUI = false;
+    m_arenaEventsAllowed = false;
 }
 
 void PreviewScene::SetInitialPowerUp(PowerUpType type)
@@ -102,7 +104,8 @@ void PreviewScene::SetAudioEnabled(bool enabled)
     GameScene::SetAudioEnabled(enabled);
     if (m_isEmbeddedMode && mp_gameFeelSystem)
     {
-        mp_gameFeelSystem->SetVolumeMultiplier(0.55f);
+        const float feelMult = (m_previewMode == PreviewMode::Ultimate) ? 0.35f : 0.45f;
+        mp_gameFeelSystem->SetVolumeMultiplier(feelMult);
     }
     if (!enabled && mp_context && m_fireballBurnSfxId != 0)
     {
@@ -113,7 +116,9 @@ void PreviewScene::SetAudioEnabled(bool enabled)
 void PreviewScene::PlaySfx(uint32_t id, float volume, float pitch, float pan) const
 {
     if (!m_audioEnabled) return;
-    float mult = m_isEmbeddedMode ? 0.55f : 1.0f;
+    const float mult = m_isEmbeddedMode
+        ? ((m_previewMode == PreviewMode::Ultimate) ? 0.38f : 0.48f)
+        : 1.0f;
     GameScene::PlaySfx(id, volume * mult, pitch, pan);
 }
 
@@ -128,7 +133,7 @@ void PreviewScene::SetMusicEnabled(bool enabled)
             cur.find("plasma_ultimate") != std::string::npos ||
             cur.find("lucky_drop_ultimate") != std::string::npos)
         {
-            mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+            mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg");
         }
     }
 }
@@ -136,7 +141,7 @@ void PreviewScene::SetMusicEnabled(bool enabled)
 void PreviewScene::RestorePostUltimateMusic()
 {
     if (!mp_context || !m_musicEnabled) return;
-    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+    mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg");
 }
 
 void PreviewScene::SetPreviewPowerUp(PowerUpType type, int level)
@@ -419,10 +424,29 @@ void PreviewScene::OnDestroy(GameContext& context)
 {
     m_countdownTimer = 0.0f;
     m_countdownGoTimer = 0.0f;
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->SetEnabled(false);
+        mp_eventSystem->StopActiveEvent();
+        mp_eventSystem->RestoreStandardPhysics();
+    }
+    m_eventRipples.clear();
+    m_eventToastTimer = 0.0f;
     // Restore persistent levels so preview transient mutations never leak
     PowerUpManager::Get().ClearTransientOverrides();
-    PowerUpManager::Get().LoadFromPrefs();
-    GameScene::OnDestroy(context);
+    if (!m_isEmbeddedMode)
+    {
+        PowerUpManager::Get().LoadFromPrefs();
+        GameScene::OnDestroy(context);
+    }
+    else
+    {
+        ClearActiveUltimates();
+        ClearVisualMalus();
+        m_collisionSub.Reset();
+        m_powerUpSub.Reset();
+        m_nextLevelSub.Reset();
+    }
 }
 
 void PreviewScene::OnUpdate(float dt, GameContext& context)
@@ -462,7 +486,7 @@ void PreviewScene::OnUpdate(float dt, GameContext& context)
         if (context.Input.IsKeyPress(KeyCode::Escape) || context.Input.IsJoystickButtonPress(0, 6))
         {
             PowerUpManager::Get().ClearTransientOverrides();
-            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
             context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
             return;
         }
@@ -874,9 +898,9 @@ void PreviewScene::OnRender(GameContext& context)
         std::string ultCat = ProfileManager::GetUltimateCategory(m_currentUltimate);
         std::string tierInfo = ProfileManager::GetUltimateTierInfo(m_currentUltimate, m_previewLevel);
 
-        std::string title = "[ PREVIEW ULTIME ]  " + ultName + "  -  NIV. " + std::to_string(m_previewLevel) + " / 5";
+        std::string title = "[ ULTIMATE PREVIEW ]  " + ultName + "  -  LVL. " + std::to_string(m_previewLevel) + " / 5";
         std::string sub = ultCat + "  |  " + tierInfo;
-        std::string controls = "[GAUCHE/DROITE] CHANGER ULTIME  |  [HAUT/BAS] NIVEAU  |  [TAB] MODE POWER-UPS  |  [R] RESET  |  [ESC] RETOUR";
+        std::string controls = "[LEFT/RIGHT] SWITCH ULTIMATE  |  [UP/DOWN] LEVEL  |  [TAB] POWER-UP MODE  |  [R] RESET  |  [ESC] BACK";
 
         context.Render.DrawTextCentered(title, m_fontId, 28.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y - 26.0f}}, Colors::Gold);
         context.Render.DrawTextCentered(sub, m_fontId, 20.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y + 6.0f}}, Color{120, 210, 255, 235});
@@ -886,8 +910,8 @@ void PreviewScene::OnRender(GameContext& context)
     {
         const auto& item = kPreviewItems[m_currentItemIndex];
         int maxLvl = PowerUpManager::Get().GetMaxLevel(item.Type);
-        std::string title = "[ PREVIEW POWER-UP ]  " + std::string(item.Name) + "  -  NIV. " + std::to_string(m_previewLevel) + " / " + std::to_string(maxLvl);
-        std::string controls = "[GAUCHE/DROITE] CHANGER POWER-UP  |  [HAUT/BAS] NIVEAU  |  [TAB] MODE ULTIMES  |  [R] RESET  |  [ESC] RETOUR";
+        std::string title = "[ POWER-UP PREVIEW ]  " + std::string(item.Name) + "  -  LVL. " + std::to_string(m_previewLevel) + " / " + std::to_string(maxLvl);
+        std::string controls = "[LEFT/RIGHT] SWITCH POWER-UP  |  [UP/DOWN] LEVEL  |  [TAB] ULTIMATE MODE  |  [R] RESET  |  [ESC] BACK";
 
         context.Render.DrawTextCentered(title, m_fontId, 28.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y - 20.0f}}, item.CapsuleColor);
         context.Render.DrawTextCentered(controls, m_fontId, 17.0f, Transform2D{Vector2f{bannerPos.X, bannerPos.Y + 22.0f}}, Color{180, 200, 230, 210});
@@ -897,7 +921,7 @@ void PreviewScene::OnRender(GameContext& context)
     {
         float pulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 8.0f);
         uint8_t a = static_cast<uint8_t>(180 + pulse * 75);
-        context.Render.DrawTextCentered("[ NIVEAU TERMINE - FINALISATION DE L'EFFET ... ]", m_fontId, 24.0f,
+        context.Render.DrawTextCentered("[ STAGE CLEARED - FINISHING EFFECT ... ]", m_fontId, 24.0f,
             Transform2D{Vector2f{viewSize.X * 0.5f, bannerPos.Y + 80.0f}}, Color{255, 225, 60, a});
     }
 }
@@ -1024,6 +1048,15 @@ void PreviewScene::TryTriggerUltimate()
 
 void PreviewScene::ResetPreview()
 {
+    if (mp_eventSystem)
+    {
+        mp_eventSystem->SetEnabled(false);
+        mp_eventSystem->StopActiveEvent();
+        mp_eventSystem->RestoreStandardPhysics();
+    }
+    m_eventRipples.clear();
+    m_eventToastTimer = 0.0f;
+
     if (m_particleSystem)
     {
         m_particleSystem->Clear();
@@ -1193,6 +1226,16 @@ void PreviewScene::ResetPreview()
     {
         m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
     }
+
+    // Guarantee event blocks are completely excluded from Workshop previews
+    m_registry.View<BrickComponent>([](Entity, BrickComponent& brick) {
+        if (brick.IsEventBrick)
+        {
+            brick.IsEventBrick = false;
+            brick.EventAlreadyTriggered = true;
+            brick.TriggeredEvent = ArenaEventType::None;
+        }
+    });
 
     m_ball = CreateBall(Vector2f{0.0f, 260.0f}, Vector2f{0.0f, 0.0f});
     if (m_registry.IsAlive(m_ball))

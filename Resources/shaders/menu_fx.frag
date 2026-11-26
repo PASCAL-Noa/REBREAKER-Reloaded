@@ -9,6 +9,8 @@ uniform vec4 u_previewRect;
 uniform float u_glitchIntensity;
 uniform float u_scanlineFlicker;
 uniform float u_time;
+uniform float u_alarmIntensity;
+uniform vec3 u_alarmColor;
 
 void main()
 {
@@ -33,6 +35,7 @@ void main()
     color += vec3(u_glitchIntensity * 0.00000001);
     color += vec3(u_scanlineFlicker * 0.00000001);
     color += vec3(u_time * 0.00000001);
+    color += u_alarmColor * (u_alarmIntensity * 0.00000001);
 
     gl_FragColor = vec4(color, 1.0);
 }

@@ -9,11 +9,15 @@
 #include <algorithm>
 #include <iostream>
 #include <memory>
+#include <atomic>
+#include <array>
+#include <cmath>
 
 struct SoundInstance
 {
     uint32_t soundId = 0;
     std::unique_ptr<sf::Sound> sound;
+    float baseVolume = 100.0f; // pre-bus volume (after headroom), rescaled on Master/SFX changes
 };
 
 struct MusicTrack
@@ -26,11 +30,19 @@ struct MusicTrack
     bool isLooping = false;
 };
 
+struct EditModeFilterState
+{
+    std::atomic<float> mix{0.0f}; // 0.0 = Play Mode (full bandwidth), 1.0 = Edit Mode (muffled/softened)
+    std::array<float, 8> z1{};
+    std::array<float, 8> z2{};
+};
+
 struct AudioMixer::Impl
 {
     ResourceManager& resourceManager;
     std::list<SoundInstance> sfxPool;
     std::unordered_map<uint32_t, std::unique_ptr<sf::Sound>> loopingSfx;
+    std::unordered_map<uint32_t, float> loopingBaseVolume;
     std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> lastTriggerTime;
 
     // Ducking state: lower music by 30-50% during heavy streaks, restoring over 0.5s
@@ -38,6 +50,13 @@ struct AudioMixer::Impl
     float duckingMultiplier = 1.0f;      // 1.0 = normal, e.g. 0.6 = lowered by 40%
     float duckingHoldTimer = 0.0f;       // hold duration during active streak
     float duckingRestoreDuration = 0.5f; // restore smoothly over 0.5s
+
+    // Super Mario Maker style Edit Mode treatment (softer gain + real-time 2-pole low-pass filter)
+    bool editModeEnabled = false;
+    float editModeMix = 0.0f;
+    float editModeTargetMix = 0.0f;
+    float editModeTransitionSpeed = 3.2f;
+    std::shared_ptr<EditModeFilterState> filterState = std::make_shared<EditModeFilterState>();
 
     // Streak detection
     static constexpr std::chrono::milliseconds kStreakWindow{350};
@@ -61,6 +80,53 @@ struct AudioMixer::Impl
 
     explicit Impl(ResourceManager& rm) : resourceManager(rm) {}
 
+    void AttachEditModeFilter(sf::Music& music) const
+    {
+        auto st = filterState;
+        music.setEffectProcessor([st](const float* inputFrames,
+                                      unsigned int& inputFrameCount,
+                                      float* outputFrames,
+                                      unsigned int& outputFrameCount,
+                                      unsigned int frameChannelCount) {
+            const unsigned int frames = std::min(inputFrameCount, outputFrameCount);
+            inputFrameCount = frames;
+            outputFrameCount = frames;
+            if (!inputFrames || !outputFrames || frames == 0 || frameChannelCount == 0)
+            {
+                return;
+            }
+
+            const float mix = std::clamp(st->mix.load(std::memory_order_relaxed), 0.0f, 1.0f);
+            const size_t totalSamples = static_cast<size_t>(frames) * static_cast<size_t>(frameChannelCount);
+            if (mix <= 0.001f)
+            {
+                std::copy(inputFrames, inputFrames + totalSamples, outputFrames);
+                return;
+            }
+
+            // Smooth 2-pole cascaded RC low-pass filter (~650 Hz warm muffled cutoff at mix=1.0)
+            const float alpha = 1.0f - 0.915f * mix;
+            const unsigned int maxCh = std::min(frameChannelCount, 8u);
+            for (unsigned int f = 0; f < frames; ++f)
+            {
+                const size_t base = static_cast<size_t>(f) * static_cast<size_t>(frameChannelCount);
+                for (unsigned int ch = 0; ch < maxCh; ++ch)
+                {
+                    const float x = inputFrames[base + ch];
+                    float s1 = st->z1[ch] + alpha * (x - st->z1[ch]);
+                    float s2 = st->z2[ch] + alpha * (s1 - st->z2[ch]);
+                    st->z1[ch] = s1;
+                    st->z2[ch] = s2;
+                    outputFrames[base + ch] = x * (1.0f - mix) + s2 * mix;
+                }
+                for (unsigned int ch = maxCh; ch < frameChannelCount; ++ch)
+                {
+                    outputFrames[base + ch] = inputFrames[base + ch];
+                }
+            }
+        });
+    }
+
     void CleanUpSfx()
     {
         sfxPool.remove_if([](const SoundInstance& item) {
@@ -68,10 +134,49 @@ struct AudioMixer::Impl
         });
     }
 
+    [[nodiscard]] float GetEditModeVolumeMultiplier() const noexcept
+    {
+        return 1.0f - (1.0f - AudioMixer::kEditModeGainMultiplier) * std::clamp(editModeMix, 0.0f, 1.0f);
+    }
+
     [[nodiscard]] float GetEffectiveMusicVolume(float rawVolume) const
     {
-        return rawVolume * (musicVolume / 100.0f) * (masterVolume / 100.0f) * duckingMultiplier;
+        return std::clamp(rawVolume, 0.0f, 100.0f) * kMusicBusHeadroom * (musicVolume / 100.0f) * (masterVolume / 100.0f) * duckingMultiplier * GetEditModeVolumeMultiplier();
     }
+
+    [[nodiscard]] float GetEffectiveSfxScale() const
+    {
+        return (sfxVolume / 100.0f) * (masterVolume / 100.0f);
+    }
+
+    void ReapplySfxVolumes()
+    {
+        const float scale = GetEffectiveSfxScale();
+        for (auto& item : sfxPool)
+        {
+            if (item.sound) item.sound->setVolume(item.baseVolume * scale);
+        }
+        for (auto& [id, sound] : loopingSfx)
+        {
+            if (!sound) continue;
+            const auto it = loopingBaseVolume.find(id);
+            sound->setVolume((it != loopingBaseVolume.end() ? it->second : 100.0f) * scale);
+        }
+    }
+
+    void ReapplyMusicVolumes()
+    {
+        for (MusicTrack* track : {&activeTrack, &fadingTrack})
+        {
+            if (track->music && track->music->getStatus() == sf::SoundSource::Status::Playing)
+            {
+                track->music->setVolume(GetEffectiveMusicVolume(track->currentVolume));
+            }
+        }
+    }
+
+    // Single mixing headroom for the whole music bus (leaves room for SFX). Never per-track.
+    static constexpr float kMusicBusHeadroom = 0.6f;
 };
 
 AudioMixer::AudioMixer(ResourceManager& resourceManager)
@@ -100,6 +205,23 @@ void AudioMixer::Update(float dt) const
     {
         float speed = 1.0f / (mp_impl->duckingRestoreDuration > 0.0f ? mp_impl->duckingRestoreDuration : 0.5f);
         mp_impl->duckingMultiplier = std::min(1.0f, mp_impl->duckingMultiplier + speed * dt);
+    }
+
+    // 0.05 Super Mario Maker Edit Mode vs Play Mode smooth variant transition
+    if (std::abs(mp_impl->editModeMix - mp_impl->editModeTargetMix) > 0.0005f)
+    {
+        const float dir = (mp_impl->editModeTargetMix > mp_impl->editModeMix) ? 1.0f : -1.0f;
+        mp_impl->editModeMix = std::clamp(mp_impl->editModeMix + dir * mp_impl->editModeTransitionSpeed * dt, 0.0f, 1.0f);
+        if ((dir > 0.0f && mp_impl->editModeMix > mp_impl->editModeTargetMix) ||
+            (dir < 0.0f && mp_impl->editModeMix < mp_impl->editModeTargetMix))
+        {
+            mp_impl->editModeMix = mp_impl->editModeTargetMix;
+        }
+        if (mp_impl->filterState)
+        {
+            mp_impl->filterState->mix.store(mp_impl->editModeMix, std::memory_order_relaxed);
+        }
+        mp_impl->ReapplyMusicVolumes();
     }
 
     // 0.1 Temporal pitch distortion / time-warp glide
@@ -144,9 +266,18 @@ void AudioMixer::Update(float dt) const
     else if (mp_impl->activeTrack.music &&
              mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Stopped)
     {
-        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-        mp_impl->activeTrack.music.reset();
-        mp_impl->activeTrack = MusicTrack{};
+        std::unique_ptr<sf::Music> oldActive;
+        {
+            std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+            oldActive = std::move(mp_impl->activeTrack.music);
+            mp_impl->activeTrack = MusicTrack{};
+        }
+        if (oldActive)
+        {
+            oldActive->stop();
+            std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+            oldActive.reset();
+        }
     }
 
     // 2. Fading-out track tween update
@@ -159,13 +290,18 @@ void AudioMixer::Update(float dt) const
             if (mp_impl->fadingTrack.volumeTween && mp_impl->fadingTrack.volumeTween->IsFinished())
             {
                 mp_impl->fadingTrack.volumeTween.reset();
-                if (mp_impl->fadingTrack.music)
+                std::unique_ptr<sf::Music> oldFading;
                 {
                     std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-                    mp_impl->fadingTrack.music->stop();
-                    mp_impl->fadingTrack.music.reset();
+                    oldFading = std::move(mp_impl->fadingTrack.music);
                 }
                 mp_impl->fadingTrack = MusicTrack{};
+                if (oldFading)
+                {
+                    oldFading->stop();
+                    std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+                    oldFading.reset();
+                }
             }
         }
         else
@@ -176,9 +312,18 @@ void AudioMixer::Update(float dt) const
     else if (mp_impl->fadingTrack.music &&
              mp_impl->fadingTrack.music->getStatus() == sf::SoundSource::Status::Stopped)
     {
-        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-        mp_impl->fadingTrack.music.reset();
-        mp_impl->fadingTrack = MusicTrack{};
+        std::unique_ptr<sf::Music> oldFading;
+        {
+            std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+            oldFading = std::move(mp_impl->fadingTrack.music);
+            mp_impl->fadingTrack = MusicTrack{};
+        }
+        if (oldFading)
+        {
+            oldFading->stop();
+            std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+            oldFading.reset();
+        }
     }
 }
 
@@ -272,8 +417,9 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
     }
 
     // Dynamic inverse-power headroom scaling prevents multi-voice clipping distortion
-    float headroom = (totalActive > 1) ? (1.0f / std::sqrt(1.0f + static_cast<float>(totalActive - 1) * 0.35f)) : 1.0f;
-    float finalVolume = volume * headroom * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
+    float headroom = (totalActive > 0) ? (1.0f / std::sqrt(1.0f + static_cast<float>(totalActive) * 0.65f)) : 1.0f;
+    const float baseVolume = std::clamp(volume, 0.0f, 100.0f) * headroom;
+    float finalVolume = baseVolume * mp_impl->GetEffectiveSfxScale();
     float clampedPan = std::clamp(pan, -1.0f, 1.0f);
 
     auto soundPtr = std::make_unique<sf::Sound>(*buffer);
@@ -281,7 +427,7 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
     soundPtr->setPitch(pitch * mp_impl->temporalSfxMultiplier);
     soundPtr->setPan(clampedPan);
     soundPtr->play();
-    mp_impl->sfxPool.push_back(SoundInstance{soundId, std::move(soundPtr)});
+    mp_impl->sfxPool.push_back(SoundInstance{soundId, std::move(soundPtr), baseVolume});
 }
 
 void AudioMixer::StopSfx() const
@@ -304,6 +450,7 @@ void AudioMixer::StopSfx() const
         }
     }
     mp_impl->loopingSfx.clear();
+    mp_impl->loopingBaseVolume.clear();
 
     mp_impl->lastTriggerTime.clear();
     mp_impl->recentSfxTriggers.clear();
@@ -313,10 +460,12 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
 {
     if (!mp_impl) return;
 
+    mp_impl->loopingBaseVolume[soundId] = volume;
+    const float finalVolume = volume * mp_impl->GetEffectiveSfxScale();
+
     auto it = mp_impl->loopingSfx.find(soundId);
     if (it != mp_impl->loopingSfx.end() && it->second)
     {
-        float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
         it->second->setVolume(finalVolume);
         it->second->setPitch(pitch * mp_impl->temporalSfxMultiplier);
         if (it->second->getStatus() != sf::SoundSource::Status::Playing)
@@ -330,7 +479,6 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
     if (!buffer) return;
 
     auto snd = std::make_unique<sf::Sound>(*buffer);
-    float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
     snd->setLooping(true);
     snd->setVolume(finalVolume);
     snd->setPitch(pitch * mp_impl->temporalSfxMultiplier);
@@ -341,6 +489,7 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
 void AudioMixer::StopLoopingSfx(uint32_t soundId) const
 {
     if (!mp_impl) return;
+    mp_impl->loopingBaseVolume.erase(soundId);
     auto it = mp_impl->loopingSfx.find(soundId);
     if (it != mp_impl->loopingSfx.end())
     {
@@ -394,6 +543,7 @@ void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop)
         mp_impl->activeTrack.currentVolume = volume;
         mp_impl->activeTrack.volumeTween.reset();
         mp_impl->activeTrack.isLooping = loop;
+        mp_impl->AttachEditModeFilter(*mp_impl->activeTrack.music);
         mp_impl->activeTrack.music->setLooping(loop);
         mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(volume));
         mp_impl->activeTrack.music->setPitch(mp_impl->currentMusicPitch);
@@ -456,31 +606,39 @@ void AudioMixer::FadeToMusic(const std::string& filepath, const TweenConfig<floa
     }
 
     // 1. Move currently active music to fadingTrack to crossfade it out using TweenConfig
-    if (mp_impl->activeTrack.music &&
-        mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+    if (mp_impl->activeTrack.music)
     {
-        if (mp_impl->fadingTrack.music)
+        std::unique_ptr<sf::Music> oldFading;
         {
             std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-            mp_impl->fadingTrack.music->stop();
-            mp_impl->fadingTrack.music.reset();
+            oldFading = std::move(mp_impl->fadingTrack.music);
+        }
+        if (oldFading)
+        {
+            oldFading->stop();
+            std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+            oldFading.reset();
         }
         mp_impl->fadingTrack = std::move(mp_impl->activeTrack);
         mp_impl->activeTrack = MusicTrack{};
 
-        TweenConfig<float> outConfig;
-        outConfig.Start = mp_impl->fadingTrack.currentVolume;
-        outConfig.End = 0.0f;
-        outConfig.Duration = inConfig.Duration;
-        outConfig.Ease = inConfig.Ease;
-        outConfig.Setter = [this](float vol) {
-            if (mp_impl && mp_impl->fadingTrack.music)
-            {
-                mp_impl->fadingTrack.currentVolume = vol;
-                mp_impl->fadingTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(vol));
-            }
-        };
-        mp_impl->fadingTrack.volumeTween = std::make_unique<Tween<float>>(outConfig);
+        if (mp_impl->fadingTrack.music &&
+            mp_impl->fadingTrack.music->getStatus() == sf::SoundSource::Status::Playing)
+        {
+            TweenConfig<float> outConfig;
+            outConfig.Start = mp_impl->fadingTrack.currentVolume;
+            outConfig.End = 0.0f;
+            outConfig.Duration = inConfig.Duration;
+            outConfig.Ease = inConfig.Ease;
+            outConfig.Setter = [this](float vol) {
+                if (mp_impl && mp_impl->fadingTrack.music)
+                {
+                    mp_impl->fadingTrack.currentVolume = vol;
+                    mp_impl->fadingTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(vol));
+                }
+            };
+            mp_impl->fadingTrack.volumeTween = std::make_unique<Tween<float>>(outConfig);
+        }
     }
     else
     {
@@ -502,6 +660,7 @@ void AudioMixer::FadeToMusic(const std::string& filepath, const TweenConfig<floa
         mp_impl->activeTrack.baseVolume = inConfig.End;
         mp_impl->activeTrack.currentVolume = inConfig.Start;
         mp_impl->activeTrack.isLooping = loop;
+        mp_impl->AttachEditModeFilter(*mp_impl->activeTrack.music);
         mp_impl->activeTrack.music->setLooping(loop);
         mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(inConfig.Start));
         mp_impl->activeTrack.music->setPitch(mp_impl->currentMusicPitch);
@@ -555,11 +714,15 @@ void AudioMixer::FadeOutMusic(const TweenConfig<float>& config) const
         return;
     }
 
-    if (mp_impl->fadingTrack.music)
+    std::unique_ptr<sf::Music> oldFading;
     {
         std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-        mp_impl->fadingTrack.music->stop();
-        mp_impl->fadingTrack.music.reset();
+        oldFading = std::move(mp_impl->fadingTrack.music);
+    }
+    if (oldFading)
+    {
+        oldFading->stop();
+        oldFading.reset();
     }
 
     mp_impl->fadingTrack = std::move(mp_impl->activeTrack);
@@ -602,21 +765,29 @@ void AudioMixer::StopMusic() const
 {
     if (!mp_impl) return;
 
-    std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-
-    if (mp_impl->activeTrack.music)
+    std::unique_ptr<sf::Music> activeMusic;
+    std::unique_ptr<sf::Music> fadingMusic;
     {
-        mp_impl->activeTrack.music->stop();
-        mp_impl->activeTrack.music.reset();
-    }
-    mp_impl->activeTrack = MusicTrack{};
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+        activeMusic = std::move(mp_impl->activeTrack.music);
+        mp_impl->activeTrack = MusicTrack{};
 
-    if (mp_impl->fadingTrack.music)
-    {
-        mp_impl->fadingTrack.music->stop();
-        mp_impl->fadingTrack.music.reset();
+        fadingMusic = std::move(mp_impl->fadingTrack.music);
+        mp_impl->fadingTrack = MusicTrack{};
     }
-    mp_impl->fadingTrack = MusicTrack{};
+
+    if (activeMusic)
+    {
+        activeMusic->stop();
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+        activeMusic.reset();
+    }
+    if (fadingMusic)
+    {
+        fadingMusic->stop();
+        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+        fadingMusic.reset();
+    }
 }
 
 void AudioMixer::TriggerDucking(float duckAmount, float restoreDuration) const
@@ -656,20 +827,43 @@ float AudioMixer::GetDuckingMultiplier() const
     return mp_impl ? mp_impl->duckingMultiplier : 1.0f;
 }
 
+void AudioMixer::SetMusicEditMode(bool enabled, float transitionDuration) const
+{
+    if (!mp_impl) return;
+    mp_impl->editModeEnabled = enabled;
+    mp_impl->editModeTargetMix = enabled ? 1.0f : 0.0f;
+    if (transitionDuration <= 0.01f)
+    {
+        mp_impl->editModeMix = mp_impl->editModeTargetMix;
+        if (mp_impl->filterState)
+        {
+            mp_impl->filterState->mix.store(mp_impl->editModeMix, std::memory_order_relaxed);
+        }
+        mp_impl->ReapplyMusicVolumes();
+    }
+    else
+    {
+        const float delta = std::abs(mp_impl->editModeTargetMix - mp_impl->editModeMix);
+        mp_impl->editModeTransitionSpeed = (delta > 0.001f) ? (delta / transitionDuration) : (1.0f / transitionDuration);
+    }
+}
+
+bool AudioMixer::IsMusicEditMode() const
+{
+    return mp_impl && mp_impl->editModeEnabled;
+}
+
+float AudioMixer::GetMusicEditModeMix() const
+{
+    return mp_impl ? mp_impl->editModeMix : 0.0f;
+}
+
 void AudioMixer::SetMasterVolume(float volume) const
 {
     if (!mp_impl) return;
-    mp_impl->masterVolume = volume;
-    SetMusicVolume(mp_impl->musicVolume);
-
-    for (auto& item : mp_impl->sfxPool)
-    {
-        if (item.sound) item.sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
-    }
-    for (auto& [id, sound] : mp_impl->loopingSfx)
-    {
-        if (sound) sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
-    }
+    mp_impl->masterVolume = std::clamp(volume, 0.0f, 100.0f);
+    mp_impl->ReapplyMusicVolumes();
+    mp_impl->ReapplySfxVolumes();
 }
 
 float AudioMixer::GetMasterVolume() const
@@ -681,29 +875,27 @@ float AudioMixer::GetMasterVolume() const
 void AudioMixer::SetSfxVolume(float volume) const
 {
     if (!mp_impl) return;
-    mp_impl->sfxVolume = volume;
-    for (auto& item : mp_impl->sfxPool)
-    {
-        if (item.sound) item.sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
-    }
-    for (auto& [id, sound] : mp_impl->loopingSfx)
-    {
-        if (sound) sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
-    }
+    mp_impl->sfxVolume = std::clamp(volume, 0.0f, 100.0f);
+    mp_impl->ReapplySfxVolumes();
 }
 
 void AudioMixer::SetMusicVolume(float volume) const
 {
     if (!mp_impl) return;
-    mp_impl->musicVolume = volume;
-    if (mp_impl->activeTrack.music && mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
-    {
-        mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(mp_impl->activeTrack.currentVolume));
-    }
-    if (mp_impl->fadingTrack.music && mp_impl->fadingTrack.music->getStatus() == sf::SoundSource::Status::Playing)
-    {
-        mp_impl->fadingTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(mp_impl->fadingTrack.currentVolume));
-    }
+    mp_impl->musicVolume = std::clamp(volume, 0.0f, 100.0f);
+    mp_impl->ReapplyMusicVolumes();
+}
+
+float AudioMixer::GetMusicLevel() const
+{
+    if (!mp_impl || !mp_impl->activeTrack.music) return 0.0f;
+    return mp_impl->activeTrack.currentVolume;
+}
+
+float AudioMixer::GetEffectiveMusicGain() const
+{
+    if (!mp_impl) return 0.0f;
+    return mp_impl->GetEffectiveMusicVolume(mp_impl->activeTrack.music ? mp_impl->activeTrack.currentVolume : kNominalMusicLevel);
 }
 
 void AudioMixer::StopAll() const
@@ -782,9 +974,9 @@ std::string AudioMixer::GetCurrentAudioDevice() const
 bool AudioMixer::SetAudioDevice(const std::string& name) const
 {
     std::string targetDevice = name;
+    auto def = sf::PlaybackDevice::getDefaultDevice();
     if (targetDevice.empty() || targetDevice == "Default Device" || targetDevice == "< DEFAULT DEVICE >")
     {
-        auto def = sf::PlaybackDevice::getDefaultDevice();
         targetDevice = def.value_or("");
     }
 
@@ -794,26 +986,31 @@ bool AudioMixer::SetAudioDevice(const std::string& name) const
         return true;
     }
 
+    // If no custom device has been explicitly bound, the active stream is already the system default
+    if (!dev.has_value() && def.has_value() && targetDevice == def.value())
+    {
+        return true;
+    }
+
+    if (targetDevice.empty())
+    {
+        return true;
+    }
+
     try
     {
+        auto available = sf::PlaybackDevice::getAvailableDevices();
+        if (std::find(available.begin(), available.end(), targetDevice) == available.end())
+        {
+            return false;
+        }
+
         StopAll();
 
         // Allow any active miniaudio WASAPI device worker to flush and terminate safely
         std::this_thread::sleep_for(std::chrono::milliseconds(60));
 
         std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-        if (targetDevice.empty())
-        {
-            return true;
-        }
-
-        auto available = sf::PlaybackDevice::getAvailableDevices();
-        if (std::find(available.begin(), available.end(), targetDevice) == available.end())
-        {
-            std::cerr << "[AudioMixer] Warning: Target audio device \"" << targetDevice << "\" not in available devices.\n";
-            return false;
-        }
-
         bool ok = sf::PlaybackDevice::setDevice(targetDevice);
         // Allow the newly opened WASAPI device stream to stabilize before new sounds/music are allocated
         std::this_thread::sleep_for(std::chrono::milliseconds(60));

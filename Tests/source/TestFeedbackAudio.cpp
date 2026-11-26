@@ -161,4 +161,69 @@ TEST_SUITE("UI Feedback & Audio Tests")
         sf::Music music;
         CHECK(music.openFromFile("Resources/audio/music/Game-menu.ogg"));
     }
+
+    TEST_CASE("AudioMixer centralized music gain synchronization & seamless same-track reuse")
+    {
+        ResourceManager rm;
+        AudioMixer mixer(rm);
+        mixer.SetDuckingEnabled(false);
+
+        mixer.SetMasterVolume(100.0f);
+        mixer.SetMusicVolume(100.0f);
+        CHECK(mixer.GetEffectiveMusicGain() == doctest::Approx(60.0f)); // 100 * 0.6 bus headroom
+
+        mixer.SetMasterVolume(80.0f);
+        mixer.SetMusicVolume(50.0f);
+        CHECK(mixer.GetEffectiveMusicGain() == doctest::Approx(24.0f)); // 100 * 0.6 * 0.8 * 0.5
+
+        mixer.PlayMusic("Resources/audio/music/Game-1.ogg");
+        CHECK(mixer.GetCurrentMusicPath() == "Resources/audio/music/Game-1.ogg");
+        CHECK(mixer.GetMusicLevel() == doctest::Approx(AudioMixer::kNominalMusicLevel));
+        CHECK(mixer.GetEffectiveMusicGain() == doctest::Approx(24.0f));
+
+        // Seamless mute toggle (Edit/Play environment mute) keeps track path & updates gain to 0
+        mixer.PlayMusic("Resources/audio/music/Game-1.ogg", 0.0f, true);
+        CHECK(mixer.GetCurrentMusicPath() == "Resources/audio/music/Game-1.ogg");
+        CHECK(mixer.GetMusicLevel() == doctest::Approx(0.0f));
+        CHECK(mixer.GetEffectiveMusicGain() == doctest::Approx(0.0f));
+
+        // Unmuting restores the exact centralized gain without changing tracks
+        mixer.PlayMusic("Resources/audio/music/Game-1.ogg", AudioMixer::kNominalMusicLevel, true);
+        CHECK(mixer.GetMusicLevel() == doctest::Approx(AudioMixer::kNominalMusicLevel));
+        CHECK(mixer.GetEffectiveMusicGain() == doctest::Approx(24.0f));
+
+        mixer.StopMusic();
+    }
+
+    TEST_CASE("AudioMixer Super Mario Maker style Edit Mode vs Play Mode music variant treatment")
+    {
+        ResourceManager rm;
+        AudioMixer mixer(rm);
+        mixer.SetDuckingEnabled(false);
+        mixer.SetMasterVolume(100.0f);
+        mixer.SetMusicVolume(100.0f);
+
+        mixer.PlayMusic("Resources/audio/music/Game-1.ogg");
+        CHECK_FALSE(mixer.IsMusicEditMode());
+        CHECK(mixer.GetMusicEditModeMix() == doctest::Approx(0.0f));
+        const float playModeGain = mixer.GetEffectiveMusicGain();
+        CHECK(playModeGain == doctest::Approx(60.0f));
+
+        // Entering Edit Mode softens & lowers gain smoothly while keeping the same music stream playing
+        mixer.SetMusicEditMode(true, 0.0f);
+        CHECK(mixer.IsMusicEditMode());
+        CHECK(mixer.GetMusicEditModeMix() == doctest::Approx(1.0f));
+        CHECK(mixer.GetCurrentMusicPath() == "Resources/audio/music/Game-1.ogg");
+        CHECK(mixer.GetEffectiveMusicGain() == doctest::Approx(playModeGain * AudioMixer::kEditModeGainMultiplier));
+
+        // Switching to Play Mode seamlessly restores full bandwidth and 100% nominal gain
+        mixer.SetMusicEditMode(false, 0.20f);
+        CHECK_FALSE(mixer.IsMusicEditMode());
+        mixer.Update(0.25f);
+        CHECK(mixer.GetMusicEditModeMix() == doctest::Approx(0.0f));
+        CHECK(mixer.GetEffectiveMusicGain() == doctest::Approx(playModeGain));
+
+        mixer.StopMusic();
+    }
 }
+

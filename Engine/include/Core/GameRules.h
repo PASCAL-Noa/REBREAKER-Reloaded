@@ -34,7 +34,8 @@ namespace Rule
         HazardZoomPulseEnabled,
         HazardAudioWarpEnabled,
         UltimateLockdownEnabled,
-        EndlessCreepingCeiling
+        EndlessCreepingCeiling,
+        ManualOverride
     };
 
     enum class Debug : uint32_t
