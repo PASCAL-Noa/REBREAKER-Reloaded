@@ -122,12 +122,15 @@ namespace
     };
 }
 
+#include <filesystem>
+
 EditorScene::EditorScene()
     : GameScene()
 {
     m_audioEnabled = true;
     m_musicEnabled = true;
     m_renderGameUI = false; // Enabled dynamically during playtest
+    m_suppressCountdown = true; // Never show or play countdown in Editor or Editor Playtest
 }
 
 EditorScene::EditorScene(std::string editLevelId, bool returnToRobostock)
@@ -138,6 +141,7 @@ EditorScene::EditorScene(std::string editLevelId, bool returnToRobostock)
     m_audioEnabled = true;
     m_musicEnabled = true;
     m_renderGameUI = false;
+    m_suppressCountdown = true;
 }
 
 void EditorScene::ShowToast(const std::string& message, Color color, float duration)
@@ -147,22 +151,49 @@ void EditorScene::ShowToast(const std::string& message, Color color, float durat
     m_toastTimer = duration;
 }
 
-void EditorScene::SyncEditorThemeMusic(GameContext& context) const
+void EditorScene::SyncEditorThemeMusic(GameContext& context)
 {
-    const auto& track = m_levelData.GetTheme().MusicTrack;
+    const auto& thm = m_levelData.GetTheme();
+    const auto& track = thm.MusicTrack;
     if (track.empty()) return;
+
+    // Super Mario Maker style: softer, quieter, low-pass filtered music in Edit Mode,
+    // seamlessly transitioning to full bandwidth & volume in Playtest Mode.
+    context.Audio.SetMusicEditMode(!m_isPlaytesting, 0.32f);
+
+    m_playlist.Clear();
+    const bool muted = (!m_musicEnabled || m_environmentMusicMuted);
+    if (m_isPlaytesting && !muted)
+    {
+        if (!thm.MusicPlaylist.empty())
+        {
+            for (const auto& plTrack : thm.MusicPlaylist)
+            {
+                if (!plTrack.empty()) m_playlist.AddTrack(context, plTrack);
+            }
+        }
+        else
+        {
+            m_playlist.AddTrack(context, track);
+        }
+    }
+
     // PlayMusic reuses the live sf::Music instance and preserves its playback offset when the path matches.
-    const float level = (!m_musicEnabled || m_environmentMusicMuted) ? 0.0f : AudioMixer::kNominalMusicLevel;
-    context.Audio.PlayMusic(track, level, true);
+    // In Edit Mode (or single-track playlists), loop the active track; in multi-track Playtest, PlaylistManager chains tracks.
+    const float level = muted ? 0.0f : AudioMixer::kNominalMusicLevel;
+    const bool loopStream = (!m_isPlaytesting || thm.MusicPlaylist.size() <= 1);
+    context.Audio.PlayMusic(track, level, loopStream);
 }
 
 void EditorScene::OnInit(GameContext& context)
 {
-    // Initialize base GameScene with game UI & music disabled so neither the campaign playlist
-    // nor the countdown "READY" audio cue triggers on editor launch.
-    m_renderGameUI = false;
+    // Initialize base GameScene with m_renderGameUI = true so m_uiController (Pause Menu UI) is created,
+    // while m_suppressCountdown = true and m_musicEnabled = false prevent any READY audio cue or campaign music.
+    m_suppressCountdown = true;
+    m_renderGameUI = true;
     m_musicEnabled = false;
     GameScene::OnInit(context);
+    m_renderGameUI = false;
     m_musicEnabled = true;
 
     // 1. Wipe campaign playlist so it cannot play campaign tracks in the editor
@@ -249,6 +280,7 @@ void EditorScene::OnInit(GameContext& context)
 
 void EditorScene::OnDestroy(GameContext& context)
 {
+    context.Audio.SetMusicEditMode(false, 0.15f);
     GameScene::OnDestroy(context);
 }
 
@@ -415,6 +447,10 @@ void EditorScene::OnUpdate(float dt, GameContext& context)
     {
         m_toastTimer = std::max(0.0f, m_toastTimer - dt);
     }
+    if (m_paintSfxCooldown > 0.0f)
+    {
+        m_paintSfxCooldown = std::max(0.0f, m_paintSfxCooldown - dt);
+    }
 
     if (m_isPlaytesting)
     {
@@ -509,22 +545,34 @@ void EditorScene::OnUpdate(float dt, GameContext& context)
             UpdateTurrets(dt, context);
         }
 
-        // Check if player clicked [STOP] in bottom-left
+        // Check if player clicked prominent [BACK TO EDITOR] pill in bottom-left
         auto [mx, my] = context.Input.GetMousePosition();
         const Vector2f viewSize = context.Render.GetLogicalViewSize();
         const float halfW = viewSize.X * 0.5f;
         const float halfH = viewSize.Y * 0.5f;
         const Vector2f worldMouse{mx - halfW, my - halfH};
 
-        const Vector2f stopBtnPos{-halfW + 80.0f, halfH - 75.0f};
-        const Vector2f btnSize{60.0f, 60.0f};
-        if (std::abs(worldMouse.X - stopBtnPos.X) <= btnSize.X * 0.6f && std::abs(worldMouse.Y - stopBtnPos.Y) <= btnSize.Y * 0.6f)
+        const Vector2f stopBtnPos{-halfW + 150.0f, halfH - 56.0f};
+        const Vector2f btnSize{236.0f, 54.0f};
+        Vector2f drawPos = stopBtnPos;
+        if (context.Rules.GetRule(Rule::Graphics::EnableShader))
         {
-            if (context.Input.IsMouseButtonPress(MouseButton::Left))
-            {
-                StopPlaytesting(context);
-                return;
-            }
+            const float normX = stopBtnPos.X / halfW;
+            const float normY = stopBtnPos.Y / halfH;
+            const float offX = normY / 4.2f;
+            const float offY = normX / 4.2f;
+            drawPos = Vector2f{(normX + normX * (offX * offX)) * halfW,
+                               (normY + normY * (offY * offY)) * halfH};
+        }
+
+        const bool hitLogical = (std::abs(worldMouse.X - stopBtnPos.X) <= btnSize.X * 0.56f &&
+                                 std::abs(worldMouse.Y - stopBtnPos.Y) <= btnSize.Y * 0.62f);
+        const bool hitWarped = (std::abs(worldMouse.X - drawPos.X) <= btnSize.X * 0.56f &&
+                                std::abs(worldMouse.Y - drawPos.Y) <= btnSize.Y * 0.62f);
+        if ((hitLogical || hitWarped) && context.Input.IsMouseButtonPress(MouseButton::Left))
+        {
+            StopPlaytesting(context);
+            return;
         }
     }
     else
@@ -535,6 +583,12 @@ void EditorScene::OnUpdate(float dt, GameContext& context)
         camera.Position = Vector2f{0.0f, 0.0f};
         camera.Rotation = 0.0f;
         context.Render.SetCamera(camera);
+
+        if (m_loadModalOpen)
+        {
+            HandleLoadLevelModalInput(context);
+            return;
+        }
 
         if (m_textModalMode != EditorTextModalMode::None)
         {
@@ -572,7 +626,7 @@ void EditorScene::OnRender(GameContext& context)
         context.Render.SetCamera(gameCam);
         RenderTurrets(context);
 
-        // 3. Render clean Stop button in bottom-left when actively playing
+        // 3. Render prominent Back to Editor button in bottom-left when actively playing
         const int curState = mp_state_machine
             ? mp_state_machine->GetCurrentState()
             : static_cast<int>(SceneState::Playing);
@@ -614,7 +668,11 @@ void EditorScene::OnRender(GameContext& context)
         RenderTabsAndPanels(context);
         RenderBottomToast(context);
 
-        if (m_textModalMode != EditorTextModalMode::None)
+        if (m_loadModalOpen)
+        {
+            RenderLoadLevelModal(context);
+        }
+        else if (m_textModalMode != EditorTextModalMode::None)
         {
             RenderTextModal(context);
         }
@@ -680,6 +738,7 @@ void EditorScene::StartPlaytesting(GameContext& context)
     m_isPlaytesting = true;
     m_showDefeatModal = false;
     m_renderGameUI = true;
+    m_suppressCountdown = true;
     m_playtestElapsed = 0.0f;
     m_nextQueuedEventIdx = 0;
     m_initialEventTriggered = false;
@@ -712,7 +771,7 @@ void EditorScene::StartPlaytesting(GameContext& context)
         mp_eventSystem->ResetLifecycle();
     }
 
-    // 2. Ensure campaign playlist is completely empty
+    // 2. Ensure campaign playlist is completely empty before configuring level playlist
     m_playlist.Clear();
 
     // 3. Build the ECS bricks starting from the first playable page in order
@@ -724,10 +783,10 @@ void EditorScene::StartPlaytesting(GameContext& context)
     context.Events.Publish(LivesChangedEvent(m_lives));
     ResetBallAndPaddle();
 
-    // 4. Start countdown state
+    // 4. Enter playing state immediately (countdown is suppressed in Editor Playtest)
     StartCountdown();
 
-    // 5. Keep the active editor theme music stream running at the same playback position and volume
+    // 5. Seamlessly un-muffle active editor theme music and queue level playlist tracks
     SyncEditorThemeMusic(context);
 
     auto& camera = m_registry.GetComponent<Camera2D>(m_camera);
@@ -743,7 +802,7 @@ void EditorScene::StartPlaytesting(GameContext& context)
                 StopPlaytesting(*mp_context);
             }
         });
-        m_uiController->ShowState(GameUIState::Countdown);
+        m_uiController->ShowState(GameUIState::Playing);
     }
 
     if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
@@ -822,6 +881,10 @@ void EditorScene::Undo()
         m_levelData.RestoreSnapshot(m_undoStack.back());
         m_hasSelectedCell = false;
         ShowToast("Action undone", Color{140, 200, 255, 255}, 1.4f);
+        if (mp_context && m_switchSfxId != 0)
+        {
+            mp_context->Audio.PlaySfx(m_switchSfxId, 14.0f, 0.92f);
+        }
     }
 }
 
@@ -839,6 +902,7 @@ void EditorScene::SetSelectedTile(EditorTileType tile)
 
 void EditorScene::ExitEditor(GameContext& context)
 {
+    context.Audio.SetMusicEditMode(false, 0.15f);
     if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
     if (m_returnToRobostock)
     {
@@ -1058,6 +1122,289 @@ void EditorScene::RenderTextModal(GameContext& context)
     context.Render.DrawRectangle(btnSz.X, btnSz.Y, Transform2D{cancelPos}, cancelHover ? Color{75, 50, 60, 255} : Color{48, 52, 64, 255});
     context.Render.DrawRectangleOutline(btnSz.X, btnSz.Y, Transform2D{cancelPos}, cancelHover ? Colors::White : Color{95, 102, 120, 255}, 1.5f);
     context.Render.DrawTextCentered("CANCEL", m_fontId, 21.0f, Transform2D{cancelPos}, Color{225, 230, 240, 255});
+}
+
+void EditorScene::OpenLoadLevelModal(GameContext& context)
+{
+    RefreshLoadModalEntries();
+    m_loadModalOpen = true;
+    m_loadModalScroll = 0;
+    m_loadModalSelected = 0;
+    if (!m_editingLevelId.empty())
+    {
+        for (size_t i = 0; i < m_loadableLevels.size(); ++i)
+        {
+            if (m_loadableLevels[i].Id == m_editingLevelId)
+            {
+                m_loadModalSelected = static_cast<int>(i);
+                if (m_loadModalSelected >= 6)
+                {
+                    m_loadModalScroll = m_loadModalSelected - 5;
+                }
+                break;
+            }
+        }
+    }
+    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+}
+
+void EditorScene::RefreshLoadModalEntries()
+{
+    m_loadableLevels.clear();
+
+    // Only list levels registered in the Strix Vault (CustomLevelLibrary)
+    CustomLevelLibrary lib;
+    for (const auto& entry : lib.GetLevels())
+    {
+        if (std::filesystem::exists(entry.FilePath))
+        {
+            m_loadableLevels.push_back(LoadableLevelItem{
+                .Id = entry.Id,
+                .Name = entry.Name,
+                .FilePath = entry.FilePath,
+                .PageCount = std::max(1, entry.PageCount),
+                .BrickCount = std::max(0, entry.BrickCount),
+                .IsCustomVault = true
+            });
+        }
+    }
+}
+
+void EditorScene::ConfirmLoadLevelSelection(GameContext& context)
+{
+    if (m_loadableLevels.empty() || m_loadModalSelected < 0 ||
+        m_loadModalSelected >= static_cast<int>(m_loadableLevels.size()))
+    {
+        m_loadModalOpen = false;
+        return;
+    }
+
+    const LoadableLevelItem chosen = m_loadableLevels[static_cast<size_t>(m_loadModalSelected)];
+    CustomLevelLibrary lib;
+    LevelData loaded;
+    const bool ok = chosen.IsCustomVault && lib.LoadLevelData(chosen.Id, loaded);
+
+    if (ok)
+    {
+        PushUndo();
+        m_levelData = std::move(loaded);
+        m_editingLevelId = chosen.Id;
+        m_currentSavePath = chosen.FilePath;
+
+        m_selectedCustomThemeIdx = -1;
+        if (!m_levelData.GetTheme().ThemeId.empty())
+        {
+            if (auto idx = m_themeLibrary.FindThemeIndex(m_levelData.GetTheme().ThemeId); idx.has_value())
+            {
+                m_selectedCustomThemeIdx = static_cast<int>(*idx);
+            }
+        }
+
+        m_hasSelectedCell = false;
+        m_loadModalOpen = false;
+        SyncEditorThemeMusic(context);
+        ShowToast("Loaded " + chosen.Id + " - " + chosen.Name, Color{85, 245, 145, 255}, 2.4f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 18.0f);
+    }
+    else
+    {
+        RefreshLoadModalEntries();
+        m_loadModalSelected = m_loadableLevels.empty()
+            ? 0
+            : std::clamp(m_loadModalSelected, 0, static_cast<int>(m_loadableLevels.size()) - 1);
+        ShowToast("Level not found in Strix Vault", Color{255, 85, 95, 255}, 2.4f);
+    }
+}
+
+void EditorScene::HandleLoadLevelModalInput(GameContext& context)
+{
+    constexpr int kMaxVisibleRows = 6;
+    const int total = static_cast<int>(m_loadableLevels.size());
+    const int maxScroll = std::max(0, total - kMaxVisibleRows);
+
+    const float wheel = context.Input.GetMouseWheelDelta();
+    if (std::abs(wheel) > 0.01f)
+    {
+        m_loadModalScroll = std::clamp(m_loadModalScroll - (wheel > 0.0f ? 1 : -1), 0, maxScroll);
+    }
+
+    if (context.Input.IsKeyPress(KeyCode::Escape))
+    {
+        m_loadModalOpen = false;
+        if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 14.0f);
+        return;
+    }
+
+    if (total > 0)
+    {
+        if (context.Input.IsKeyPress(KeyCode::Up) || context.Input.IsKeyPress(KeyCode::W))
+        {
+            m_loadModalSelected = (m_loadModalSelected - 1 + total) % total;
+            if (m_loadModalSelected < m_loadModalScroll) m_loadModalScroll = m_loadModalSelected;
+            if (m_loadModalSelected >= m_loadModalScroll + kMaxVisibleRows) m_loadModalScroll = m_loadModalSelected - kMaxVisibleRows + 1;
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 13.0f);
+        }
+        else if (context.Input.IsKeyPress(KeyCode::Down) || context.Input.IsKeyPress(KeyCode::S))
+        {
+            m_loadModalSelected = (m_loadModalSelected + 1) % total;
+            if (m_loadModalSelected >= m_loadModalScroll + kMaxVisibleRows) m_loadModalScroll = m_loadModalSelected - kMaxVisibleRows + 1;
+            if (m_loadModalSelected < m_loadModalScroll) m_loadModalScroll = m_loadModalSelected;
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 13.0f);
+        }
+        else if (context.Input.IsKeyPress(KeyCode::Enter))
+        {
+            ConfirmLoadLevelSelection(context);
+            return;
+        }
+    }
+
+    if (context.Input.IsMouseButtonPress(MouseButton::Left))
+    {
+        const Vector2f viewSize = context.Render.GetLogicalViewSize();
+        auto [mx, my] = context.Input.GetMousePosition();
+        const Vector2f worldMouse{mx - viewSize.X * 0.5f, my - viewSize.Y * 0.5f};
+
+        const float listTopY = -126.0f;
+        const float rowH = 46.0f;
+        const float rowW = 556.0f;
+        for (int vis = 0; vis < kMaxVisibleRows; ++vis)
+        {
+            const int idx = m_loadModalScroll + vis;
+            if (idx >= total) break;
+            const float ry = listTopY + static_cast<float>(vis) * rowH;
+            if (std::abs(worldMouse.X) <= rowW * 0.5f && std::abs(worldMouse.Y - ry) <= (rowH - 4.0f) * 0.5f)
+            {
+                if (m_loadModalSelected == idx)
+                {
+                    ConfirmLoadLevelSelection(context);
+                    return;
+                }
+                m_loadModalSelected = idx;
+                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+                return;
+            }
+        }
+
+        const Vector2f loadBtnPos{-125.0f, 178.0f};
+        const Vector2f cancelBtnPos{125.0f, 178.0f};
+        const Vector2f btnSz{210.0f, 48.0f};
+        if (total > 0 && std::abs(worldMouse.X - loadBtnPos.X) <= btnSz.X * 0.5f &&
+            std::abs(worldMouse.Y - loadBtnPos.Y) <= btnSz.Y * 0.5f)
+        {
+            ConfirmLoadLevelSelection(context);
+            return;
+        }
+        if (std::abs(worldMouse.X - cancelBtnPos.X) <= btnSz.X * 0.5f &&
+            std::abs(worldMouse.Y - cancelBtnPos.Y) <= btnSz.Y * 0.5f)
+        {
+            m_loadModalOpen = false;
+            if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 14.0f);
+            return;
+        }
+    }
+}
+
+void EditorScene::RenderLoadLevelModal(GameContext& context)
+{
+    Camera2D uiCamera{};
+    uiCamera.Position = Vector2f{0.0f, 0.0f};
+    uiCamera.Zoom = 1.0f;
+    uiCamera.Rotation = 0.0f;
+    context.Render.SetCamera(uiCamera);
+
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+    auto [mx, my] = context.Input.GetMousePosition();
+    const Vector2f worldMouse{mx - viewSize.X * 0.5f, my - viewSize.Y * 0.5f};
+
+    context.Render.DrawRectangle(viewSize.X * 1.5f, viewSize.Y * 1.5f, Transform2D{Vector2f{0.0f, 0.0f}}, Color{8, 10, 16, 220});
+
+    const Vector2f modalSize{620.0f, 440.0f};
+    context.Render.DrawRectangle(modalSize.X, modalSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, Color{24, 28, 38, 255});
+    context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, Color{80, 220, 255, 255}, 2.0f);
+
+    // Header
+    const float headerY = -modalSize.Y * 0.5f + 25.0f;
+    context.Render.DrawRectangle(modalSize.X - 4.0f, 48.0f, Transform2D{Vector2f{0.0f, headerY}}, Color{34, 40, 54, 255});
+    DrawIconFolderOpen(context, Vector2f{-275.0f, headerY}, 22.0f, Color{255, 215, 65, 255});
+    context.Render.DrawText("LOAD LEVEL FROM STRIX VAULT", m_fontId, 22.0f, Transform2D{Vector2f{-252.0f, headerY - 12.0f}}, Color{255, 215, 65, 255});
+
+    const std::string countTag = std::to_string(m_loadableLevels.size()) + " IN VAULT";
+    const Vector2f badgePos{225.0f, headerY};
+    context.Render.DrawRectangle(130.0f, 28.0f, Transform2D{badgePos}, Color{18, 24, 34, 255});
+    context.Render.DrawRectangleOutline(130.0f, 28.0f, Transform2D{badgePos}, Color{80, 220, 255, 200}, 1.3f);
+    context.Render.DrawTextCentered(countTag, m_fontId, 16.0f, Transform2D{badgePos}, Color{130, 235, 255, 255});
+
+    constexpr int kMaxVisibleRows = 6;
+    const int total = static_cast<int>(m_loadableLevels.size());
+    const float listTopY = -126.0f;
+    const float rowH = 46.0f;
+    const float rowW = 556.0f;
+
+    if (total == 0)
+    {
+        context.Render.DrawTextCentered("No levels found in Strix Vault.", m_fontId, 22.0f, Transform2D{Vector2f{0.0f, 0.0f}}, Color{160, 175, 200, 220});
+    }
+    else
+    {
+        for (int vis = 0; vis < kMaxVisibleRows; ++vis)
+        {
+            const int idx = m_loadModalScroll + vis;
+            if (idx >= total) break;
+
+            const auto& item = m_loadableLevels[static_cast<size_t>(idx)];
+            const float ry = listTopY + static_cast<float>(vis) * rowH;
+            const Vector2f rPos{0.0f, ry};
+            const bool isSel = (idx == m_loadModalSelected);
+            const bool isHov = (std::abs(worldMouse.X) <= rowW * 0.5f && std::abs(worldMouse.Y - ry) <= (rowH - 4.0f) * 0.5f);
+
+            const Color bg = isSel
+                ? Color{42, 62, 92, 255}
+                : (isHov ? Color{34, 42, 58, 255} : Color{20, 24, 34, 255});
+            const Color border = isSel
+                ? Color{255, 215, 65, 255}
+                : (isHov ? Color{110, 185, 245, 230} : Color{48, 56, 74, 210});
+            context.Render.DrawRectangle(rowW, rowH - 5.0f, Transform2D{rPos}, bg);
+            context.Render.DrawRectangleOutline(rowW, rowH - 5.0f, Transform2D{rPos}, border, isSel ? 2.0f : 1.2f);
+
+            // ID pill on left
+            const Vector2f idPos{-rowW * 0.5f + 58.0f, ry};
+            const Color idAccent = Color{80, 225, 255, 255};
+            context.Render.DrawRectangle(96.0f, 26.0f, Transform2D{idPos}, Color{14, 18, 26, 245});
+            context.Render.DrawRectangleOutline(96.0f, 26.0f, Transform2D{idPos}, idAccent, 1.2f);
+            context.Render.DrawTextCentered(item.Id, m_fontId, 15.0f, Transform2D{idPos}, idAccent);
+
+            // Level Name
+            context.Render.DrawText(item.Name, m_fontId, 19.0f, Transform2D{Vector2f{-rowW * 0.5f + 120.0f, ry - 10.0f}},
+                                    isSel ? Color{255, 235, 120, 255} : Colors::White);
+
+            // Metadata on right (Pages & Bricks)
+            const std::string meta = std::to_string(item.PageCount) + (item.PageCount == 1 ? " PAGE  |  " : " PAGES  |  ")
+                                   + std::to_string(item.BrickCount) + " BRICKS";
+            context.Render.DrawTextCentered(meta, m_fontId, 15.0f, Transform2D{Vector2f{rowW * 0.5f - 95.0f, ry}}, Color{165, 190, 220, 235});
+        }
+    }
+
+    // Load & Cancel Buttons
+    const Vector2f loadBtnPos{-125.0f, 178.0f};
+    const Vector2f cancelBtnPos{125.0f, 178.0f};
+    const Vector2f btnSz{210.0f, 48.0f};
+    const bool loadHov = total > 0 && (std::abs(worldMouse.X - loadBtnPos.X) <= btnSz.X * 0.5f && std::abs(worldMouse.Y - loadBtnPos.Y) <= btnSz.Y * 0.5f);
+    const bool cancelHov = (std::abs(worldMouse.X - cancelBtnPos.X) <= btnSz.X * 0.5f && std::abs(worldMouse.Y - cancelBtnPos.Y) <= btnSz.Y * 0.5f);
+
+    const Color loadBg = (total > 0)
+        ? (loadHov ? Color{60, 175, 95, 255} : Color{45, 140, 75, 255})
+        : Color{32, 38, 48, 220};
+    const Color loadBorder = (total > 0)
+        ? (loadHov ? Colors::White : Color{95, 200, 125, 255})
+        : Color{68, 76, 92, 180};
+    const Color loadTextCol = (total > 0) ? Colors::White : Color{115, 125, 145, 200};
+    context.Render.DrawRectangle(btnSz.X, btnSz.Y, Transform2D{loadBtnPos}, loadBg);
+    context.Render.DrawRectangleOutline(btnSz.X, btnSz.Y, Transform2D{loadBtnPos}, loadBorder, 1.5f);
+    context.Render.DrawTextCentered("LOAD LEVEL [ENTER]", m_fontId, 19.0f, Transform2D{loadBtnPos}, loadTextCol);
+
+    context.Render.DrawRectangle(btnSz.X, btnSz.Y, Transform2D{cancelBtnPos}, cancelHov ? Color{75, 50, 60, 255} : Color{48, 52, 64, 255});
+    context.Render.DrawRectangleOutline(btnSz.X, btnSz.Y, Transform2D{cancelBtnPos}, cancelHov ? Colors::White : Color{95, 102, 120, 255}, 1.5f);
+    context.Render.DrawTextCentered("CANCEL [ESC]", m_fontId, 19.0f, Transform2D{cancelBtnPos}, Color{225, 230, 240, 255});
 }
 
 void EditorScene::RenderBottomToast(GameContext& context)
@@ -1370,10 +1717,26 @@ void EditorScene::HandleEditorInput(GameContext& context)
     const bool middleClick = context.Input.IsMouseButtonPress(MouseButton::Middle);
     const bool shiftDown = context.Input.IsKeyDown(KeyCode::LShift) || context.Input.IsKeyDown(KeyCode::RShift);
 
+    const bool ctrlDown = context.Input.IsKeyDown(KeyCode::LControl) || context.Input.IsKeyDown(KeyCode::RControl);
+
     // Ctrl + Z shortcut for Undo
-    if ((context.Input.IsKeyDown(KeyCode::LControl) || context.Input.IsKeyDown(KeyCode::RControl)) && context.Input.IsKeyPress(KeyCode::Z))
+    if (ctrlDown && context.Input.IsKeyPress(KeyCode::Z))
     {
         Undo();
+        return;
+    }
+
+    // Ctrl + O shortcut for Load Level Modal
+    if (ctrlDown && context.Input.IsKeyPress(KeyCode::O))
+    {
+        OpenLoadLevelModal(context);
+        return;
+    }
+
+    // Ctrl + S shortcut for Save Level
+    if (ctrlDown && context.Input.IsKeyPress(KeyCode::S))
+    {
+        SaveLevel(context);
         return;
     }
 
@@ -1385,7 +1748,7 @@ void EditorScene::HandleEditorInput(GameContext& context)
     }
 
     // Select tool toggle shortcut [S]
-    if (!context.Input.IsKeyDown(KeyCode::LControl) && !context.Input.IsKeyDown(KeyCode::RControl) && context.Input.IsKeyPress(KeyCode::S))
+    if (!ctrlDown && context.Input.IsKeyPress(KeyCode::S))
     {
         SetTool(m_tool == EditorTool::Select ? EditorTool::Paint : EditorTool::Select);
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
@@ -1524,7 +1887,13 @@ void EditorScene::HandleEditorInput(GameContext& context)
             SaveLevelAs(context);
             return;
         }
-        Vector2f clearBtnPos{-halfW + 684.0f, toolbarPos.Y};
+        Vector2f loadBtnPos{-halfW + 684.0f, toolbarPos.Y};
+        if (std::abs(worldMouse.X - loadBtnPos.X) <= btnSize.X * 0.5f && leftClick)
+        {
+            OpenLoadLevelModal(context);
+            return;
+        }
+        Vector2f clearBtnPos{-halfW + 750.0f, toolbarPos.Y};
         if (std::abs(worldMouse.X - clearBtnPos.X) <= btnSize.X * 0.5f && leftClick)
         {
             PushUndo();
@@ -1568,7 +1937,7 @@ void EditorScene::HandleEditorInput(GameContext& context)
                     if (std::abs(worldMouse.Y - itemY) <= itemH * 0.46f)
                     {
                         SetSelectedTile(kPaletteTiles[i]);
-                        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+                        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f, 1.0f + static_cast<float>(i) * 0.03f);
                         return;
                     }
                 }
@@ -1764,7 +2133,7 @@ void EditorScene::HandleEditorInput(GameContext& context)
                         }
                         m_activeTab = EditorTab::Inspector;
                         m_rightPanelOpen = true;
-                        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+                        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f, 1.08f);
                         return;
                     }
 
@@ -1782,6 +2151,11 @@ void EditorScene::HandleEditorInput(GameContext& context)
                                 {
                                     m_hasSelectedCell = false;
                                 }
+                                if (m_paintSfxCooldown <= 0.0f && m_switchSfxId != 0)
+                                {
+                                    context.Audio.PlaySfx(m_switchSfxId, 13.0f, 0.86f);
+                                    m_paintSfxCooldown = 0.042f;
+                                }
                             }
                         }
                         else if (m_tool == EditorTool::Select)
@@ -1796,11 +2170,12 @@ void EditorScene::HandleEditorInput(GameContext& context)
                                     m_selectedTile = currentCell.Type;
                                     m_activeTab = EditorTab::Inspector;
                                     m_rightPanelOpen = true;
-                                    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+                                    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f, 1.05f);
                                 }
                                 else
                                 {
                                     m_hasSelectedCell = false;
+                                    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 10.0f, 0.90f);
                                 }
                             }
                         }
@@ -1811,6 +2186,17 @@ void EditorScene::HandleEditorInput(GameContext& context)
                             {
                                 PushUndo();
                                 m_levelData.SetCell(col, row, desiredCell);
+                                if (m_paintSfxCooldown <= 0.0f && m_clickSfxId != 0)
+                                {
+                                    const float pitch = 0.98f + static_cast<float>(LevelData::GRID_ROWS - 1 - row) * 0.03f
+                                                      + static_cast<float>(col % 3) * 0.015f;
+                                    context.Audio.PlaySfx(m_clickSfxId, 14.0f, pitch);
+                                    m_paintSfxCooldown = 0.042f;
+                                }
+                            }
+                            else if (leftClick && (m_selectedCol != col || m_selectedRow != row))
+                            {
+                                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 11.0f, 1.02f);
                             }
                             m_hasSelectedCell = true;
                             m_selectedCol = col;
@@ -2543,6 +2929,31 @@ void EditorScene::DrawIconFloppyPlus(GameContext& context, const Vector2f& pos, 
     context.Render.DrawLine(badgePos - Vector2f{0.0f, 4.0f}, badgePos + Vector2f{0.0f, 4.0f}, Colors::White, 2.0f);
 }
 
+void EditorScene::DrawIconFolderOpen(GameContext& context, const Vector2f& pos, float size, Color color)
+{
+    (void)color;
+    const float w = size * 0.88f;
+    const float h = size * 0.66f;
+
+    // Back folder tab (top-left, warm gold #D9A343)
+    const Vector2f tabPos{pos.X - w * 0.22f, pos.Y - h * 0.42f};
+    context.Render.DrawRectangle(w * 0.44f, h * 0.34f, Transform2D{tabPos}, Color{217, 163, 67, 255});
+    context.Render.DrawRectangleOutline(w * 0.44f, h * 0.34f, Transform2D{tabPos}, Color{125, 85, 25, 255}, 1.2f);
+
+    // Back folder body
+    const Vector2f backPos{pos.X, pos.Y - h * 0.04f};
+    context.Render.DrawRectangle(w * 0.92f, h * 0.72f, Transform2D{backPos}, Color{217, 163, 67, 255});
+
+    // Crisp white document sheet peeking inside
+    const Vector2f docPos{pos.X + 1.0f, pos.Y - h * 0.14f};
+    context.Render.DrawRectangle(w * 0.72f, h * 0.46f, Transform2D{docPos}, Color{240, 244, 250, 255});
+
+    // Open front folder flap (bright amber #F2C55C)
+    const Vector2f frontPos{pos.X + 1.0f, pos.Y + h * 0.14f};
+    context.Render.DrawRectangle(w, h * 0.64f, Transform2D{frontPos}, Color{242, 197, 92, 255});
+    context.Render.DrawRectangleOutline(w, h * 0.64f, Transform2D{frontPos}, Color{135, 92, 28, 255}, 1.4f);
+}
+
 void EditorScene::DrawIconTrash(GameContext& context, const Vector2f& pos, float size, Color color)
 {
     float w = size * 0.58f;
@@ -2641,10 +3052,8 @@ void EditorScene::RenderPlaytestStopButton(GameContext& context)
     auto [mx, my] = context.Input.GetMousePosition();
     const Vector2f worldMouse{mx - halfW, my - halfH};
 
-    const Vector2f stopBtnPos{-halfW + 80.0f, halfH - 75.0f};
-    const Vector2f btnSize{60.0f, 60.0f};
-    bool isHovered = (std::abs(worldMouse.X - stopBtnPos.X) <= btnSize.X * 0.6f &&
-                      std::abs(worldMouse.Y - stopBtnPos.Y) <= btnSize.Y * 0.6f);
+    const Vector2f stopBtnPos{-halfW + 150.0f, halfH - 56.0f};
+    const Vector2f btnSize{236.0f, 54.0f};
 
     Vector2f drawPos = stopBtnPos;
     if (context.Rules.GetRule(Rule::Graphics::EnableShader))
@@ -2658,28 +3067,45 @@ void EditorScene::RenderPlaytestStopButton(GameContext& context)
         drawPos = Vector2f{crtNormX * halfW, crtNormY * halfH};
     }
 
-    context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{drawPos + Vector2f{3.0f, 3.0f}}, Color{0, 0, 0, 180});
-    Color bg = isHovered ? Color{235, 50, 65, 255} : Color{195, 38, 52, 240};
+    const bool isHovered = (std::abs(worldMouse.X - stopBtnPos.X) <= btnSize.X * 0.56f &&
+                            std::abs(worldMouse.Y - stopBtnPos.Y) <= btnSize.Y * 0.62f) ||
+                           (std::abs(worldMouse.X - drawPos.X) <= btnSize.X * 0.56f &&
+                            std::abs(worldMouse.Y - drawPos.Y) <= btnSize.Y * 0.62f);
+
+    const float pulse = 0.5f + 0.5f * std::sin(m_pulseTimer * 5.0f);
+    const uint8_t haloAlpha = static_cast<uint8_t>(isHovered ? 130 : (55 + 45 * pulse));
+
+    // High-visibility outer glow & drop shadow
+    context.Render.DrawRectangle(btnSize.X + 10.0f, btnSize.Y + 10.0f, Transform2D{drawPos}, Color{255, 75, 85, haloAlpha});
+    context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{drawPos + Vector2f{4.0f, 4.0f}}, Color{0, 0, 0, 210});
+
+    // High-contrast crimson-to-slate pill body
+    const Color bg = isHovered ? Color{235, 52, 68, 255} : Color{185, 32, 48, 250};
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{drawPos}, bg);
 
-    context.Render.DrawLine(Vector2f{drawPos.X - btnSize.X * 0.5f, drawPos.Y - btnSize.Y * 0.5f},
-                            Vector2f{drawPos.X + btnSize.X * 0.5f, drawPos.Y - btnSize.Y * 0.5f},
-                            Color{255, 140, 150, 200}, 2.0f);
-    context.Render.DrawLine(Vector2f{drawPos.X - btnSize.X * 0.5f, drawPos.Y - btnSize.Y * 0.5f},
-                            Vector2f{drawPos.X - btnSize.X * 0.5f, drawPos.Y + btnSize.Y * 0.5f},
-                            Color{255, 140, 150, 200}, 2.0f);
+    // Left icon badge plate
+    const float iconBoxW = 48.0f;
+    const Vector2f iconBoxPos{drawPos.X - btnSize.X * 0.5f + iconBoxW * 0.5f + 3.0f, drawPos.Y};
+    context.Render.DrawRectangle(iconBoxW, btnSize.Y - 6.0f, Transform2D{iconBoxPos},
+        isHovered ? Color{255, 85, 95, 255} : Color{220, 48, 64, 255});
+    DrawIconStop(context, iconBoxPos, 22.0f, Colors::White);
 
-    context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{drawPos}, isHovered ? Colors::White : Color{255, 110, 125, 200}, isHovered ? 2.5f : 1.5f);
-    DrawIconStop(context, drawPos, 22.0f, Colors::White);
+    // Top specular highlight line & double high-contrast border
+    context.Render.DrawLine(Vector2f{drawPos.X - btnSize.X * 0.5f + 2.0f, drawPos.Y - btnSize.Y * 0.5f + 2.0f},
+                            Vector2f{drawPos.X + btnSize.X * 0.5f - 2.0f, drawPos.Y - btnSize.Y * 0.5f + 2.0f},
+                            Color{255, 210, 140, 235}, 2.0f);
 
-    if (isHovered)
-    {
-        Vector2f tipPos{drawPos.X + 125.0f, drawPos.Y};
-        context.Render.DrawRectangle(182.0f, 36.0f, Transform2D{tipPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 160});
-        context.Render.DrawRectangle(182.0f, 36.0f, Transform2D{tipPos}, Color{30, 33, 40, 250});
-        context.Render.DrawRectangleOutline(182.0f, 36.0f, Transform2D{tipPos}, Color{90, 95, 110, 220}, 1.5f);
-        context.Render.DrawTextCentered("STOP PLAYTEST [P]", m_fontId, 16.0f, Transform2D{tipPos}, Colors::White);
-    }
+    const Color borderCol = isHovered
+        ? Colors::White
+        : Color{255, static_cast<uint8_t>(185 + 55 * pulse), 95, 255};
+    context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{drawPos}, borderCol, isHovered ? 3.0f : 2.2f);
+
+    // Always-visible bold readable text + hotkey hint
+    const Vector2f labelPos{drawPos.X + 24.0f, drawPos.Y - 7.0f};
+    const Vector2f subPos{drawPos.X + 24.0f, drawPos.Y + 12.0f};
+    context.Render.DrawTextCentered("BACK TO EDITOR", m_fontId, 21.0f, Transform2D{labelPos + Vector2f{1.5f, 1.5f}}, Color{0, 0, 0, 220});
+    context.Render.DrawTextCentered("BACK TO EDITOR", m_fontId, 21.0f, Transform2D{labelPos}, Colors::White);
+    context.Render.DrawTextCentered("[P] STOP  |  [ESC] PAUSE", m_fontId, 14.0f, Transform2D{subPos}, Color{255, 235, 155, 245});
 }
 
 void EditorScene::RenderToolbar(GameContext& context)
@@ -2784,7 +3210,7 @@ void EditorScene::RenderToolbar(GameContext& context)
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{savePos}, saveCol);
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{savePos}, saveHover ? Colors::White : Color{68, 73, 85, 255}, 1.5f);
     DrawIconFloppy(context, savePos, 24.0f, Colors::White);
-    if (saveHover) { hoveredTooltip = "Save level"; hoveredBtnX = savePos.X; }
+    if (saveHover) { hoveredTooltip = "Save level [Ctrl+S]"; hoveredBtnX = savePos.X; }
 
     // 6. Save As Button
     Vector2f saveAsPos{-halfW + 618.0f, barPos.Y};
@@ -2795,8 +3221,17 @@ void EditorScene::RenderToolbar(GameContext& context)
     DrawIconFloppyPlus(context, saveAsPos, 24.0f, Colors::White);
     if (saveAsHover) { hoveredTooltip = "Save level as..."; hoveredBtnX = saveAsPos.X; }
 
-    // 7. Clear Page Button
-    Vector2f clearPos{-halfW + 684.0f, barPos.Y};
+    // 7. Load Level Button
+    Vector2f loadPos{-halfW + 684.0f, barPos.Y};
+    bool loadHover = (std::abs(worldMouse.X - loadPos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - loadPos.Y) <= btnSize.Y * 0.5f);
+    Color loadCol = loadHover ? Color{55, 60, 72, 255} : Color{43, 45, 48, 255};
+    context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{loadPos}, loadCol);
+    context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{loadPos}, loadHover ? Color{255, 215, 65, 255} : Color{68, 73, 85, 255}, 1.5f);
+    DrawIconFolderOpen(context, loadPos, 24.0f, Color{242, 197, 92, 255});
+    if (loadHover) { hoveredTooltip = "Load level [Ctrl+O]"; hoveredBtnX = loadPos.X; }
+
+    // 8. Clear Page Button
+    Vector2f clearPos{-halfW + 750.0f, barPos.Y};
     bool clearHover = (std::abs(worldMouse.X - clearPos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - clearPos.Y) <= btnSize.Y * 0.5f);
     Color clearCol = clearHover ? Color{80, 35, 45, 255} : Color{43, 45, 48, 255};
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{clearPos}, clearCol);
@@ -2804,21 +3239,21 @@ void EditorScene::RenderToolbar(GameContext& context)
     DrawIconTrash(context, clearPos, 24.0f, Color{219, 88, 96, 255});
     if (clearHover) { hoveredTooltip = "Clear current page"; hoveredBtnX = clearPos.X; }
 
-    context.Render.DrawLine(Vector2f{-halfW + 726.0f, barPos.Y - 20.0f},
-                            Vector2f{-halfW + 726.0f, barPos.Y + 20.0f},
+    context.Render.DrawLine(Vector2f{-halfW + 792.0f, barPos.Y - 20.0f},
+                            Vector2f{-halfW + 792.0f, barPos.Y + 20.0f},
                             Color{65, 70, 80, 255}, 1.5f);
 
     // Active Level ID + Name badge (when saved in Robostock)
     if (!m_editingLevelId.empty())
     {
-        Vector2f lvlBadgePos{-halfW + 905.0f, barPos.Y};
+        Vector2f lvlBadgePos{-halfW + 965.0f, barPos.Y};
         std::string badgeTxt = m_editingLevelId + "  " + m_levelData.GetLevelName();
         context.Render.DrawRectangle(310.0f, 38.0f, Transform2D{lvlBadgePos}, Color{20, 26, 38, 255});
         context.Render.DrawRectangleOutline(310.0f, 38.0f, Transform2D{lvlBadgePos}, Color{80, 220, 255, 190}, 1.5f);
         context.Render.DrawTextCentered(badgeTxt, m_fontId, 18.0f, Transform2D{lvlBadgePos}, Color{190, 240, 255, 255});
     }
 
-    // 8. Exit Button (Far Right)
+    // 9. Exit Button (Far Right)
     Vector2f quitPos{halfW - 55.0f, barPos.Y};
     bool quitHover = (std::abs(worldMouse.X - quitPos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - quitPos.Y) <= btnSize.Y * 0.5f);
     Color quitCol = quitHover ? Color{65, 40, 48, 255} : Color{43, 45, 48, 255};
@@ -3762,9 +4197,9 @@ void EditorScene::RenderThemeTab(GameContext& context, const Vector2f& panelCent
     drawStepper(top + 626.0f, "Light Range", std::to_string(static_cast<int>(std::round(thm.PaddleLightRange))) + " px");
     drawStepper(top + 662.0f, "Vignette", std::to_string(static_cast<int>(std::round(thm.VignetteIntensity * 100.0f))) + "%");
 
-    // 4. Audio Track & Background Music Mute Toggle
-    drawSection(top + 702.0f, "AUDIO");
-    context.Render.DrawText("Music Track", m_fontId, 15.0f, Transform2D{Vector2f{leftX + 6.0f, top + 726.0f}}, Color{200, 210, 228, 240});
+    // 4. Audio Track, Level Music Playlist & Background Music Mute Toggle
+    drawSection(top + 702.0f, "AUDIO & PLAYLIST");
+    context.Render.DrawText("Primary Track", m_fontId, 15.0f, Transform2D{Vector2f{leftX + 6.0f, top + 726.0f}}, Color{200, 210, 228, 240});
     const Vector2f musPos{ctrlCenterX, top + 734.0f};
     const bool musHov = (std::abs(worldMouse.X - musPos.X) <= ctrlW * 0.5f && std::abs(worldMouse.Y - musPos.Y) <= 15.0f);
     context.Render.DrawRectangle(ctrlW, 30.0f, Transform2D{musPos}, musHov ? Color{38, 48, 66, 255} : Color{28, 33, 45, 255});
@@ -3782,6 +4217,50 @@ void EditorScene::RenderThemeTab(GameContext& context, const Vector2f& panelCent
     context.Render.DrawRectangle(ctrlW, 30.0f, Transform2D{mutePos}, muteBg);
     context.Render.DrawRectangleOutline(ctrlW, 30.0f, Transform2D{mutePos}, muteHov ? Colors::White : muteBorder, 1.3f);
     context.Render.DrawTextCentered(m_environmentMusicMuted ? "MUTED" : "ON", m_fontId, 16.0f, Transform2D{mutePos}, muteText);
+
+    // 5. Multi-Track Level Playlist Queue (01 | 02 | 03 | 04 | ALL)
+    const size_t qCount = std::max<size_t>(1, thm.MusicPlaylist.size());
+    const std::string plLabel = "Playlist (" + std::to_string(qCount) + (qCount == 1 ? " trk)" : " trks)");
+    context.Render.DrawText(plLabel, m_fontId, 15.0f, Transform2D{Vector2f{leftX + 6.0f, top + 798.0f}}, Color{200, 210, 228, 240});
+
+    const auto& allTracks = LevelData::GetAvailableMusicTracks();
+    const float plY = top + 806.0f;
+    const float chipGap = 4.0f;
+    const float chipW = (ctrlW - chipGap * 4.0f) / 5.0f;
+    const float chipStartX = ctrlCenterX - ctrlW * 0.5f + chipW * 0.5f;
+    const char* chipNames[5] = {"01", "02", "03", "04", "ALL"};
+
+    for (int i = 0; i < 5; ++i)
+    {
+        const float cx = chipStartX + static_cast<float>(i) * (chipW + chipGap);
+        const Vector2f cPos{cx, plY};
+        const bool hov = (std::abs(worldMouse.X - cx) <= chipW * 0.5f && std::abs(worldMouse.Y - plY) <= 14.0f);
+        bool active = false;
+        bool isPrimary = false;
+        if (i < 4 && static_cast<size_t>(i) < allTracks.size())
+        {
+            active = thm.IsTrackInPlaylist(allTracks[static_cast<size_t>(i)]);
+            isPrimary = (thm.MusicTrack == allTracks[static_cast<size_t>(i)]);
+        }
+        else if (i == 4)
+        {
+            active = (thm.MusicPlaylist.size() >= allTracks.size());
+        }
+
+        const Color bg = active
+            ? (isPrimary ? Color{48, 76, 120, 255} : Color{32, 66, 88, 255})
+            : (hov ? Color{36, 42, 56, 255} : Color{24, 28, 38, 255});
+        const Color border = isPrimary
+            ? Color{255, 215, 65, 255}
+            : (active ? Color{85, 225, 255, 235} : (hov ? Colors::White : Color{56, 65, 86, 200}));
+        const Color txtCol = isPrimary
+            ? Color{255, 230, 95, 255}
+            : (active ? Color{155, 245, 255, 255} : Color{150, 165, 188, 210});
+
+        context.Render.DrawRectangle(chipW, 28.0f, Transform2D{cPos}, bg);
+        context.Render.DrawRectangleOutline(chipW, 28.0f, Transform2D{cPos}, border, (isPrimary || active) ? 1.8f : 1.1f);
+        context.Render.DrawTextCentered(chipNames[i], m_fontId, 14.0f, Transform2D{cPos}, txtCol);
+    }
 }
 
 bool EditorScene::HandleThemeTabInput(GameContext& context, const Vector2f& panelCenter, float sideWidth, float toolbarH, float halfH, const Vector2f& worldMouse, bool leftClick)
@@ -4004,7 +4483,7 @@ bool EditorScene::HandleThemeTabInput(GameContext& context, const Vector2f& pane
         return true;
     }
 
-    // 4. Music Track Selector (Y = top + 734)
+    // 4. Primary Music Track Selector (Y = top + 734)
     if (hitStepperDelta(top + 734.0f, dir))
     {
         const auto& tracks = LevelData::GetAvailableMusicTracks();
@@ -4018,7 +4497,17 @@ bool EditorScene::HandleThemeTabInput(GameContext& context, const Vector2f& pane
             idx = (dir < 0)
                 ? ((idx == 0) ? (tracks.size() - 1) : (idx - 1))
                 : ((idx + 1) % tracks.size());
+            PushUndo();
+            const bool wasSingleTrack = (thm.MusicPlaylist.size() <= 1);
             thm.MusicTrack = tracks[idx];
+            if (wasSingleTrack)
+            {
+                thm.SetSingleTrack(tracks[idx]);
+            }
+            else
+            {
+                thm.ClampValues(); // Keeps MusicTrack at front of MusicPlaylist
+            }
             playThemeMusic();
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
         }
@@ -4035,6 +4524,46 @@ bool EditorScene::HandleThemeTabInput(GameContext& context, const Vector2f& pane
                   1.5f);
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
         return true;
+    }
+
+    // 6. Multi-Track Level Playlist Chips (01 | 02 | 03 | 04 | ALL at Y = top + 806)
+    const float plY = top + 806.0f;
+    if (std::abs(worldMouse.Y - plY) <= 15.0f)
+    {
+        const auto& allTracks = LevelData::GetAvailableMusicTracks();
+        const float chipGap = 4.0f;
+        const float chipW = (ctrlW - chipGap * 4.0f) / 5.0f;
+        const float chipStartX = ctrlCenterX - ctrlW * 0.5f + chipW * 0.5f;
+
+        for (int i = 0; i < 5; ++i)
+        {
+            const float cx = chipStartX + static_cast<float>(i) * (chipW + chipGap);
+            if (std::abs(worldMouse.X - cx) <= chipW * 0.5f)
+            {
+                PushUndo();
+                if (i < 4 && static_cast<size_t>(i) < allTracks.size())
+                {
+                    thm.TogglePlaylistTrack(allTracks[static_cast<size_t>(i)]);
+                }
+                else if (i == 4)
+                {
+                    if (thm.MusicPlaylist.size() >= allTracks.size())
+                    {
+                        thm.SetSingleTrack(thm.MusicTrack);
+                    }
+                    else
+                    {
+                        thm.EnableAllPlaylistTracks(allTracks);
+                    }
+                }
+                playThemeMusic();
+                ShowToast("Level Playlist: " + std::to_string(thm.MusicPlaylist.size()) +
+                          (thm.MusicPlaylist.size() == 1 ? " track queued" : " tracks queued"),
+                          Color{110, 230, 255, 255}, 1.5f);
+                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+                return true;
+            }
+        }
     }
 
     return false;

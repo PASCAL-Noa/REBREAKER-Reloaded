@@ -431,6 +431,20 @@ TEST_SUITE("LevelMaker")
             CHECK(reloaded.GetPlaylists()[0].LevelIds.size() == 5);
         }
 
+        // Orphan recovery check: if robostock.manifest was overwritten/reset while RBK-0001.txt remains on disk,
+        // CustomLevelLibrary::Load() automatically recovers RBK-0001.txt and re-registers it in the manifest.
+        {
+            std::ofstream manifestReset(tempDir + "/robostock.manifest");
+            manifestReset << "#REBREAKER_ROBOSTOCK_V1\nCOUNTERS|1|1\n";
+            manifestReset.close();
+
+            CustomLevelLibrary recovered(tempDir, /*autoImportLegacy=*/false);
+            REQUIRE(recovered.GetLevels().size() == 1);
+            CHECK(recovered.GetLevels()[0].Id == "RBK-0001");
+            CHECK(recovered.GetLevels()[0].Name == "ALPHA REMIX");
+            CHECK(recovered.PeekNextLevelId() == "RBK-0002");
+        }
+
         std::filesystem::remove_all(tempDir, ec);
     }
 
@@ -689,6 +703,41 @@ TEST_SUITE("LevelMaker")
         data.SetInitialEvent(ArenaEventType::Count);
         CHECK(data.GetInitialEvent() == ArenaEventType::None);
     }
+
+    TEST_CASE("LevelData - Level Music Playlist Queue & V2 Roundtrip")
+    {
+        LevelData data;
+        auto& thm = data.GetTheme();
+        const auto& allTracks = LevelData::GetAvailableMusicTracks();
+        REQUIRE(allTracks.size() >= 4);
+
+        // Default playlist contains the primary track
+        CHECK(thm.MusicPlaylist.size() == 1);
+        CHECK(thm.IsTrackInPlaylist(allTracks[0]));
+
+        // Toggle additional tracks into the level playlist
+        thm.TogglePlaylistTrack(allTracks[2]);
+        thm.TogglePlaylistTrack(allTracks[3]);
+        CHECK(thm.MusicPlaylist.size() == 3);
+        CHECK(thm.IsTrackInPlaylist(allTracks[2]));
+        CHECK(thm.IsTrackInPlaylist(allTracks[3]));
+
+        // Export & import V2 preserves full playlist order
+        const std::string exported = data.ExportLevelV2();
+        CHECK(exported.find("MUSIC_PLAYLIST") != std::string::npos);
+
+        LevelData loaded;
+        loaded.ImportLevelV2(exported);
+        CHECK(loaded.GetTheme().MusicPlaylist.size() == 3);
+        CHECK(loaded.GetTheme().MusicPlaylist[0] == allTracks[0]);
+        CHECK(loaded.GetTheme().MusicPlaylist[1] == allTracks[2]);
+        CHECK(loaded.GetTheme().MusicPlaylist[2] == allTracks[3]);
+
+        // Enabling all tracks queues all 4 available tracks
+        loaded.GetTheme().EnableAllPlaylistTracks(allTracks);
+        CHECK(loaded.GetTheme().MusicPlaylist.size() == allTracks.size());
+    }
 }
+
 
 

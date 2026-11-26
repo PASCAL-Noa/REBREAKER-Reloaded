@@ -9,6 +9,9 @@
 #include <algorithm>
 #include <iostream>
 #include <memory>
+#include <atomic>
+#include <array>
+#include <cmath>
 
 struct SoundInstance
 {
@@ -27,6 +30,13 @@ struct MusicTrack
     bool isLooping = false;
 };
 
+struct EditModeFilterState
+{
+    std::atomic<float> mix{0.0f}; // 0.0 = Play Mode (full bandwidth), 1.0 = Edit Mode (muffled/softened)
+    std::array<float, 8> z1{};
+    std::array<float, 8> z2{};
+};
+
 struct AudioMixer::Impl
 {
     ResourceManager& resourceManager;
@@ -40,6 +50,13 @@ struct AudioMixer::Impl
     float duckingMultiplier = 1.0f;      // 1.0 = normal, e.g. 0.6 = lowered by 40%
     float duckingHoldTimer = 0.0f;       // hold duration during active streak
     float duckingRestoreDuration = 0.5f; // restore smoothly over 0.5s
+
+    // Super Mario Maker style Edit Mode treatment (softer gain + real-time 2-pole low-pass filter)
+    bool editModeEnabled = false;
+    float editModeMix = 0.0f;
+    float editModeTargetMix = 0.0f;
+    float editModeTransitionSpeed = 3.2f;
+    std::shared_ptr<EditModeFilterState> filterState = std::make_shared<EditModeFilterState>();
 
     // Streak detection
     static constexpr std::chrono::milliseconds kStreakWindow{350};
@@ -63,6 +80,53 @@ struct AudioMixer::Impl
 
     explicit Impl(ResourceManager& rm) : resourceManager(rm) {}
 
+    void AttachEditModeFilter(sf::Music& music) const
+    {
+        auto st = filterState;
+        music.setEffectProcessor([st](const float* inputFrames,
+                                      unsigned int& inputFrameCount,
+                                      float* outputFrames,
+                                      unsigned int& outputFrameCount,
+                                      unsigned int frameChannelCount) {
+            const unsigned int frames = std::min(inputFrameCount, outputFrameCount);
+            inputFrameCount = frames;
+            outputFrameCount = frames;
+            if (!inputFrames || !outputFrames || frames == 0 || frameChannelCount == 0)
+            {
+                return;
+            }
+
+            const float mix = std::clamp(st->mix.load(std::memory_order_relaxed), 0.0f, 1.0f);
+            const size_t totalSamples = static_cast<size_t>(frames) * static_cast<size_t>(frameChannelCount);
+            if (mix <= 0.001f)
+            {
+                std::copy(inputFrames, inputFrames + totalSamples, outputFrames);
+                return;
+            }
+
+            // Smooth 2-pole cascaded RC low-pass filter (~650 Hz warm muffled cutoff at mix=1.0)
+            const float alpha = 1.0f - 0.915f * mix;
+            const unsigned int maxCh = std::min(frameChannelCount, 8u);
+            for (unsigned int f = 0; f < frames; ++f)
+            {
+                const size_t base = static_cast<size_t>(f) * static_cast<size_t>(frameChannelCount);
+                for (unsigned int ch = 0; ch < maxCh; ++ch)
+                {
+                    const float x = inputFrames[base + ch];
+                    float s1 = st->z1[ch] + alpha * (x - st->z1[ch]);
+                    float s2 = st->z2[ch] + alpha * (s1 - st->z2[ch]);
+                    st->z1[ch] = s1;
+                    st->z2[ch] = s2;
+                    outputFrames[base + ch] = x * (1.0f - mix) + s2 * mix;
+                }
+                for (unsigned int ch = maxCh; ch < frameChannelCount; ++ch)
+                {
+                    outputFrames[base + ch] = inputFrames[base + ch];
+                }
+            }
+        });
+    }
+
     void CleanUpSfx()
     {
         sfxPool.remove_if([](const SoundInstance& item) {
@@ -70,9 +134,14 @@ struct AudioMixer::Impl
         });
     }
 
+    [[nodiscard]] float GetEditModeVolumeMultiplier() const noexcept
+    {
+        return 1.0f - (1.0f - AudioMixer::kEditModeGainMultiplier) * std::clamp(editModeMix, 0.0f, 1.0f);
+    }
+
     [[nodiscard]] float GetEffectiveMusicVolume(float rawVolume) const
     {
-        return std::clamp(rawVolume, 0.0f, 100.0f) * kMusicBusHeadroom * (musicVolume / 100.0f) * (masterVolume / 100.0f) * duckingMultiplier;
+        return std::clamp(rawVolume, 0.0f, 100.0f) * kMusicBusHeadroom * (musicVolume / 100.0f) * (masterVolume / 100.0f) * duckingMultiplier * GetEditModeVolumeMultiplier();
     }
 
     [[nodiscard]] float GetEffectiveSfxScale() const
@@ -136,6 +205,23 @@ void AudioMixer::Update(float dt) const
     {
         float speed = 1.0f / (mp_impl->duckingRestoreDuration > 0.0f ? mp_impl->duckingRestoreDuration : 0.5f);
         mp_impl->duckingMultiplier = std::min(1.0f, mp_impl->duckingMultiplier + speed * dt);
+    }
+
+    // 0.05 Super Mario Maker Edit Mode vs Play Mode smooth variant transition
+    if (std::abs(mp_impl->editModeMix - mp_impl->editModeTargetMix) > 0.0005f)
+    {
+        const float dir = (mp_impl->editModeTargetMix > mp_impl->editModeMix) ? 1.0f : -1.0f;
+        mp_impl->editModeMix = std::clamp(mp_impl->editModeMix + dir * mp_impl->editModeTransitionSpeed * dt, 0.0f, 1.0f);
+        if ((dir > 0.0f && mp_impl->editModeMix > mp_impl->editModeTargetMix) ||
+            (dir < 0.0f && mp_impl->editModeMix < mp_impl->editModeTargetMix))
+        {
+            mp_impl->editModeMix = mp_impl->editModeTargetMix;
+        }
+        if (mp_impl->filterState)
+        {
+            mp_impl->filterState->mix.store(mp_impl->editModeMix, std::memory_order_relaxed);
+        }
+        mp_impl->ReapplyMusicVolumes();
     }
 
     // 0.1 Temporal pitch distortion / time-warp glide
@@ -457,6 +543,7 @@ void AudioMixer::PlayMusic(const std::string& filepath, float volume, bool loop)
         mp_impl->activeTrack.currentVolume = volume;
         mp_impl->activeTrack.volumeTween.reset();
         mp_impl->activeTrack.isLooping = loop;
+        mp_impl->AttachEditModeFilter(*mp_impl->activeTrack.music);
         mp_impl->activeTrack.music->setLooping(loop);
         mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(volume));
         mp_impl->activeTrack.music->setPitch(mp_impl->currentMusicPitch);
@@ -573,6 +660,7 @@ void AudioMixer::FadeToMusic(const std::string& filepath, const TweenConfig<floa
         mp_impl->activeTrack.baseVolume = inConfig.End;
         mp_impl->activeTrack.currentVolume = inConfig.Start;
         mp_impl->activeTrack.isLooping = loop;
+        mp_impl->AttachEditModeFilter(*mp_impl->activeTrack.music);
         mp_impl->activeTrack.music->setLooping(loop);
         mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(inConfig.Start));
         mp_impl->activeTrack.music->setPitch(mp_impl->currentMusicPitch);
@@ -737,6 +825,37 @@ bool AudioMixer::IsDuckingEnabled() const
 float AudioMixer::GetDuckingMultiplier() const
 {
     return mp_impl ? mp_impl->duckingMultiplier : 1.0f;
+}
+
+void AudioMixer::SetMusicEditMode(bool enabled, float transitionDuration) const
+{
+    if (!mp_impl) return;
+    mp_impl->editModeEnabled = enabled;
+    mp_impl->editModeTargetMix = enabled ? 1.0f : 0.0f;
+    if (transitionDuration <= 0.01f)
+    {
+        mp_impl->editModeMix = mp_impl->editModeTargetMix;
+        if (mp_impl->filterState)
+        {
+            mp_impl->filterState->mix.store(mp_impl->editModeMix, std::memory_order_relaxed);
+        }
+        mp_impl->ReapplyMusicVolumes();
+    }
+    else
+    {
+        const float delta = std::abs(mp_impl->editModeTargetMix - mp_impl->editModeMix);
+        mp_impl->editModeTransitionSpeed = (delta > 0.001f) ? (delta / transitionDuration) : (1.0f / transitionDuration);
+    }
+}
+
+bool AudioMixer::IsMusicEditMode() const
+{
+    return mp_impl && mp_impl->editModeEnabled;
+}
+
+float AudioMixer::GetMusicEditModeMix() const
+{
+    return mp_impl ? mp_impl->editModeMix : 0.0f;
 }
 
 void AudioMixer::SetMasterVolume(float volume) const

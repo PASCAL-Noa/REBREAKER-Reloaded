@@ -194,4 +194,36 @@ TEST_SUITE("UI Feedback & Audio Tests")
 
         mixer.StopMusic();
     }
+
+    TEST_CASE("AudioMixer Super Mario Maker style Edit Mode vs Play Mode music variant treatment")
+    {
+        ResourceManager rm;
+        AudioMixer mixer(rm);
+        mixer.SetDuckingEnabled(false);
+        mixer.SetMasterVolume(100.0f);
+        mixer.SetMusicVolume(100.0f);
+
+        mixer.PlayMusic("Resources/audio/music/Game-1.ogg");
+        CHECK_FALSE(mixer.IsMusicEditMode());
+        CHECK(mixer.GetMusicEditModeMix() == doctest::Approx(0.0f));
+        const float playModeGain = mixer.GetEffectiveMusicGain();
+        CHECK(playModeGain == doctest::Approx(60.0f));
+
+        // Entering Edit Mode softens & lowers gain smoothly while keeping the same music stream playing
+        mixer.SetMusicEditMode(true, 0.0f);
+        CHECK(mixer.IsMusicEditMode());
+        CHECK(mixer.GetMusicEditModeMix() == doctest::Approx(1.0f));
+        CHECK(mixer.GetCurrentMusicPath() == "Resources/audio/music/Game-1.ogg");
+        CHECK(mixer.GetEffectiveMusicGain() == doctest::Approx(playModeGain * AudioMixer::kEditModeGainMultiplier));
+
+        // Switching to Play Mode seamlessly restores full bandwidth and 100% nominal gain
+        mixer.SetMusicEditMode(false, 0.20f);
+        CHECK_FALSE(mixer.IsMusicEditMode());
+        mixer.Update(0.25f);
+        CHECK(mixer.GetMusicEditModeMix() == doctest::Approx(0.0f));
+        CHECK(mixer.GetEffectiveMusicGain() == doctest::Approx(playModeGain));
+
+        mixer.StopMusic();
+    }
 }
+

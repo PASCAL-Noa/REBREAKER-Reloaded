@@ -93,9 +93,21 @@ public:
                     thm.VignetteIntensity = std::stof(parts[12]);
                     thm.VignetteColor = ParseRgb(parts[13], Color{0, 0, 0, 255});
                     thm.MusicTrack = parts[14];
+                    thm.MusicPlaylist = {thm.MusicTrack};
                     if (parts.size() >= 16)
                     {
                         thm.Lighting = static_cast<LightingMode>(std::clamp(std::stoi(parts[15]), 0, 2));
+                    }
+                    if (parts.size() >= 17 && !parts[16].empty())
+                    {
+                        std::vector<std::string> pl;
+                        std::istringstream pss(parts[16]);
+                        std::string item;
+                        while (std::getline(pss, item, ','))
+                        {
+                            if (!item.empty()) pl.push_back(item);
+                        }
+                        if (!pl.empty()) thm.MusicPlaylist = std::move(pl);
                     }
                     thm.ClampValues();
                     m_themes.push_back(std::move(thm));
@@ -118,6 +130,12 @@ public:
         out << "COUNTER|" << m_nextCounter << "\n";
         for (const auto& thm : m_themes)
         {
+            std::string plJoined;
+            for (size_t i = 0; i < thm.MusicPlaylist.size(); ++i)
+            {
+                if (i > 0) plJoined.push_back(',');
+                plJoined += thm.MusicPlaylist[i];
+            }
             out << "THEME|" << thm.ThemeId << "|" << SanitizeName(thm.Name, thm.ThemeId) << "|"
                 << static_cast<int>(thm.Preset) << "|"
                 << FormatRgb(thm.BgColor) << "|"
@@ -131,7 +149,8 @@ public:
                 << thm.VignetteIntensity << "|"
                 << FormatRgb(thm.VignetteColor) << "|"
                 << thm.MusicTrack << "|"
-                << static_cast<int>(thm.Lighting) << "\n";
+                << static_cast<int>(thm.Lighting) << "|"
+                << plJoined << "\n";
         }
         return true;
     }

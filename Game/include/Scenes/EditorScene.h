@@ -72,6 +72,7 @@ public:
     void SetSelectedTile(EditorTileType tile);
     void SaveLevel(GameContext& context);
     void SaveLevelAs(GameContext& context);
+    void OpenLoadLevelModal(GameContext& context);
     void GenerateProceduralLevel();
 
     // Event Queue Drag & Drop / Trash
@@ -139,6 +140,10 @@ private:
     void ConfirmTextModal(GameContext& context);
     void RenderTextModal(GameContext& context);
     void HandleTextModalInput(GameContext& context);
+    void RefreshLoadModalEntries();
+    void ConfirmLoadLevelSelection(GameContext& context);
+    void RenderLoadLevelModal(GameContext& context);
+    void HandleLoadLevelModalInput(GameContext& context);
     void RenderPlaytestStopButton(GameContext& context);
     void ShowToast(const std::string& message, Color color = Color{110, 235, 165, 255}, float duration = 2.0f);
     void RenderBottomToast(GameContext& context);
@@ -155,6 +160,7 @@ private:
     void DrawIconEraser(GameContext& context, const Vector2f& pos, float size, Color color);
     void DrawIconFloppy(GameContext& context, const Vector2f& pos, float size, Color color);
     void DrawIconFloppyPlus(GameContext& context, const Vector2f& pos, float size, Color color);
+    void DrawIconFolderOpen(GameContext& context, const Vector2f& pos, float size, Color color);
     void DrawIconTrash(GameContext& context, const Vector2f& pos, float size, Color color);
     void DrawIconExit(GameContext& context, const Vector2f& pos, float size, Color color);
     void DrawChevron(GameContext& context, const Vector2f& pos, float size, bool pointsRight, Color color);
@@ -184,7 +190,17 @@ private:
     void RenderTurrets(GameContext& context);
     void ResetTurretsAndProjectiles();
 
-    void SyncEditorThemeMusic(GameContext& context) const;
+    void SyncEditorThemeMusic(GameContext& context);
+
+    struct LoadableLevelItem
+    {
+        std::string Id;       // e.g. "RBK-0001" or "STAGE 01"
+        std::string Name;     // Display name
+        std::string FilePath; // Path on disk
+        int PageCount = 1;
+        int BrickCount = 0;
+        bool IsCustomVault = true;
+    };
 
     // Editor State
     LevelData           m_levelData;
@@ -200,6 +216,12 @@ private:
     bool                m_rightPanelOpen = true;
     int                 m_hoveredToolbarBtn = -1;
 
+    // Load Level Modal state
+    bool                m_loadModalOpen = false;
+    int                 m_loadModalScroll = 0;
+    int                 m_loadModalSelected = 0;
+    std::vector<LoadableLevelItem> m_loadableLevels;
+
     // Robostock & Reusable Text Modal state (Save Level / New Theme / Rename Theme)
     std::string         m_editingLevelId;
     bool                m_returnToRobostock = false;
@@ -211,6 +233,9 @@ private:
     bool            m_hasSelectedCell = false;
     int             m_selectedCol = 0;
     int             m_selectedRow = 0;
+    int             m_lastPaintedCol = -1;
+    int             m_lastPaintedRow = -1;
+    float           m_paintSfxCooldown = 0.0f;
 
     // Multi-page & EventQueue Playtest tracking
     size_t          m_playtestPageIndex = 0;

@@ -216,8 +216,66 @@ struct EditorThemeData
     float VignetteIntensity = 0.25f;
     Color VignetteColor{0, 0, 0, 255};
     std::string MusicTrack = "Resources/audio/music/Game-1.ogg";
+    std::vector<std::string> MusicPlaylist = {"Resources/audio/music/Game-1.ogg"};
 
     bool operator==(const EditorThemeData&) const = default;
+
+    [[nodiscard]] bool IsTrackInPlaylist(const std::string& track) const
+    {
+        if (MusicPlaylist.empty())
+        {
+            return track == MusicTrack;
+        }
+        return std::find(MusicPlaylist.begin(), MusicPlaylist.end(), track) != MusicPlaylist.end();
+    }
+
+    void SetSingleTrack(const std::string& track)
+    {
+        MusicTrack = track.empty() ? "Resources/audio/music/Game-1.ogg" : track;
+        MusicPlaylist = {MusicTrack};
+    }
+
+    void TogglePlaylistTrack(const std::string& track)
+    {
+        if (track.empty()) return;
+        ClampValues();
+        auto it = std::find(MusicPlaylist.begin(), MusicPlaylist.end(), track);
+        if (it != MusicPlaylist.end())
+        {
+            // Keep at least 1 track in the level playlist
+            if (MusicPlaylist.size() > 1)
+            {
+                MusicPlaylist.erase(it);
+                if (MusicTrack == track)
+                {
+                    MusicTrack = MusicPlaylist.front();
+                }
+            }
+        }
+        else
+        {
+            MusicPlaylist.push_back(track);
+        }
+        ClampValues();
+    }
+
+    void EnableAllPlaylistTracks(const std::vector<std::string>& allTracks)
+    {
+        if (allTracks.empty()) return;
+        MusicPlaylist.clear();
+        if (!MusicTrack.empty() && std::find(allTracks.begin(), allTracks.end(), MusicTrack) != allTracks.end())
+        {
+            MusicPlaylist.push_back(MusicTrack);
+        }
+        for (const auto& t : allTracks)
+        {
+            if (std::find(MusicPlaylist.begin(), MusicPlaylist.end(), t) == MusicPlaylist.end())
+            {
+                MusicPlaylist.push_back(t);
+            }
+        }
+        ClampValues();
+    }
 
     void ClampValues()
     {
@@ -232,6 +290,26 @@ struct EditorThemeData
         {
             MusicTrack = "Resources/audio/music/Game-1.ogg";
         }
+
+        // Deduplicate & sanitize playlist while preserving order and ensuring MusicTrack is included
+        std::vector<std::string> cleaned;
+        for (const auto& trk : MusicPlaylist)
+        {
+            if (!trk.empty() && std::find(cleaned.begin(), cleaned.end(), trk) == cleaned.end())
+            {
+                cleaned.push_back(trk);
+            }
+        }
+        if (cleaned.empty())
+        {
+            cleaned.push_back(MusicTrack);
+        }
+        else if (std::find(cleaned.begin(), cleaned.end(), MusicTrack) == cleaned.end())
+        {
+            cleaned.insert(cleaned.begin(), MusicTrack);
+        }
+        MusicPlaylist = std::move(cleaned);
+        MusicTrack = MusicPlaylist.front();
     }
 };
 
@@ -867,6 +945,7 @@ public:
         default:
             break;
         }
+        thm.MusicPlaylist = {thm.MusicTrack};
         return thm;
     }
 
@@ -1174,6 +1253,15 @@ public:
             << static_cast<int>(m_theme.VignetteColor.r) << " " << static_cast<int>(m_theme.VignetteColor.g) << " " << static_cast<int>(m_theme.VignetteColor.b) << " "
             << (m_theme.ThemeId.empty() ? "-" : m_theme.ThemeId) << " "
             << m_theme.MusicTrack << "\n";
+        if (!m_theme.MusicPlaylist.empty())
+        {
+            oss << "MUSIC_PLAYLIST";
+            for (const auto& trk : m_theme.MusicPlaylist)
+            {
+                oss << " " << trk;
+            }
+            oss << "\n";
+        }
         if (!m_theme.Name.empty())
         {
             oss << "THEME_NAME " << m_theme.Name << "\n";
@@ -1316,7 +1404,26 @@ public:
                     m_theme.VignetteIntensity = vInt;
                     m_theme.VignetteColor = Color{static_cast<uint8_t>(std::clamp(vr, 0, 255)), static_cast<uint8_t>(std::clamp(vg, 0, 255)), static_cast<uint8_t>(std::clamp(vb, 0, 255)), 255};
                     if (ls >> tid) m_theme.ThemeId = (tid == "-") ? "" : tid;
-                    if (ls >> track) m_theme.MusicTrack = track;
+                    if (ls >> track)
+                    {
+                        m_theme.MusicTrack = track;
+                        m_theme.MusicPlaylist = {track};
+                    }
+                    m_theme.ClampValues();
+                }
+            }
+            else if (tag == "MUSIC_PLAYLIST")
+            {
+                std::vector<std::string> pl;
+                std::string trk;
+                while (ls >> trk)
+                {
+                    if (!trk.empty()) pl.push_back(trk);
+                }
+                if (!pl.empty())
+                {
+                    m_theme.MusicPlaylist = std::move(pl);
+                    m_theme.MusicTrack = m_theme.MusicPlaylist.front();
                     m_theme.ClampValues();
                 }
             }

@@ -400,47 +400,11 @@ void RobostockScene::HandleInput(GameContext& context)
         return;
     }
 
-    // 3. Top Bar Buttons: [< TV] and [+ NOUVEAU]
-    const float barY = -halfH + kTopBarH * 0.5f;
-    const CardRect backBtn{Vector2f{-halfW + 78.0f, barY}, Vector2f{112.0f, 44.0f}};
-    if (backBtn.Contains(mouse))
-    {
-        if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 14.0f);
-        MenuScene::SetReturnChannelType(ChannelType::Robostock);
-        MenuScene::SetReturnWithDezoom(true);
-        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
-        return;
-    }
-
+    // 3. Vault Cartridge Cards (Select + arm Drag)
+    const float vaultMinX = -halfW + 28.0f;
     const float vaultMaxX = halfW - kRightPanelW - 44.0f;
-    const CardRect newBtn{Vector2f{vaultMaxX - 74.0f, barY}, Vector2f{148.0f, 44.0f}};
-    if (newBtn.Contains(mouse))
-    {
-        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
-        context.Scenes.LoadSceneWithTransition<EditorScene>(SceneTransitionConfig{.Type = SceneTransitionType::StaticSnow, .Duration = 0.55f}, std::string{}, true);
-        return;
-    }
+    const float vaultCenterX = (vaultMinX + vaultMaxX) * 0.5f;
 
-    // Vault pagination buttons (in top bar when > 1 page)
-    if (totalPages > 1)
-    {
-        const CardRect prevPageBtn{Vector2f{vaultMaxX - 255.0f, barY}, Vector2f{38.0f, 38.0f}};
-        const CardRect nextPageBtn{Vector2f{vaultMaxX - 175.0f, barY}, Vector2f{38.0f, 38.0f}};
-        if (prevPageBtn.Contains(mouse))
-        {
-            m_vaultPage = (m_vaultPage + totalPages - 1) % totalPages;
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
-            return;
-        }
-        if (nextPageBtn.Contains(mouse))
-        {
-            m_vaultPage = (m_vaultPage + 1) % totalPages;
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
-            return;
-        }
-    }
-
-    // 4. Vault Cartridge Cards (Select + arm Drag)
     const int pageStart = m_vaultPage * kCardsPerPage;
     for (int vis = 0; vis < kCardsPerPage; ++vis)
     {
@@ -462,7 +426,6 @@ void RobostockScene::HandleInput(GameContext& context)
     // Empty vault center CTA
     if (levels.empty())
     {
-        const float vaultCenterX = (-halfW + 28.0f + vaultMaxX) * 0.5f;
         const CardRect emptyNewBtn{Vector2f{vaultCenterX, 24.0f}, Vector2f{210.0f, 54.0f}};
         if (emptyNewBtn.Contains(mouse))
         {
@@ -472,21 +435,39 @@ void RobostockScene::HandleInput(GameContext& context)
         }
     }
 
-    // 5. Bottom Action Bar for Selected Level: [JOUER] [EDITER] [NOM] [SUPPR]
+    // 4. Centralized Bottom Action Bar: [< TV] [+ CREATE] [PLAY] [EDIT] [RENAME] [DELETE] (+ pagination if > 1 page)
+    const float actY = halfH - 46.0f;
+    const float btnW = 148.0f;
+    const float gap = 12.0f;
+    const int btnCount = 6;
+    const float totalRowW = btnW * static_cast<float>(btnCount) + gap * static_cast<float>(btnCount - 1);
+    const float startX = vaultCenterX - totalRowW * 0.5f + btnW * 0.5f;
+
+    const CardRect backBtn{Vector2f{startX + 0.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
+    const CardRect newBtn{Vector2f{startX + 1.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
+    const CardRect playBtn{Vector2f{startX + 2.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
+    const CardRect editBtn{Vector2f{startX + 3.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
+    const CardRect renBtn{Vector2f{startX + 4.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
+    const CardRect delBtn{Vector2f{startX + 5.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
+
+    if (backBtn.Contains(mouse))
+    {
+        if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 14.0f);
+        MenuScene::SetReturnChannelType(ChannelType::Robostock);
+        MenuScene::SetReturnWithDezoom(true);
+        context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
+        return;
+    }
+
+    if (newBtn.Contains(mouse))
+    {
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+        context.Scenes.LoadSceneWithTransition<EditorScene>(SceneTransitionConfig{.Type = SceneTransitionType::StaticSnow, .Duration = 0.55f}, std::string{}, true);
+        return;
+    }
+
     if (m_selectedLevelIdx >= 0 && m_selectedLevelIdx < static_cast<int>(levels.size()))
     {
-        const float vaultMinX = -halfW + 28.0f;
-        const float vaultCenterX = (vaultMinX + vaultMaxX) * 0.5f;
-        const float actY = halfH - 46.0f;
-        const float btnW = 168.0f;
-        const float gap = 14.0f;
-        const float startX = vaultCenterX - (btnW * 4.0f + gap * 3.0f) * 0.5f + btnW * 0.5f;
-
-        const CardRect playBtn{Vector2f{startX + 0.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
-        const CardRect editBtn{Vector2f{startX + 1.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
-        const CardRect renBtn{Vector2f{startX + 2.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
-        const CardRect delBtn{Vector2f{startX + 3.0f * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
-
         const auto& sel = levels[static_cast<size_t>(m_selectedLevelIdx)];
 
         if (playBtn.Contains(mouse))
@@ -513,6 +494,26 @@ void RobostockScene::HandleInput(GameContext& context)
             const int remaining = static_cast<int>(m_library.GetLevels().size());
             m_selectedLevelIdx = (remaining > 0) ? std::min(m_selectedLevelIdx, remaining - 1) : -1;
             if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
+            return;
+        }
+    }
+
+    // Bottom pagination buttons (when > 1 page)
+    if (totalPages > 1)
+    {
+        const float pageClusterX = vaultCenterX + totalRowW * 0.5f + 56.0f;
+        const CardRect prevPageBtn{Vector2f{pageClusterX - 38.0f, actY}, Vector2f{36.0f, 36.0f}};
+        const CardRect nextPageBtn{Vector2f{pageClusterX + 38.0f, actY}, Vector2f{36.0f, 36.0f}};
+        if (prevPageBtn.Contains(mouse))
+        {
+            m_vaultPage = (m_vaultPage + totalPages - 1) % totalPages;
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return;
+        }
+        if (nextPageBtn.Contains(mouse))
+        {
+            m_vaultPage = (m_vaultPage + 1) % totalPages;
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
             return;
         }
     }
@@ -666,7 +667,7 @@ void RobostockScene::OnRender(GameContext& context)
     }
 }
 
-void RobostockScene::RenderTopBar(GameContext& context, const Vector2f& viewSize, const Vector2f& mouse)
+void RobostockScene::RenderTopBar(GameContext& context, const Vector2f& viewSize, const Vector2f& /*mouse*/)
 {
     const float halfW = viewSize.X * 0.5f;
     const float halfH = viewSize.Y * 0.5f;
@@ -675,55 +676,16 @@ void RobostockScene::RenderTopBar(GameContext& context, const Vector2f& viewSize
     context.Render.DrawRectangle(viewSize.X, kTopBarH, Transform2D{Vector2f{0.0f, barY}}, Color{18, 24, 34, 250});
     context.Render.DrawLine(Vector2f{-halfW, -halfH + kTopBarH}, Vector2f{halfW, -halfH + kTopBarH}, Color{65, 235, 195, 190}, 2.0f);
 
-    // [< TV] Button
-    const CardRect backBtn{Vector2f{-halfW + 78.0f, barY}, Vector2f{112.0f, 44.0f}};
-    const bool backHover = backBtn.Contains(mouse) && (m_modalMode == ModalMode::None);
-    context.Render.DrawRectangle(backBtn.Size.X, backBtn.Size.Y, Transform2D{backBtn.Center},
-                                 backHover ? Color{44, 62, 86, 255} : Color{28, 36, 50, 255});
-    context.Render.DrawRectangleOutline(backBtn.Size.X, backBtn.Size.Y, Transform2D{backBtn.Center},
-                                        backHover ? Colors::White : Color{80, 140, 190, 210}, 1.6f);
-    context.Render.DrawTextCentered("< TV", m_fontId, 22.0f, Transform2D{backBtn.Center}, Colors::White);
+    // Centered Animated Strix Emblem + STRIX VAULT Title + Count Pill (no buttons in top bar)
+    const float bobY = std::sin(m_animTimer * 2.4f) * 2.0f;
+    DrawBotBadge(context, Vector2f{-134.0f, barY + 2.0f + bobY}, 38.0f);
+    context.Render.DrawTextCentered("STRIX VAULT", m_fontId, 32.0f, Transform2D{Vector2f{0.0f, barY}}, Color{65, 235, 195, 255});
 
-    // Strix Emblem + STRIX VAULT Title + Count Pill
-    DrawBotBadge(context, Vector2f{-halfW + 178.0f, barY + 2.0f}, 36.0f);
-    context.Render.DrawText("STRIX VAULT", m_fontId, 30.0f, Transform2D{Vector2f{-halfW + 210.0f, barY - 16.0f}}, Color{65, 235, 195, 255});
-
-    const Vector2f countPill{Vector2f{-halfW + 420.0f, barY}};
+    const Vector2f countPill{Vector2f{128.0f, barY}};
     context.Render.DrawRectangle(58.0f, 30.0f, Transform2D{countPill}, Color{12, 18, 26, 255});
     context.Render.DrawRectangleOutline(58.0f, 30.0f, Transform2D{countPill}, Color{65, 235, 195, 180}, 1.4f);
     context.Render.DrawTextCentered(FormatTwoDigits(static_cast<int>(m_library.GetLevels().size())),
                                     m_fontId, 20.0f, Transform2D{countPill}, Color{225, 245, 255, 255});
-
-    // Vault Page Switcher (only if > 9 levels)
-    const auto& levels = m_library.GetLevels();
-    const int totalPages = std::max(1, (static_cast<int>(levels.size()) + kCardsPerPage - 1) / kCardsPerPage);
-    const float vaultMaxX = halfW - kRightPanelW - 44.0f;
-
-    if (totalPages > 1)
-    {
-        const CardRect prevPageBtn{Vector2f{vaultMaxX - 255.0f, barY}, Vector2f{38.0f, 38.0f}};
-        const CardRect nextPageBtn{Vector2f{vaultMaxX - 175.0f, barY}, Vector2f{38.0f, 38.0f}};
-        context.Render.DrawRectangle(38.0f, 38.0f, Transform2D{prevPageBtn.Center}, prevPageBtn.Contains(mouse) ? Color{45, 65, 88, 255} : Color{26, 34, 48, 255});
-        context.Render.DrawRectangleOutline(38.0f, 38.0f, Transform2D{prevPageBtn.Center}, Color{65, 235, 195, 190}, 1.4f);
-        context.Render.DrawTextCentered("<", m_fontId, 22.0f, Transform2D{prevPageBtn.Center}, Colors::White);
-
-        const std::string pStr = std::to_string(m_vaultPage + 1) + "/" + std::to_string(totalPages);
-        context.Render.DrawTextCentered(pStr, m_fontId, 19.0f, Transform2D{Vector2f{vaultMaxX - 215.0f, barY}}, Color{200, 225, 240, 255});
-
-        context.Render.DrawRectangle(38.0f, 38.0f, Transform2D{nextPageBtn.Center}, nextPageBtn.Contains(mouse) ? Color{45, 65, 88, 255} : Color{26, 34, 48, 255});
-        context.Render.DrawRectangleOutline(38.0f, 38.0f, Transform2D{nextPageBtn.Center}, Color{65, 235, 195, 190}, 1.4f);
-        context.Render.DrawTextCentered(">", m_fontId, 22.0f, Transform2D{nextPageBtn.Center}, Colors::White);
-    }
-
-    // [+ CREATE] Quick Editor Shortcut
-    const CardRect newBtn{Vector2f{vaultMaxX - 74.0f, barY}, Vector2f{148.0f, 44.0f}};
-    const bool newHover = newBtn.Contains(mouse) && (m_modalMode == ModalMode::None);
-    context.Render.DrawRectangle(newBtn.Size.X, newBtn.Size.Y, Transform2D{newBtn.Center},
-                                 newHover ? Color{235, 175, 45, 255} : Color{185, 130, 28, 255});
-    context.Render.DrawRectangleOutline(newBtn.Size.X, newBtn.Size.Y, Transform2D{newBtn.Center},
-                                        newHover ? Colors::White : Color{255, 225, 110, 230}, 1.6f);
-    DrawIconPlus(context, Vector2f{newBtn.Center.X - 46.0f, newBtn.Center.Y}, 14.0f, Colors::White);
-    context.Render.DrawTextCentered("CREATE", m_fontId, 21.0f, Transform2D{Vector2f{newBtn.Center.X + 12.0f, newBtn.Center.Y}}, Colors::White);
 }
 
 void RobostockScene::RenderVaultGrid(GameContext& context, const Vector2f& viewSize, const Vector2f& mouse)
@@ -750,124 +712,161 @@ void RobostockScene::RenderVaultGrid(GameContext& context, const Vector2f& viewS
                                             hov ? Colors::White : Color{95, 240, 190, 230}, 1.8f);
         DrawIconPlus(context, Vector2f{emptyNewBtn.Center.X - 58.0f, emptyNewBtn.Center.Y}, 16.0f, Colors::White);
         context.Render.DrawTextCentered("NEW LEVEL", m_fontId, 23.0f, Transform2D{Vector2f{emptyNewBtn.Center.X + 14.0f, emptyNewBtn.Center.Y}}, Colors::White);
-        return;
+    }
+    else
+    {
+        const int pageStart = m_vaultPage * kCardsPerPage;
+        for (int vis = 0; vis < kCardsPerPage; ++vis)
+        {
+            const int idx = pageStart + vis;
+            const CardRect card = GetVaultCardRect(vis, viewSize);
+
+            if (idx >= static_cast<int>(levels.size()))
+            {
+                // Recessed empty cartridge bay
+                context.Render.DrawRectangle(card.Size.X, card.Size.Y, Transform2D{card.Center}, Color{15, 20, 28, 155});
+                context.Render.DrawRectangleOutline(card.Size.X, card.Size.Y, Transform2D{card.Center}, Color{36, 46, 62, 130}, 1.2f);
+                continue;
+            }
+
+            const auto& entry = levels[static_cast<size_t>(idx)];
+            const bool isSelected = (idx == m_selectedLevelIdx);
+            const bool isHovered = card.Contains(mouse) && (m_modalMode == ModalMode::None);
+            const bool isDropTarget = m_dragActive && m_dragKind == DragKind::LevelCard && isHovered && idx != m_dragSourceIdx;
+
+            // Drop shadow
+            context.Render.DrawRectangle(card.Size.X, card.Size.Y, Transform2D{card.Center + Vector2f{4.0f, 5.0f}}, Color{0, 0, 0, 135});
+
+            // Cartridge shell
+            const Color shellCol = isSelected ? Color{28, 42, 54, 255} : (isHovered ? Color{24, 34, 46, 255} : Color{19, 26, 36, 250});
+            context.Render.DrawRectangle(card.Size.X, card.Size.Y, Transform2D{card.Center}, shellCol);
+
+            Color borderCol = Color{52, 68, 88, 200};
+            float borderThick = 1.5f;
+            if (isDropTarget)
+            {
+                borderCol = Colors::Gold;
+                borderThick = 3.2f;
+            }
+            else if (isSelected)
+            {
+                const uint8_t pulse = static_cast<uint8_t>(185 + 70 * (0.5f + 0.5f * std::sin(m_animTimer * 6.0f)));
+                borderCol = Color{65, 235, 195, pulse};
+                borderThick = 3.0f;
+            }
+            else if (isHovered)
+            {
+                borderCol = Color{110, 195, 235, 235};
+                borderThick = 2.0f;
+            }
+            context.Render.DrawRectangleOutline(card.Size.X, card.Size.Y, Transform2D{card.Center}, borderCol, borderThick);
+
+            // Top Cartridge ID Bar
+            const float topStripH = 28.0f;
+            const Vector2f topStripPos{card.Center.X, card.Center.Y - card.Size.Y * 0.5f + topStripH * 0.5f + 2.0f};
+            context.Render.DrawRectangle(card.Size.X - 6.0f, topStripH, Transform2D{topStripPos}, Color{13, 18, 26, 255});
+            context.Render.DrawText(entry.Id, m_fontId, 18.0f,
+                                    Transform2D{Vector2f{card.Center.X - card.Size.X * 0.5f + 12.0f, topStripPos.Y - 10.0f}},
+                                    Color{65, 235, 195, 255});
+
+            if (entry.PageCount > 1)
+            {
+                const std::string pgBadge = std::to_string(entry.PageCount) + "P";
+                const Vector2f pgPos{card.Center.X + card.Size.X * 0.5f - 26.0f, topStripPos.Y};
+                context.Render.DrawRectangle(34.0f, 20.0f, Transform2D{pgPos}, Color{46, 36, 14, 255});
+                context.Render.DrawRectangleOutline(34.0f, 20.0f, Transform2D{pgPos}, Colors::Gold, 1.2f);
+                context.Render.DrawTextCentered(pgBadge, m_fontId, 15.0f, Transform2D{pgPos}, Colors::Gold);
+            }
+
+            // Center Miniature Brick Preview
+            const float botStripH = 34.0f;
+            const Vector2f previewSize{card.Size.X - 22.0f, std::max(54.0f, card.Size.Y - topStripH - botStripH - 18.0f)};
+            const Vector2f previewCenter{card.Center.X, card.Center.Y + (topStripH - botStripH) * 0.5f};
+            RenderMiniBrickPreview(context, entry, previewCenter, previewSize);
+
+            // Bottom Cartridge Name Strip
+            const Vector2f botStripPos{card.Center.X, card.Center.Y + card.Size.Y * 0.5f - botStripH * 0.5f - 2.0f};
+            context.Render.DrawRectangle(card.Size.X - 6.0f, botStripH, Transform2D{botStripPos}, Color{12, 16, 24, 255});
+            context.Render.DrawTextCentered(entry.Name, m_fontId, 21.0f, Transform2D{botStripPos},
+                                            isSelected ? Colors::White : Color{215, 228, 242, 255});
+        }
     }
 
-    const int pageStart = m_vaultPage * kCardsPerPage;
-    for (int vis = 0; vis < kCardsPerPage; ++vis)
+    // Centralized Bottom Bar: [< TV] [+ CREATE] [PLAY] [EDIT] [RENAME] [DELETE]
+    const float actY = halfH - 46.0f;
+    const float btnW = 148.0f;
+    const float gap = 12.0f;
+    const int btnCount = 6;
+    const float totalRowW = btnW * static_cast<float>(btnCount) + gap * static_cast<float>(btnCount - 1);
+    const float startX = vaultCenterX - totalRowW * 0.5f + btnW * 0.5f;
+    const bool hasSelection = (m_selectedLevelIdx >= 0 && m_selectedLevelIdx < static_cast<int>(levels.size()));
+
+    struct ActBtnSpec
     {
-        const int idx = pageStart + vis;
-        const CardRect card = GetVaultCardRect(vis, viewSize);
+        const char* Label;
+        Color BaseBg;
+        Color HoverBg;
+        Color Rim;
+        int IconType; // -1 = none, 0 = play, 1 = edit, 2 = rename, 3 = trash, 4 = plus
+        bool Enabled;
+    };
+    const ActBtnSpec specs[6] = {
+        {"< TV",   Color{28, 36, 50, 255},   Color{44, 62, 86, 255},   Color{80, 140, 190, 210},  -1, true},
+        {"CREATE", Color{185, 130, 28, 255}, Color{235, 175, 45, 255}, Color{255, 225, 110, 230},  4, true},
+        {"PLAY",   Color{34, 130, 74, 255},  Color{48, 172, 98, 255},  Color{95, 235, 145, 255},   0, hasSelection},
+        {"EDIT",   Color{165, 115, 24, 255}, Color{215, 152, 34, 255}, Color{255, 215, 85, 255},   1, hasSelection},
+        {"RENAME", Color{36, 78, 116, 255},  Color{50, 108, 158, 255}, Color{105, 195, 255, 255},  2, hasSelection},
+        {"DELETE", Color{128, 34, 46, 255},  Color{176, 46, 62, 255},  Color{255, 105, 120, 255},  3, hasSelection}
+    };
 
-        if (idx >= static_cast<int>(levels.size()))
-        {
-            // Recessed empty cartridge bay
-            context.Render.DrawRectangle(card.Size.X, card.Size.Y, Transform2D{card.Center}, Color{15, 20, 28, 155});
-            context.Render.DrawRectangleOutline(card.Size.X, card.Size.Y, Transform2D{card.Center}, Color{36, 46, 62, 130}, 1.2f);
-            continue;
-        }
-
-        const auto& entry = levels[static_cast<size_t>(idx)];
-        const bool isSelected = (idx == m_selectedLevelIdx);
-        const bool isHovered = card.Contains(mouse) && (m_modalMode == ModalMode::None);
-        const bool isDropTarget = m_dragActive && m_dragKind == DragKind::LevelCard && isHovered && idx != m_dragSourceIdx;
-
-        // Drop shadow
-        context.Render.DrawRectangle(card.Size.X, card.Size.Y, Transform2D{card.Center + Vector2f{4.0f, 5.0f}}, Color{0, 0, 0, 135});
-
-        // Cartridge shell
-        const Color shellCol = isSelected ? Color{28, 42, 54, 255} : (isHovered ? Color{24, 34, 46, 255} : Color{19, 26, 36, 250});
-        context.Render.DrawRectangle(card.Size.X, card.Size.Y, Transform2D{card.Center}, shellCol);
-
-        Color borderCol = Color{52, 68, 88, 200};
-        float borderThick = 1.5f;
-        if (isDropTarget)
-        {
-            borderCol = Colors::Gold;
-            borderThick = 3.2f;
-        }
-        else if (isSelected)
-        {
-            const uint8_t pulse = static_cast<uint8_t>(185 + 70 * (0.5f + 0.5f * std::sin(m_animTimer * 6.0f)));
-            borderCol = Color{65, 235, 195, pulse};
-            borderThick = 3.0f;
-        }
-        else if (isHovered)
-        {
-            borderCol = Color{110, 195, 235, 235};
-            borderThick = 2.0f;
-        }
-        context.Render.DrawRectangleOutline(card.Size.X, card.Size.Y, Transform2D{card.Center}, borderCol, borderThick);
-
-        // Top Cartridge ID Bar
-        const float topStripH = 28.0f;
-        const Vector2f topStripPos{card.Center.X, card.Center.Y - card.Size.Y * 0.5f + topStripH * 0.5f + 2.0f};
-        context.Render.DrawRectangle(card.Size.X - 6.0f, topStripH, Transform2D{topStripPos}, Color{13, 18, 26, 255});
-        context.Render.DrawText(entry.Id, m_fontId, 18.0f,
-                                Transform2D{Vector2f{card.Center.X - card.Size.X * 0.5f + 12.0f, topStripPos.Y - 10.0f}},
-                                Color{65, 235, 195, 255});
-
-        if (entry.PageCount > 1)
-        {
-            const std::string pgBadge = std::to_string(entry.PageCount) + "P";
-            const Vector2f pgPos{card.Center.X + card.Size.X * 0.5f - 26.0f, topStripPos.Y};
-            context.Render.DrawRectangle(34.0f, 20.0f, Transform2D{pgPos}, Color{46, 36, 14, 255});
-            context.Render.DrawRectangleOutline(34.0f, 20.0f, Transform2D{pgPos}, Colors::Gold, 1.2f);
-            context.Render.DrawTextCentered(pgBadge, m_fontId, 15.0f, Transform2D{pgPos}, Colors::Gold);
-        }
-
-        // Center Miniature Brick Preview
-        const float botStripH = 34.0f;
-        const Vector2f previewSize{card.Size.X - 22.0f, std::max(54.0f, card.Size.Y - topStripH - botStripH - 18.0f)};
-        const Vector2f previewCenter{card.Center.X, card.Center.Y + (topStripH - botStripH) * 0.5f};
-        RenderMiniBrickPreview(context, entry, previewCenter, previewSize);
-
-        // Bottom Cartridge Name Strip
-        const Vector2f botStripPos{card.Center.X, card.Center.Y + card.Size.Y * 0.5f - botStripH * 0.5f - 2.0f};
-        context.Render.DrawRectangle(card.Size.X - 6.0f, botStripH, Transform2D{botStripPos}, Color{12, 16, 24, 255});
-        context.Render.DrawTextCentered(entry.Name, m_fontId, 21.0f, Transform2D{botStripPos},
-                                        isSelected ? Colors::White : Color{215, 228, 242, 255});
-    }
-
-    // Selected Level Action Bar: [PLAY] [EDIT] [RENAME] [DELETE]
-    if (m_selectedLevelIdx >= 0 && m_selectedLevelIdx < static_cast<int>(levels.size()))
+    for (int b = 0; b < btnCount; ++b)
     {
-        const float actY = halfH - 46.0f;
-        const float btnW = 168.0f;
-        const float gap = 14.0f;
-        const float startX = vaultCenterX - (btnW * 4.0f + gap * 3.0f) * 0.5f + btnW * 0.5f;
+        const CardRect rect{Vector2f{startX + static_cast<float>(b) * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
+        const bool enabled = specs[b].Enabled;
+        const bool hov = enabled && rect.Contains(mouse) && (m_modalMode == ModalMode::None);
+        const Color bg = enabled ? (hov ? specs[b].HoverBg : specs[b].BaseBg) : Color{22, 28, 38, 180};
+        const Color rim = enabled ? (hov ? Colors::White : specs[b].Rim) : Color{48, 56, 70, 150};
+        const Color fg = enabled ? Colors::White : Color{105, 115, 130, 190};
 
-        struct ActBtnSpec
+        context.Render.DrawRectangle(rect.Size.X, rect.Size.Y, Transform2D{rect.Center}, bg);
+        context.Render.DrawRectangleOutline(rect.Size.X, rect.Size.Y, Transform2D{rect.Center}, rim, hov ? 2.2f : 1.5f);
+
+        if (specs[b].IconType >= 0)
         {
-            const char* Label;
-            Color BaseBg;
-            Color HoverBg;
-            Color Rim;
-            int IconType;
-        };
-        const ActBtnSpec specs[4] = {
-            {"PLAY",   Color{34, 130, 74, 255}, Color{48, 172, 98, 255}, Color{95, 235, 145, 255}, 0},
-            {"EDIT",   Color{165, 115, 24, 255}, Color{215, 152, 34, 255}, Color{255, 215, 85, 255}, 1},
-            {"RENAME", Color{36, 78, 116, 255}, Color{50, 108, 158, 255}, Color{105, 195, 255, 255}, 2},
-            {"DELETE", Color{128, 34, 46, 255}, Color{176, 46, 62, 255}, Color{255, 105, 120, 255}, 3}
-        };
+            const Vector2f iconPos{rect.Center.X - 42.0f, rect.Center.Y};
+            if (specs[b].IconType == 0) DrawIconPlay(context, iconPos, 15.0f, fg);
+            else if (specs[b].IconType == 1) DrawIconEdit(context, iconPos, 15.0f, fg);
+            else if (specs[b].IconType == 2) DrawIconRename(context, iconPos, 15.0f, fg);
+            else if (specs[b].IconType == 3) DrawIconTrash(context, iconPos, 16.0f, fg);
+            else if (specs[b].IconType == 4) DrawIconPlus(context, iconPos, 14.0f, fg);
 
-        for (int b = 0; b < 4; ++b)
+            context.Render.DrawTextCentered(specs[b].Label, m_fontId, 20.0f,
+                                            Transform2D{Vector2f{rect.Center.X + 12.0f, rect.Center.Y}}, fg);
+        }
+        else
         {
-            const CardRect rect{Vector2f{startX + static_cast<float>(b) * (btnW + gap), actY}, Vector2f{btnW, 50.0f}};
-            const bool hov = rect.Contains(mouse) && (m_modalMode == ModalMode::None);
-            context.Render.DrawRectangle(rect.Size.X, rect.Size.Y, Transform2D{rect.Center}, hov ? specs[b].HoverBg : specs[b].BaseBg);
-            context.Render.DrawRectangleOutline(rect.Size.X, rect.Size.Y, Transform2D{rect.Center}, hov ? Colors::White : specs[b].Rim, hov ? 2.2f : 1.5f);
-
-            const Vector2f iconPos{rect.Center.X - 46.0f, rect.Center.Y};
-            if (specs[b].IconType == 0) DrawIconPlay(context, iconPos, 15.0f, Colors::White);
-            else if (specs[b].IconType == 1) DrawIconEdit(context, iconPos, 15.0f, Colors::White);
-            else if (specs[b].IconType == 2) DrawIconRename(context, iconPos, 15.0f, Colors::White);
-            else DrawIconTrash(context, iconPos, 16.0f, Colors::White);
-
             context.Render.DrawTextCentered(specs[b].Label, m_fontId, 21.0f,
-                                            Transform2D{Vector2f{rect.Center.X + 14.0f, rect.Center.Y}}, Colors::White);
+                                            Transform2D{rect.Center}, fg);
         }
+    }
+
+    const int totalPages = std::max(1, (static_cast<int>(levels.size()) + kCardsPerPage - 1) / kCardsPerPage);
+    if (totalPages > 1)
+    {
+        const float pageClusterX = vaultCenterX + totalRowW * 0.5f + 56.0f;
+        const CardRect prevPageBtn{Vector2f{pageClusterX - 38.0f, actY}, Vector2f{36.0f, 36.0f}};
+        const CardRect nextPageBtn{Vector2f{pageClusterX + 38.0f, actY}, Vector2f{36.0f, 36.0f}};
+
+        context.Render.DrawRectangle(36.0f, 36.0f, Transform2D{prevPageBtn.Center}, prevPageBtn.Contains(mouse) ? Color{45, 65, 88, 255} : Color{26, 34, 48, 255});
+        context.Render.DrawRectangleOutline(36.0f, 36.0f, Transform2D{prevPageBtn.Center}, Color{65, 235, 195, 190}, 1.4f);
+        context.Render.DrawTextCentered("<", m_fontId, 22.0f, Transform2D{prevPageBtn.Center}, Colors::White);
+
+        const std::string pStr = std::to_string(m_vaultPage + 1) + "/" + std::to_string(totalPages);
+        context.Render.DrawTextCentered(pStr, m_fontId, 18.0f, Transform2D{Vector2f{pageClusterX, actY}}, Color{200, 225, 240, 255});
+
+        context.Render.DrawRectangle(36.0f, 36.0f, Transform2D{nextPageBtn.Center}, nextPageBtn.Contains(mouse) ? Color{45, 65, 88, 255} : Color{26, 34, 48, 255});
+        context.Render.DrawRectangleOutline(36.0f, 36.0f, Transform2D{nextPageBtn.Center}, Color{65, 235, 195, 190}, 1.4f);
+        context.Render.DrawTextCentered(">", m_fontId, 22.0f, Transform2D{nextPageBtn.Center}, Colors::White);
     }
 }
 

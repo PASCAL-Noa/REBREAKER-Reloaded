@@ -161,7 +161,10 @@ void CustomLevelPlayScene::RestorePostUltimateMusic()
     {
         return;
     }
-    mp_context->Audio.PlayMusic(m_levelData.GetTheme().MusicTrack);
+    const auto& thm = m_levelData.GetTheme();
+    const bool singleLoop = (thm.MusicPlaylist.size() <= 1);
+    mp_context->Audio.SetMusicEditMode(false, 0.1f);
+    mp_context->Audio.PlayMusic(thm.MusicTrack, AudioMixer::kNominalMusicLevel, singleLoop);
 }
 
 std::optional<size_t> CustomLevelPlayScene::FindNextPlayablePage(size_t startIndex) const
@@ -238,9 +241,18 @@ void CustomLevelPlayScene::LoadSlotLevel(size_t slotIndex, GameContext& context,
 
     ResetBallAndPaddle();
 
+    m_playlist.Clear();
+    const auto& thm = m_levelData.GetTheme();
+    for (const auto& trk : thm.MusicPlaylist)
+    {
+        m_playlist.AddTrack(context, trk);
+    }
+
     if (m_musicEnabled)
     {
-        context.Audio.PlayMusic(m_levelData.GetTheme().MusicTrack);
+        context.Audio.SetMusicEditMode(false, 0.1f);
+        const bool singleLoop = (thm.MusicPlaylist.size() <= 1);
+        context.Audio.PlayMusic(thm.MusicTrack, AudioMixer::kNominalMusicLevel, singleLoop);
     }
 }
 

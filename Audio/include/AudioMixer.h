@@ -49,6 +49,13 @@ public:
     [[nodiscard]] bool  IsDuckingEnabled() const;
     [[nodiscard]] float GetDuckingMultiplier() const;
 
+    // Super Mario Maker style Edit Mode vs. Play Mode Music Variant Treatment
+    // Softens, quiets, and low-pass filters the active music track in Edit Mode while preserving playback offset.
+    static constexpr float kEditModeGainMultiplier = 0.48f;
+    void    SetMusicEditMode(bool enabled, float transitionDuration = 0.32f) const;
+    [[nodiscard]] bool  IsMusicEditMode() const;
+    [[nodiscard]] float GetMusicEditModeMix() const;
+
     // Temporal Pitch Distortion & Time-Warp (Tempo Ball / Tape Stop)
     void    SetMusicPitch(float pitch) const;
     void    FadeMusicPitch(float targetPitch, float duration = 0.5f) const;

@@ -100,6 +100,8 @@ public:
 
     // Countdown & Ready Sequence
     virtual void StartCountdown();
+    void SetCountdownSuppressed(bool suppressed) noexcept { m_suppressCountdown = suppressed; }
+    [[nodiscard]] bool  IsCountdownSuppressed() const noexcept { return m_suppressCountdown; }
     [[nodiscard]] bool  IsCountdownActive() const noexcept { return m_countdownActive; }
     [[nodiscard]] bool  IsCountdownComplete() const noexcept { return !m_countdownActive; }
     [[nodiscard]] float GetCountdownTimer() const noexcept { return m_countdownTimer; }
@@ -268,6 +270,7 @@ protected:
     int         m_countdownLastSecond = 0;
     int         m_countdownWhooshPlayedForSecond = 0;
     bool        m_countdownActive = false;
+    bool        m_suppressCountdown = false;
 
     LeaderboardManager m_leaderboard;
     ScoreManager       m_scoreManager;

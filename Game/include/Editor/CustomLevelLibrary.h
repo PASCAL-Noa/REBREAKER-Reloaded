@@ -42,6 +42,7 @@ class CustomLevelLibrary
 public:
     explicit CustomLevelLibrary(std::string baseDir = "Resources/levels/custom", bool autoImportLegacy = true)
         : m_baseDir(std::move(baseDir))
+        , m_isDefaultBaseDir(m_baseDir == "Resources/levels/custom")
         , m_autoImportLegacy(autoImportLegacy)
     {
         Load();
@@ -88,6 +89,12 @@ public:
         std::error_code ec;
         std::filesystem::create_directories(m_baseDir, ec);
 
+        // If running from a working directory different from the executable directory, sync any custom levels
+        if (m_isDefaultBaseDir)
+        {
+            SyncBetweenCwdAndExeDirs();
+        }
+
         const std::string manifestPath = GetManifestPath();
         const bool manifestExists = std::filesystem::exists(manifestPath, ec);
 
@@ -120,11 +127,21 @@ public:
                     entry.FilePath = parts[3];
 
                     LevelData data;
-                    if (data.LoadFromFile(entry.FilePath))
+                    if (!data.LoadFromFile(entry.FilePath))
                     {
-                        RefreshEntryPreview(entry, data);
-                        m_levels.push_back(std::move(entry));
+                        // Fallback to standard path inside m_baseDir if stored path differed
+                        const std::string fallbackPath = m_baseDir + "/" + entry.Id + ".txt";
+                        if (data.LoadFromFile(fallbackPath))
+                        {
+                            entry.FilePath = fallbackPath;
+                        }
+                        else
+                        {
+                            continue;
+                        }
                     }
+                    RefreshEntryPreview(entry, data);
+                    m_levels.push_back(std::move(entry));
                 }
                 else if (parts[0] == "PLAYLIST" && parts.size() >= 3)
                 {
@@ -146,13 +163,20 @@ public:
                     m_playlists.push_back(std::move(pl));
                 }
             }
-
-            PruneOrphanedPlaylistSlots();
-            EnsureCountersAboveExisting();
         }
         else if (m_autoImportLegacy)
         {
             ImportLegacyCustomLevels();
+        }
+
+        // Always recover any RBK-*.txt level files present in m_baseDir that were missing from robostock.manifest
+        const bool recoveredOrphans = RecoverOrphanedLevelFiles();
+
+        PruneOrphanedPlaylistSlots();
+        EnsureCountersAboveExisting();
+
+        if (!manifestExists || recoveredOrphans)
+        {
             Save();
         }
     }
@@ -180,6 +204,12 @@ public:
                 out << pl.LevelIds[i];
             }
             out << "\n";
+        }
+        out.close();
+
+        if (m_isDefaultBaseDir)
+        {
+            MirrorToAlternateDefaultDirs();
         }
         return true;
     }
@@ -255,6 +285,10 @@ public:
 
         std::error_code ec;
         std::filesystem::remove(it->FilePath, ec);
+        if (m_isDefaultBaseDir)
+        {
+            RemoveFromAlternateDefaultDirs(id + ".txt");
+        }
         m_levels.erase(it);
 
         PruneOrphanedPlaylistSlots();
@@ -541,10 +575,194 @@ private:
         }
     }
 
+    bool RecoverOrphanedLevelFiles()
+    {
+        std::error_code ec;
+        const std::filesystem::path dirPath(m_baseDir);
+        if (!std::filesystem::exists(dirPath, ec)) return false;
+
+        std::vector<std::filesystem::path> found;
+        for (const auto& dirEntry : std::filesystem::directory_iterator(dirPath, ec))
+        {
+            if (!dirEntry.is_regular_file()) continue;
+            const std::string stem = dirEntry.path().stem().string();
+            if (stem.rfind("RBK-", 0) == 0 && dirEntry.path().extension() == ".txt")
+            {
+                found.push_back(dirEntry.path());
+            }
+        }
+        std::sort(found.begin(), found.end());
+
+        bool recoveredAny = false;
+        for (const auto& p : found)
+        {
+            const std::string stemId = p.stem().string();
+            if (FindLevel(stemId) != nullptr) continue;
+
+            LevelData data;
+            if (!data.LoadFromFile(p.string())) continue;
+
+            CustomLevelEntry entry;
+            entry.Id = stemId;
+            entry.Name = SanitizeName(data.GetLevelName().empty() ? stemId : data.GetLevelName(), stemId);
+            entry.FilePath = m_baseDir + "/" + stemId + ".txt";
+            RefreshEntryPreview(entry, data);
+            m_levels.push_back(std::move(entry));
+            recoveredAny = true;
+        }
+        return recoveredAny;
+    }
+
+    static std::vector<std::filesystem::path> GetCandidateCustomDirs()
+    {
+        std::vector<std::filesystem::path> dirs;
+        std::error_code ec;
+        const std::filesystem::path cwdCustom = std::filesystem::current_path(ec) / "Resources" / "levels" / "custom";
+        dirs.push_back(cwdCustom);
+
+        // If running from <repo>/cmake-build-*/bin, also check <repo>/Resources/levels/custom
+        // If running from <repo>, also check <repo>/cmake-build-*/bin/Resources/levels/custom
+        std::filesystem::path cur = std::filesystem::current_path(ec);
+        for (int depth = 0; depth < 3 && cur.has_parent_path(); ++depth)
+        {
+            const std::filesystem::path parentCustom = cur / "Resources" / "levels" / "custom";
+            if (std::filesystem::exists(cur / "CMakeLists.txt", ec))
+            {
+                bool alreadyAdded = false;
+                for (const auto& d : dirs)
+                {
+                    if (std::filesystem::equivalent(d, parentCustom, ec)) alreadyAdded = true;
+                }
+                if (!alreadyAdded) dirs.push_back(parentCustom);
+
+                for (const auto& entry : std::filesystem::directory_iterator(cur, ec))
+                {
+                    if (!entry.is_directory()) continue;
+                    const std::string dn = entry.path().filename().string();
+                    if (dn.rfind("cmake-build", 0) == 0)
+                    {
+                        const std::filesystem::path binCustom = entry.path() / "bin" / "Resources" / "levels" / "custom";
+                        if (std::filesystem::exists(binCustom.parent_path(), ec))
+                        {
+                            bool dup = false;
+                            for (const auto& d : dirs)
+                            {
+                                if (std::filesystem::equivalent(d, binCustom, ec)) dup = true;
+                            }
+                            if (!dup) dirs.push_back(binCustom);
+                        }
+                    }
+                }
+                break;
+            }
+            cur = cur.parent_path();
+        }
+        return dirs;
+    }
+
+    void SyncBetweenCwdAndExeDirs() const
+    {
+        std::error_code ec;
+        const std::filesystem::path activeDir = std::filesystem::path(m_baseDir);
+        std::filesystem::create_directories(activeDir, ec);
+
+        const auto dirs = GetCandidateCustomDirs();
+        // 1. Copy any RBK-*.txt level files from candidate dirs into activeDir if missing
+        for (const auto& srcDir : dirs)
+        {
+            if (!std::filesystem::exists(srcDir, ec) || std::filesystem::equivalent(srcDir, activeDir, ec)) continue;
+            for (const auto& entry : std::filesystem::directory_iterator(srcDir, ec))
+            {
+                if (!entry.is_regular_file()) continue;
+                const std::string fn = entry.path().filename().string();
+                if ((fn.rfind("RBK-", 0) == 0 && entry.path().extension() == ".txt") || fn == "themes.cfg")
+                {
+                    const std::filesystem::path dstFile = activeDir / fn;
+                    if (!std::filesystem::exists(dstFile, ec))
+                    {
+                        std::filesystem::copy_file(entry.path(), dstFile, std::filesystem::copy_options::overwrite_existing, ec);
+                    }
+                }
+            }
+        }
+
+        // 2. If another candidate dir has a richer robostock.manifest (more LEVEL lines), adopt it
+        auto countManifestLevels = [](const std::filesystem::path& manifestFile) -> int {
+            std::ifstream f(manifestFile);
+            if (!f.is_open()) return -1;
+            int cnt = 0;
+            std::string line;
+            while (std::getline(f, line))
+            {
+                if (line.rfind("LEVEL|", 0) == 0) ++cnt;
+            }
+            return cnt;
+        };
+
+        const std::filesystem::path activeManifest = activeDir / "robostock.manifest";
+        int bestCount = countManifestLevels(activeManifest);
+        std::filesystem::path bestManifest;
+
+        for (const auto& srcDir : dirs)
+        {
+            if (!std::filesystem::exists(srcDir, ec) || std::filesystem::equivalent(srcDir, activeDir, ec)) continue;
+            const std::filesystem::path candManifest = srcDir / "robostock.manifest";
+            const int candCount = countManifestLevels(candManifest);
+            if (candCount > bestCount)
+            {
+                bestCount = candCount;
+                bestManifest = candManifest;
+            }
+        }
+
+        if (!bestManifest.empty())
+        {
+            std::filesystem::copy_file(bestManifest, activeManifest, std::filesystem::copy_options::overwrite_existing, ec);
+        }
+    }
+
+    void MirrorToAlternateDefaultDirs() const
+    {
+        std::error_code ec;
+        const std::filesystem::path activeDir = std::filesystem::path(m_baseDir);
+        if (!std::filesystem::exists(activeDir, ec)) return;
+
+        const auto dirs = GetCandidateCustomDirs();
+        for (const auto& dstDir : dirs)
+        {
+            std::filesystem::create_directories(dstDir, ec);
+            if (std::filesystem::equivalent(dstDir, activeDir, ec)) continue;
+
+            for (const auto& entry : std::filesystem::directory_iterator(activeDir, ec))
+            {
+                if (!entry.is_regular_file()) continue;
+                const std::string fn = entry.path().filename().string();
+                if ((fn.rfind("RBK-", 0) == 0 && entry.path().extension() == ".txt") ||
+                    fn == "robostock.manifest" || fn == "themes.cfg")
+                {
+                    std::filesystem::copy_file(entry.path(), dstDir / fn,
+                                               std::filesystem::copy_options::overwrite_existing, ec);
+                }
+            }
+        }
+    }
+
+    static void RemoveFromAlternateDefaultDirs(const std::string& fileName)
+    {
+        std::error_code ec;
+        const auto dirs = GetCandidateCustomDirs();
+        for (const auto& dir : dirs)
+        {
+            std::filesystem::remove(dir / fileName, ec);
+        }
+    }
+
     std::string m_baseDir;
+    bool m_isDefaultBaseDir = false;
     bool m_autoImportLegacy = true;
     int m_nextLevelCounter = 1;
     int m_nextPlaylistCounter = 1;
     std::vector<CustomLevelEntry> m_levels;
     std::vector<CustomPlaylist> m_playlists;
 };
+

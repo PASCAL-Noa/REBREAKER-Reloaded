@@ -39,11 +39,15 @@ void PlaylistManager::Update(const GameContext& context)
 
     const std::string& currentPath = context.Audio.GetCurrentMusicPath();
     bool isInPlaylist = false;
-    for (const auto& track : m_tracks)
+    for (size_t i = 0; i < m_tracks.size(); ++i)
     {
-        if (track == currentPath)
+        if (m_tracks[i] == currentPath)
         {
             isInPlaylist = true;
+            if (!m_isCrossfading)
+            {
+                m_currentTrack = i;
+            }
             break;
         }
     }
@@ -54,10 +58,22 @@ void PlaylistManager::Update(const GameContext& context)
         return;
     }
 
-    // Guarantee that stage tracks in playlist do not loop infinitely so chaining is preserved
-    if (context.Audio.IsMusicLooping())
+    // When a playlist has multiple tracks, disable looping on the current track so it advances at track end;
+    // when it has only 1 track, keep it looping seamlessly.
+    if (m_tracks.size() > 1)
     {
-        context.Audio.SetMusicLooping(false);
+        if (context.Audio.IsMusicLooping())
+        {
+            context.Audio.SetMusicLooping(false);
+        }
+    }
+    else
+    {
+        if (!context.Audio.IsMusicLooping())
+        {
+            context.Audio.SetMusicLooping(true);
+        }
+        return;
     }
 
     float remaining = context.Audio.GetMusicTimeRemaining();

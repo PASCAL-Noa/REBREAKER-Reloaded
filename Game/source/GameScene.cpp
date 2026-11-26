@@ -2300,6 +2300,33 @@ void GameScene::CompleteLevelTransition()
 
 void GameScene::StartCountdown()
 {
+    if (m_suppressCountdown)
+    {
+        m_countdownTimer = 0.0f;
+        m_countdownGoTimer = 0.0f;
+        m_countdownLastSecond = 0;
+        m_countdownWhooshPlayedForSecond = 0;
+        m_countdownActive = false;
+
+        if (mp_state_machine && mp_state_machine->GetCurrentState() != static_cast<int>(SceneState::Playing))
+        {
+            mp_state_machine->SetState(static_cast<int>(SceneState::Playing));
+        }
+        if (mp_paddleSystem)
+        {
+            mp_paddleSystem->SetInputEnabled(true);
+            if (mp_paddleSystem->IsBallAttached())
+            {
+                mp_paddleSystem->LaunchBall();
+            }
+        }
+        if (m_renderGameUI && mp_context)
+        {
+            mp_context->Events.Publish(GameStateChangedEvent(GameUIState::Playing));
+        }
+        return;
+    }
+
     m_countdownTimer = 4.0f;
     m_countdownGoTimer = 0.0f;
     m_countdownLastSecond = 4;
