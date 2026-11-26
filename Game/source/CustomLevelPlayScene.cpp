@@ -44,7 +44,6 @@ void CustomLevelPlayScene::OnInit(GameContext& context)
     m_playlist.Clear();
 
     m_bossLaserSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup_laser.wav");
-    m_paddleCrackSfxId = context.Resources.LoadResource("Resources/audio/sfx/brick_hit.wav");
 
     if (m_uiController)
     {
@@ -74,16 +73,12 @@ void CustomLevelPlayScene::OnInit(GameContext& context)
 
 bool CustomLevelPlayScene::IsGameOver() const
 {
-    if (m_isPaddleDestroyed)
-    {
-        return m_paddleDestroyedTimer <= 0.0f;
-    }
     return GameScene::IsGameOver();
 }
 
 bool CustomLevelPlayScene::IsLevelCleared() const
 {
-    if (IsCountdownActive() || m_isPaddleDestroyed)
+    if (IsCountdownActive() || IsPaddleExploding())
     {
         return false;
     }
@@ -166,7 +161,7 @@ void CustomLevelPlayScene::RestorePostUltimateMusic()
     {
         return;
     }
-    mp_context->Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
+    mp_context->Audio.PlayMusic(m_levelData.GetTheme().MusicTrack);
 }
 
 std::optional<size_t> CustomLevelPlayScene::FindNextPlayablePage(size_t startIndex) const
@@ -188,16 +183,16 @@ void CustomLevelPlayScene::LoadSlotLevel(size_t slotIndex, GameContext& context,
         return;
     }
 
-    m_isPaddleDestroyed = false;
-    m_paddleDestroyedTimer = 0.0f;
-    m_paddleDamageFlashTimer = 0.0f;
-    m_sparkEmissionTimer = 0.0f;
     m_levelElapsed = 0.0f;
     m_nextQueuedEventIdx = 0;
+    m_initialEventTriggered = false;
 
     ClearActiveUltimates();
     ClearVisualMalus();
     RestoreTemporalAudio(0.05f);
+    ResetPaddleDurability(0.0f);
+    m_eventRipples.clear();
+    m_eventToastTimer = 0.0f;
 
     if (!m_library.LoadLevelData(m_levelIds[slotIndex], m_levelData))
     {
@@ -236,10 +231,6 @@ void CustomLevelPlayScene::LoadSlotLevel(size_t slotIndex, GameContext& context,
         context.Events.Publish(LivesChangedEvent(m_lives));
     }
 
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-    {
-        m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Colors::White;
-    }
     if (mp_paddleSystem)
     {
         mp_paddleSystem->SetInputEnabled(true);
@@ -249,7 +240,7 @@ void CustomLevelPlayScene::LoadSlotLevel(size_t slotIndex, GameContext& context,
 
     if (m_musicEnabled)
     {
-        context.Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
+        context.Audio.PlayMusic(m_levelData.GetTheme().MusicTrack);
     }
 }
 
@@ -257,24 +248,8 @@ void CustomLevelPlayScene::ApplyCustomTheme(GameContext& context)
 {
     (void)context;
     const auto& thm = m_levelData.GetTheme();
-    m_bgColor = thm.BgColor;
-    m_currentTheme.BgBase1 = thm.BgColor;
-    m_currentTheme.BgBase2 = thm.BgColor;
-    const float mult = std::clamp(thm.AmbientIntensity * 2.0f, 0.25f, 1.0f);
-    m_currentTheme.AmbientLight = Color{
-        static_cast<uint8_t>(std::clamp(static_cast<float>(thm.AmbientColor.r) * mult, 20.0f, 255.0f)),
-        static_cast<uint8_t>(std::clamp(static_cast<float>(thm.AmbientColor.g) * mult, 20.0f, 255.0f)),
-        static_cast<uint8_t>(std::clamp(static_cast<float>(thm.AmbientColor.b) * mult, 20.0f, 255.0f)),
-        255
-    };
-    m_ambientBackground.SetTheme(m_currentTheme);
-
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<LightSourceComponent>(m_paddle))
-    {
-        auto& light = m_registry.GetComponent<LightSourceComponent>(m_paddle);
-        light.LightColor = thm.PaddleConeColor;
-        light.ConeAngleDeg = thm.PaddleConeAngle;
-    }
+    const LevelTheme built = LevelData::BuildLevelTheme(thm);
+    ApplyCustomLighting(built, thm.PaddleConeColor, thm.PaddleConeAngle, thm.PaddleLightRange, thm.PaddleLightIntensity);
 }
 
 void CustomLevelPlayScene::RebuildPlayfieldFromPage(size_t pageIdx, GameContext& context, bool withDescent)
@@ -314,16 +289,65 @@ void CustomLevelPlayScene::RebuildPlayfieldFromPage(size_t pageIdx, GameContext&
             case EditorTileType::Bomb:    bType = BrickType::Bomb; break;
             case EditorTileType::Turret:  bType = BrickType::Hard; break;
             case EditorTileType::Lantern: bType = BrickType::Lantern; break;
+            case EditorTileType::Event:   bType = BrickType::Event; break;
             default: break;
             }
 
             Entity bEntity = BrickFactory::Create(m_registry, pos.X, pos.Y, bType, isSpecial, m_brickTexId, 0, cell.HitPoints);
 
-            if (cell.Type == EditorTileType::Special && !cell.RandomPowerUp && m_registry.HasComponent<BrickComponent>(bEntity))
+            if (m_registry.HasComponent<BrickComponent>(bEntity))
             {
                 auto& bComp = m_registry.GetComponent<BrickComponent>(bEntity);
-                bComp.HasForcedPowerUp = true;
-                bComp.ForcedPowerUp = cell.SpecificPowerUp;
+                if (cell.Type == EditorTileType::Special)
+                {
+                    if (!cell.RandomPowerUp)
+                    {
+                        bComp.HasForcedPowerUp = true;
+                        bComp.ForcedPowerUp = cell.SpecificPowerUp;
+                    }
+                    bComp.RegenEnabled = cell.PowerUpRegenEnabled;
+                    bComp.RegenCooldown = cell.PowerUpRegenCooldown;
+                }
+                else if (cell.Type == EditorTileType::Event)
+                {
+                    bComp.IsEventBrick = true;
+                    bComp.RandomEvent = cell.RandomEvent;
+                    bComp.TriggeredEvent = cell.SpecificEvent;
+                    bComp.EventTriggerOnHit = cell.EventTriggerOnHit;
+                    if (m_registry.HasComponent<SpriteComponent>(bEntity))
+                    {
+                        m_registry.GetComponent<SpriteComponent>(bEntity).Tint = LevelData::GetDisplayColorForCell(cell);
+                    }
+                }
+                else if (cell.Type == EditorTileType::Bomb)
+                {
+                    bComp.BombBlastTier = std::clamp(cell.BombBlastTier, 0, 2);
+                }
+                else if (cell.Type == EditorTileType::Metal)
+                {
+                    bComp.MetalBounceBoost = std::clamp(cell.MetalBounceBoost, 1.0f, 1.45f);
+                }
+            }
+
+            if (cell.UseCustomColor && m_registry.HasComponent<SpriteComponent>(bEntity) &&
+                (cell.Type == EditorTileType::Light || cell.Type == EditorTileType::Medium || cell.Type == EditorTileType::Hard))
+            {
+                m_registry.GetComponent<SpriteComponent>(bEntity).Tint = cell.CustomColor;
+            }
+
+            if (cell.Type == EditorTileType::Lantern)
+            {
+                if (m_registry.HasComponent<LightSourceComponent>(bEntity))
+                {
+                    auto& light = m_registry.GetComponent<LightSourceComponent>(bEntity);
+                    light.LightColor = cell.LanternLightColor;
+                    light.Radius = std::clamp(cell.LanternLightRadius, 80.0f, 520.0f);
+                    light.Intensity = std::clamp(cell.LanternLightIntensity, 0.2f, 2.5f);
+                }
+                if (m_registry.HasComponent<SpriteComponent>(bEntity))
+                {
+                    m_registry.GetComponent<SpriteComponent>(bEntity).Tint = cell.LanternLightColor;
+                }
             }
 
             if (bType != BrickType::Metal && bType != BrickType::Special)
@@ -343,6 +367,8 @@ void CustomLevelPlayScene::RebuildPlayfieldFromPage(size_t pageIdx, GameContext&
                     .ShootTimer = cell.TurretInitialDelay + static_cast<float>(m_turretBricks.size()) * 0.35f,
                     .Cooldown = cell.TurretCooldown,
                     .ProjectileSpeed = cell.TurretProjectileSpeed,
+                    .Damage = cell.TurretDamage,
+                    .Aimed = cell.TurretAimed,
                     .BaseHP = cell.HitPoints
                 });
             }
@@ -387,7 +413,7 @@ void CustomLevelPlayScene::OnUpdate(float dt, GameContext& context)
     }
 
     // Multi-page progression within the current custom level
-    if (!IsCountdownActive() && !m_isPaddleDestroyed && m_brickCount <= 0)
+    if (!IsCountdownActive() && !IsPaddleExploding() && m_brickCount <= 0)
     {
         if (auto nextPage = FindNextPlayablePage(m_activePageIndex + 1); nextPage.has_value())
         {
@@ -401,9 +427,20 @@ void CustomLevelPlayScene::OnUpdate(float dt, GameContext& context)
         }
     }
 
+    // Initial Event triggered once right when gameplay starts after countdown
+    if (!m_initialEventTriggered && !IsCountdownActive() && !IsPaddleExploding())
+    {
+        m_initialEventTriggered = true;
+        const ArenaEventType initEv = m_levelData.GetInitialEvent();
+        if (initEv != ArenaEventType::None && mp_eventSystem)
+        {
+            mp_eventSystem->TriggerEvent(initEv, /*skipWarning=*/true, /*subtleNotification=*/false);
+        }
+    }
+
     // Scheduled EventQueue execution (with alarm!)
     const auto& queue = m_levelData.GetEventQueue();
-    if (mp_eventSystem && m_nextQueuedEventIdx < queue.size() && !IsCountdownActive() && !m_isPaddleDestroyed)
+    if (mp_eventSystem && m_nextQueuedEventIdx < queue.size() && !IsCountdownActive() && !IsPaddleExploding())
     {
         m_levelElapsed += dt;
         const auto& nextEv = queue[m_nextQueuedEventIdx];
@@ -415,33 +452,9 @@ void CustomLevelPlayScene::OnUpdate(float dt, GameContext& context)
         }
     }
 
-    // Paddle destruction death sequence
-    if (m_isPaddleDestroyed)
+    if (IsPaddleExploding() || IsBallDying())
     {
-        m_paddleDestroyedTimer -= dt;
         return;
-    }
-
-    // Paddle red hit flash recovery
-    if (m_paddleDamageFlashTimer > 0.0f)
-    {
-        m_paddleDamageFlashTimer = std::max(0.0f, m_paddleDamageFlashTimer - dt);
-        if (m_paddleDamageFlashTimer <= 0.0f && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-        {
-            m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Colors::White;
-        }
-    }
-
-    // Critical 1-HP paddle sparks
-    if (m_lives == 1 && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
-    {
-        m_sparkEmissionTimer -= dt;
-        if (m_sparkEmissionTimer <= 0.0f)
-        {
-            m_sparkEmissionTimer = 0.14f;
-            const Vector2f pPos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
-            SpawnExplosionParticles(pPos, Color{255, 190, 60, 255}, 4);
-        }
     }
 
     UpdateTurrets(dt, context);
@@ -454,13 +467,12 @@ void CustomLevelPlayScene::OnRender(GameContext& context)
 
 void CustomLevelPlayScene::RenderSceneSpecificHUD(GameContext& context)
 {
-    // World-space overlays (turrets, triangle missiles, paddle cracks)
+    // World-space overlays (turrets & triangle missiles; paddle damage feedback is rendered by GameScene)
     if (m_registry.IsAlive(m_camera) && m_registry.HasComponent<Camera2D>(m_camera))
     {
         context.Render.SetCamera(m_registry.GetComponent<Camera2D>(m_camera));
     }
     RenderTurrets(context);
-    RenderPaddleDurabilityOverlay(context);
 
     // Screen-space concise level / playlist badge
     Camera2D uiCam{};
@@ -494,84 +506,32 @@ void CustomLevelPlayScene::RenderSceneSpecificHUD(GameContext& context)
     context.Render.DrawTextCentered(header, m_fontId, 19.0f, Transform2D{badgePos}, Color{225, 245, 255, 245});
 }
 
+void CustomLevelPlayScene::ResetTurretsAndProjectiles()
+{
+    m_turretBullets.clear();
+    float stagger = 0.0f;
+    for (auto& tb : m_turretBricks)
+    {
+        tb.ShootTimer = std::max(tb.Cooldown, 2.2f) + stagger;
+        stagger += 0.40f;
+        if (m_registry.IsAlive(tb.EntityId) && m_registry.HasComponent<SpriteComponent>(tb.EntityId))
+        {
+            const Color baseCol = (tb.BaseHP > 3)
+                ? BrickFactory::GetColorForHitPoints(tb.BaseHP)
+                : Color{255, 45, 55, 255};
+            m_registry.GetComponent<SpriteComponent>(tb.EntityId).Tint = baseCol;
+        }
+    }
+}
+
 void CustomLevelPlayScene::UpdateTurrets(float dt, GameContext& context)
 {
-    if (IsCountdownActive())
+    if (IsCountdownActive() || IsPaddleExploding() || IsBallDying())
     {
         return;
     }
 
-    for (auto it = m_turretBricks.begin(); it != m_turretBricks.end(); )
-    {
-        if (!m_registry.IsAlive(it->EntityId) || !m_registry.HasComponent<BrickComponent>(it->EntityId) ||
-            m_registry.GetComponent<BrickComponent>(it->EntityId).HitPoints == 0)
-        {
-            it = m_turretBricks.erase(it);
-            continue;
-        }
-
-        const auto& brick = m_registry.GetComponent<BrickComponent>(it->EntityId);
-        if (brick.IsDescending)
-        {
-            ++it;
-            continue;
-        }
-
-        it->ShootTimer -= dt;
-
-        if (it->ShootTimer <= 0.45f && m_registry.HasComponent<Transform2D>(it->EntityId))
-        {
-            const float pulse = 0.5f + 0.5f * std::sin(it->ShootTimer * 30.0f);
-            if (m_registry.HasComponent<SpriteComponent>(it->EntityId))
-            {
-                m_registry.GetComponent<SpriteComponent>(it->EntityId).Tint = Color{
-                    255,
-                    static_cast<uint8_t>(45 + 140 * pulse),
-                    static_cast<uint8_t>(55 + 140 * pulse),
-                    255
-                };
-            }
-        }
-
-        if (it->ShootTimer <= 0.0f)
-        {
-            it->ShootTimer = it->Cooldown;
-
-            if (m_registry.HasComponent<Transform2D>(it->EntityId))
-            {
-                const auto& bTrans = m_registry.GetComponent<Transform2D>(it->EntityId);
-                const Vector2f spawnPos{bTrans.Position.X, bTrans.Position.Y + 18.0f};
-
-                TriangleProjectile proj;
-                proj.Position = spawnPos;
-                proj.Velocity = Vector2f{0.0f, it->ProjectileSpeed};
-                proj.Size = 16.0f;
-                m_turretBullets.push_back(proj);
-
-                SpawnExplosionParticles(spawnPos, Color{255, 80, 40, 255}, 12);
-                if (m_audioEnabled && m_bossLaserSfxId != 0)
-                {
-                    context.Audio.PlaySfx(m_bossLaserSfxId, 55.0f, 1.45f);
-                }
-            }
-
-            if (m_registry.HasComponent<SpriteComponent>(it->EntityId))
-            {
-                const Color baseCol = (it->BaseHP > 3)
-                    ? BrickFactory::GetColorForHitPoints(it->BaseHP)
-                    : Color{255, 45, 55, 255};
-                m_registry.GetComponent<SpriteComponent>(it->EntityId).Tint = baseCol;
-            }
-        }
-        ++it;
-    }
-
-    if (m_turretBullets.empty())
-    {
-        return;
-    }
-
-    const bool hasPaddle = m_registry.IsAlive(m_paddle) && !m_isPaddleDestroyed &&
+    const bool hasPaddle = m_registry.IsAlive(m_paddle) && !IsPaddleExploding() &&
                            m_registry.HasComponent<Transform2D>(m_paddle) &&
                            m_registry.HasComponent<BoxCollider>(m_paddle);
 
@@ -585,17 +545,103 @@ void CustomLevelPlayScene::UpdateTurrets(float dt, GameContext& context)
         halfSize = pCol.GetEffectiveSize(pTrans.Scale) * 0.5f;
     }
 
+    if (!IsBallAttached())
+    {
+        for (auto it = m_turretBricks.begin(); it != m_turretBricks.end(); )
+        {
+            if (!m_registry.IsAlive(it->EntityId) || !m_registry.HasComponent<BrickComponent>(it->EntityId) ||
+                m_registry.GetComponent<BrickComponent>(it->EntityId).HitPoints == 0)
+            {
+                it = m_turretBricks.erase(it);
+                continue;
+            }
+
+            const auto& brick = m_registry.GetComponent<BrickComponent>(it->EntityId);
+            if (brick.IsDescending)
+            {
+                ++it;
+                continue;
+            }
+
+            it->ShootTimer -= dt;
+
+            if (it->ShootTimer <= 0.45f && m_registry.HasComponent<Transform2D>(it->EntityId))
+            {
+                const float pulse = 0.5f + 0.5f * std::sin(it->ShootTimer * 30.0f);
+                if (m_registry.HasComponent<SpriteComponent>(it->EntityId))
+                {
+                    m_registry.GetComponent<SpriteComponent>(it->EntityId).Tint = Color{
+                        255,
+                        static_cast<uint8_t>(45 + 140 * pulse),
+                        static_cast<uint8_t>(55 + 140 * pulse),
+                        255
+                    };
+                }
+            }
+
+            if (it->ShootTimer <= 0.0f)
+            {
+                it->ShootTimer = it->Cooldown;
+
+                if (m_registry.HasComponent<Transform2D>(it->EntityId))
+                {
+                    const auto& bTrans = m_registry.GetComponent<Transform2D>(it->EntityId);
+                    const Vector2f spawnPos{bTrans.Position.X, bTrans.Position.Y + 18.0f};
+
+                    Vector2f vel{0.0f, it->ProjectileSpeed};
+                    if (it->Aimed && hasPaddle)
+                    {
+                        Vector2f dir = paddlePos - spawnPos;
+                        dir.Y = std::max(80.0f, dir.Y);
+                        const float len = dir.Length();
+                        if (len > 0.001f)
+                        {
+                            vel = (dir / len) * it->ProjectileSpeed;
+                        }
+                    }
+
+                    TriangleProjectile proj;
+                    proj.Position = spawnPos;
+                    proj.Velocity = vel;
+                    proj.Size = 16.0f;
+                    proj.Damage = it->Damage;
+                    m_turretBullets.push_back(proj);
+
+                    SpawnExplosionParticles(spawnPos, Color{255, 80, 40, 255}, 12);
+                    if (m_audioEnabled && m_bossLaserSfxId != 0)
+                    {
+                        context.Audio.PlaySfx(m_bossLaserSfxId, 55.0f, 1.45f);
+                    }
+                }
+
+                if (m_registry.HasComponent<SpriteComponent>(it->EntityId))
+                {
+                    const Color baseCol = (it->BaseHP > 3)
+                        ? BrickFactory::GetColorForHitPoints(it->BaseHP)
+                        : Color{255, 45, 55, 255};
+                    m_registry.GetComponent<SpriteComponent>(it->EntityId).Tint = baseCol;
+                }
+            }
+            ++it;
+        }
+    }
+
+    if (m_turretBullets.empty())
+    {
+        return;
+    }
+
     for (auto it = m_turretBullets.begin(); it != m_turretBullets.end(); )
     {
-        it->Position.Y += it->Velocity.Y * dt;
+        it->Position += it->Velocity * dt;
 
-        if (it->Position.Y > 450.0f)
+        if (it->Position.Y > 450.0f || std::abs(it->Position.X) > 760.0f)
         {
             it = m_turretBullets.erase(it);
             continue;
         }
 
-        if (hasPaddle)
+        if (hasPaddle && !IsPaddleExploding())
         {
             const float projW = it->Size * 0.75f;
             const float projH = it->Size * 0.85f;
@@ -607,31 +653,13 @@ void CustomLevelPlayScene::UpdateTurrets(float dt, GameContext& context)
             if (hitX && hitY)
             {
                 const Vector2f impactPos = it->Position;
+                const float dmg = it->Damage;
                 it = m_turretBullets.erase(it);
 
-                SpawnExplosionParticles(impactPos, Color{255, 60, 40, 255}, 28);
-                TweenEffects::Shake(m_registry, m_camera, 0.35f, 16.0f);
-                if (m_audioEnabled && m_paddleCrackSfxId != 0)
+                DamagePaddle(dmg, impactPos, context);
+                if (IsPaddleExploding())
                 {
-                    context.Audio.PlaySfx(m_paddleCrackSfxId, 85.0f, 0.85f);
-                }
-
-                m_paddleDamageFlashTimer = 0.28f;
-                if (m_registry.HasComponent<SpriteComponent>(m_paddle))
-                {
-                    m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Color{255, 50, 50, 255};
-                }
-
-                if (!context.Rules.GetRule(Rule::Gameplay::InfiniteLives))
-                {
-                    --m_lives;
-                    context.Events.Publish(LivesChangedEvent(m_lives));
-                    if (m_lives <= 0)
-                    {
-                        m_lives = 0;
-                        TriggerPaddleExplosion(context);
-                        return;
-                    }
+                    return;
                 }
                 continue;
             }
@@ -694,94 +722,14 @@ void CustomLevelPlayScene::RenderTurrets(GameContext& context) const
     }
 }
 
-void CustomLevelPlayScene::TriggerPaddleExplosion(GameContext& context)
+void CustomLevelPlayScene::OnPaddleShattered(GameContext& /*context*/)
 {
-    m_isPaddleDestroyed = true;
-    m_paddleDestroyedTimer = 0.85f;
-    m_lives = 0;
-
-    Vector2f paddlePos{0.0f, 350.0f};
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
-    {
-        paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
-    }
-
-    Color paddleThemeColor{200, 235, 255, 255};
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<LightSourceComponent>(m_paddle))
-    {
-        paddleThemeColor = m_registry.GetComponent<LightSourceComponent>(m_paddle).LightColor;
-    }
-    else
-    {
-        const std::string skin = ProfileManager::Get().GetEquippedCosmetic(CosmeticSlot::PaddleSkin);
-        if (skin == "paddle_gold_plating")
-        {
-            paddleThemeColor = Color{255, 215, 0, 255};
-        }
-        else if (skin == "paddle_obsidian")
-        {
-            paddleThemeColor = Color{140, 60, 220, 255};
-        }
-    }
-
-    const Color secondaryColor{
-        static_cast<uint8_t>(std::min(255, paddleThemeColor.r + 40)),
-        static_cast<uint8_t>(std::min(255, paddleThemeColor.g + 40)),
-        static_cast<uint8_t>(std::min(255, paddleThemeColor.b + 40)),
-        255
-    };
-
-    SpawnExplosionParticles(paddlePos, paddleThemeColor, 75);
-    SpawnExplosionParticles(paddlePos, secondaryColor, 55);
-    SpawnLightFlash(paddlePos, 420.0f, paddleThemeColor, 3.0f, 0.5f);
-    TweenEffects::Shake(m_registry, m_camera, 0.55f, 22.0f);
-
-    if (m_audioEnabled && m_explosionSfxId != 0)
-    {
-        context.Audio.PlaySfx(m_explosionSfxId, 100.0f, 0.85f);
-    }
-
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-    {
-        m_registry.GetComponent<SpriteComponent>(m_paddle).Tint.a = 0;
-    }
-    if (mp_paddleSystem)
-    {
-        mp_paddleSystem->SetInputEnabled(false);
-    }
-    if (mp_ballSystem)
-    {
-        mp_ballSystem->ClearBalls(m_ball);
-    }
+    ResetTurretsAndProjectiles();
 }
 
-void CustomLevelPlayScene::RenderPaddleDurabilityOverlay(GameContext& context) const
+void CustomLevelPlayScene::OnLifeLost(GameContext& /*context*/)
 {
-    if (!m_registry.IsAlive(m_paddle) || m_isPaddleDestroyed ||
-        !m_registry.HasComponent<Transform2D>(m_paddle) || !m_registry.HasComponent<BoxCollider>(m_paddle))
-    {
-        return;
-    }
-
-    auto& registry = const_cast<Registry&>(m_registry);
-    const auto& pTrans = registry.GetComponent<Transform2D>(m_paddle);
-    const auto& pCol = registry.GetComponent<BoxCollider>(m_paddle);
-    const Vector2f effSize = pCol.GetEffectiveSize(pTrans.Scale);
-
-    if (m_lives < 3 && m_lives > 0)
-    {
-        const Color crackCol = (m_lives == 1) ? Color{255, 50, 50, 220} : Color{220, 220, 220, 170};
-        const float halfW = effSize.X * 0.5f;
-        const float halfH = effSize.Y * 0.5f;
-
-        context.Render.DrawLine(Vector2f{pTrans.Position.X - halfW * 0.35f, pTrans.Position.Y - halfH},
-                                Vector2f{pTrans.Position.X - halfW * 0.15f, pTrans.Position.Y + halfH}, crackCol, 2.0f);
-        if (m_lives == 1)
-        {
-            context.Render.DrawLine(Vector2f{pTrans.Position.X + halfW * 0.25f, pTrans.Position.Y - halfH},
-                                    Vector2f{pTrans.Position.X + halfW * 0.40f, pTrans.Position.Y + halfH}, crackCol, 2.0f);
-        }
-    }
+    ResetTurretsAndProjectiles();
 }
 
 void CustomLevelPlayScene::ReturnToRobostock(GameContext& context)
@@ -789,7 +737,7 @@ void CustomLevelPlayScene::ReturnToRobostock(GameContext& context)
     const std::string focusId = (!m_levelIds.empty() && m_currentSlot < m_levelIds.size())
         ? m_levelIds[m_currentSlot]
         : std::string{};
-    context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 0.9f, 60.0f, true);
+    context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 0.9f, AudioMixer::kNominalMusicLevel, true);
     context.Scenes.LoadSceneWithTransition<RobostockScene>(
         SceneTransitionConfig{.Type = SceneTransitionType::StaticSnow, .Duration = 0.55f},
         focusId);

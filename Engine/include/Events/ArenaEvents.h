@@ -29,6 +29,113 @@ enum class ArenaEventState : int
     Cooldown
 };
 
+#include <vector>
+
+struct ArenaEventDescriptor
+{
+    ArenaEventType Type = ArenaEventType::None;
+    const char*    Id = "none";
+    const char*    DisplayName = "NONE";
+    const char*    ShortLabel = "NONE";
+    const char*    Description = "Arena is stable";
+    Color          AccentColor = Colors::White;
+};
+
+inline const std::vector<ArenaEventDescriptor>& GetArenaEventCatalog()
+{
+    static const std::vector<ArenaEventDescriptor> catalog = {
+        {
+            ArenaEventType::TemporalFlux,
+            "temporal_flux",
+            "Temporal Flux",
+            "TEMPO",
+            "Alternating slow-motion and high-speed time warp",
+            Color{180, 110, 255, 255}
+        },
+        {
+            ArenaEventType::GravityShiftLeft,
+            "gravity_left",
+            "Gravity Shift (Left)",
+            "GRAV L",
+            "Arena tilts and pulls active balls to the left",
+            Color{255, 175, 45, 255}
+        },
+        {
+            ArenaEventType::GravityShiftRight,
+            "gravity_right",
+            "Gravity Shift (Right)",
+            "GRAV R",
+            "Arena tilts and pulls active balls to the right",
+            Color{255, 175, 45, 255}
+        },
+        {
+            ArenaEventType::GravityShiftDown,
+            "gravity_down",
+            "Heavy Gravity",
+            "GRAVITY",
+            "Heavy downward gravity pulls active balls",
+            Color{255, 140, 30, 255}
+        },
+        {
+            ArenaEventType::CameraEarthquake,
+            "earthquake",
+            "Camera Earthquake",
+            "QUAKE",
+            "Seismic tremor agitates ball trajectories",
+            Color{255, 65, 80, 255}
+        },
+        {
+            ArenaEventType::SolarFlareBlackout,
+            "solar_blackout",
+            "Solar Blackout",
+            "ECLIPSE",
+            "Arena lights cut out with sweeping searchlights",
+            Color{255, 230, 90, 255}
+        },
+        {
+            ArenaEventType::MeteorShower,
+            "meteor_shower",
+            "Meteor Shower",
+            "METEORS",
+            "Falling meteors rain across the arena",
+            Color{255, 100, 35, 255}
+        },
+        {
+            ArenaEventType::UltimateLockdown,
+            "emp_lockdown",
+            "EMP Lockdown",
+            "EMP LOCK",
+            "Electromagnetic pulse disables Ultimate abilities",
+            Color{0, 235, 255, 255}
+        }
+    };
+    return catalog;
+}
+
+inline const ArenaEventDescriptor* FindArenaEventDescriptor(ArenaEventType type)
+{
+    for (const auto& desc : GetArenaEventCatalog())
+    {
+        if (desc.Type == type)
+        {
+            return &desc;
+        }
+    }
+    return nullptr;
+}
+
+inline const ArenaEventDescriptor* FindArenaEventDescriptorById(const std::string& id)
+{
+    for (const auto& desc : GetArenaEventCatalog())
+    {
+        if (id == desc.Id)
+        {
+            return &desc;
+        }
+    }
+    return nullptr;
+}
+
 inline const char* GetArenaEventName(ArenaEventType type)
 {
     switch (type)
@@ -47,34 +154,20 @@ inline const char* GetArenaEventName(ArenaEventType type)
 
 inline const char* GetArenaEventDescription(ArenaEventType type)
 {
-    switch (type)
+    if (const auto* desc = FindArenaEventDescriptor(type))
     {
-        case ArenaEventType::TemporalFlux:       return "Dynamic multi-phase time warp alternating between slow-motion and high speed";
-        case ArenaEventType::GravityShiftLeft:   return "Dynamic arena tilt pulling active balls to the left";
-        case ArenaEventType::GravityShiftRight:  return "Dynamic arena tilt pulling active balls to the right";
-        case ArenaEventType::GravityShiftDown:   return "Heavy gravity pulling active balls downwards";
-        case ArenaEventType::CameraEarthquake:   return "Violent camera vibration and turbulent ball agitation";
-        case ArenaEventType::SolarFlareBlackout: return "Dynamic darkness sweep and sweeping searchlights";
-        case ArenaEventType::MeteorShower:       return "Environmental meteor projectiles raining from above";
-        case ArenaEventType::UltimateLockdown:   return "Electromagnetic pulse disabling Ultimate Ability activations for 45s";
-        default:                                 return "Arena is stable";
+        return desc->Description;
     }
+    return "Arena is stable";
 }
 
 inline Color GetArenaEventColor(ArenaEventType type)
 {
-    switch (type)
+    if (const auto* desc = FindArenaEventDescriptor(type))
     {
-        case ArenaEventType::TemporalFlux:       return Color{180, 110, 255, 255}; // Deep Neon Violet
-        case ArenaEventType::GravityShiftLeft:   return Color{255, 175, 45, 255};  // Amber
-        case ArenaEventType::GravityShiftRight:  return Color{255, 175, 45, 255};  // Amber
-        case ArenaEventType::GravityShiftDown:   return Color{255, 140, 30, 255};  // Deep Orange
-        case ArenaEventType::CameraEarthquake:   return Color{255, 65, 80, 255};   // Crimson Red
-        case ArenaEventType::SolarFlareBlackout: return Color{255, 230, 90, 255};  // Solar Gold
-        case ArenaEventType::MeteorShower:       return Color{255, 100, 35, 255};  // Fiery Orange
-        case ArenaEventType::UltimateLockdown:   return Color{0, 235, 255, 255};   // EMP Cyan
-        default:                                 return Colors::White;
+        return desc->AccentColor;
     }
+    return Colors::White;
 }
 
 struct ArenaEventWarningStartedEvent : public Event

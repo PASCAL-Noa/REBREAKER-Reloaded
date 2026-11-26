@@ -60,11 +60,15 @@ public:
     void    TriggerPostProcessFlash(float caIntensity, float vignetteIntensity, const Color& vignetteColor, float flashIntensity = 0.0f, const Color& flashColor = Colors::White);
     void    UpdateComboBackgroundColor(uint32_t comboMultiplier);
     void    ApplyLevelTheme(int levelNumber);
+    void    ApplyCustomLighting(const LevelTheme& theme, const Color& paddleLightColor, float coneAngleDeg, float lightRange, float lightIntensity);
     [[nodiscard]] const LevelTheme& GetCurrentTheme() const { return m_currentTheme; }
 
     [[nodiscard]] const GameContext*    GetContext() const { return mp_context; }
     [[nodiscard]] int     GetLives() const { return m_lives; }
-    [[nodiscard]] virtual bool IsGameOver() const { return m_lives <= 0; }
+    [[nodiscard]] virtual bool IsGameOver() const { return m_lives <= 0 && (!m_isPaddleExploding || m_paddleRespawnTimer <= 0.0f); }
+    [[nodiscard]] bool    IsPaddleExploding() const noexcept { return m_isPaddleExploding; }
+    bool    DamagePaddle(float rawDamage, const Vector2f& impactPos, GameContext& context, bool ignoreInvuln = false);
+    void    ResetPaddleDurability(float spawnInvuln = 0.0f);
     [[nodiscard]] virtual bool IsLevelCleared() const { return m_brickCount <= 0; }
     [[nodiscard]] int     GetBrickCount() const { return m_brickCount; }
     [[nodiscard]] bool    CanUnpause() const;
@@ -206,6 +210,21 @@ protected:
     void    UpdateVisualMalus(float dt);
     void    UpdateHazardZones(float dt);
 
+    // Event Bricks & Unified Paddle Damage System
+    void    TriggerEventBrick(Entity entity, const Vector2f& pos);
+    void    UpdateEventBrickFeedback(float dt);
+    void    RenderEventBrickWorldFeedback(GameContext& context);
+    void    RenderEventBrickToastHUD(GameContext& context);
+    void    UpdatePaddleDamageSystem(float dt, GameContext& context);
+    void    RenderPaddleDamageFeedback(GameContext& context);
+    virtual void OnPaddleShattered(GameContext& context) { (void)context; }
+    virtual void OnPaddleRespawned(GameContext& context) { (void)context; }
+    virtual void OnLifeLost(GameContext& context) { (void)context; }
+    [[nodiscard]] bool IsBallDying() const noexcept { return m_ballState == BallState::Dying; }
+    [[nodiscard]] bool IsBallAttached() const noexcept { return m_ballState == BallState::Attached; }
+
+    bool m_arenaEventsAllowed = true;
+
     std::unique_ptr<StateMachine<GameScene>> mp_state_machine;
     Entity  m_ball{};
     Entity  m_paddle{};
@@ -329,6 +348,7 @@ protected:
     bool                m_musicEnabled = true;
     bool                m_audioEnabled = true;
     bool                m_renderGameUI = true;
+    bool                m_isInUpdateStep = false;
 
     // Ambient background & dynamic shader effects
     AmbientBackground   m_ambientBackground;
@@ -558,4 +578,59 @@ protected:
     void    RenderLuckyQuestionMarks(GameContext& context);
     void    RenderActiveUltimateVisuals(GameContext& context);
     void    RestoreDiscoBricks();
+
+    // Event Brick Subtle World & HUD Feedback
+    struct EventRipple
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Color    Accent{45, 220, 235, 255};
+        float    Radius = 16.0f;
+        float    MaxRadius = 180.0f;
+        float    Lifetime = 0.55f;
+        float    MaxLifetime = 0.55f;
+    };
+    std::vector<EventRipple> m_eventRipples;
+    std::string m_eventToastTitle;
+    std::string m_eventToastDesc;
+    Color       m_eventToastColor{45, 220, 235, 255};
+    float       m_eventToastTimer = 0.0f;
+    float       m_eventToastMaxDuration = 2.8f;
+
+    // Unified Paddle Damage, Visual Feedback & Life-Based Shatter/Respawn System
+    uint32_t    m_paddleCrackSfxId = 0;
+    bool        m_isPaddleExploding = false;
+    float       m_paddleRespawnTimer = 0.0f;
+    float       m_paddleHitFlashTimer = 0.0f;
+    float       m_paddleShieldFlashTimer = 0.0f;
+    float       m_paddleRecoilY = 0.0f;
+    float       m_paddleRecoilTilt = 0.0f;
+    float       m_paddleSquashTimer = 0.0f;
+    float       m_paddleRematerializeTimer = 0.0f;
+    float       m_paddleCritSparkTimer = 0.0f;
+    float       m_paddleHudRevealTimer = 0.0f;
+    float       m_paddleBeamFeedbackCooldown = 0.0f;
+    float       m_paddleBaseY = 300.0f;
+
+    struct PaddleImpactRipple
+    {
+        Vector2f Position{0.0f, 0.0f};
+        Color    Accent{255, 110, 70, 255};
+        float    Radius = 10.0f;
+        float    MaxRadius = 90.0f;
+        float    Lifetime = 0.35f;
+        float    MaxLifetime = 0.35f;
+    };
+    std::vector<PaddleImpactRipple> m_paddleImpactRipples;
+
+    struct FloatingCallout
+    {
+        Vector2f    Position{0.0f, 0.0f};
+        Vector2f    Velocity{0.0f, -55.0f};
+        std::string Text;
+        Color       Tint{255, 100, 80, 255};
+        float       Lifetime = 0.95f;
+        float       MaxLifetime = 0.95f;
+        float       FontSize = 20.0f;
+    };
+    std::vector<FloatingCallout> m_floatingCallouts;
 };

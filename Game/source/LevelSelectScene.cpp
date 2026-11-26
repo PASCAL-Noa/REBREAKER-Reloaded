@@ -45,7 +45,7 @@ void LevelSelectScene::OnInit(GameContext& context)
     m_levelManager.PreloadLevels(context.Resources);
 
     // Keep menu music playing across menu navigation
-    context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+    context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
 
     m_selectedLevelIndex = 0;
     m_currentPage = 0;
@@ -81,7 +81,7 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
         {
             context.Audio.PlaySfx(m_clickSfxId, 80.0f);
         }
-        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
         MenuScene::SetReturnWithDezoom(true);
         context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
@@ -199,7 +199,7 @@ void LevelSelectScene::OnUpdate(float dt, GameContext& context)
         centeredMouse.Y >= backY - 26.0f && centeredMouse.Y <= backY + 26.0f)
     {
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 80.0f);
-        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
         MenuScene::SetReturnWithDezoom(true);
         context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
@@ -394,14 +394,14 @@ void LevelSelectScene::RenderThumbnailsAndEffects(const GameContext& context) co
     // Back Button
     context.Render.DrawRectangle(btnW, btnH, Transform2D{Vector2f{screenCenterX - 135.0f, backY}}, Color{95, 35, 42, 255});
     context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{Vector2f{screenCenterX - 135.0f, backY}}, Color{180, 60, 70, 200}, 2.0f);
-    context.Render.DrawTextCentered("<- RETOUR [ECHAP]", m_fontId, 22.0f,
+    context.Render.DrawTextCentered("<- BACK [ESC]", m_fontId, 22.0f,
         Transform2D{Vector2f{screenCenterX - 135.0f, backY}},
         Colors::White);
 
     // Custom Match Button
     context.Render.DrawRectangle(btnW, btnH, Transform2D{Vector2f{screenCenterX + 135.0f, backY}}, Color{28, 55, 95, 255});
     context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{Vector2f{screenCenterX + 135.0f, backY}}, Colors::Gold, 2.0f);
-    context.Render.DrawTextCentered("PARTIE PERSO [C]", m_fontId, 22.0f,
+    context.Render.DrawTextCentered("CUSTOM MATCH [C]", m_fontId, 22.0f,
         Transform2D{Vector2f{screenCenterX + 135.0f, backY}},
         Colors::Gold);
 }

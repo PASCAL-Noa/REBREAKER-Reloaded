@@ -25,6 +25,9 @@
 
 namespace
 {
+    constexpr float kEventQueueListStartOffsetY = 382.0f;
+    constexpr int   kEventQueueMaxVisible = 5;
+
     std::string FormatOneDecimal(float val)
     {
         char buf[32];
@@ -32,38 +35,91 @@ namespace
         return std::string(buf);
     }
 
-    const char* GetHitPointsColorName(int hp)
+    std::string FormatTwoDecimals(float val)
     {
-        switch (std::clamp(hp, 1, 9))
-        {
-        case 1: return "VERT EMERAUDE";
-        case 2: return "JAUNE SOLAIRE";
-        case 3: return "ROUGE CRAMOISI";
-        case 4: return "ORANGE VIF";
-        case 5: return "CYAN ELECTRIQUE";
-        case 6: return "BLEU AZUR";
-        case 7: return "VIOLET PLASMA";
-        case 8: return "MAGENTA NEON";
-        case 9: return "OR DIAMANT";
-        default: return "";
-        }
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.2f", val);
+        return std::string(buf);
     }
 
-    const char* GetTileTypeName(EditorTileType type)
+    // Curated swatches for element tints, lantern colors, and environment lighting
+    constexpr Color kAccentSwatches[8] = {
+        Color{80, 220, 255, 255},   // Cyan
+        Color{70, 235, 130, 255},   // Emerald
+        Color{255, 215, 70, 255},   // Gold
+        Color{255, 115, 55, 255},   // Coral
+        Color{255, 65, 215, 255},   // Magenta
+        Color{165, 95, 255, 255},   // Violet
+        Color{235, 245, 255, 255},  // Ice White
+        Color{255, 60, 75, 255}     // Crimson
+    };
+
+    constexpr Color kLanternSwatches[8] = {
+        Color{255, 235, 130, 255},  // Warm Amber
+        Color{100, 235, 255, 255},  // Cyan Glow
+        Color{110, 255, 165, 255},  // Mint Glow
+        Color{255, 110, 225, 255},  // Neon Pink
+        Color{255, 95, 95, 255},    // Red Alert
+        Color{180, 125, 255, 255},  // Plasma Violet
+        Color{245, 250, 255, 255},  // Daylight White
+        Color{255, 160, 70, 255}    // Sunset Orange
+    };
+
+    constexpr Color kBgDarkSwatches[8] = {
+        Color{10, 14, 26, 255},     // Deep Space
+        Color{18, 10, 32, 255},     // Cyber Violet
+        Color{28, 12, 10, 255},     // Solar Ember
+        Color{8, 22, 16, 255},      // Toxic Dark
+        Color{6, 7, 12, 255},       // Void Black
+        Color{10, 24, 38, 255},     // Arctic Navy
+        Color{30, 8, 14, 255},      // Crimson Dark
+        Color{22, 18, 10, 255}      // Cathedral Bronze
+    };
+
+    constexpr Color kBgSecondarySwatches[8] = {
+        Color{22, 34, 62, 255},
+        Color{42, 18, 72, 255},
+        Color{68, 26, 18, 255},
+        Color{18, 52, 34, 255},
+        Color{22, 16, 40, 255},
+        Color{24, 56, 86, 255},
+        Color{74, 18, 28, 255},
+        Color{58, 44, 22, 255}
+    };
+
+    constexpr Color kAmbientSwatches[8] = {
+        Color{55, 95, 165, 255},
+        Color{135, 65, 205, 255},
+        Color{190, 95, 50, 255},
+        Color{50, 175, 95, 255},
+        Color{80, 85, 130, 255},
+        Color{95, 185, 225, 255},
+        Color{195, 55, 75, 255},
+        Color{215, 175, 85, 255}
+    };
+
+    bool ColorsApproxEqual(Color a, Color b)
     {
-        switch (type)
-        {
-        case EditorTileType::Light:   return "1. LIGHT";
-        case EditorTileType::Medium:  return "2. MEDIUM";
-        case EditorTileType::Hard:    return "3. HARD";
-        case EditorTileType::Special: return "*. BONUS";
-        case EditorTileType::Metal:   return "M. METAL";
-        case EditorTileType::Bomb:    return "B. BOMBE";
-        case EditorTileType::Turret:  return "V. TOURELLE";
-        case EditorTileType::Lantern: return "L. LANTERNE";
-        default:                      return "VIDE";
-        }
+        return std::abs(static_cast<int>(a.r) - static_cast<int>(b.r)) <= 6 &&
+               std::abs(static_cast<int>(a.g) - static_cast<int>(b.g)) <= 6 &&
+               std::abs(static_cast<int>(a.b) - static_cast<int>(b.b)) <= 6;
     }
+
+    constexpr float kLeftPanelWidth = 286.0f;
+    constexpr float kRightPanelWidth = 410.0f;
+    constexpr float kToolbarHeight = 74.0f;
+
+    constexpr EditorTileType kPaletteTiles[9] = {
+        EditorTileType::Light,
+        EditorTileType::Medium,
+        EditorTileType::Hard,
+        EditorTileType::Special,
+        EditorTileType::Event,
+        EditorTileType::Metal,
+        EditorTileType::Bomb,
+        EditorTileType::Turret,
+        EditorTileType::Lantern
+    };
 }
 
 EditorScene::EditorScene()
@@ -84,14 +140,32 @@ EditorScene::EditorScene(std::string editLevelId, bool returnToRobostock)
     m_renderGameUI = false;
 }
 
+void EditorScene::ShowToast(const std::string& message, Color color, float duration)
+{
+    m_toastMessage = message;
+    m_toastColor = color;
+    m_toastTimer = duration;
+}
+
+void EditorScene::SyncEditorThemeMusic(GameContext& context) const
+{
+    const auto& track = m_levelData.GetTheme().MusicTrack;
+    if (track.empty()) return;
+    // PlayMusic reuses the live sf::Music instance and preserves its playback offset when the path matches.
+    const float level = (!m_musicEnabled || m_environmentMusicMuted) ? 0.0f : AudioMixer::kNominalMusicLevel;
+    context.Audio.PlayMusic(track, level, true);
+}
+
 void EditorScene::OnInit(GameContext& context)
 {
-    // Initialize base GameScene (creates systems, camera, and m_uiController)
-    m_renderGameUI = true;
+    // Initialize base GameScene with game UI & music disabled so neither the campaign playlist
+    // nor the countdown "READY" audio cue triggers on editor launch.
+    m_renderGameUI = false;
+    m_musicEnabled = false;
     GameScene::OnInit(context);
-    m_renderGameUI = false; // Keep hidden in edit mode
+    m_musicEnabled = true;
 
-    // 1. Immediately wipe the campaign playlist so it CANNOT play campaign tracks in the editor
+    // 1. Wipe campaign playlist so it cannot play campaign tracks in the editor
     m_playlist.Clear();
 
     // 2. Clean up any campaign bricks that GameScene::OnInit might have loaded
@@ -126,7 +200,10 @@ void EditorScene::OnInit(GameContext& context)
     m_shootSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup_laser.wav");
     m_hitSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
     m_bossLaserSfxId = m_shootSfxId;
-    m_paddleCrackSfxId = context.Resources.LoadResource("Resources/audio/sfx/brick_hit.wav");
+
+    // Reload persisted reusable custom themes
+    m_themeLibrary.Load();
+    m_selectedCustomThemeIdx = -1;
 
     // Load target Robostock level if opened for editing, otherwise generate default template
     bool loadedExisting = false;
@@ -140,8 +217,6 @@ void EditorScene::OnInit(GameContext& context)
                 m_currentSavePath = entry->FilePath;
             }
             loadedExisting = true;
-            m_statusMessage = m_editingLevelId + " // " + m_levelData.GetLevelName();
-            m_statusTimer = 2.5f;
         }
         else
         {
@@ -152,18 +227,23 @@ void EditorScene::OnInit(GameContext& context)
     if (!loadedExisting)
     {
         m_levelData.ProceduralGenerate(36, 0.40f, 1, 1337);
-        m_statusMessage = "REBREAKER MAKER PRET";
-        m_statusTimer = 2.5f;
     }
 
-    context.Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
+    // Match loaded theme to saved custom theme if applicable
+    if (!m_levelData.GetTheme().ThemeId.empty())
+    {
+        if (auto idx = m_themeLibrary.FindThemeIndex(m_levelData.GetTheme().ThemeId); idx.has_value())
+        {
+            m_selectedCustomThemeIdx = static_cast<int>(*idx);
+        }
+    }
+
+    SyncEditorThemeMusic(context);
 
     m_undoStack.clear();
     m_undoStack.push_back(m_levelData.CreateSnapshot());
 
     m_isPlaytesting = false;
-
-    // Reset ball once on scene startup
     ResetBallAndPaddle();
 }
 
@@ -174,16 +254,12 @@ void EditorScene::OnDestroy(GameContext& context)
 
 bool EditorScene::IsGameOver() const
 {
-    if (m_isPaddleDestroyed)
-    {
-        return m_paddleDestroyedTimer <= 0.0f;
-    }
-    return false;
+    return m_isPlaytesting && GameScene::IsGameOver();
 }
 
 bool EditorScene::IsLevelCleared() const
 {
-    if (!m_isPlaytesting || IsCountdownActive() || m_isPaddleDestroyed)
+    if (!m_isPlaytesting || IsCountdownActive() || IsPaddleExploding())
     {
         return false;
     }
@@ -214,7 +290,7 @@ void EditorScene::OnGameOverExit()
     if (m_isPlaytesting && mp_context)
     {
         m_playlist.Clear();
-        mp_context->Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
+        SyncEditorThemeMusic(*mp_context);
     }
 }
 
@@ -226,22 +302,10 @@ void EditorScene::FullReset()
     if (m_isPlaytesting && mp_context)
     {
         m_showDefeatModal = false;
-        m_isPaddleDestroyed = false;
-        m_paddleDestroyedTimer = 0.0f;
-        m_paddleDamageFlashTimer = 0.0f;
-        m_sparkEmissionTimer = 0.0f;
         m_playtestElapsed = 0.0f;
         m_nextQueuedEventIdx = 0;
 
-        if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-        {
-            m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Colors::White;
-        }
-        if (mp_paddleSystem)
-        {
-            mp_paddleSystem->SetInputEnabled(true);
-        }
-
+        ResetPaddleDurability(0.0f);
         ApplyEditorThemeToPlaytest();
         if (mp_eventSystem)
         {
@@ -262,7 +326,7 @@ void EditorScene::FullReset()
         mp_context->Events.Publish(LivesChangedEvent(m_lives));
         ResetBallAndPaddle();
         StartCountdown();
-        mp_context->Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
+        SyncEditorThemeMusic(*mp_context);
     }
     else if (mp_eventSystem)
     {
@@ -283,9 +347,7 @@ void EditorScene::OnVictoryEnter()
             m_isPlaytesting = false;
             m_renderGameUI = false;
         }
-        m_statusMessage = "VICTOIRE ! TOUTES LES PAGES COMPLETEES !";
-        m_statusTimer = 4.0f;
-        m_statusColor = Color{80, 255, 140, 255};
+        ShowToast("PLAYTEST CLEARED - ALL PAGES COMPLETE", Color{85, 245, 145, 255}, 3.2f);
     }
 }
 
@@ -298,8 +360,9 @@ void EditorScene::OnVictoryExit()
         RebuildPlayfieldFromPage(m_playtestPageIndex, *mp_context, true);
         m_lives = 3;
         mp_context->Events.Publish(LivesChangedEvent(m_lives));
+        ResetPaddleDurability(0.0f);
         ResetBallAndPaddle();
-        mp_context->Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
+        SyncEditorThemeMusic(*mp_context);
     }
 }
 
@@ -340,7 +403,7 @@ void EditorScene::RestorePostUltimateMusic()
     if (mp_context)
     {
         m_playlist.Clear();
-        mp_context->Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
+        SyncEditorThemeMusic(*mp_context);
     }
 }
 
@@ -348,9 +411,9 @@ void EditorScene::OnUpdate(float dt, GameContext& context)
 {
     mp_context = &context;
     m_pulseTimer += dt;
-    if (m_statusTimer > 0.0f)
+    if (m_toastTimer > 0.0f)
     {
-        m_statusTimer -= dt;
+        m_toastTimer = std::max(0.0f, m_toastTimer - dt);
     }
 
     if (m_isPlaytesting)
@@ -397,22 +460,8 @@ void EditorScene::OnUpdate(float dt, GameContext& context)
             m_pageBannerTimer = std::max(0.0f, m_pageBannerTimer - dt);
         }
 
-        // Paddle damage flash recovery
-        if (m_paddleDamageFlashTimer > 0.0f)
-        {
-            m_paddleDamageFlashTimer -= dt;
-            if (m_paddleDamageFlashTimer <= 0.0f)
-            {
-                m_paddleDamageFlashTimer = 0.0f;
-                if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle) && !m_isPaddleDestroyed)
-                {
-                    m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Colors::White;
-                }
-            }
-        }
-
         // Multi-Page Sequential Progression: advance to next playable page before Victory triggers
-        if (m_brickCount <= 0 && !IsCountdownActive() && !m_isPaddleDestroyed)
+        if (m_brickCount <= 0 && !IsCountdownActive() && !IsPaddleExploding())
         {
             auto nextIdx = FindNextPlayablePage(m_playtestPageIndex + 1);
             if (nextIdx.has_value())
@@ -427,9 +476,19 @@ void EditorScene::OnUpdate(float dt, GameContext& context)
             }
         }
 
-        // Scheduled Event Queue Execution (triggers Arena Event + Alarm!)
-        if (!IsCountdownActive() && !m_isPaddleDestroyed)
+        // Initial Event & Scheduled Event Queue Execution (triggers Arena Event + Alarm!)
+        if (!IsCountdownActive() && !IsPaddleExploding() && !IsBallDying())
         {
+            if (!m_initialEventTriggered)
+            {
+                m_initialEventTriggered = true;
+                const ArenaEventType initEv = m_levelData.GetInitialEvent();
+                if (initEv != ArenaEventType::None && mp_eventSystem)
+                {
+                    mp_eventSystem->TriggerEvent(initEv, /*skipWarning=*/true, /*forceOverride=*/false);
+                }
+            }
+
             m_playtestElapsed += dt;
             const auto& queue = m_levelData.GetEventQueue();
             if (m_nextQueuedEventIdx < queue.size() &&
@@ -445,37 +504,7 @@ void EditorScene::OnUpdate(float dt, GameContext& context)
             }
         }
 
-        if (m_lives <= 0 && !m_isPaddleDestroyed)
-        {
-            TriggerPaddleExplosion(context);
-        }
-
-        if (m_isPaddleDestroyed)
-        {
-            if (m_paddleDestroyedTimer > 0.0f)
-            {
-                m_paddleDestroyedTimer -= dt;
-                m_sparkEmissionTimer += dt;
-                if (m_sparkEmissionTimer >= 0.07f)
-                {
-                    m_sparkEmissionTimer = 0.0f;
-                    Vector2f paddlePos{0.0f, 350.0f};
-                    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
-                    {
-                        paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
-                    }
-                    const float offsetRnd = (static_cast<float>(rand() % 100) - 50.0f) * 1.4f;
-                    Color sparkCol{200, 235, 255, 200};
-                    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<LightSourceComponent>(m_paddle))
-                    {
-                        sparkCol = m_registry.GetComponent<LightSourceComponent>(m_paddle).LightColor;
-                        sparkCol.a = 200;
-                    }
-                    SpawnExplosionParticles(paddlePos + Vector2f{offsetRnd, 0.0f}, sparkCol, 8);
-                }
-            }
-        }
-        else
+        if (!IsPaddleExploding() && !IsBallDying())
         {
             UpdateTurrets(dt, context);
         }
@@ -507,9 +536,9 @@ void EditorScene::OnUpdate(float dt, GameContext& context)
         camera.Rotation = 0.0f;
         context.Render.SetCamera(camera);
 
-        if (m_showSaveAsModal)
+        if (m_textModalMode != EditorTextModalMode::None)
         {
-            HandleSaveAsModalInput(context);
+            HandleTextModalInput(context);
             return;
         }
 
@@ -534,15 +563,14 @@ void EditorScene::OnRender(GameContext& context)
 {
     if (m_isPlaytesting)
     {
-        // 1. In Playtest: GameScene renders the arena, ball, paddle, HUD (hearts, combo, countdown, and centered pause menu)
+        // 1. In Playtest: GameScene renders the arena, ball, paddle, damage feedback, event toasts, and HUD
         m_renderGameUI = true;
         GameScene::OnRender(context);
 
-        // 2. Render Turrets, Projectiles & Paddle Fracture Overlay in arena space (camera zoom 0.75)
+        // 2. Render Turrets & Projectiles in arena space (camera zoom 0.75)
         const auto& gameCam = m_registry.GetComponent<Camera2D>(m_camera);
         context.Render.SetCamera(gameCam);
         RenderTurrets(context);
-        RenderPaddleDurabilityOverlay(context);
 
         // 3. Render clean Stop button in bottom-left when actively playing
         const int curState = mp_state_machine
@@ -572,21 +600,23 @@ void EditorScene::OnRender(GameContext& context)
         camera.Position = Vector2f{0.0f, 0.0f};
         camera.Rotation = 0.0f;
 
-        // Draw background theme covering 100% of the screen
+        // Draw live background theme covering 100% of the screen
         const Vector2f viewSize = context.Render.GetLogicalViewSize();
-        context.Render.DrawRectangle(viewSize.X * 1.02f, viewSize.Y * 1.02f, Transform2D{Vector2f{0.0f, 0.0f}}, m_levelData.GetTheme().BgColor);
+        const auto& thm = m_levelData.GetTheme();
+        context.Render.DrawRectangle(viewSize.X * 1.02f, viewSize.Y * 1.02f, Transform2D{Vector2f{0.0f, 0.0f}}, thm.BgColor);
 
-        // Draw Arena Boundaries, Blueprint Grid & Page Bar (dynamically adapts when panels fold)
+        // Draw Arena Boundaries, Blueprint Grid & Page Bar
         RenderGrid(context);
 
         // Draw Fullscreen Editor UI Components
         RenderToolbar(context);
         RenderPalette(context);
         RenderTabsAndPanels(context);
+        RenderBottomToast(context);
 
-        if (m_showSaveAsModal)
+        if (m_textModalMode != EditorTextModalMode::None)
         {
-            RenderSaveAsModal(context);
+            RenderTextModal(context);
         }
     }
 }
@@ -612,7 +642,7 @@ void EditorScene::RenderSceneSpecificHUD(GameContext& context)
     {
         const float alphaF = std::min(1.0f, m_pageBannerTimer / 0.6f);
         const uint8_t a = static_cast<uint8_t>(255.0f * alphaF);
-        std::string banner = "VAGUE / PAGE " + std::to_string(m_playtestPageIndex + 1) + " / " + std::to_string(totalPages);
+        std::string banner = "WAVE / PAGE " + std::to_string(m_playtestPageIndex + 1) + " / " + std::to_string(totalPages);
         Vector2f bPos{0.0f, -halfH + 100.0f};
         context.Render.DrawTextCentered(banner, m_fontId, 30.0f, Transform2D{bPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, a});
         context.Render.DrawTextCentered(banner, m_fontId, 30.0f, Transform2D{bPos}, Color{80, 240, 255, a});
@@ -624,27 +654,25 @@ void EditorScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool is
     GameScene::HandleBrickCollision(entity, ballEntity, isLaser, isExplosion, damage);
 }
 
+void EditorScene::OnPaddleShattered(GameContext& /*context*/)
+{
+    ResetTurretsAndProjectiles();
+}
+
+void EditorScene::OnLifeLost(GameContext& /*context*/)
+{
+    ResetTurretsAndProjectiles();
+}
+
 void EditorScene::ApplyEditorThemeToPlaytest()
 {
     const auto& thm = m_levelData.GetTheme();
-    m_bgColor = thm.BgColor;
-    m_currentTheme.BgBase1 = thm.BgColor;
-    m_currentTheme.BgBase2 = thm.BgColor;
-    const float mult = std::clamp(thm.AmbientIntensity * 2.0f, 0.25f, 1.0f);
-    m_currentTheme.AmbientLight = Color{
-        static_cast<uint8_t>(std::clamp(static_cast<float>(thm.AmbientColor.r) * mult, 20.0f, 255.0f)),
-        static_cast<uint8_t>(std::clamp(static_cast<float>(thm.AmbientColor.g) * mult, 20.0f, 255.0f)),
-        static_cast<uint8_t>(std::clamp(static_cast<float>(thm.AmbientColor.b) * mult, 20.0f, 255.0f)),
-        255
-    };
-    m_ambientBackground.SetTheme(m_currentTheme);
-
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<LightSourceComponent>(m_paddle))
-    {
-        auto& light = m_registry.GetComponent<LightSourceComponent>(m_paddle);
-        light.LightColor = thm.PaddleConeColor;
-        light.ConeAngleDeg = thm.PaddleConeAngle;
-    }
+    ApplyCustomLighting(
+        LevelData::BuildLevelTheme(thm),
+        thm.PaddleConeColor,
+        thm.PaddleConeAngle,
+        thm.PaddleLightRange,
+        thm.PaddleLightIntensity);
 }
 
 void EditorScene::StartPlaytesting(GameContext& context)
@@ -652,25 +680,11 @@ void EditorScene::StartPlaytesting(GameContext& context)
     m_isPlaytesting = true;
     m_showDefeatModal = false;
     m_renderGameUI = true;
-    m_isPaddleDestroyed = false;
-    m_paddleDestroyedTimer = 0.0f;
-    m_paddleDamageFlashTimer = 0.0f;
-    m_sparkEmissionTimer = 0.0f;
     m_playtestElapsed = 0.0f;
     m_nextQueuedEventIdx = 0;
+    m_initialEventTriggered = false;
 
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-    {
-        m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Colors::White;
-    }
-    if (mp_paddleSystem)
-    {
-        mp_paddleSystem->SetInputEnabled(true);
-    }
-
-    m_statusMessage = "TEST EN COURS - CLIQUEZ [STOP] POUR REVENIR";
-    m_statusTimer = 2.5f;
-    m_statusColor = Color{80, 220, 255, 255};
+    ResetPaddleDurability(0.0f);
 
     // Synchronize GameRules & DynamicEventSystem
     const bool manualOverride = context.Rules.GetRule(Rule::Gameplay::ManualOverride);
@@ -682,7 +696,7 @@ void EditorScene::StartPlaytesting(GameContext& context)
         context.Rules.SetRule(Rule::Gameplay::InfiniteLives, rules.InfiniteLives);
     }
 
-    // 1. Immediately abort any lingering ultimate abilities & visual malus
+    // 1. Abort any lingering ultimate abilities & visual debuffs
     ClearActiveUltimates();
     ClearVisualMalus();
     RestoreTemporalAudio(0.05f);
@@ -713,8 +727,8 @@ void EditorScene::StartPlaytesting(GameContext& context)
     // 4. Start countdown state
     StartCountdown();
 
-    // 5. Ensure editor theme track is playing
-    context.Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
+    // 5. Keep the active editor theme music stream running at the same playback position and volume
+    SyncEditorThemeMusic(context);
 
     auto& camera = m_registry.GetComponent<Camera2D>(m_camera);
     camera.Zoom = 0.75f;
@@ -740,33 +754,18 @@ void EditorScene::StopPlaytesting(GameContext& context)
     m_isPlaytesting = false;
     m_showDefeatModal = false;
     m_renderGameUI = false;
-    m_isPaddleDestroyed = false;
-    m_paddleDestroyedTimer = 0.0f;
-    m_paddleDamageFlashTimer = 0.0f;
-    m_sparkEmissionTimer = 0.0f;
     m_pageBannerTimer = 0.0f;
 
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-    {
-        m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Colors::White;
-    }
-    if (mp_paddleSystem)
-    {
-        mp_paddleSystem->SetInputEnabled(true);
-    }
+    ResetPaddleDurability(0.0f);
 
-    m_statusMessage = "MODE EDITION RESTAURE";
-    m_statusTimer = 2.0f;
-    m_statusColor = Color{100, 255, 160, 255};
-
-    // 1. Immediately abort and clear any active ultimates (Disco, Plasma, Lucky Drop)
+    // 1. Immediately abort and clear any active ultimates
     ClearActiveUltimates();
     ClearVisualMalus();
     RestoreTemporalAudio(0.05f);
 
-    // 2. Clear campaign playlist and immediately restore editor theme music
+    // 2. Clear campaign playlist and keep/restore editor theme music without restarting it
     m_playlist.Clear();
-    context.Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
+    SyncEditorThemeMusic(context);
 
     // 3. Clear projectiles & simulation bullets
     m_turretBullets.clear();
@@ -822,30 +821,13 @@ void EditorScene::Undo()
         m_undoStack.pop_back();
         m_levelData.RestoreSnapshot(m_undoStack.back());
         m_hasSelectedCell = false;
-        m_statusMessage = "ACTION ANNULEE (CTRL+Z)";
-        m_statusTimer = 1.5f;
+        ShowToast("Action undone", Color{140, 200, 255, 255}, 1.4f);
     }
 }
 
 void EditorScene::SetTool(EditorTool tool)
 {
     m_tool = tool;
-    if (tool == EditorTool::Eraser)
-    {
-        m_statusMessage = "OUTIL GOMME ACTIF";
-        m_statusColor = Color{237, 108, 99, 255};
-    }
-    else if (tool == EditorTool::Select)
-    {
-        m_statusMessage = "MODE SELECTION ACTIF - CLIQUEZ UNE BRIQUE";
-        m_statusColor = Color{80, 230, 255, 255};
-    }
-    else
-    {
-        m_statusMessage = "OUTIL PINCEAU ACTIF";
-        m_statusColor = Color{100, 255, 160, 255};
-    }
-    m_statusTimer = 1.8f;
 }
 
 void EditorScene::SetSelectedTile(EditorTileType tile)
@@ -875,71 +857,125 @@ void EditorScene::ExitEditor(GameContext& context)
 void EditorScene::OpenSaveAsModal()
 {
     CustomLevelLibrary lib;
-    m_saveAsPreviewId = lib.PeekNextLevelId();
+    m_textModalBadge = lib.PeekNextLevelId();
     if (!m_levelData.GetLevelName().empty() && m_editingLevelId.empty())
     {
-        m_saveAsNameBuffer = m_levelData.GetLevelName();
+        m_textModalBuffer = m_levelData.GetLevelName();
     }
     else
     {
-        m_saveAsNameBuffer = "NIVEAU " + std::to_string(lib.GetLevels().size() + 1);
+        m_textModalBuffer = "LEVEL " + std::to_string(lib.GetLevels().size() + 1);
     }
-    m_showSaveAsModal = true;
+    m_textModalMode = EditorTextModalMode::SaveLevelAs;
 }
 
-void EditorScene::ConfirmSaveAsModal(GameContext& context)
+void EditorScene::OpenThemeModal(EditorTextModalMode mode)
 {
-    CustomLevelLibrary lib;
-    const std::string savedId = lib.SaveNewLevel(m_saveAsNameBuffer, m_levelData);
-    m_showSaveAsModal = false;
-
-    if (!savedId.empty())
+    m_textModalMode = mode;
+    if (mode == EditorTextModalMode::NewTheme)
     {
-        m_editingLevelId = savedId;
-        if (const auto* entry = lib.FindLevel(savedId))
-        {
-            m_currentSavePath = entry->FilePath;
-        }
-        m_levelData.SaveToFile("Resources/levels/custom_level.txt");
-        m_statusMessage = "ENREGISTRE : " + savedId + " // " + m_levelData.GetLevelName();
-        m_statusTimer = 3.2f;
-        m_statusColor = Color{80, 255, 140, 255};
-        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 18.0f);
+        m_textModalBadge = m_themeLibrary.PeekNextThemeId();
+        m_textModalBuffer = "THEME " + std::to_string(m_themeLibrary.GetThemes().size() + 1);
     }
-    else
+    else if (mode == EditorTextModalMode::RenameTheme)
     {
-        m_statusMessage = "ERREUR SAUVEGARDE !";
-        m_statusTimer = 3.0f;
-        m_statusColor = Color{255, 70, 70, 255};
+        const auto& themes = m_themeLibrary.GetThemes();
+        if (m_selectedCustomThemeIdx >= 0 && m_selectedCustomThemeIdx < static_cast<int>(themes.size()))
+        {
+            m_textModalBadge = themes[static_cast<size_t>(m_selectedCustomThemeIdx)].ThemeId;
+            m_textModalBuffer = themes[static_cast<size_t>(m_selectedCustomThemeIdx)].Name;
+        }
+        else
+        {
+            m_textModalMode = EditorTextModalMode::None;
+        }
     }
 }
 
-void EditorScene::HandleSaveAsModalInput(GameContext& context)
+void EditorScene::ConfirmTextModal(GameContext& context)
+{
+    const EditorTextModalMode mode = m_textModalMode;
+    m_textModalMode = EditorTextModalMode::None;
+
+    if (mode == EditorTextModalMode::SaveLevelAs)
+    {
+        CustomLevelLibrary lib;
+        const std::string savedId = lib.SaveNewLevel(m_textModalBuffer, m_levelData);
+        if (!savedId.empty())
+        {
+            m_editingLevelId = savedId;
+            if (const auto* entry = lib.FindLevel(savedId))
+            {
+                m_currentSavePath = entry->FilePath;
+            }
+            m_levelData.SaveToFile("Resources/levels/custom_level.txt");
+            ShowToast("Saved " + savedId + " - " + m_levelData.GetLevelName(), Color{85, 245, 145, 255}, 2.8f);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 18.0f);
+        }
+        else
+        {
+            ShowToast("Save failed", Color{255, 85, 85, 255}, 2.6f);
+        }
+    }
+    else if (mode == EditorTextModalMode::NewTheme)
+    {
+        const std::string newId = m_themeLibrary.CreateTheme(m_textModalBuffer, m_levelData.GetTheme());
+        if (!newId.empty())
+        {
+            if (auto idx = m_themeLibrary.FindThemeIndex(newId); idx.has_value())
+            {
+                m_selectedCustomThemeIdx = static_cast<int>(*idx);
+                m_levelData.SetTheme(m_themeLibrary.GetThemes()[*idx]);
+            }
+            ShowToast("Theme saved: " + m_levelData.GetTheme().Name, Color{85, 245, 145, 255}, 2.4f);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 18.0f);
+        }
+    }
+    else if (mode == EditorTextModalMode::RenameTheme)
+    {
+        const auto& themes = m_themeLibrary.GetThemes();
+        if (m_selectedCustomThemeIdx >= 0 && m_selectedCustomThemeIdx < static_cast<int>(themes.size()))
+        {
+            const std::string id = themes[static_cast<size_t>(m_selectedCustomThemeIdx)].ThemeId;
+            if (m_themeLibrary.RenameTheme(id, m_textModalBuffer))
+            {
+                if (const auto* updated = m_themeLibrary.FindTheme(id))
+                {
+                    m_levelData.GetTheme().Name = updated->Name;
+                }
+                ShowToast("Theme renamed: " + m_levelData.GetTheme().Name, Color{110, 225, 255, 255}, 2.2f);
+                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+            }
+        }
+    }
+}
+
+void EditorScene::HandleTextModalInput(GameContext& context)
 {
     const std::string& typed = context.Input.GetEnteredText();
     for (char ch : typed)
     {
-        if (ch >= 32 && ch < 127 && ch != '|' && m_saveAsNameBuffer.size() < 20)
+        if (ch >= 32 && ch < 127 && ch != '|' && m_textModalBuffer.size() < 20)
         {
             char upper = (ch >= 'a' && ch <= 'z') ? static_cast<char>(ch - 'a' + 'A') : ch;
-            m_saveAsNameBuffer.push_back(upper);
+            m_textModalBuffer.push_back(upper);
         }
     }
 
-    if (context.Input.IsKeyPress(KeyCode::Backspace) && !m_saveAsNameBuffer.empty())
+    if (context.Input.IsKeyPress(KeyCode::Backspace) && !m_textModalBuffer.empty())
     {
-        m_saveAsNameBuffer.pop_back();
+        m_textModalBuffer.pop_back();
     }
 
     if (context.Input.IsKeyPress(KeyCode::Enter))
     {
-        ConfirmSaveAsModal(context);
+        ConfirmTextModal(context);
         return;
     }
 
     if (context.Input.IsKeyPress(KeyCode::Escape))
     {
-        m_showSaveAsModal = false;
+        m_textModalMode = EditorTextModalMode::None;
         if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 14.0f);
         return;
     }
@@ -956,19 +992,19 @@ void EditorScene::HandleSaveAsModalInput(GameContext& context)
 
         if (std::abs(worldMouse.X - okPos.X) <= btnSz.X * 0.5f && std::abs(worldMouse.Y - okPos.Y) <= btnSz.Y * 0.5f)
         {
-            ConfirmSaveAsModal(context);
+            ConfirmTextModal(context);
             return;
         }
         if (std::abs(worldMouse.X - cancelPos.X) <= btnSz.X * 0.5f && std::abs(worldMouse.Y - cancelPos.Y) <= btnSz.Y * 0.5f)
         {
-            m_showSaveAsModal = false;
+            m_textModalMode = EditorTextModalMode::None;
             if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 14.0f);
             return;
         }
     }
 }
 
-void EditorScene::RenderSaveAsModal(GameContext& context)
+void EditorScene::RenderTextModal(GameContext& context)
 {
     Camera2D uiCamera{};
     uiCamera.Position = Vector2f{0.0f, 0.0f};
@@ -986,14 +1022,18 @@ void EditorScene::RenderSaveAsModal(GameContext& context)
     context.Render.DrawRectangle(modalSize.X, modalSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, Color{26, 30, 40, 255});
     context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{Vector2f{0.0f, 0.0f}}, Color{80, 220, 255, 255}, 2.0f);
 
+    const char* modalTitle = "SAVE LEVEL AS";
+    if (m_textModalMode == EditorTextModalMode::NewTheme) modalTitle = "NEW CUSTOM THEME";
+    else if (m_textModalMode == EditorTextModalMode::RenameTheme) modalTitle = "RENAME THEME";
+
     // Header + ID Badge
     context.Render.DrawRectangle(modalSize.X - 4.0f, 46.0f, Transform2D{Vector2f{0.0f, -100.0f}}, Color{36, 42, 56, 255});
-    context.Render.DrawText("ENREGISTRER SOUS", m_fontId, 22.0f, Transform2D{Vector2f{-225.0f, -112.0f}}, Color{255, 215, 60, 255});
+    context.Render.DrawText(modalTitle, m_fontId, 22.0f, Transform2D{Vector2f{-225.0f, -112.0f}}, Color{255, 215, 60, 255});
 
     Vector2f idBadgePos{165.0f, -100.0f};
     context.Render.DrawRectangle(120.0f, 28.0f, Transform2D{idBadgePos}, Color{18, 24, 34, 255});
     context.Render.DrawRectangleOutline(120.0f, 28.0f, Transform2D{idBadgePos}, Color{80, 220, 255, 200}, 1.5f);
-    context.Render.DrawTextCentered(m_saveAsPreviewId, m_fontId, 18.0f, Transform2D{idBadgePos}, Color{80, 235, 255, 255});
+    context.Render.DrawTextCentered(m_textModalBadge, m_fontId, 18.0f, Transform2D{idBadgePos}, Color{80, 235, 255, 255});
 
     // Input Box
     Vector2f boxPos{0.0f, -8.0f};
@@ -1001,7 +1041,7 @@ void EditorScene::RenderSaveAsModal(GameContext& context)
     context.Render.DrawRectangleOutline(430.0f, 54.0f, Transform2D{boxPos}, Color{255, 215, 60, 240}, 2.0f);
 
     const bool blink = (std::fmod(m_pulseTimer * 2.2f, 2.0f) < 1.0f);
-    std::string shown = m_saveAsNameBuffer + (blink ? "_" : " ");
+    std::string shown = m_textModalBuffer + (blink ? "_" : " ");
     context.Render.DrawTextCentered(shown, m_fontId, 26.0f, Transform2D{boxPos}, Colors::White);
 
     // Confirm / Cancel Buttons
@@ -1013,11 +1053,32 @@ void EditorScene::RenderSaveAsModal(GameContext& context)
 
     context.Render.DrawRectangle(btnSz.X, btnSz.Y, Transform2D{okPos}, okHover ? Color{60, 175, 95, 255} : Color{45, 140, 75, 255});
     context.Render.DrawRectangleOutline(btnSz.X, btnSz.Y, Transform2D{okPos}, okHover ? Colors::White : Color{95, 200, 125, 255}, 1.5f);
-    context.Render.DrawTextCentered("VALIDER", m_fontId, 21.0f, Transform2D{okPos}, Colors::White);
+    context.Render.DrawTextCentered("CONFIRM", m_fontId, 21.0f, Transform2D{okPos}, Colors::White);
 
     context.Render.DrawRectangle(btnSz.X, btnSz.Y, Transform2D{cancelPos}, cancelHover ? Color{75, 50, 60, 255} : Color{48, 52, 64, 255});
     context.Render.DrawRectangleOutline(btnSz.X, btnSz.Y, Transform2D{cancelPos}, cancelHover ? Colors::White : Color{95, 102, 120, 255}, 1.5f);
-    context.Render.DrawTextCentered("ANNULER", m_fontId, 21.0f, Transform2D{cancelPos}, Color{225, 230, 240, 255});
+    context.Render.DrawTextCentered("CANCEL", m_fontId, 21.0f, Transform2D{cancelPos}, Color{225, 230, 240, 255});
+}
+
+void EditorScene::RenderBottomToast(GameContext& context)
+{
+    if (m_toastTimer <= 0.0f || m_toastMessage.empty()) return;
+
+    const Vector2f viewSize = context.Render.GetLogicalViewSize();
+    const EditorGridLayout layout = ComputeGridLayout(viewSize);
+    const float cx = (layout.CanvasMinX + layout.CanvasMaxX) * 0.5f;
+    const float y = layout.CanvasMaxY - layout.PageBarHeight - 24.0f;
+    const float alphaF = std::min(1.0f, m_toastTimer / 0.45f);
+    const uint8_t bgA = static_cast<uint8_t>(215.0f * alphaF);
+    const uint8_t txtA = static_cast<uint8_t>(255.0f * alphaF);
+
+    const float pillW = std::clamp(static_cast<float>(m_toastMessage.size()) * 10.5f + 44.0f, 180.0f, 440.0f);
+    const Vector2f pos{cx, y};
+    Color border = m_toastColor;
+    border.a = txtA;
+    context.Render.DrawRectangle(pillW, 30.0f, Transform2D{pos}, Color{16, 20, 30, bgA});
+    context.Render.DrawRectangleOutline(pillW, 30.0f, Transform2D{pos}, border, 1.5f);
+    context.Render.DrawTextCentered(m_toastMessage, m_fontId, 17.0f, Transform2D{pos}, Color{240, 246, 255, txtA});
 }
 
 void EditorScene::SaveLevel(GameContext& context)
@@ -1028,15 +1089,12 @@ void EditorScene::SaveLevel(GameContext& context)
         if (lib.UpdateExistingLevel(m_editingLevelId, m_levelData))
         {
             m_levelData.SaveToFile("Resources/levels/custom_level.txt");
-            m_statusMessage = "SAUVEGARDE : " + m_editingLevelId + " // " + m_levelData.GetLevelName();
-            m_statusTimer = 3.0f;
-            m_statusColor = Color{80, 255, 140, 255};
+            ShowToast("Saved " + m_editingLevelId + " - " + m_levelData.GetLevelName(), Color{85, 245, 145, 255}, 2.4f);
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 18.0f);
             return;
         }
     }
 
-    // First save of an unnamed draft: open Save As modal so it gets Name + ID in Robostock
     OpenSaveAsModal();
     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
 }
@@ -1052,8 +1110,7 @@ void EditorScene::GenerateProceduralLevel()
     PushUndo();
     m_levelData.ProceduralGenerate(m_procBrickCount, m_procDifficulty, m_procSymmetry, static_cast<unsigned int>(m_pulseTimer * 1000.0f));
     m_hasSelectedCell = false;
-    m_statusMessage = "NIVEAU GENERE (" + std::to_string(m_levelData.GetBrickCount()) + " BRIQUES)";
-    m_statusTimer = 2.0f;
+    ShowToast("Generated " + std::to_string(m_levelData.GetBrickCount()) + " bricks", Color{255, 210, 95, 255}, 1.8f);
     if (mp_context && m_switchSfxId != 0)
     {
         mp_context->Audio.PlaySfx(m_switchSfxId, 16.0f);
@@ -1065,8 +1122,7 @@ void EditorScene::ClearEventQueue()
     PushUndo();
     m_levelData.ClearEventQueue();
     m_eventQueueScroll = 0;
-    m_statusMessage = "FILE D'EVENEMENTS VIDEE";
-    m_statusTimer = 2.0f;
+    ShowToast("Event queue cleared", Color{255, 130, 140, 255}, 1.6f);
     if (mp_context && m_switchSfxId != 0) mp_context->Audio.PlaySfx(m_switchSfxId, 16.0f);
 }
 
@@ -1074,8 +1130,6 @@ void EditorScene::DeleteEvent(size_t index)
 {
     PushUndo();
     m_levelData.RemoveEvent(index);
-    m_statusMessage = "EVENEMENT SUPPRIME";
-    m_statusTimer = 2.0f;
     if (mp_context && m_clickSfxId != 0) mp_context->Audio.PlaySfx(m_clickSfxId, 16.0f);
 }
 
@@ -1083,18 +1137,17 @@ EditorScene::EditorGridLayout EditorScene::ComputeGridLayout(const Vector2f& vie
 {
     const float halfW = viewSize.X * 0.5f;
     const float halfH = viewSize.Y * 0.5f;
-    const float toolbarH = 74.0f;
-    const float leftW = m_leftPanelOpen ? 360.0f : 44.0f;
-    const float rightW = m_rightPanelOpen ? 410.0f : 44.0f;
+    const float leftW = m_leftPanelOpen ? kLeftPanelWidth : 44.0f;
+    const float rightW = m_rightPanelOpen ? kRightPanelWidth : 44.0f;
 
     EditorGridLayout layout;
     layout.CanvasMinX = -halfW + leftW + 6.0f;
     layout.CanvasMaxX = halfW - rightW - 6.0f;
-    layout.CanvasMinY = -halfH + toolbarH + 6.0f;
+    layout.CanvasMinY = -halfH + kToolbarHeight + 6.0f;
     layout.CanvasMaxY = halfH - 6.0f;
     layout.PageBarHeight = 64.0f;
 
-    const float headerReserve = 44.0f;
+    const float headerReserve = 36.0f;
     const float bottomReserve = layout.PageBarHeight + 18.0f;
     const float sidePad = 24.0f;
 
@@ -1172,6 +1225,7 @@ void EditorScene::RebuildPlayfieldFromPage(size_t pageIdx, GameContext& context,
             case EditorTileType::Medium:  bType = BrickType::Medium; break;
             case EditorTileType::Hard:    bType = BrickType::Hard; break;
             case EditorTileType::Special: bType = BrickType::Special; isSpecial = true; break;
+            case EditorTileType::Event:   bType = BrickType::Event; break;
             case EditorTileType::Metal:   bType = BrickType::Metal; break;
             case EditorTileType::Bomb:    bType = BrickType::Bomb; break;
             case EditorTileType::Turret:  bType = BrickType::Hard; break;
@@ -1181,12 +1235,60 @@ void EditorScene::RebuildPlayfieldFromPage(size_t pageIdx, GameContext& context,
 
             Entity bEntity = BrickFactory::Create(m_registry, pos.X, pos.Y, bType, isSpecial, m_brickTexId, 0, cell.HitPoints);
 
-            // Forced specific power-up configuration
-            if (cell.Type == EditorTileType::Special && !cell.RandomPowerUp && m_registry.HasComponent<BrickComponent>(bEntity))
+            if (m_registry.HasComponent<BrickComponent>(bEntity))
             {
                 auto& bComp = m_registry.GetComponent<BrickComponent>(bEntity);
-                bComp.HasForcedPowerUp = true;
-                bComp.ForcedPowerUp = cell.SpecificPowerUp;
+                if (cell.Type == EditorTileType::Special)
+                {
+                    if (!cell.RandomPowerUp)
+                    {
+                        bComp.HasForcedPowerUp = true;
+                        bComp.ForcedPowerUp = cell.SpecificPowerUp;
+                    }
+                    bComp.RegenEnabled = cell.PowerUpRegenEnabled;
+                    bComp.RegenCooldown = cell.PowerUpRegenCooldown;
+                }
+                else if (cell.Type == EditorTileType::Event)
+                {
+                    bComp.IsEventBrick = true;
+                    bComp.RandomEvent = cell.RandomEvent;
+                    bComp.TriggeredEvent = cell.SpecificEvent;
+                    bComp.EventTriggerOnHit = cell.EventTriggerOnHit;
+                    bComp.EventAlreadyTriggered = false;
+                }
+                else if (cell.Type == EditorTileType::Bomb)
+                {
+                    bComp.BombBlastTier = cell.BombBlastTier;
+                }
+                else if (cell.Type == EditorTileType::Metal)
+                {
+                    bComp.MetalBounceBoost = cell.MetalBounceBoost;
+                }
+            }
+
+            // Custom appearance / lantern light customization
+            if ((cell.Type == EditorTileType::Light || cell.Type == EditorTileType::Medium || cell.Type == EditorTileType::Hard) &&
+                cell.UseCustomColor && m_registry.HasComponent<SpriteComponent>(bEntity))
+            {
+                m_registry.GetComponent<SpriteComponent>(bEntity).Tint = cell.CustomColor;
+            }
+            else if (cell.Type == EditorTileType::Lantern)
+            {
+                if (m_registry.HasComponent<SpriteComponent>(bEntity))
+                {
+                    m_registry.GetComponent<SpriteComponent>(bEntity).Tint = cell.LanternLightColor;
+                }
+                if (m_registry.HasComponent<LightSourceComponent>(bEntity))
+                {
+                    auto& light = m_registry.GetComponent<LightSourceComponent>(bEntity);
+                    light.LightColor = cell.LanternLightColor;
+                    light.Radius = cell.LanternLightRadius;
+                    light.Intensity = cell.LanternLightIntensity;
+                }
+            }
+            else if (cell.Type == EditorTileType::Event && m_registry.HasComponent<SpriteComponent>(bEntity))
+            {
+                m_registry.GetComponent<SpriteComponent>(bEntity).Tint = LevelData::GetDisplayColorForCell(cell);
             }
 
             if (bType != BrickType::Metal && bType != BrickType::Special)
@@ -1206,6 +1308,8 @@ void EditorScene::RebuildPlayfieldFromPage(size_t pageIdx, GameContext& context,
                     .ShootTimer = cell.TurretInitialDelay + static_cast<float>(m_turretBricks.size()) * 0.35f,
                     .Cooldown = cell.TurretCooldown,
                     .ProjectileSpeed = cell.TurretProjectileSpeed,
+                    .Damage = cell.TurretDamage,
+                    .Aimed = cell.TurretAimed,
                     .BaseHP = cell.HitPoints
                 });
             }
@@ -1288,10 +1392,18 @@ void EditorScene::HandleEditorInput(GameContext& context)
         return;
     }
 
-    // Gomme toggle shortcut [G]
+    // Eraser toggle shortcut [G]
     if (context.Input.IsKeyPress(KeyCode::G))
     {
         SetTool(m_tool == EditorTool::Eraser ? EditorTool::Paint : EditorTool::Eraser);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+        return;
+    }
+
+    // Event brick shortcut [E]
+    if (context.Input.IsKeyPress(KeyCode::E))
+    {
+        SetSelectedTile(EditorTileType::Event);
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
         return;
     }
@@ -1311,11 +1423,11 @@ void EditorScene::HandleEditorInput(GameContext& context)
         return;
     }
 
-    // Dynamic Layout Dimensions (harmonized toolbarH = 74.0f everywhere)
-    const float toolbarH = 74.0f;
+    // Dynamic Layout Dimensions
+    const float toolbarH = kToolbarHeight;
     const Vector2f toolbarPos{0.0f, -halfH + toolbarH * 0.5f};
     const Vector2f btnSize{56.0f, 50.0f};
-    const float rightPanelW = m_rightPanelOpen ? 410.0f : 44.0f;
+    const float rightPanelW = m_rightPanelOpen ? kRightPanelWidth : 44.0f;
     const Vector2f rightPanelCenter{halfW - rightPanelW * 0.5f, -halfH + toolbarH + (viewSize.Y - toolbarH) * 0.5f};
 
     // Active EventQueue Drag-and-Drop MUST run before any panel early-return!
@@ -1339,11 +1451,11 @@ void EditorScene::HandleEditorInput(GameContext& context)
             else
             {
                 const auto& q = m_levelData.GetEventQueue();
-                const float listStartY = -halfH + toolbarH + 312.0f;
+                const float listStartY = -halfH + toolbarH + kEventQueueListStartOffsetY;
                 const float itemH = 52.0f;
                 int targetDropIdx = -1;
 
-                for (int vis = 0; vis < 6; ++vis)
+                for (int vis = 0; vis < kEventQueueMaxVisible; ++vis)
                 {
                     const int actualIdx = m_eventQueueScroll + vis;
                     if (actualIdx >= static_cast<int>(q.size())) break;
@@ -1360,8 +1472,6 @@ void EditorScene::HandleEditorInput(GameContext& context)
                 {
                     PushUndo();
                     m_levelData.ReorderEvent(static_cast<size_t>(m_draggedEventIdx), static_cast<size_t>(targetDropIdx));
-                    m_statusMessage = "ORDRE MIS A JOUR";
-                    m_statusTimer = 1.5f;
                     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
                 }
             }
@@ -1395,8 +1505,8 @@ void EditorScene::HandleEditorInput(GameContext& context)
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
             return;
         }
-        Vector2f gommeBtnPos{-halfW + 468.0f, toolbarPos.Y};
-        if (std::abs(worldMouse.X - gommeBtnPos.X) <= btnSize.X * 0.5f && leftClick)
+        Vector2f eraserBtnPos{-halfW + 468.0f, toolbarPos.Y};
+        if (std::abs(worldMouse.X - eraserBtnPos.X) <= btnSize.X * 0.5f && leftClick)
         {
             SetTool(m_tool == EditorTool::Eraser ? EditorTool::Paint : EditorTool::Eraser);
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
@@ -1414,15 +1524,13 @@ void EditorScene::HandleEditorInput(GameContext& context)
             SaveLevelAs(context);
             return;
         }
-        Vector2f viderBtnPos{-halfW + 684.0f, toolbarPos.Y};
-        if (std::abs(worldMouse.X - viderBtnPos.X) <= btnSize.X * 0.5f && leftClick)
+        Vector2f clearBtnPos{-halfW + 684.0f, toolbarPos.Y};
+        if (std::abs(worldMouse.X - clearBtnPos.X) <= btnSize.X * 0.5f && leftClick)
         {
             PushUndo();
             m_levelData.ClearGrid();
             m_hasSelectedCell = false;
-            m_statusMessage = "PAGE EFFACEE";
-            m_statusTimer = 2.0f;
-            m_statusColor = Color{255, 100, 120, 255};
+            ShowToast("Page cleared", Color{255, 115, 130, 255}, 1.6f);
             if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
             return;
         }
@@ -1434,10 +1542,10 @@ void EditorScene::HandleEditorInput(GameContext& context)
         }
     }
 
-    // 2. Fullscreen Left Brick Palette Interaction (Touches left edge -halfW)
-    const float leftPanelW = m_leftPanelOpen ? 360.0f : 44.0f;
-    const Vector2f leftTogglePos = m_leftPanelOpen ? Vector2f{-halfW + 360.0f - 22.0f, -halfH + toolbarH + 35.0f}
-                                                   : Vector2f{-halfW + 22.0f, -halfH + toolbarH + 35.0f};
+    // 2. Fullscreen Left Brick Palette Interaction (9 placeable objects, no eraser)
+    const float leftPanelW = m_leftPanelOpen ? kLeftPanelWidth : 44.0f;
+    const Vector2f leftTogglePos = m_leftPanelOpen ? Vector2f{-halfW + kLeftPanelWidth - 22.0f, -halfH + toolbarH + 32.0f}
+                                                   : Vector2f{-halfW + 22.0f, -halfH + toolbarH + 32.0f};
 
     if (m_leftPanelOpen)
     {
@@ -1452,31 +1560,14 @@ void EditorScene::HandleEditorInput(GameContext& context)
         {
             if (leftClick)
             {
-                const float palStartY = -halfH + toolbarH + 68.0f;
-                const float itemH = 76.0f;
+                const float palStartY = -halfH + toolbarH + 62.0f;
+                const float itemH = 62.0f;
                 for (int i = 0; i < 9; ++i)
                 {
-                    float itemY = palStartY + static_cast<float>(i) * itemH + itemH * 0.5f;
-                    if (std::abs(worldMouse.Y - itemY) <= itemH * 0.45f)
+                    const float itemY = palStartY + static_cast<float>(i) * itemH + itemH * 0.5f;
+                    if (std::abs(worldMouse.Y - itemY) <= itemH * 0.46f)
                     {
-                        if (i == 8)
-                        {
-                            SetTool(EditorTool::Eraser);
-                        }
-                        else
-                        {
-                            const EditorTileType types[] = {
-                                EditorTileType::Light,
-                                EditorTileType::Medium,
-                                EditorTileType::Hard,
-                                EditorTileType::Special,
-                                EditorTileType::Metal,
-                                EditorTileType::Bomb,
-                                EditorTileType::Turret,
-                                EditorTileType::Lantern
-                            };
-                            SetSelectedTile(types[i]);
-                        }
+                        SetSelectedTile(kPaletteTiles[i]);
                         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
                         return;
                     }
@@ -1495,8 +1586,8 @@ void EditorScene::HandleEditorInput(GameContext& context)
         }
     }
 
-    // 3. Fullscreen Right Panel Interaction (Touches right edge +halfW)
-    const float tabH = 48.0f;
+    // 3. Fullscreen Right Panel Interaction
+    const float tabH = 44.0f;
     const float tabY = -halfH + toolbarH + tabH * 0.5f + 10.0f;
 
     if (m_rightPanelOpen)
@@ -1544,28 +1635,28 @@ void EditorScene::HandleEditorInput(GameContext& context)
             }
             case EditorTab::Procedural:
             {
-                float cntY = -halfH + toolbarH + 160.0f;
-                if (std::abs(worldMouse.Y - cntY) <= 30.0f && leftClick)
+                float cntY = -halfH + toolbarH + 150.0f;
+                if (std::abs(worldMouse.Y - cntY) <= 28.0f && leftClick)
                 {
                     if (worldMouse.X < panelCenter.X - 50.0f) m_procBrickCount = std::max(12, m_procBrickCount - 6);
                     else if (worldMouse.X > panelCenter.X + 50.0f) m_procBrickCount = std::min(84, m_procBrickCount + 6);
                     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
                 }
-                float diffY = -halfH + toolbarH + 250.0f;
-                if (std::abs(worldMouse.Y - diffY) <= 30.0f && leftClick)
+                float diffY = -halfH + toolbarH + 230.0f;
+                if (std::abs(worldMouse.Y - diffY) <= 28.0f && leftClick)
                 {
                     if (worldMouse.X < panelCenter.X - 50.0f) m_procDifficulty = std::max(0.1f, m_procDifficulty - 0.15f);
                     else if (worldMouse.X > panelCenter.X + 50.0f) m_procDifficulty = std::min(1.0f, m_procDifficulty + 0.15f);
                     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
                 }
-                float symY = -halfH + toolbarH + 340.0f;
-                if (std::abs(worldMouse.Y - symY) <= 30.0f && leftClick)
+                float symY = -halfH + toolbarH + 310.0f;
+                if (std::abs(worldMouse.Y - symY) <= 28.0f && leftClick)
                 {
                     m_procSymmetry = (m_procSymmetry + 1) % 4;
                     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
                 }
-                float genY = -halfH + toolbarH + 450.0f;
-                if (std::abs(worldMouse.Y - genY) <= 36.0f && leftClick)
+                float genY = -halfH + toolbarH + 410.0f;
+                if (std::abs(worldMouse.Y - genY) <= 34.0f && leftClick)
                 {
                     GenerateProceduralLevel();
                     return;
@@ -1574,29 +1665,9 @@ void EditorScene::HandleEditorInput(GameContext& context)
             }
             case EditorTab::ThemeLighting:
             {
-                float thmY = -halfH + toolbarH + 160.0f;
-                if (std::abs(worldMouse.Y - thmY) <= 30.0f && leftClick)
+                if (HandleThemeTabInput(context, panelCenter, sideWidth, toolbarH, halfH, worldMouse, leftClick))
                 {
-                    if (worldMouse.X < panelCenter.X) m_levelData.PrevThemePreset();
-                    else m_levelData.NextThemePreset();
-                    context.Audio.PlayMusic(m_levelData.GetTheme().MusicTrack, true);
-                    if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 14.0f);
-                }
-                float ambY = -halfH + toolbarH + 250.0f;
-                if (std::abs(worldMouse.Y - ambY) <= 30.0f && leftClick)
-                {
-                    float& amb = m_levelData.GetTheme().AmbientIntensity;
-                    if (worldMouse.X < panelCenter.X - 50.0f) amb = std::max(0.10f, amb - 0.08f);
-                    else if (worldMouse.X > panelCenter.X + 50.0f) amb = std::min(0.90f, amb + 0.08f);
-                    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
-                }
-                float coneY = -halfH + toolbarH + 340.0f;
-                if (std::abs(worldMouse.Y - coneY) <= 30.0f && leftClick)
-                {
-                    float& angle = m_levelData.GetTheme().PaddleConeAngle;
-                    if (worldMouse.X < panelCenter.X - 50.0f) angle = std::max(20.0f, angle - 10.0f);
-                    else if (worldMouse.X > panelCenter.X + 50.0f) angle = std::min(90.0f, angle + 10.0f);
-                    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+                    return;
                 }
                 break;
             }
@@ -1611,20 +1682,20 @@ void EditorScene::HandleEditorInput(GameContext& context)
             case EditorTab::Gamerules:
             {
                 auto& gr = m_levelData.GetGamerules();
-                float hzY = -halfH + toolbarH + 210.0f;
-                if (std::abs(worldMouse.Y - hzY) <= 30.0f && leftClick)
+                float hzY = -halfH + toolbarH + 200.0f;
+                if (std::abs(worldMouse.Y - hzY) <= 28.0f && leftClick)
                 {
                     gr.HazardZones = !gr.HazardZones;
                     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
                 }
-                float arY = -halfH + toolbarH + 300.0f;
-                if (std::abs(worldMouse.Y - arY) <= 30.0f && leftClick)
+                float arY = -halfH + toolbarH + 280.0f;
+                if (std::abs(worldMouse.Y - arY) <= 28.0f && leftClick)
                 {
                     gr.ArenaEvents = !gr.ArenaEvents;
                     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
                 }
-                float lfY = -halfH + toolbarH + 390.0f;
-                if (std::abs(worldMouse.Y - lfY) <= 30.0f && leftClick)
+                float lfY = -halfH + toolbarH + 360.0f;
+                if (std::abs(worldMouse.Y - lfY) <= 28.0f && leftClick)
                 {
                     gr.InfiniteLives = !gr.InfiniteLives;
                     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
@@ -1725,9 +1796,6 @@ void EditorScene::HandleEditorInput(GameContext& context)
                                     m_selectedTile = currentCell.Type;
                                     m_activeTab = EditorTab::Inspector;
                                     m_rightPanelOpen = true;
-                                    m_statusMessage = "BRIQUE [" + std::to_string(col + 1) + "," + std::to_string(row + 1) + "] SELECTIONNEE";
-                                    m_statusTimer = 1.8f;
-                                    m_statusColor = Color{80, 230, 255, 255};
                                     if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
                                 }
                                 else
@@ -1755,6 +1823,90 @@ void EditorScene::HandleEditorInput(GameContext& context)
     }
 }
 
+void EditorScene::DrawTilePreview(GameContext& context, const EditorCellData& cell, const Vector2f& center, float w, float h) const
+{
+    const Color bCol = LevelData::GetDisplayColorForCell(cell);
+
+    // 1. Render actual in-game brick texture (Resources/sprite/brick.png) scaled identically to RenderSystem
+    bool drewSprite = false;
+    if (m_brickTexId != 0)
+    {
+        const Vector2f texSize = context.Render.GetTextureSize(m_brickTexId);
+        if (texSize.X > 0.0f && texSize.Y > 0.0f)
+        {
+            const Transform2D sprTransform{center, 0.0f, Vector2f{w / texSize.X, h / texSize.Y}};
+            context.Render.DrawSprite(SpriteComponent{m_brickTexId, bCol}, sprTransform, BlendMode::Alpha);
+            drewSprite = true;
+        }
+    }
+    if (!drewSprite)
+    {
+        context.Render.DrawRectangle(w, h, Transform2D{center}, bCol);
+    }
+
+    // 2. Exact in-game brick overlays scaled proportionally from 100x30 in-game brick dimensions
+    const float sx = w / 100.0f;
+    const float sy = h / 30.0f;
+    const float s = std::min(sx, sy);
+
+    if (cell.Type == EditorTileType::Metal)
+    {
+        // Metallic double inset frame (matches GameScene::OnRender)
+        context.Render.DrawRectangleOutline(w, h, Transform2D{center}, Color{225, 235, 250, 210}, -1.5f * s);
+        context.Render.DrawRectangleOutline(w - 14.0f * sx, h - 10.0f * sy, Transform2D{center}, Color{110, 130, 155, 160}, -1.0f * s);
+    }
+    else if (cell.Type == EditorTileType::Bomb)
+    {
+        // Pulsing explosive orange-gold border + centered glowing core (matches GameScene::OnRender)
+        const float p = 0.5f + 0.5f * std::sin(m_pulseTimer * 6.5f);
+        const Color glowCol{255, static_cast<uint8_t>(140 + 80 * p), 30, static_cast<uint8_t>(180 + 75 * p)};
+        context.Render.DrawRectangleOutline(w, h, Transform2D{center}, glowCol, -2.0f * s);
+        context.Render.DrawCircle(5.0f * s, Transform2D{center}, Color{255, 250, 180, static_cast<uint8_t>(200 + 55 * p)});
+    }
+    else if (cell.Type == EditorTileType::Lantern)
+    {
+        // Pulsing custom-colored lantern border + centered luminous core (matches GameScene::OnRender)
+        const float p = 0.5f + 0.5f * std::sin(m_pulseTimer * 4.5f);
+        const Color lc = cell.LanternLightColor;
+        const Color glowCol{lc.r, lc.g, lc.b, static_cast<uint8_t>(170 + 85 * p)};
+        context.Render.DrawRectangleOutline(w, h, Transform2D{center}, glowCol, -2.0f * s);
+        context.Render.DrawCircle(6.0f * s, Transform2D{center}, Color{255, 245, 180, static_cast<uint8_t>(200 + 55 * p)});
+    }
+    else if (cell.Type == EditorTileType::Event)
+    {
+        // Pulsing double electric frame + centered crisp white lightning bolt (matches GameScene::OnRender)
+        const float p = 0.5f + 0.5f * std::sin(m_pulseTimer * 5.2f);
+        const Color accent = cell.UseCustomColor
+            ? cell.CustomColor
+            : (cell.RandomEvent ? Color{110, 235, 255, 255} : GetArenaEventColor(cell.SpecificEvent));
+        const Color borderCol{accent.r, accent.g, accent.b, static_cast<uint8_t>(175 + 80 * p)};
+        context.Render.DrawRectangleOutline(w, h, Transform2D{center}, borderCol, -2.0f * s);
+        context.Render.DrawRectangleOutline(w - 10.0f * sx, h - 8.0f * sy, Transform2D{center},
+            Color{235, 250, 255, static_cast<uint8_t>(135 + 85 * p)}, -1.0f * s);
+
+        const float lw = std::max(1.2f, 2.2f * s);
+        const Color boltCol{255, 255, 255, static_cast<uint8_t>(215 + 40 * p)};
+        context.Render.DrawLine(Vector2f{center.X + 3.0f * sx, center.Y - 9.0f * sy},
+                                Vector2f{center.X - 4.0f * sx, center.Y + 0.5f * sy}, boltCol, lw);
+        context.Render.DrawLine(Vector2f{center.X - 4.0f * sx, center.Y + 0.5f * sy},
+                                Vector2f{center.X + 4.0f * sx, center.Y + 0.5f * sy}, boltCol, lw);
+        context.Render.DrawLine(Vector2f{center.X + 4.0f * sx, center.Y + 0.5f * sy},
+                                Vector2f{center.X - 3.0f * sx, center.Y + 9.0f * sy}, boltCol, lw);
+    }
+    else if (cell.Type == EditorTileType::Turret)
+    {
+        // Centered downward barrel triangle (matches StoryScene & EditorScene::RenderTurrets)
+        const float triW = 14.0f * sx;
+        const float triH = 12.0f * sy;
+        std::vector<Vertex> iconVerts = {
+            Vertex{center.X - triW * 0.5f, center.Y - triH * 0.4f, Color{255, 230, 230, 240}, 0.0f, 0.0f},
+            Vertex{center.X + triW * 0.5f, center.Y - triH * 0.4f, Color{255, 230, 230, 240}, 0.0f, 0.0f},
+            Vertex{center.X, center.Y + triH * 0.7f, Color{255, 255, 255, 255}, 0.0f, 0.0f}
+        };
+        context.Render.DrawVertices(iconVerts, PrimitiveType::Triangles);
+    }
+}
+
 void EditorScene::RenderGrid(GameContext& context)
 {
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
@@ -1765,41 +1917,118 @@ void EditorScene::RenderGrid(GameContext& context)
     Vector2f canvasCenter{(layout.CanvasMinX + layout.CanvasMaxX) * 0.5f, (layout.CanvasMinY + layout.CanvasMaxY) * 0.5f};
     Vector2f canvasSize{layout.CanvasMaxX - layout.CanvasMinX, layout.CanvasMaxY - layout.CanvasMinY};
 
-    // 1. Dedicated Dynamic Blueprint Canvas Plate
-    context.Render.DrawRectangle(canvasSize.X, canvasSize.Y, Transform2D{canvasCenter}, Color{12, 18, 30, 240});
+    // 1. Dedicated Dynamic Blueprint Canvas Plate with Live LightingMode & Environment Preview
+    const EditorThemeData& thm = m_levelData.GetTheme();
+    context.Render.DrawRectangle(canvasSize.X, canvasSize.Y, Transform2D{canvasCenter}, thm.BgColor);
+
+    // Secondary background gradient strip
+    const float bandH = canvasSize.Y * 0.34f;
+    context.Render.DrawRectangle(canvasSize.X - 4.0f, bandH,
+                                 Transform2D{Vector2f{canvasCenter.X, layout.CanvasMinY + bandH * 0.5f + 2.0f}},
+                                 Color{thm.BgSecondaryColor.r, thm.BgSecondaryColor.g, thm.BgSecondaryColor.b, 85});
+
+    // Live LightingMode darkness/atmosphere wash (mirrors Debug Panel presets)
+    if (thm.Lighting == LightingMode::PitchBlack)
+    {
+        context.Render.DrawRectangle(canvasSize.X - 4.0f, canvasSize.Y - 4.0f,
+                                     Transform2D{canvasCenter}, Color{2, 4, 10, 180});
+    }
+    else if (thm.Lighting == LightingMode::Atmospheric)
+    {
+        const uint8_t ambAlpha = static_cast<uint8_t>(std::clamp((1.0f - thm.AmbientIntensity) * 110.0f + 35.0f, 30.0f, 135.0f));
+        context.Render.DrawRectangle(canvasSize.X - 4.0f, canvasSize.Y - 4.0f,
+                                     Transform2D{canvasCenter},
+                                     Color{static_cast<uint8_t>(thm.AmbientColor.r / 4),
+                                           static_cast<uint8_t>(thm.AmbientColor.g / 4),
+                                           static_cast<uint8_t>(thm.AmbientColor.b / 3),
+                                           ambAlpha});
+    }
+    else // LightingMode::Lit
+    {
+        context.Render.DrawRectangle(canvasSize.X - 4.0f, canvasSize.Y - 4.0f,
+                                     Transform2D{canvasCenter}, Color{220, 235, 255, 16});
+    }
+
+    // Subtle paddle light cone preview at bottom of grid area (stronger in Atmospheric / PitchBlack)
+    if (thm.Lighting != LightingMode::Lit)
+    {
+        const float coneHalfW = std::clamp(thm.PaddleConeAngle * 2.2f, 40.0f, canvasSize.X * 0.36f);
+        const float coneBaseY = layout.CanvasMaxY - layout.PageBarHeight - 6.0f;
+        const float coneTopY = coneBaseY - std::clamp(thm.PaddleLightRange * 0.38f, 75.0f, 210.0f);
+        const float modeBoost = (thm.Lighting == LightingMode::PitchBlack) ? 1.55f : 1.0f;
+        const uint8_t coneAlpha = static_cast<uint8_t>(std::clamp(thm.PaddleLightIntensity * 30.0f * modeBoost, 16.0f, 110.0f));
+        std::vector<Vertex> coneVerts = {
+            Vertex{canvasCenter.X, coneBaseY, Color{thm.PaddleConeColor.r, thm.PaddleConeColor.g, thm.PaddleConeColor.b, coneAlpha}, 0.0f, 0.0f},
+            Vertex{canvasCenter.X - coneHalfW, coneTopY, Color{thm.PaddleConeColor.r, thm.PaddleConeColor.g, thm.PaddleConeColor.b, 0}, 0.0f, 0.0f},
+            Vertex{canvasCenter.X + coneHalfW, coneTopY, Color{thm.PaddleConeColor.r, thm.PaddleConeColor.g, thm.PaddleConeColor.b, 0}, 0.0f, 0.0f}
+        };
+        context.Render.DrawVertices(coneVerts, PrimitiveType::Triangles);
+    }
+
+    // Subtle vignette border preview
+    if (thm.VignetteIntensity > 0.01f)
+    {
+        const uint8_t vigAlpha = static_cast<uint8_t>(std::clamp(thm.VignetteIntensity * 165.0f, 0.0f, 140.0f));
+        const float edgeT = 18.0f;
+        Color vigCol{thm.VignetteColor.r, thm.VignetteColor.g, thm.VignetteColor.b, vigAlpha};
+        context.Render.DrawRectangle(canvasSize.X, edgeT, Transform2D{Vector2f{canvasCenter.X, layout.CanvasMinY + edgeT * 0.5f}}, vigCol);
+        context.Render.DrawRectangle(canvasSize.X, edgeT, Transform2D{Vector2f{canvasCenter.X, layout.CanvasMaxY - layout.PageBarHeight - edgeT * 0.5f}}, vigCol);
+        context.Render.DrawRectangle(edgeT, canvasSize.Y, Transform2D{Vector2f{layout.CanvasMinX + edgeT * 0.5f, canvasCenter.Y}}, vigCol);
+        context.Render.DrawRectangle(edgeT, canvasSize.Y, Transform2D{Vector2f{layout.CanvasMaxX - edgeT * 0.5f, canvasCenter.Y}}, vigCol);
+    }
+
     context.Render.DrawRectangleOutline(canvasSize.X, canvasSize.Y, Transform2D{canvasCenter}, Color{50, 95, 160, 220}, 2.0f);
 
-    // 2. Technical Header Tag at Canvas Top
-    std::string toolTag = (m_tool == EditorTool::Select) ? "OUTIL: SELECTION [S]" : ((m_tool == EditorTool::Eraser) ? "OUTIL: GOMME [G]" : "OUTIL: PINCEAU");
-    std::string dimStr = "CANVA D'EDITION (" + std::to_string(static_cast<int>(canvasSize.X)) + "x" + std::to_string(static_cast<int>(canvasSize.Y)) + ")  //  "
-                       + "PAGE " + std::to_string(m_levelData.GetActivePageIndex() + 1) + "/" + std::to_string(m_levelData.GetPageCount())
-                       + "  //  " + toolTag;
-    Color headerCol = (m_tool == EditorTool::Select) ? Color{110, 230, 255, 220} : ((m_tool == EditorTool::Eraser) ? Color{255, 145, 145, 220} : Color{110, 165, 225, 195});
-    context.Render.DrawTextCentered(dimStr, m_fontId, 16.0f, Transform2D{Vector2f{canvasCenter.X, layout.CanvasMinY + 18.0f}}, headerCol);
+    // 2. Clean Technical Header Tag at Canvas Top
+    const char* toolTag = (m_tool == EditorTool::Select) ? "SELECT [S]" : ((m_tool == EditorTool::Eraser) ? "ERASER [G]" : "PAINT");
+    std::string headerStr = "PAGE " + std::to_string(m_levelData.GetActivePageIndex() + 1) + "/" + std::to_string(m_levelData.GetPageCount())
+                          + "  |  " + toolTag
+                          + "  |  " + GetLightingModeName(thm.Lighting);
+    Color headerCol = (m_tool == EditorTool::Select) ? Color{110, 230, 255, 225} : ((m_tool == EditorTool::Eraser) ? Color{255, 145, 145, 225} : Color{165, 200, 240, 215});
+    context.Render.DrawTextCentered(headerStr, m_fontId, 16.0f, Transform2D{Vector2f{canvasCenter.X, layout.CanvasMinY + 18.0f}}, headerCol);
 
-    // 3. Localized CRT Scanlines & Blueprint Grid Lines across dynamic canvas
-    for (float y = layout.CanvasMinY + 6.0f; y < layout.CanvasMaxY - 4.0f; y += 4.0f)
+    // 3. Localized Blueprint Grid Lines across dynamic canvas
+    for (float y = layout.CanvasMinY + 6.0f; y < layout.CanvasMaxY - layout.PageBarHeight - 4.0f; y += 6.0f)
     {
-        context.Render.DrawLine(Vector2f{layout.CanvasMinX + 2.0f, y}, Vector2f{layout.CanvasMaxX - 2.0f, y}, Color{0, 0, 0, 35}, 1.0f);
+        context.Render.DrawLine(Vector2f{layout.CanvasMinX + 2.0f, y}, Vector2f{layout.CanvasMaxX - 2.0f, y}, Color{0, 0, 0, 22}, 1.0f);
     }
     for (float x = layout.CanvasMinX + 16.0f; x < layout.CanvasMaxX - 10.0f; x += 32.0f)
     {
-        context.Render.DrawLine(Vector2f{x, layout.CanvasMinY + 2.0f}, Vector2f{x, layout.CanvasMaxY - 2.0f}, Color{25, 55, 95, 20}, 1.0f);
+        context.Render.DrawLine(Vector2f{x, layout.CanvasMinY + 2.0f}, Vector2f{x, layout.CanvasMaxY - layout.PageBarHeight - 2.0f}, Color{255, 255, 255, 10}, 1.0f);
     }
 
     // 4. Technical Corner Drafting Brackets on the dynamic canvas bounds
-    const float bLen = 28.0f;
-    Color bracketCol{80, 220, 255, 220};
-    context.Render.DrawLine(Vector2f{layout.CanvasMinX, layout.CanvasMinY}, Vector2f{layout.CanvasMinX + bLen, layout.CanvasMinY}, bracketCol, 2.5f);
-    context.Render.DrawLine(Vector2f{layout.CanvasMinX, layout.CanvasMinY}, Vector2f{layout.CanvasMinX, layout.CanvasMinY + bLen}, bracketCol, 2.5f);
-    context.Render.DrawLine(Vector2f{layout.CanvasMaxX, layout.CanvasMinY}, Vector2f{layout.CanvasMaxX - bLen, layout.CanvasMinY}, bracketCol, 2.5f);
-    context.Render.DrawLine(Vector2f{layout.CanvasMaxX, layout.CanvasMinY}, Vector2f{layout.CanvasMaxX, layout.CanvasMinY + bLen}, bracketCol, 2.5f);
-    context.Render.DrawLine(Vector2f{layout.CanvasMinX, layout.CanvasMaxY}, Vector2f{layout.CanvasMinX + bLen, layout.CanvasMaxY}, bracketCol, 2.5f);
-    context.Render.DrawLine(Vector2f{layout.CanvasMinX, layout.CanvasMaxY}, Vector2f{layout.CanvasMinX, layout.CanvasMaxY - bLen}, bracketCol, 2.5f);
-    context.Render.DrawLine(Vector2f{layout.CanvasMaxX, layout.CanvasMaxY}, Vector2f{layout.CanvasMaxX - bLen, layout.CanvasMaxY}, bracketCol, 2.5f);
-    context.Render.DrawLine(Vector2f{layout.CanvasMaxX, layout.CanvasMaxY}, Vector2f{layout.CanvasMaxX, layout.CanvasMaxY - bLen}, bracketCol, 2.5f);
+    const float bLen = 24.0f;
+    Color bracketCol{thm.PaddleConeColor.r, thm.PaddleConeColor.g, thm.PaddleConeColor.b, 200};
+    context.Render.DrawLine(Vector2f{layout.CanvasMinX, layout.CanvasMinY}, Vector2f{layout.CanvasMinX + bLen, layout.CanvasMinY}, bracketCol, 2.2f);
+    context.Render.DrawLine(Vector2f{layout.CanvasMinX, layout.CanvasMinY}, Vector2f{layout.CanvasMinX, layout.CanvasMinY + bLen}, bracketCol, 2.2f);
+    context.Render.DrawLine(Vector2f{layout.CanvasMaxX, layout.CanvasMinY}, Vector2f{layout.CanvasMaxX - bLen, layout.CanvasMinY}, bracketCol, 2.2f);
+    context.Render.DrawLine(Vector2f{layout.CanvasMaxX, layout.CanvasMinY}, Vector2f{layout.CanvasMaxX, layout.CanvasMinY + bLen}, bracketCol, 2.2f);
+    context.Render.DrawLine(Vector2f{layout.CanvasMinX, layout.CanvasMaxY}, Vector2f{layout.CanvasMinX + bLen, layout.CanvasMaxY}, bracketCol, 2.2f);
+    context.Render.DrawLine(Vector2f{layout.CanvasMinX, layout.CanvasMaxY}, Vector2f{layout.CanvasMinX, layout.CanvasMaxY - bLen}, bracketCol, 2.2f);
+    context.Render.DrawLine(Vector2f{layout.CanvasMaxX, layout.CanvasMaxY}, Vector2f{layout.CanvasMaxX - bLen, layout.CanvasMaxY}, bracketCol, 2.2f);
+    context.Render.DrawLine(Vector2f{layout.CanvasMaxX, layout.CanvasMaxY}, Vector2f{layout.CanvasMaxX, layout.CanvasMaxY - bLen}, bracketCol, 2.2f);
 
-    // 5. Grid Cells & Placed Bricks (Fitted dynamically inside canvas, no paddle clutter)
+    // 4b. Soft radial lantern light halos on the canvas in Atmospheric / PitchBlack modes
+    if (thm.Lighting != LightingMode::Lit)
+    {
+        const float glowIntensity = (thm.Lighting == LightingMode::PitchBlack) ? 0.55f : 0.30f;
+        for (int r = 0; r < LevelData::GRID_ROWS; ++r)
+        {
+            for (int c = 0; c < LevelData::GRID_COLS; ++c)
+            {
+                const EditorCellData cell = m_levelData.GetCell(c, r);
+                if (cell.Type == EditorTileType::Lantern)
+                {
+                    const Vector2f cellCenter = layout.GetCellCenter(c, r);
+                    const float radius = std::clamp(cell.LanternLightRadius * 0.42f, 48.0f, 145.0f);
+                    context.Render.DrawPointLight(cellCenter, radius, cell.LanternLightColor, glowIntensity * cell.LanternLightIntensity, BlendMode::Add);
+                }
+            }
+        }
+    }
+
+    // 5. Grid Cells & Placed Bricks (100% faithful to in-game visuals)
     auto [mx, my] = context.Input.GetMousePosition();
     const Vector2f worldMouse{mx - halfW, my - halfH};
     const float selPulse = 0.5f + 0.5f * std::sin(m_pulseTimer * 6.0f);
@@ -1818,86 +2047,15 @@ void EditorScene::RenderGrid(GameContext& context)
             if (cell.Type == EditorTileType::Empty)
             {
                 Color emptyCol = isHovered
-                    ? ((m_tool == EditorTool::Select) ? Color{35, 65, 105, 190} : Color{45, 75, 120, 210})
-                    : Color{20, 30, 48, 140};
+                    ? ((m_tool == EditorTool::Select) ? Color{35, 65, 105, 180} : Color{45, 75, 120, 200})
+                    : Color{16, 24, 40, 125};
                 context.Render.DrawRectangle(layout.BrickW, layout.BrickH, Transform2D{cellCenter}, emptyCol);
-                context.Render.DrawRectangleOutline(layout.BrickW, layout.BrickH, Transform2D{cellCenter}, Color{45, 70, 110, 130}, 1.0f);
-                context.Render.DrawRectangle(4.0f, 4.0f, Transform2D{cellCenter}, Color{70, 105, 155, 180});
+                context.Render.DrawRectangleOutline(layout.BrickW, layout.BrickH, Transform2D{cellCenter}, Color{75, 105, 150, 95}, 1.0f);
+                context.Render.DrawRectangle(3.5f, 3.5f, Transform2D{cellCenter}, Color{100, 135, 185, 140});
             }
             else
             {
-                const Color bCol = LevelData::GetDisplayColorForCell(cell);
-                std::string label;
-                switch (cell.Type)
-                {
-                case EditorTileType::Light:
-                case EditorTileType::Medium:
-                case EditorTileType::Hard:
-                    label = std::to_string(cell.HitPoints);
-                    break;
-                case EditorTileType::Special:
-                    label = cell.RandomPowerUp ? "*?" : "*F";
-                    break;
-                case EditorTileType::Metal:
-                    label = "M";
-                    break;
-                case EditorTileType::Bomb:
-                    label = "B";
-                    break;
-                case EditorTileType::Turret:
-                    label = "T" + std::to_string(cell.HitPoints);
-                    break;
-                case EditorTileType::Lantern:
-                    label = (cell.HitPoints > 1) ? ("L" + std::to_string(cell.HitPoints)) : "L";
-                    break;
-                default:
-                    break;
-                }
-
-                // 3D Drop shadow
-                context.Render.DrawRectangle(layout.BrickW, layout.BrickH, Transform2D{cellCenter + Vector2f{3.0f, 3.0f}}, Color{0, 0, 0, 160});
-
-                // Brick body
-                context.Render.DrawRectangle(layout.BrickW, layout.BrickH, Transform2D{cellCenter}, bCol);
-
-                // Top & Left 3D bevel highlight lines
-                const float halfBW = layout.BrickW * 0.5f;
-                const float halfBH = layout.BrickH * 0.5f;
-                context.Render.DrawLine(Vector2f{cellCenter.X - halfBW + 1.0f, cellCenter.Y - halfBH + 1.0f},
-                                        Vector2f{cellCenter.X + halfBW - 1.0f, cellCenter.Y - halfBH + 1.0f},
-                                        Color{255, 255, 255, 120}, 2.0f);
-                context.Render.DrawLine(Vector2f{cellCenter.X - halfBW + 1.0f, cellCenter.Y - halfBH + 1.0f},
-                                        Vector2f{cellCenter.X - halfBW + 1.0f, cellCenter.Y + halfBH - 1.0f},
-                                        Color{255, 255, 255, 80}, 2.0f);
-
-                // Bottom 3D shadow line
-                context.Render.DrawLine(Vector2f{cellCenter.X - halfBW + 1.0f, cellCenter.Y + halfBH - 1.0f},
-                                        Vector2f{cellCenter.X + halfBW - 1.0f, cellCenter.Y + halfBH - 1.0f},
-                                        Color{0, 0, 0, 100}, 2.0f);
-
-                // Turret downward barrel preview on grid
-                if (cell.Type == EditorTileType::Turret)
-                {
-                    const float triW = 10.0f;
-                    const float triH = 9.0f;
-                    const Vector2f barCenter = cellCenter + Vector2f{halfBW * 0.52f, 0.0f};
-                    std::vector<Vertex> iconVerts = {
-                        Vertex{barCenter.X - triW * 0.5f, barCenter.Y - triH * 0.4f, Color{255, 230, 230, 240}, 0.0f, 0.0f},
-                        Vertex{barCenter.X + triW * 0.5f, barCenter.Y - triH * 0.4f, Color{255, 230, 230, 240}, 0.0f, 0.0f},
-                        Vertex{barCenter.X, barCenter.Y + triH * 0.7f, Color{255, 255, 255, 255}, 0.0f, 0.0f}
-                    };
-                    context.Render.DrawVertices(iconVerts, PrimitiveType::Triangles);
-                }
-
-                // Crisp outline
-                context.Render.DrawRectangleOutline(layout.BrickW, layout.BrickH, Transform2D{cellCenter}, Colors::White, isHovered ? 2.5f : 1.2f);
-
-                if (!label.empty())
-                {
-                    const float labelOffsetX = (cell.Type == EditorTileType::Turret) ? -6.0f : 0.0f;
-                    context.Render.DrawTextCentered(label, m_fontId, 20.0f, Transform2D{cellCenter + Vector2f{labelOffsetX + 1.0f, 0.0f}}, Color{0, 0, 0, 200});
-                    context.Render.DrawTextCentered(label, m_fontId, 20.0f, Transform2D{cellCenter + Vector2f{labelOffsetX, -1.5f}}, Color{18, 22, 32, 255});
-                }
+                DrawTilePreview(context, cell, cellCenter, layout.BrickW, layout.BrickH);
             }
 
             if (isSelectedCell)
@@ -1906,7 +2064,6 @@ void EditorScene::RenderGrid(GameContext& context)
                 context.Render.DrawRectangle(layout.BrickW, layout.BrickH, Transform2D{cellCenter}, Color{80, 230, 255, glowAlpha});
                 context.Render.DrawRectangleOutline(layout.BrickW + 6.0f, layout.BrickH + 6.0f, Transform2D{cellCenter}, Color{80, 230, 255, 255}, 3.0f);
 
-                // Animated gold L-shaped corner brackets around selected brick
                 const float expand = 4.5f + 2.5f * selPulse;
                 const float ox = layout.BrickW * 0.5f + expand;
                 const float oy = layout.BrickH * 0.5f + expand;
@@ -1968,14 +2125,14 @@ void EditorScene::RenderPageBar(GameContext& context, const EditorGridLayout& la
     // Right-aligned page action buttons
     const float rightEdge = layout.CanvasMaxX - 18.0f;
     const float gap = 6.0f;
-    const float wMoveR = 46.0f, wMoveL = 46.0f, wDel = 92.0f, wDup = 60.0f, wAdd = 94.0f;
+    const float wMoveR = 46.0f, wMoveL = 46.0f, wDel = 80.0f, wDup = 60.0f, wAdd = 94.0f;
 
     float cx = rightEdge - wMoveR * 0.5f;
     drawBtn(Vector2f{cx, barY}, wMoveR, ">>", Color{32, 40, 56, 255}, Color{75, 100, 145, 220}, (activeIdx + 1 < pageCount) ? Colors::White : Color{90, 100, 115, 140});
     cx -= (wMoveR * 0.5f + gap + wMoveL * 0.5f);
     drawBtn(Vector2f{cx, barY}, wMoveL, "<<", Color{32, 40, 56, 255}, Color{75, 100, 145, 220}, (activeIdx > 0) ? Colors::White : Color{90, 100, 115, 140});
     cx -= (wMoveL * 0.5f + gap + wDel * 0.5f);
-    drawBtn(Vector2f{cx, barY}, wDel, "- SUPPR", (pageCount > 1) ? Color{68, 28, 36, 255} : Color{28, 30, 38, 200}, (pageCount > 1) ? Color{210, 75, 90, 230} : Color{50, 54, 65, 150}, (pageCount > 1) ? Color{255, 195, 200, 255} : Color{95, 100, 115, 140});
+    drawBtn(Vector2f{cx, barY}, wDel, "- DEL", (pageCount > 1) ? Color{68, 28, 36, 255} : Color{28, 30, 38, 200}, (pageCount > 1) ? Color{210, 75, 90, 230} : Color{50, 54, 65, 150}, (pageCount > 1) ? Color{255, 195, 200, 255} : Color{95, 100, 115, 140});
     cx -= (wDel * 0.5f + gap + wDup * 0.5f);
     drawBtn(Vector2f{cx, barY}, wDup, "DUP", Color{32, 52, 82, 255}, Color{80, 155, 235, 230}, Color{195, 230, 255, 255});
     cx -= (wDup * 0.5f + gap + wAdd * 0.5f);
@@ -2026,7 +2183,7 @@ bool EditorScene::HandlePageBarInput(const EditorGridLayout& layout, const Vecto
         return false;
     }
 
-    if (!leftClick) return true; // Consume hover/click inside bar region
+    if (!leftClick) return true;
 
     const size_t pageCount = m_levelData.GetPageCount();
     const size_t activeIdx = m_levelData.GetActivePageIndex();
@@ -2037,7 +2194,7 @@ bool EditorScene::HandlePageBarInput(const EditorGridLayout& layout, const Vecto
 
     const float rightEdge = layout.CanvasMaxX - 18.0f;
     const float gap = 6.0f;
-    const float wMoveR = 46.0f, wMoveL = 46.0f, wDel = 92.0f, wDup = 60.0f, wAdd = 94.0f;
+    const float wMoveR = 46.0f, wMoveL = 46.0f, wDel = 80.0f, wDup = 60.0f, wAdd = 94.0f;
 
     float cx = rightEdge - wMoveR * 0.5f;
     if (hitBtn(Vector2f{cx, barY}, wMoveR))
@@ -2046,8 +2203,7 @@ bool EditorScene::HandlePageBarInput(const EditorGridLayout& layout, const Vecto
         {
             PushUndo();
             m_hasSelectedCell = false;
-            m_statusMessage = "PAGE DEPLACEE A DROITE (" + std::to_string(m_levelData.GetActivePageIndex() + 1) + "/" + std::to_string(m_levelData.GetPageCount()) + ")";
-            m_statusTimer = 1.8f;
+            ShowToast("Page moved right (" + std::to_string(m_levelData.GetActivePageIndex() + 1) + "/" + std::to_string(m_levelData.GetPageCount()) + ")", Color{120, 220, 255, 255}, 1.6f);
             if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
         }
         return true;
@@ -2060,8 +2216,7 @@ bool EditorScene::HandlePageBarInput(const EditorGridLayout& layout, const Vecto
         {
             PushUndo();
             m_hasSelectedCell = false;
-            m_statusMessage = "PAGE DEPLACEE A GAUCHE (" + std::to_string(m_levelData.GetActivePageIndex() + 1) + "/" + std::to_string(m_levelData.GetPageCount()) + ")";
-            m_statusTimer = 1.8f;
+            ShowToast("Page moved left (" + std::to_string(m_levelData.GetActivePageIndex() + 1) + "/" + std::to_string(m_levelData.GetPageCount()) + ")", Color{120, 220, 255, 255}, 1.6f);
             if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
         }
         return true;
@@ -2074,8 +2229,7 @@ bool EditorScene::HandlePageBarInput(const EditorGridLayout& layout, const Vecto
         {
             PushUndo();
             m_hasSelectedCell = false;
-            m_statusMessage = "PAGE SUPPRIMEE";
-            m_statusTimer = 1.8f;
+            ShowToast("Page deleted", Color{255, 130, 140, 255}, 1.6f);
             if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
         }
         return true;
@@ -2087,8 +2241,7 @@ bool EditorScene::HandlePageBarInput(const EditorGridLayout& layout, const Vecto
         PushUndo();
         m_levelData.AddPage(true);
         m_hasSelectedCell = false;
-        m_statusMessage = "PAGE DUPLIQUEE (" + std::to_string(m_levelData.GetPageCount()) + " PAGES)";
-        m_statusTimer = 1.8f;
+        ShowToast("Page duplicated (" + std::to_string(m_levelData.GetPageCount()) + " pages)", Color{120, 220, 255, 255}, 1.6f);
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
         return true;
     }
@@ -2099,8 +2252,7 @@ bool EditorScene::HandlePageBarInput(const EditorGridLayout& layout, const Vecto
         PushUndo();
         m_levelData.AddPage(false);
         m_hasSelectedCell = false;
-        m_statusMessage = "NOUVELLE PAGE AJOUTEE (" + std::to_string(m_levelData.GetPageCount()) + " PAGES)";
-        m_statusTimer = 1.8f;
+        ShowToast("New page added (" + std::to_string(m_levelData.GetPageCount()) + " pages)", Color{110, 235, 165, 255}, 1.6f);
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
         return true;
     }
@@ -2164,7 +2316,6 @@ bool EditorScene::HandlePageBarInput(const EditorGridLayout& layout, const Vecto
 
 void EditorScene::RenderDefeatModal(GameContext& context)
 {
-    // Force identity center-aligned UI camera (pos: 0, 0, zoom: 1.0)
     Camera2D uiCamera{};
     uiCamera.Position = Vector2f{0.0f, 0.0f};
     uiCamera.Zoom = 1.0f;
@@ -2177,18 +2328,14 @@ void EditorScene::RenderDefeatModal(GameContext& context)
     auto [mx, my] = context.Input.GetMousePosition();
     const Vector2f worldMouse{mx - halfW, my - halfH};
 
-    // Dim background
     context.Render.DrawRectangle(viewSize.X * 1.5f, viewSize.Y * 1.5f, Transform2D{Vector2f{0.0f, 0.0f}}, Color{10, 12, 16, 210});
 
-    // JetBrains styled Dialog Window
     const Vector2f modalSize{640.0f, 320.0f};
     const Vector2f modalPos{0.0f, 0.0f};
 
-    // Window frame
     context.Render.DrawRectangle(modalSize.X, modalSize.Y, Transform2D{modalPos}, Color{30, 31, 34, 255});
     context.Render.DrawRectangleOutline(modalSize.X, modalSize.Y, Transform2D{modalPos}, Color{78, 82, 92, 255}, 2.0f);
 
-    // Header bar
     const float headerH = 52.0f;
     const Vector2f headerPos{0.0f, modalPos.Y - modalSize.Y * 0.5f + headerH * 0.5f};
     context.Render.DrawRectangle(modalSize.X - 4.0f, headerH, Transform2D{headerPos}, Color{43, 45, 48, 255});
@@ -2196,15 +2343,12 @@ void EditorScene::RenderDefeatModal(GameContext& context)
                             Vector2f{modalSize.X * 0.5f, headerPos.Y + headerH * 0.5f},
                             Color{60, 64, 72, 255}, 1.5f);
 
-    // Stop icon + Title in header
-    DrawIconStop(context, Vector2f{-230.0f, headerPos.Y}, 20.0f, Color{219, 88, 96, 255});
-    context.Render.DrawTextCentered("TEST TERMINE - NIVEAU NON COMPLETE", m_fontId, 22.0f, Transform2D{Vector2f{20.0f, headerPos.Y}}, Color{235, 238, 245, 255});
+    DrawIconStop(context, Vector2f{-220.0f, headerPos.Y}, 20.0f, Color{219, 88, 96, 255});
+    context.Render.DrawTextCentered("PLAYTEST ENDED - LEVEL FAILED", m_fontId, 22.0f, Transform2D{Vector2f{16.0f, headerPos.Y}}, Color{235, 238, 245, 255});
 
-    // Body texts
-    context.Render.DrawTextCentered("Vous avez epuise toutes vos vies lors du playtest.", m_fontId, 21.0f, Transform2D{Vector2f{0.0f, modalPos.Y - 35.0f}}, Color{210, 215, 225, 255});
-    context.Render.DrawTextCentered("Que souhaitez-vous faire maintenant ?", m_fontId, 19.0f, Transform2D{Vector2f{0.0f, modalPos.Y}}, Color{160, 165, 178, 255});
+    context.Render.DrawTextCentered("All lives were lost during the playtest.", m_fontId, 21.0f, Transform2D{Vector2f{0.0f, modalPos.Y - 35.0f}}, Color{210, 215, 225, 255});
+    context.Render.DrawTextCentered("What would you like to do?", m_fontId, 19.0f, Transform2D{Vector2f{0.0f, modalPos.Y}}, Color{160, 165, 178, 255});
 
-    // Buttons
     const Vector2f btn1Pos{-150.0f, modalPos.Y + 75.0f};
     const Vector2f btn2Pos{150.0f, modalPos.Y + 75.0f};
     const Vector2f btnSize{270.0f, 54.0f};
@@ -2212,19 +2356,17 @@ void EditorScene::RenderDefeatModal(GameContext& context)
     bool btn1Hover = (std::abs(worldMouse.X - btn1Pos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - btn1Pos.Y) <= btnSize.Y * 0.5f);
     bool btn2Hover = (std::abs(worldMouse.X - btn2Pos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - btn2Pos.Y) <= btnSize.Y * 0.5f);
 
-    // Button 1: REJOUER LE NIVEAU (JetBrains green button)
     Color btn1Bg = btn1Hover ? Color{65, 175, 95, 255} : Color{50, 145, 75, 255};
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{btn1Pos}, btn1Bg);
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{btn1Pos}, btn1Hover ? Colors::White : Color{89, 168, 105, 255}, 1.5f);
     DrawIconPlay(context, Vector2f{btn1Pos.X - 95.0f, btn1Pos.Y}, 20.0f, Colors::White);
-    context.Render.DrawTextCentered("REJOUER [R / ESPACE]", m_fontId, 18.0f, Transform2D{Vector2f{btn1Pos.X + 15.0f, btn1Pos.Y}}, Colors::White);
+    context.Render.DrawTextCentered("RETRY [R / SPACE]", m_fontId, 18.0f, Transform2D{Vector2f{btn1Pos.X + 15.0f, btn1Pos.Y}}, Colors::White);
 
-    // Button 2: RETOUR EN MODE EDIT (JetBrains neutral slate button)
     Color btn2Bg = btn2Hover ? Color{60, 65, 76, 255} : Color{43, 45, 48, 255};
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{btn2Pos}, btn2Bg);
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{btn2Pos}, btn2Hover ? Colors::White : Color{90, 95, 108, 255}, 1.5f);
     DrawIconUndo(context, Vector2f{btn2Pos.X - 95.0f, btn2Pos.Y}, 20.0f, Color{88, 157, 246, 255});
-    context.Render.DrawTextCentered("RETOUR EDIT [ECHAP]", m_fontId, 18.0f, Transform2D{Vector2f{btn2Pos.X + 15.0f, btn2Pos.Y}}, Color{230, 235, 245, 255});
+    context.Render.DrawTextCentered("BACK TO EDITOR [ESC]", m_fontId, 18.0f, Transform2D{Vector2f{btn2Pos.X + 15.0f, btn2Pos.Y}}, Color{230, 235, 245, 255});
 }
 
 void EditorScene::HandleDefeatModalInput(GameContext& context)
@@ -2242,7 +2384,6 @@ void EditorScene::HandleDefeatModalInput(GameContext& context)
 
     if (context.Input.IsMouseButtonPress(MouseButton::Left))
     {
-        // 1. REJOUER LE NIVEAU
         if (std::abs(worldMouse.X - btn1Pos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - btn1Pos.Y) <= btnSize.Y * 0.5f)
         {
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
@@ -2251,7 +2392,6 @@ void EditorScene::HandleDefeatModalInput(GameContext& context)
             return;
         }
 
-        // 2. RETOUR EDIT
         if (std::abs(worldMouse.X - btn2Pos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - btn2Pos.Y) <= btnSize.Y * 0.5f)
         {
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
@@ -2474,14 +2614,15 @@ Color EditorScene::GetBrickColor(EditorTileType tile) const
 {
     switch (tile)
     {
-    case EditorTileType::Light:   return Color{60, 220, 90, 255};    // Green (1 PV)
-    case EditorTileType::Medium:  return Color{255, 220, 40, 255};   // Yellow (2 PV)
-    case EditorTileType::Hard:    return Color{240, 50, 60, 255};    // Red (3 PV)
-    case EditorTileType::Special: return Color{255, 40, 240, 255};   // Magenta / Bonus
-    case EditorTileType::Metal:   return Color{180, 195, 210, 255};  // Steel Silver
-    case EditorTileType::Bomb:    return Color{255, 85, 25, 255};    // Explosive Orange
-    case EditorTileType::Turret:  return Color{225, 40, 75, 255};    // Tactical Crimson
-    case EditorTileType::Lantern: return Color{255, 235, 120, 255};  // Warm Amber
+    case EditorTileType::Light:   return Color{60, 220, 90, 255};
+    case EditorTileType::Medium:  return Color{255, 220, 40, 255};
+    case EditorTileType::Hard:    return Color{240, 50, 60, 255};
+    case EditorTileType::Special: return Color{255, 40, 240, 255};
+    case EditorTileType::Event:   return Color{45, 220, 235, 255};
+    case EditorTileType::Metal:   return Color{180, 195, 210, 255};
+    case EditorTileType::Bomb:    return Color{255, 85, 25, 255};
+    case EditorTileType::Turret:  return Color{225, 40, 75, 255};
+    case EditorTileType::Lantern: return Color{255, 235, 120, 255};
     default:                      return Color{100, 110, 130, 255};
     }
 }
@@ -2505,7 +2646,6 @@ void EditorScene::RenderPlaytestStopButton(GameContext& context)
     bool isHovered = (std::abs(worldMouse.X - stopBtnPos.X) <= btnSize.X * 0.6f &&
                       std::abs(worldMouse.Y - stopBtnPos.Y) <= btnSize.Y * 0.6f);
 
-    // Compensate for CRT curvature shader in playtest mode
     Vector2f drawPos = stopBtnPos;
     if (context.Rules.GetRule(Rule::Graphics::EnableShader))
     {
@@ -2518,14 +2658,10 @@ void EditorScene::RenderPlaytestStopButton(GameContext& context)
         drawPos = Vector2f{crtNormX * halfW, crtNormY * halfH};
     }
 
-    // Drop shadow
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{drawPos + Vector2f{3.0f, 3.0f}}, Color{0, 0, 0, 180});
-
-    // Button body
     Color bg = isHovered ? Color{235, 50, 65, 255} : Color{195, 38, 52, 240};
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{drawPos}, bg);
 
-    // 3D Bevel highlight
     context.Render.DrawLine(Vector2f{drawPos.X - btnSize.X * 0.5f, drawPos.Y - btnSize.Y * 0.5f},
                             Vector2f{drawPos.X + btnSize.X * 0.5f, drawPos.Y - btnSize.Y * 0.5f},
                             Color{255, 140, 150, 200}, 2.0f);
@@ -2533,26 +2669,21 @@ void EditorScene::RenderPlaytestStopButton(GameContext& context)
                             Vector2f{drawPos.X - btnSize.X * 0.5f, drawPos.Y + btnSize.Y * 0.5f},
                             Color{255, 140, 150, 200}, 2.0f);
 
-    // Outer border
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{drawPos}, isHovered ? Colors::White : Color{255, 110, 125, 200}, isHovered ? 2.5f : 1.5f);
-
-    // Stop icon inside
     DrawIconStop(context, drawPos, 22.0f, Colors::White);
 
-    // Tooltip pill next to the button when hovered
     if (isHovered)
     {
-        Vector2f tipPos{drawPos.X + 130.0f, drawPos.Y};
-        context.Render.DrawRectangle(190.0f, 36.0f, Transform2D{tipPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 160});
-        context.Render.DrawRectangle(190.0f, 36.0f, Transform2D{tipPos}, Color{30, 33, 40, 250});
-        context.Render.DrawRectangleOutline(190.0f, 36.0f, Transform2D{tipPos}, Color{90, 95, 110, 220}, 1.5f);
-        context.Render.DrawTextCentered("STOP SIMULATION [P]", m_fontId, 16.0f, Transform2D{tipPos}, Colors::White);
+        Vector2f tipPos{drawPos.X + 125.0f, drawPos.Y};
+        context.Render.DrawRectangle(182.0f, 36.0f, Transform2D{tipPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 160});
+        context.Render.DrawRectangle(182.0f, 36.0f, Transform2D{tipPos}, Color{30, 33, 40, 250});
+        context.Render.DrawRectangleOutline(182.0f, 36.0f, Transform2D{tipPos}, Color{90, 95, 110, 220}, 1.5f);
+        context.Render.DrawTextCentered("STOP PLAYTEST [P]", m_fontId, 16.0f, Transform2D{tipPos}, Colors::White);
     }
 }
 
 void EditorScene::RenderToolbar(GameContext& context)
 {
-    // Force identity center-aligned UI camera (pos: 0, 0, zoom: 1.0)
     Camera2D uiCamera{};
     uiCamera.Position = Vector2f{0.0f, 0.0f};
     uiCamera.Zoom = 1.0f;
@@ -2562,10 +2693,9 @@ void EditorScene::RenderToolbar(GameContext& context)
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
     const float halfW = viewSize.X * 0.5f;
     const float halfH = viewSize.Y * 0.5f;
-    const float toolbarH = 74.0f;
+    const float toolbarH = kToolbarHeight;
     const Vector2f barPos{0.0f, -halfH + toolbarH * 0.5f};
 
-    // Fullscreen Top Toolbar (JetBrains dark theme #1E1F22)
     context.Render.DrawRectangle(viewSize.X * 1.02f, toolbarH, Transform2D{barPos}, Color{30, 31, 34, 255});
     context.Render.DrawLine(Vector2f{-halfW, barPos.Y + toolbarH * 0.5f},
                             Vector2f{halfW, barPos.Y + toolbarH * 0.5f},
@@ -2574,17 +2704,16 @@ void EditorScene::RenderToolbar(GameContext& context)
     auto [mx, my] = context.Input.GetMousePosition();
     const Vector2f worldMouse{mx - halfW, my - halfH};
 
-    // Left: Rebreaker Maker logo / badge
+    // Left: Rebreaker Maker logo
     Vector2f logoPos{-halfW + 120.0f, barPos.Y};
     context.Render.DrawTextCentered("REBREAKER", m_fontId, 22.0f, Transform2D{logoPos}, Color{255, 215, 60, 255});
-    // Vertical separator
     context.Render.DrawLine(Vector2f{-halfW + 220.0f, barPos.Y - 20.0f},
                             Vector2f{-halfW + 220.0f, barPos.Y + 20.0f},
                             Color{65, 70, 80, 255}, 1.5f);
 
-    // Button dimensions
     const Vector2f btnSize{56.0f, 50.0f};
-    std::string hoveredTooltip = "";
+    std::string hoveredTooltip;
+    float hoveredBtnX = 0.0f;
 
     // 1. Play / Stop Button
     Vector2f playPos{-halfW + 270.0f, barPos.Y};
@@ -2597,7 +2726,7 @@ void EditorScene::RenderToolbar(GameContext& context)
         context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{playPos}, cutCol);
         context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{playPos}, Colors::White, 2.0f);
         DrawIconStop(context, playPos, 22.0f, Colors::White);
-        if (playHover) hoveredTooltip = "Arreter le test [Echap / Couper]";
+        if (playHover) { hoveredTooltip = "Stop playtest [P]"; hoveredBtnX = playPos.X; }
     }
     else
     {
@@ -2605,19 +2734,13 @@ void EditorScene::RenderToolbar(GameContext& context)
         context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{playPos}, playCol);
         context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{playPos}, playHover ? Colors::White : Color{89, 168, 105, 255}, 1.5f);
         DrawIconPlay(context, playPos, 22.0f, Colors::White);
-        if (playHover) hoveredTooltip = "Lancer le test du niveau [P]";
+        if (playHover) { hoveredTooltip = "Start playtest [P]"; hoveredBtnX = playPos.X; }
     }
 
     if (m_isPlaytesting)
     {
-        // When playtesting, display playtest badge & status
         Vector2f testBadgePos{0.0f, barPos.Y};
-        context.Render.DrawTextCentered("TEST DU NIVEAU EN COURS", m_fontId, 22.0f, Transform2D{testBadgePos}, Color{80, 220, 255, 255});
-        if (!hoveredTooltip.empty())
-        {
-            Vector2f tipPos{halfW - 300.0f, barPos.Y};
-            context.Render.DrawTextCentered(hoveredTooltip, m_fontId, 18.0f, Transform2D{tipPos}, Color{255, 225, 100, 255});
-        }
+        context.Render.DrawTextCentered("PLAYTEST ACTIVE", m_fontId, 21.0f, Transform2D{testBadgePos}, Color{80, 220, 255, 255});
         return;
     }
 
@@ -2628,7 +2751,7 @@ void EditorScene::RenderToolbar(GameContext& context)
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{undoPos}, undoCol);
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{undoPos}, undoHover ? Colors::White : Color{68, 73, 85, 255}, 1.5f);
     DrawIconUndo(context, undoPos, 24.0f, Color{88, 157, 246, 255});
-    if (undoHover) hoveredTooltip = "Annuler la derniere action [Ctrl+Z]";
+    if (undoHover) { hoveredTooltip = "Undo [Ctrl+Z]"; hoveredBtnX = undoPos.X; }
 
     // 3. Select / Inspect Tool Button
     Vector2f selectPos{-halfW + 402.0f, barPos.Y};
@@ -2638,19 +2761,18 @@ void EditorScene::RenderToolbar(GameContext& context)
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{selectPos}, selectCol);
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{selectPos}, isSelectActive ? Color{80, 230, 255, 255} : (selectHover ? Colors::White : Color{68, 73, 85, 255}), isSelectActive ? 2.5f : 1.5f);
     DrawIconSelect(context, selectPos, 24.0f, isSelectActive ? Color{80, 230, 255, 255} : Color{160, 220, 255, 255});
-    if (selectHover) hoveredTooltip = "Outil Selection / Inspecter brique [S]";
+    if (selectHover) { hoveredTooltip = "Select / Inspect [S]"; hoveredBtnX = selectPos.X; }
 
-    // 4. Eraser (Gomme) Button
-    Vector2f gommePos{-halfW + 468.0f, barPos.Y};
-    bool gommeHover = (std::abs(worldMouse.X - gommePos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - gommePos.Y) <= btnSize.Y * 0.5f);
-    bool isGommeActive = (m_tool == EditorTool::Eraser);
-    Color gommeCol = isGommeActive ? Color{70, 45, 55, 255} : (gommeHover ? Color{55, 60, 72, 255} : Color{43, 45, 48, 255});
-    context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{gommePos}, gommeCol);
-    context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{gommePos}, isGommeActive ? Color{237, 108, 99, 255} : (gommeHover ? Colors::White : Color{68, 73, 85, 255}), isGommeActive ? 2.5f : 1.5f);
-    DrawIconEraser(context, gommePos, 24.0f, Colors::White);
-    if (gommeHover) hoveredTooltip = "Outil Gomme / Effacer brique [G]";
+    // 4. Eraser Button
+    Vector2f eraserPos{-halfW + 468.0f, barPos.Y};
+    bool eraserHover = (std::abs(worldMouse.X - eraserPos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - eraserPos.Y) <= btnSize.Y * 0.5f);
+    bool isEraserActive = (m_tool == EditorTool::Eraser);
+    Color eraserCol = isEraserActive ? Color{70, 45, 55, 255} : (eraserHover ? Color{55, 60, 72, 255} : Color{43, 45, 48, 255});
+    context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{eraserPos}, eraserCol);
+    context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{eraserPos}, isEraserActive ? Color{237, 108, 99, 255} : (eraserHover ? Colors::White : Color{68, 73, 85, 255}), isEraserActive ? 2.5f : 1.5f);
+    DrawIconEraser(context, eraserPos, 24.0f, Colors::White);
+    if (eraserHover) { hoveredTooltip = "Eraser [G]"; hoveredBtnX = eraserPos.X; }
 
-    // Separator line
     context.Render.DrawLine(Vector2f{-halfW + 510.0f, barPos.Y - 20.0f},
                             Vector2f{-halfW + 510.0f, barPos.Y + 20.0f},
                             Color{65, 70, 80, 255}, 1.5f);
@@ -2662,7 +2784,7 @@ void EditorScene::RenderToolbar(GameContext& context)
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{savePos}, saveCol);
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{savePos}, saveHover ? Colors::White : Color{68, 73, 85, 255}, 1.5f);
     DrawIconFloppy(context, savePos, 24.0f, Colors::White);
-    if (saveHover) hoveredTooltip = "Sauvegarder le niveau actuel";
+    if (saveHover) { hoveredTooltip = "Save level"; hoveredBtnX = savePos.X; }
 
     // 6. Save As Button
     Vector2f saveAsPos{-halfW + 618.0f, barPos.Y};
@@ -2671,18 +2793,17 @@ void EditorScene::RenderToolbar(GameContext& context)
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{saveAsPos}, saveAsCol);
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{saveAsPos}, saveAsHover ? Colors::White : Color{68, 73, 85, 255}, 1.5f);
     DrawIconFloppyPlus(context, saveAsPos, 24.0f, Colors::White);
-    if (saveAsHover) hoveredTooltip = "Enregistrer sous un nouveau fichier";
+    if (saveAsHover) { hoveredTooltip = "Save level as..."; hoveredBtnX = saveAsPos.X; }
 
-    // 7. Clear Button
+    // 7. Clear Page Button
     Vector2f clearPos{-halfW + 684.0f, barPos.Y};
     bool clearHover = (std::abs(worldMouse.X - clearPos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - clearPos.Y) <= btnSize.Y * 0.5f);
     Color clearCol = clearHover ? Color{80, 35, 45, 255} : Color{43, 45, 48, 255};
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{clearPos}, clearCol);
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{clearPos}, clearHover ? Color{219, 88, 96, 255} : Color{68, 73, 85, 255}, 1.5f);
     DrawIconTrash(context, clearPos, 24.0f, Color{219, 88, 96, 255});
-    if (clearHover) hoveredTooltip = "Vider toute la grille";
+    if (clearHover) { hoveredTooltip = "Clear current page"; hoveredBtnX = clearPos.X; }
 
-    // Separator line
     context.Render.DrawLine(Vector2f{-halfW + 726.0f, barPos.Y - 20.0f},
                             Vector2f{-halfW + 726.0f, barPos.Y + 20.0f},
                             Color{65, 70, 80, 255}, 1.5f);
@@ -2697,24 +2818,25 @@ void EditorScene::RenderToolbar(GameContext& context)
         context.Render.DrawTextCentered(badgeTxt, m_fontId, 18.0f, Transform2D{lvlBadgePos}, Color{190, 240, 255, 255});
     }
 
-    // 7. Quit Button (Far Right)
+    // 8. Exit Button (Far Right)
     Vector2f quitPos{halfW - 55.0f, barPos.Y};
     bool quitHover = (std::abs(worldMouse.X - quitPos.X) <= btnSize.X * 0.5f && std::abs(worldMouse.Y - quitPos.Y) <= btnSize.Y * 0.5f);
     Color quitCol = quitHover ? Color{65, 40, 48, 255} : Color{43, 45, 48, 255};
     context.Render.DrawRectangle(btnSize.X, btnSize.Y, Transform2D{quitPos}, quitCol);
     context.Render.DrawRectangleOutline(btnSize.X, btnSize.Y, Transform2D{quitPos}, quitHover ? Color{219, 88, 96, 255} : Color{68, 73, 85, 255}, 1.5f);
     DrawIconExit(context, quitPos, 22.0f, Color{206, 210, 216, 255});
-    if (quitHover) hoveredTooltip = "Quitter l'editeur [Echap]";
+    if (quitHover) { hoveredTooltip = "Exit editor [Esc]"; hoveredBtnX = quitPos.X; }
 
-    // Status / Tooltip Message Display in Center-Right
-    Vector2f statusPos{halfW - 360.0f, barPos.Y};
+    // Floating hover tooltip directly below hovered toolbar button (no permanent top-right clutter)
     if (!hoveredTooltip.empty())
     {
-        context.Render.DrawTextCentered(hoveredTooltip, m_fontId, 20.0f, Transform2D{statusPos}, Color{255, 225, 100, 255});
-    }
-    else
-    {
-        context.Render.DrawTextCentered(m_statusMessage, m_fontId, 20.0f, Transform2D{statusPos}, m_statusColor);
+        const float tipW = std::max(150.0f, static_cast<float>(hoveredTooltip.size()) * 10.5f + 26.0f);
+        const float tipX = std::clamp(hoveredBtnX, -halfW + tipW * 0.5f + 10.0f, halfW - tipW * 0.5f - 10.0f);
+        const Vector2f tipPos{tipX, -halfH + toolbarH + 22.0f};
+        context.Render.DrawRectangle(tipW, 30.0f, Transform2D{tipPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 145});
+        context.Render.DrawRectangle(tipW, 30.0f, Transform2D{tipPos}, Color{26, 30, 38, 245});
+        context.Render.DrawRectangleOutline(tipW, 30.0f, Transform2D{tipPos}, Color{85, 95, 118, 230}, 1.2f);
+        context.Render.DrawTextCentered(hoveredTooltip, m_fontId, 16.0f, Transform2D{tipPos}, Color{235, 240, 248, 255});
     }
 }
 
@@ -2723,7 +2845,7 @@ void EditorScene::RenderPalette(GameContext& context)
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
     const float halfW = viewSize.X * 0.5f;
     const float halfH = viewSize.Y * 0.5f;
-    const float toolbarH = 74.0f;
+    const float toolbarH = kToolbarHeight;
     const float palH = viewSize.Y - toolbarH;
 
     auto [mx, my] = context.Input.GetMousePosition();
@@ -2731,151 +2853,60 @@ void EditorScene::RenderPalette(GameContext& context)
 
     if (m_leftPanelOpen)
     {
-        const float sideWidth = 360.0f;
+        const float sideWidth = kLeftPanelWidth;
         Vector2f palCenter{-halfW + sideWidth * 0.5f, -halfH + toolbarH + palH * 0.5f};
         Vector2f palSize{sideWidth, palH};
 
-        // Modern dark panel background with outer border
         context.Render.DrawRectangle(palSize.X, palSize.Y, Transform2D{palCenter}, Color{22, 25, 33, 250});
         context.Render.DrawLine(Vector2f{-halfW + sideWidth, -halfH + toolbarH},
                                 Vector2f{-halfW + sideWidth, halfH},
                                 Color{60, 66, 80, 255}, 2.0f);
 
-        // Header Title
-        Vector2f titlePos{-halfW + 140.0f, -halfH + toolbarH + 35.0f};
-        context.Render.DrawTextCentered("PALETTE DE BRIQUES", m_fontId, 24.0f, Transform2D{titlePos}, Color{255, 215, 60, 255});
+        // Clean Header Title
+        Vector2f titlePos{-halfW + 18.0f, -halfH + toolbarH + 22.0f};
+        context.Render.DrawText("PALETTE", m_fontId, 20.0f, Transform2D{titlePos}, Color{225, 232, 245, 245});
 
-        // Header Collapse Tab Button on right edge
-        Vector2f togglePos{-halfW + sideWidth - 22.0f, -halfH + toolbarH + 35.0f};
+        // Header Collapse Button
+        Vector2f togglePos{-halfW + sideWidth - 22.0f, -halfH + toolbarH + 32.0f};
         bool toggleHover = (std::abs(worldMouse.X - togglePos.X) <= 16.0f && std::abs(worldMouse.Y - togglePos.Y) <= 16.0f);
-        context.Render.DrawRectangle(30.0f, 30.0f, Transform2D{togglePos}, toggleHover ? Color{55, 62, 78, 255} : Color{34, 38, 48, 255});
-        context.Render.DrawRectangleOutline(30.0f, 30.0f, Transform2D{togglePos}, toggleHover ? Colors::White : Color{70, 76, 92, 255}, 1.2f);
-        DrawChevron(context, togglePos, 16.0f, false /* left */, toggleHover ? Colors::White : Color{190, 195, 205, 255});
+        context.Render.DrawRectangle(28.0f, 28.0f, Transform2D{togglePos}, toggleHover ? Color{55, 62, 78, 255} : Color{34, 38, 48, 255});
+        context.Render.DrawRectangleOutline(28.0f, 28.0f, Transform2D{togglePos}, toggleHover ? Colors::White : Color{70, 76, 92, 255}, 1.2f);
+        DrawChevron(context, togglePos, 15.0f, false /* left */, toggleHover ? Colors::White : Color{190, 195, 205, 255});
 
-        struct PaletteEntry
-        {
-            EditorTileType Type;
-            const char* Label;
-        };
+        context.Render.DrawLine(Vector2f{-halfW + 14.0f, -halfH + toolbarH + 54.0f},
+                                Vector2f{-halfW + sideWidth - 14.0f, -halfH + toolbarH + 54.0f},
+                                Color{48, 54, 68, 220}, 1.0f);
 
-        const PaletteEntry items[9] = {
-            {EditorTileType::Light,   "1. LIGHT"},
-            {EditorTileType::Medium,  "2. MEDIUM"},
-            {EditorTileType::Hard,    "3. HARD"},
-            {EditorTileType::Special, "*. BONUS"},
-            {EditorTileType::Metal,   "M. METAL"},
-            {EditorTileType::Bomb,    "B. BOMBE"},
-            {EditorTileType::Turret,  "V. TOURELLE"},
-            {EditorTileType::Lantern, "L. LANTERNE"},
-            {EditorTileType::Empty,   "X. GOMME"}
-        };
+        const float palStartY = -halfH + toolbarH + 62.0f;
+        const float itemH = 62.0f;
+        const float cardW = sideWidth - 24.0f;
 
-        const float palStartY = -halfH + toolbarH + 68.0f;
-        const float itemH = 76.0f;
-        const float cardW = sideWidth - 28.0f;
-
+        // Display ONLY visual preview + object name (no eraser, no descriptions or extra text)
         for (int i = 0; i < 9; ++i)
         {
-            float itemY = palStartY + static_cast<float>(i) * itemH + itemH * 0.5f;
-            Vector2f itemPos{palCenter.X, itemY};
-            bool isHover = (std::abs(worldMouse.X - itemPos.X) <= cardW * 0.5f && std::abs(worldMouse.Y - itemPos.Y) <= itemH * 0.45f);
-            bool isSelected = (i == 8) ? (m_tool == EditorTool::Eraser) : (m_tool == EditorTool::Paint && m_selectedTile == items[i].Type);
+            const EditorTileType tileType = kPaletteTiles[i];
+            const float itemY = palStartY + static_cast<float>(i) * itemH + itemH * 0.5f;
+            const Vector2f itemPos{palCenter.X, itemY};
+            const bool isHover = (std::abs(worldMouse.X - itemPos.X) <= cardW * 0.5f && std::abs(worldMouse.Y - itemPos.Y) <= itemH * 0.45f);
+            const bool isSelected = (m_tool == EditorTool::Paint && m_selectedTile == tileType);
 
-            // Card body with 3D relief
             Color bg = isSelected ? Color{38, 52, 76, 255} : (isHover ? Color{30, 36, 50, 255} : Color{25, 29, 39, 255});
             context.Render.DrawRectangle(cardW, itemH - 6.0f, Transform2D{itemPos}, bg);
+            context.Render.DrawRectangleOutline(cardW, itemH - 6.0f, Transform2D{itemPos},
+                isSelected ? Color{255, 215, 60, 255} : (isHover ? Color{110, 140, 180, 210} : Color{46, 52, 68, 190}),
+                isSelected ? 2.0f : 1.0f);
 
-            // 3D bevel top highlight line
-            context.Render.DrawLine(Vector2f{itemPos.X - cardW * 0.5f + 1.0f, itemPos.Y - (itemH - 6.0f) * 0.5f + 1.0f},
-                                    Vector2f{itemPos.X + cardW * 0.5f - 1.0f, itemPos.Y - (itemH - 6.0f) * 0.5f + 1.0f},
-                                    Color{255, 255, 255, static_cast<uint8_t>(isSelected ? 60 : 25)}, 1.5f);
+            const EditorCellData preset = m_levelData.GetPalettePreset(tileType);
+            const Vector2f iconPos{itemPos.X - cardW * 0.34f, itemPos.Y};
+            DrawTilePreview(context, preset, iconPos, 54.0f, 24.0f);
 
-            // Outer border
-            context.Render.DrawRectangleOutline(cardW, itemH - 6.0f, Transform2D{itemPos}, isSelected ? Color{255, 215, 60, 255} : (isHover ? Color{120, 150, 190, 200} : Color{48, 54, 70, 200}), isSelected ? 2.0f : 1.0f);
-
-            // Live preset data for brick preview & description
-            const EditorCellData preset = (i < 8) ? m_levelData.GetPalettePreset(items[i].Type) : EditorCellData{};
-            std::string desc;
-            if (i == 8)
-            {
-                desc = "Effaceur brique";
-            }
-            else
-            {
-                switch (items[i].Type)
-                {
-                case EditorTileType::Light:
-                case EditorTileType::Medium:
-                case EditorTileType::Hard:
-                    desc = std::to_string(preset.HitPoints) + " PV - " + GetHitPointsColorName(preset.HitPoints);
-                    break;
-                case EditorTileType::Special:
-                    desc = preset.RandomPowerUp
-                        ? "Capsule Aleatoire"
-                        : ("Fixe: " + LevelData::GetPowerUpDisplayName(preset.SpecificPowerUp));
-                    break;
-                case EditorTileType::Metal:
-                    desc = "Incassable";
-                    break;
-                case EditorTileType::Bomb:
-                    desc = "Explosion AOE";
-                    break;
-                case EditorTileType::Turret:
-                    desc = std::to_string(preset.HitPoints) + " PV | Tir " + FormatOneDecimal(preset.TurretCooldown) + "s";
-                    break;
-                case EditorTileType::Lantern:
-                    desc = std::to_string(preset.HitPoints) + " PV - Emetteur";
-                    break;
-                default:
-                    desc = "";
-                    break;
-                }
-            }
-
-            // Large brick preview block
-            Vector2f iconPos{itemPos.X - cardW * 0.35f, itemPos.Y};
-            if (i == 8)
-            {
-                DrawIconEraser(context, iconPos, 28.0f, Colors::White);
-            }
-            else
-            {
-                Color bCol = LevelData::GetDisplayColorForCell(preset);
-                // Preview brick shadow & body
-                context.Render.DrawRectangle(60.0f, 26.0f, Transform2D{iconPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 140});
-                context.Render.DrawRectangle(60.0f, 26.0f, Transform2D{iconPos}, bCol);
-                // 3D bevel on preview
-                context.Render.DrawLine(Vector2f{iconPos.X - 30.0f, iconPos.Y - 12.0f}, Vector2f{iconPos.X + 30.0f, iconPos.Y - 12.0f}, Color{255, 255, 255, 120}, 1.5f);
-                context.Render.DrawRectangleOutline(60.0f, 26.0f, Transform2D{iconPos}, Colors::White, 1.2f);
-
-                if (items[i].Type == EditorTileType::Turret)
-                {
-                    std::vector<Vertex> iconVerts = {
-                        Vertex{iconPos.X - 6.0f, iconPos.Y - 4.0f, Color{255, 230, 230, 240}, 0.0f, 0.0f},
-                        Vertex{iconPos.X + 6.0f, iconPos.Y - 4.0f, Color{255, 230, 230, 240}, 0.0f, 0.0f},
-                        Vertex{iconPos.X, iconPos.Y + 7.0f, Color{255, 255, 255, 255}, 0.0f, 0.0f}
-                    };
-                    context.Render.DrawVertices(iconVerts, PrimitiveType::Triangles);
-                }
-            }
-
-            // Labels
-            Vector2f namePos{itemPos.X - cardW * 0.14f, itemPos.Y - 14.0f};
-            context.Render.DrawText(items[i].Label, m_fontId, 20.0f, Transform2D{namePos}, isSelected ? Color{255, 225, 75, 255} : Colors::White);
-
-            Vector2f descPos{itemPos.X - cardW * 0.14f, itemPos.Y + 11.0f};
-            context.Render.DrawText(desc, m_fontId, 15.0f, Transform2D{descPos}, Color{165, 185, 210, 230});
+            const Vector2f namePos{itemPos.X - cardW * 0.14f, itemPos.Y - 10.0f};
+            context.Render.DrawText(LevelData::GetTileDisplayName(tileType), m_fontId, 19.0f,
+                                    Transform2D{namePos}, isSelected ? Color{255, 225, 85, 255} : Color{230, 236, 245, 255});
         }
-
-        // Page & Brick count indicator at bottom of palette
-        Vector2f statsPos{palCenter.X, halfH - 35.0f};
-        std::string statsTxt = "PAGE " + std::to_string(m_levelData.GetActivePageIndex() + 1) + "/" + std::to_string(m_levelData.GetPageCount())
-                             + " : " + std::to_string(m_levelData.GetBrickCount()) + " BRIQUES";
-        context.Render.DrawTextCentered(statsTxt, m_fontId, 19.0f, Transform2D{statsPos}, Color{100, 230, 255, 240});
     }
     else
     {
-        // Collapsed Rail (44px wide)
         const float railW = 44.0f;
         Vector2f railCenter{-halfW + railW * 0.5f, -halfH + toolbarH + palH * 0.5f};
         context.Render.DrawRectangle(railW, palH, Transform2D{railCenter}, Color{22, 25, 33, 250});
@@ -2883,28 +2914,24 @@ void EditorScene::RenderPalette(GameContext& context)
                                 Vector2f{-halfW + railW, halfH},
                                 Color{60, 66, 80, 255}, 2.0f);
 
-        // Expand Button at top
-        Vector2f togglePos{-halfW + railW * 0.5f, -halfH + toolbarH + 35.0f};
+        Vector2f togglePos{-halfW + railW * 0.5f, -halfH + toolbarH + 32.0f};
         bool toggleHover = (std::abs(worldMouse.X - togglePos.X) <= 16.0f && std::abs(worldMouse.Y - togglePos.Y) <= 16.0f);
-        context.Render.DrawRectangle(30.0f, 30.0f, Transform2D{togglePos}, toggleHover ? Color{55, 62, 78, 255} : Color{34, 38, 48, 255});
-        context.Render.DrawRectangleOutline(30.0f, 30.0f, Transform2D{togglePos}, toggleHover ? Colors::White : Color{70, 76, 92, 255}, 1.2f);
-        DrawChevron(context, togglePos, 16.0f, true /* right */, toggleHover ? Colors::White : Color{190, 195, 205, 255});
+        context.Render.DrawRectangle(28.0f, 28.0f, Transform2D{togglePos}, toggleHover ? Color{55, 62, 78, 255} : Color{34, 38, 48, 255});
+        context.Render.DrawRectangleOutline(28.0f, 28.0f, Transform2D{togglePos}, toggleHover ? Colors::White : Color{70, 76, 92, 255}, 1.2f);
+        DrawChevron(context, togglePos, 15.0f, true /* right */, toggleHover ? Colors::White : Color{190, 195, 205, 255});
 
-        // Active tool preview block
-        Vector2f previewPos{-halfW + railW * 0.5f, -halfH + toolbarH + 95.0f};
+        Vector2f previewPos{-halfW + railW * 0.5f, -halfH + toolbarH + 90.0f};
         if (m_tool == EditorTool::Eraser)
         {
-            DrawIconEraser(context, previewPos, 26.0f, Colors::White);
+            DrawIconEraser(context, previewPos, 24.0f, Colors::White);
         }
         else if (m_tool == EditorTool::Select)
         {
-            DrawIconSelect(context, previewPos, 24.0f, Color{80, 230, 255, 255});
+            DrawIconSelect(context, previewPos, 22.0f, Color{80, 230, 255, 255});
         }
         else
         {
-            Color bCol = LevelData::GetDisplayColorForCell(m_levelData.GetPalettePreset(m_selectedTile));
-            context.Render.DrawRectangle(30.0f, 18.0f, Transform2D{previewPos}, bCol);
-            context.Render.DrawRectangleOutline(30.0f, 18.0f, Transform2D{previewPos}, Colors::White, 1.2f);
+            DrawTilePreview(context, m_levelData.GetPalettePreset(m_selectedTile), previewPos, 30.0f, 16.0f);
         }
     }
 }
@@ -2914,7 +2941,7 @@ void EditorScene::RenderTabsAndPanels(GameContext& context)
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
     const float halfW = viewSize.X * 0.5f;
     const float halfH = viewSize.Y * 0.5f;
-    const float toolbarH = 74.0f;
+    const float toolbarH = kToolbarHeight;
     const float panelH = viewSize.Y - toolbarH;
 
     auto [mx, my] = context.Input.GetMousePosition();
@@ -2922,28 +2949,25 @@ void EditorScene::RenderTabsAndPanels(GameContext& context)
 
     if (m_rightPanelOpen)
     {
-        const float sideWidth = 410.0f;
+        const float sideWidth = kRightPanelWidth;
         Vector2f panelCenter{halfW - sideWidth * 0.5f, -halfH + toolbarH + panelH * 0.5f};
         Vector2f panelSize{sideWidth, panelH};
 
-        // Panel background & 3D left boundary
         context.Render.DrawRectangle(panelSize.X, panelSize.Y, Transform2D{panelCenter}, Color{22, 25, 33, 250});
         context.Render.DrawLine(Vector2f{halfW - sideWidth, -halfH + toolbarH},
                                 Vector2f{halfW - sideWidth, halfH},
                                 Color{60, 66, 80, 255}, 2.0f);
 
-        const float tabH = 48.0f;
+        const float tabH = 44.0f;
         const float tabY = -halfH + toolbarH + tabH * 0.5f + 10.0f;
 
-        // Collapse Button on left edge of tab bar
         Vector2f togglePos{halfW - sideWidth + 20.0f, tabY};
         bool toggleHover = (std::abs(worldMouse.X - togglePos.X) <= 16.0f && std::abs(worldMouse.Y - togglePos.Y) <= 16.0f);
-        context.Render.DrawRectangle(30.0f, 30.0f, Transform2D{togglePos}, toggleHover ? Color{55, 62, 78, 255} : Color{34, 38, 48, 255});
-        context.Render.DrawRectangleOutline(30.0f, 30.0f, Transform2D{togglePos}, toggleHover ? Colors::White : Color{70, 76, 92, 255}, 1.2f);
-        DrawChevron(context, togglePos, 16.0f, true /* right */, toggleHover ? Colors::White : Color{190, 195, 205, 255});
+        context.Render.DrawRectangle(28.0f, 28.0f, Transform2D{togglePos}, toggleHover ? Color{55, 62, 78, 255} : Color{34, 38, 48, 255});
+        context.Render.DrawRectangleOutline(28.0f, 28.0f, Transform2D{togglePos}, toggleHover ? Colors::White : Color{70, 76, 92, 255}, 1.2f);
+        DrawChevron(context, togglePos, 15.0f, true /* right */, toggleHover ? Colors::White : Color{190, 195, 205, 255});
 
-        // 5 Segmented Tabs
-        const char* tabNames[5] = {"INSP", "PROC", "THEME", "EVENTS", "REGLES"};
+        const char* tabNames[5] = {"INSP", "GEN", "ENV", "EVENTS", "RULES"};
         const float tabsStartX = halfW - sideWidth + 42.0f;
         const float tabsAvailW = sideWidth - 52.0f;
         const float tabW = tabsAvailW / 5.0f;
@@ -2957,19 +2981,12 @@ void EditorScene::RenderTabsAndPanels(GameContext& context)
 
             Color tBg = isCurTab ? Color{42, 54, 76, 255} : (isHover ? Color{32, 38, 52, 255} : Color{25, 29, 39, 255});
             context.Render.DrawRectangle(tabW - 4.0f, tabH - 4.0f, Transform2D{tPos}, tBg);
-
-            // 3D Bevel highlight
-            context.Render.DrawLine(Vector2f{tPos.X - (tabW - 4.0f) * 0.5f, tPos.Y - (tabH - 4.0f) * 0.5f},
-                                    Vector2f{tPos.X + (tabW - 4.0f) * 0.5f, tPos.Y - (tabH - 4.0f) * 0.5f},
-                                    Color{255, 255, 255, static_cast<uint8_t>(isCurTab ? 60 : 25)}, 1.5f);
-
             context.Render.DrawRectangleOutline(tabW - 4.0f, tabH - 4.0f, Transform2D{tPos}, isCurTab ? Color{255, 215, 60, 255} : Color{50, 56, 72, 200}, isCurTab ? 2.0f : 1.0f);
-            context.Render.DrawTextCentered(tabNames[t], m_fontId, 17.0f, Transform2D{tPos}, isCurTab ? Color{255, 220, 75, 255} : Color{190, 205, 225, 220});
+            context.Render.DrawTextCentered(tabNames[t], m_fontId, 16.0f, Transform2D{tPos}, isCurTab ? Color{255, 220, 75, 255} : Color{190, 205, 225, 220});
         }
 
         const float cardW = sideWidth - 36.0f;
 
-        // Render Active Tab Content with 3D Relief
         switch (m_activeTab)
         {
         case EditorTab::Inspector:
@@ -2979,75 +2996,40 @@ void EditorScene::RenderTabsAndPanels(GameContext& context)
         }
         case EditorTab::Procedural:
         {
-            Vector2f titlePos{panelCenter.X, -halfH + toolbarH + 98.0f};
-            context.Render.DrawTextCentered("ASSISTANT PROCEDURAL", m_fontId, 24.0f, Transform2D{titlePos}, Color{255, 215, 60, 255});
+            Vector2f titlePos{panelCenter.X, -halfH + toolbarH + 92.0f};
+            context.Render.DrawTextCentered("PROCEDURAL GENERATOR", m_fontId, 22.0f, Transform2D{titlePos}, Color{255, 215, 60, 255});
 
-            // 1. Brick Count Control
-            Vector2f cntPos{panelCenter.X, -halfH + toolbarH + 160.0f};
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{cntPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{cntPos}, Color{28, 32, 44, 255});
-            context.Render.DrawLine(Vector2f{cntPos.X - cardW * 0.5f, cntPos.Y - 28.0f}, Vector2f{cntPos.X + cardW * 0.5f, cntPos.Y - 28.0f}, Color{255, 255, 255, 30}, 1.5f);
-            context.Render.DrawRectangleOutline(cardW, 58.0f, Transform2D{cntPos}, Color{55, 65, 88, 200}, 1.5f);
-            context.Render.DrawTextCentered("[-] " + std::to_string(m_procBrickCount) + " BRIQUES CIBLES [+]", m_fontId, 22.0f, Transform2D{cntPos}, Colors::White);
+            // 1. Target Brick Count (Y = 150)
+            Vector2f cntPos{panelCenter.X, -halfH + toolbarH + 150.0f};
+            context.Render.DrawRectangle(cardW, 56.0f, Transform2D{cntPos}, Color{28, 32, 44, 255});
+            context.Render.DrawRectangleOutline(cardW, 56.0f, Transform2D{cntPos}, Color{55, 65, 88, 200}, 1.5f);
+            context.Render.DrawTextCentered("[-] TARGET BRICKS: " + std::to_string(m_procBrickCount) + " [+]", m_fontId, 20.0f, Transform2D{cntPos}, Colors::White);
 
-            // 2. Difficulty Control
-            Vector2f diffPos{panelCenter.X, -halfH + toolbarH + 250.0f};
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{diffPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{diffPos}, Color{28, 32, 44, 255});
-            context.Render.DrawLine(Vector2f{diffPos.X - cardW * 0.5f, diffPos.Y - 28.0f}, Vector2f{diffPos.X + cardW * 0.5f, diffPos.Y - 28.0f}, Color{255, 255, 255, 30}, 1.5f);
-            context.Render.DrawRectangleOutline(cardW, 58.0f, Transform2D{diffPos}, Color{55, 65, 88, 200}, 1.5f);
+            // 2. Density (Y = 230)
+            Vector2f diffPos{panelCenter.X, -halfH + toolbarH + 230.0f};
+            context.Render.DrawRectangle(cardW, 56.0f, Transform2D{diffPos}, Color{28, 32, 44, 255});
+            context.Render.DrawRectangleOutline(cardW, 56.0f, Transform2D{diffPos}, Color{55, 65, 88, 200}, 1.5f);
             int diffPct = static_cast<int>(m_procDifficulty * 100.0f);
-            context.Render.DrawTextCentered("[-] DENSITE : " + std::to_string(diffPct) + "% [+]", m_fontId, 22.0f, Transform2D{diffPos}, Colors::White);
+            context.Render.DrawTextCentered("[-] DENSITY: " + std::to_string(diffPct) + "% [+]", m_fontId, 20.0f, Transform2D{diffPos}, Colors::White);
 
-            // 3. Symmetry Mode
-            const char* symNames[4] = {"AUCUNE", "HORIZONTALE", "VERTICALE", "DUALE (4X)"};
-            Vector2f symPos{panelCenter.X, -halfH + toolbarH + 340.0f};
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{symPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{symPos}, Color{28, 32, 44, 255});
-            context.Render.DrawLine(Vector2f{symPos.X - cardW * 0.5f, symPos.Y - 28.0f}, Vector2f{symPos.X + cardW * 0.5f, symPos.Y - 28.0f}, Color{255, 255, 255, 30}, 1.5f);
-            context.Render.DrawRectangleOutline(cardW, 58.0f, Transform2D{symPos}, Color{55, 65, 88, 200}, 1.5f);
-            context.Render.DrawTextCentered("SYMETRIE : " + std::string(symNames[m_procSymmetry]), m_fontId, 22.0f, Transform2D{symPos}, Color{255, 195, 60, 255});
+            // 3. Symmetry Mode (Y = 310)
+            const char* symNames[4] = {"NONE", "HORIZONTAL", "VERTICAL", "DUAL (4X)"};
+            Vector2f symPos{panelCenter.X, -halfH + toolbarH + 310.0f};
+            context.Render.DrawRectangle(cardW, 56.0f, Transform2D{symPos}, Color{28, 32, 44, 255});
+            context.Render.DrawRectangleOutline(cardW, 56.0f, Transform2D{symPos}, Color{55, 65, 88, 200}, 1.5f);
+            context.Render.DrawTextCentered("SYMMETRY: " + std::string(symNames[m_procSymmetry]), m_fontId, 20.0f, Transform2D{symPos}, Color{255, 195, 60, 255});
 
-            // 4. Large Generate Button
-            Vector2f genPos{panelCenter.X, -halfH + toolbarH + 450.0f};
+            // 4. Generate Button (Y = 410)
+            Vector2f genPos{panelCenter.X, -halfH + toolbarH + 410.0f};
             bool genHover = (std::abs(worldMouse.X - genPos.X) <= cardW * 0.5f && std::abs(worldMouse.Y - genPos.Y) <= 34.0f);
-            context.Render.DrawRectangle(cardW, 68.0f, Transform2D{genPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 140});
-            context.Render.DrawRectangle(cardW, 68.0f, Transform2D{genPos}, genHover ? Color{255, 175, 40, 255} : Color{215, 140, 30, 255});
-            context.Render.DrawLine(Vector2f{genPos.X - cardW * 0.5f, genPos.Y - 33.0f}, Vector2f{genPos.X + cardW * 0.5f, genPos.Y - 33.0f}, Color{255, 255, 255, 90}, 2.0f);
-            context.Render.DrawRectangleOutline(cardW, 68.0f, Transform2D{genPos}, Colors::White, 2.0f);
-            context.Render.DrawTextCentered("GENERER NIVEAU", m_fontId, 24.0f, Transform2D{genPos}, Colors::White);
+            context.Render.DrawRectangle(cardW, 64.0f, Transform2D{genPos}, genHover ? Color{255, 175, 40, 255} : Color{215, 140, 30, 255});
+            context.Render.DrawRectangleOutline(cardW, 64.0f, Transform2D{genPos}, Colors::White, 2.0f);
+            context.Render.DrawTextCentered("GENERATE LEVEL", m_fontId, 22.0f, Transform2D{genPos}, Colors::White);
             break;
         }
         case EditorTab::ThemeLighting:
         {
-            Vector2f titlePos{panelCenter.X, -halfH + toolbarH + 98.0f};
-            context.Render.DrawTextCentered("THEMES & LUMIERE", m_fontId, 24.0f, Transform2D{titlePos}, Color{255, 215, 60, 255});
-
-            // Theme Preset Selector
-            Vector2f thmPos{panelCenter.X, -halfH + toolbarH + 160.0f};
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{thmPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{thmPos}, Color{28, 32, 44, 255});
-            context.Render.DrawLine(Vector2f{thmPos.X - cardW * 0.5f, thmPos.Y - 28.0f}, Vector2f{thmPos.X + cardW * 0.5f, thmPos.Y - 28.0f}, Color{255, 255, 255, 30}, 1.5f);
-            context.Render.DrawRectangleOutline(cardW, 58.0f, Transform2D{thmPos}, Color{55, 65, 88, 200}, 1.5f);
-            context.Render.DrawTextCentered("< " + m_levelData.GetTheme().Name + " >", m_fontId, 22.0f, Transform2D{thmPos}, Color{255, 215, 75, 255});
-
-            // Ambient Intensity
-            Vector2f ambPos{panelCenter.X, -halfH + toolbarH + 250.0f};
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{ambPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{ambPos}, Color{28, 32, 44, 255});
-            context.Render.DrawLine(Vector2f{ambPos.X - cardW * 0.5f, ambPos.Y - 28.0f}, Vector2f{ambPos.X + cardW * 0.5f, ambPos.Y - 28.0f}, Color{255, 255, 255, 30}, 1.5f);
-            context.Render.DrawRectangleOutline(cardW, 58.0f, Transform2D{ambPos}, Color{55, 65, 88, 200}, 1.5f);
-            int ambPct = static_cast<int>(m_levelData.GetTheme().AmbientIntensity * 100.0f);
-            context.Render.DrawTextCentered("[-] AMBIANCE : " + std::to_string(ambPct) + "% [+]", m_fontId, 22.0f, Transform2D{ambPos}, Colors::White);
-
-            // Paddle Spotlight Cone
-            Vector2f conePos{panelCenter.X, -halfH + toolbarH + 340.0f};
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{conePos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-            context.Render.DrawRectangle(cardW, 58.0f, Transform2D{conePos}, Color{28, 32, 44, 255});
-            context.Render.DrawLine(Vector2f{conePos.X - cardW * 0.5f, conePos.Y - 28.0f}, Vector2f{conePos.X + cardW * 0.5f, conePos.Y - 28.0f}, Color{255, 255, 255, 30}, 1.5f);
-            context.Render.DrawRectangleOutline(cardW, 58.0f, Transform2D{conePos}, Color{55, 65, 88, 200}, 1.5f);
-            int coneDeg = static_cast<int>(m_levelData.GetTheme().PaddleConeAngle);
-            context.Render.DrawTextCentered("[-] FAISCEAU PADDLE : " + std::to_string(coneDeg) + "° [+]", m_fontId, 22.0f, Transform2D{conePos}, Colors::White);
+            RenderThemeTab(context, panelCenter, sideWidth, toolbarH, halfH, worldMouse);
             break;
         }
         case EditorTab::EventQueue:
@@ -3057,49 +3039,45 @@ void EditorScene::RenderTabsAndPanels(GameContext& context)
         }
         case EditorTab::Gamerules:
         {
-            Vector2f titlePos{panelCenter.X, -halfH + toolbarH + 98.0f};
-            context.Render.DrawTextCentered("REGLES DE JEU", m_fontId, 24.0f, Transform2D{titlePos}, Color{255, 215, 60, 255});
+            Vector2f titlePos{panelCenter.X, -halfH + toolbarH + 92.0f};
+            context.Render.DrawTextCentered("GAME RULES", m_fontId, 22.0f, Transform2D{titlePos}, Color{255, 215, 60, 255});
 
             const bool manualOverride = context.Rules.GetRule(Rule::Gameplay::ManualOverride);
-            Vector2f modePos{panelCenter.X, -halfH + toolbarH + 142.0f};
+            Vector2f modePos{panelCenter.X, -halfH + toolbarH + 136.0f};
             if (manualOverride)
             {
-                context.Render.DrawTextCentered("MODE : MANUEL (DEPUIS SETTINGS)", m_fontId, 20.0f, Transform2D{modePos}, Color{255, 160, 60, 255});
+                context.Render.DrawTextCentered("MODE: MANUAL (SETTINGS)", m_fontId, 18.0f, Transform2D{modePos}, Color{255, 160, 60, 255});
             }
             else
             {
-                context.Render.DrawTextCentered("MODE : AUTOMATIQUE (NIVEAU)", m_fontId, 20.0f, Transform2D{modePos}, Color{80, 240, 140, 255});
+                context.Render.DrawTextCentered("MODE: LEVEL RULES", m_fontId, 18.0f, Transform2D{modePos}, Color{80, 240, 140, 255});
             }
 
             const auto& gr = m_levelData.GetGamerules();
 
-            Vector2f hzPos{panelCenter.X, -halfH + toolbarH + 210.0f};
-            context.Render.DrawRectangle(cardW, 60.0f, Transform2D{hzPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-            context.Render.DrawRectangle(cardW, 60.0f, Transform2D{hzPos}, Color{28, 32, 44, 255});
-            context.Render.DrawLine(Vector2f{hzPos.X - cardW * 0.5f, hzPos.Y - 29.0f}, Vector2f{hzPos.X + cardW * 0.5f, hzPos.Y - 29.0f}, Color{255, 255, 255, 30}, 1.5f);
-            context.Render.DrawRectangleOutline(cardW, 60.0f, Transform2D{hzPos}, gr.HazardZones ? Color{80, 240, 140, 200} : Color{240, 60, 70, 200}, 2.0f);
-            context.Render.DrawTextCentered(std::string("HAZARDS : ") + (gr.HazardZones ? "[ACTIF]" : "[DESACTIVE]"), m_fontId, 22.0f, Transform2D{hzPos}, Colors::White);
+            // Y = 200
+            Vector2f hzPos{panelCenter.X, -halfH + toolbarH + 200.0f};
+            context.Render.DrawRectangle(cardW, 56.0f, Transform2D{hzPos}, Color{28, 32, 44, 255});
+            context.Render.DrawRectangleOutline(cardW, 56.0f, Transform2D{hzPos}, gr.HazardZones ? Color{80, 240, 140, 200} : Color{240, 60, 70, 200}, 2.0f);
+            context.Render.DrawTextCentered(std::string("HAZARD ZONES: ") + (gr.HazardZones ? "[ON]" : "[OFF]"), m_fontId, 20.0f, Transform2D{hzPos}, Colors::White);
 
-            Vector2f arPos{panelCenter.X, -halfH + toolbarH + 300.0f};
-            context.Render.DrawRectangle(cardW, 60.0f, Transform2D{arPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-            context.Render.DrawRectangle(cardW, 60.0f, Transform2D{arPos}, Color{28, 32, 44, 255});
-            context.Render.DrawLine(Vector2f{arPos.X - cardW * 0.5f, arPos.Y - 29.0f}, Vector2f{arPos.X + cardW * 0.5f, arPos.Y - 29.0f}, Color{255, 255, 255, 30}, 1.5f);
-            context.Render.DrawRectangleOutline(cardW, 60.0f, Transform2D{arPos}, gr.ArenaEvents ? Color{80, 240, 140, 200} : Color{240, 60, 70, 200}, 2.0f);
-            context.Render.DrawTextCentered(std::string("EVENTS ARENE : ") + (gr.ArenaEvents ? "[ACTIF]" : "[DESACTIVE]"), m_fontId, 22.0f, Transform2D{arPos}, Colors::White);
+            // Y = 280
+            Vector2f arPos{panelCenter.X, -halfH + toolbarH + 280.0f};
+            context.Render.DrawRectangle(cardW, 56.0f, Transform2D{arPos}, Color{28, 32, 44, 255});
+            context.Render.DrawRectangleOutline(cardW, 56.0f, Transform2D{arPos}, gr.ArenaEvents ? Color{80, 240, 140, 200} : Color{240, 60, 70, 200}, 2.0f);
+            context.Render.DrawTextCentered(std::string("ARENA EVENTS: ") + (gr.ArenaEvents ? "[ON]" : "[OFF]"), m_fontId, 20.0f, Transform2D{arPos}, Colors::White);
 
-            Vector2f lfPos{panelCenter.X, -halfH + toolbarH + 390.0f};
-            context.Render.DrawRectangle(cardW, 60.0f, Transform2D{lfPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-            context.Render.DrawRectangle(cardW, 60.0f, Transform2D{lfPos}, Color{28, 32, 44, 255});
-            context.Render.DrawLine(Vector2f{lfPos.X - cardW * 0.5f, lfPos.Y - 29.0f}, Vector2f{lfPos.X + cardW * 0.5f, lfPos.Y - 29.0f}, Color{255, 255, 255, 30}, 1.5f);
-            context.Render.DrawRectangleOutline(cardW, 60.0f, Transform2D{lfPos}, gr.InfiniteLives ? Color{80, 240, 140, 200} : Color{240, 60, 70, 200}, 2.0f);
-            context.Render.DrawTextCentered(std::string("VIES : ") + (gr.InfiniteLives ? "INFINIES" : "STANDARD (3 VIES)"), m_fontId, 22.0f, Transform2D{lfPos}, Colors::White);
+            // Y = 360
+            Vector2f lfPos{panelCenter.X, -halfH + toolbarH + 360.0f};
+            context.Render.DrawRectangle(cardW, 56.0f, Transform2D{lfPos}, Color{28, 32, 44, 255});
+            context.Render.DrawRectangleOutline(cardW, 56.0f, Transform2D{lfPos}, gr.InfiniteLives ? Color{80, 240, 140, 200} : Color{240, 60, 70, 200}, 2.0f);
+            context.Render.DrawTextCentered(std::string("LIVES: ") + (gr.InfiniteLives ? "INFINITE" : "STANDARD (3)"), m_fontId, 20.0f, Transform2D{lfPos}, Colors::White);
             break;
         }
         }
     }
     else
     {
-        // Collapsed Rail (44px wide)
         const float railW = 44.0f;
         Vector2f railCenter{halfW - railW * 0.5f, -halfH + toolbarH + panelH * 0.5f};
         context.Render.DrawRectangle(railW, panelH, Transform2D{railCenter}, Color{22, 25, 33, 250});
@@ -3107,15 +3085,13 @@ void EditorScene::RenderTabsAndPanels(GameContext& context)
                                 Vector2f{halfW - railW, halfH},
                                 Color{60, 66, 80, 255}, 2.0f);
 
-        // Expand Button at top
-        Vector2f togglePos{halfW - railW * 0.5f, -halfH + toolbarH + 35.0f};
+        Vector2f togglePos{halfW - railW * 0.5f, -halfH + toolbarH + 32.0f};
         bool toggleHover = (std::abs(worldMouse.X - togglePos.X) <= 16.0f && std::abs(worldMouse.Y - togglePos.Y) <= 16.0f);
-        context.Render.DrawRectangle(30.0f, 30.0f, Transform2D{togglePos}, toggleHover ? Color{55, 62, 78, 255} : Color{34, 38, 48, 255});
-        context.Render.DrawRectangleOutline(30.0f, 30.0f, Transform2D{togglePos}, toggleHover ? Colors::White : Color{70, 76, 92, 255}, 1.2f);
-        DrawChevron(context, togglePos, 16.0f, false /* left */, toggleHover ? Colors::White : Color{190, 195, 205, 255});
+        context.Render.DrawRectangle(28.0f, 28.0f, Transform2D{togglePos}, toggleHover ? Color{55, 62, 78, 255} : Color{34, 38, 48, 255});
+        context.Render.DrawRectangleOutline(28.0f, 28.0f, Transform2D{togglePos}, toggleHover ? Colors::White : Color{70, 76, 92, 255}, 1.2f);
+        DrawChevron(context, togglePos, 15.0f, false /* left */, toggleHover ? Colors::White : Color{190, 195, 205, 255});
 
-        // 5 Compact Vertical Tab Icons (I, P, T, E, R)
-        const char* tabIcons[5] = {"I", "P", "T", "E", "R"};
+        const char* tabIcons[5] = {"I", "G", "E", "Q", "R"};
         for (int t = 0; t < 5; ++t)
         {
             Vector2f tPos{halfW - railW * 0.5f, -halfH + toolbarH + 90.0f + static_cast<float>(t) * 46.0f};
@@ -3133,156 +3109,213 @@ void EditorScene::RenderTabsAndPanels(GameContext& context)
 void EditorScene::RenderInspectorTab(GameContext& context, const Vector2f& panelCenter, float sideWidth, float toolbarH, float halfH, const Vector2f& worldMouse)
 {
     const float top = -halfH + toolbarH;
-    const float cardW = sideWidth - 36.0f;
+    const float cardW = sideWidth - 32.0f;
+    const float leftX = panelCenter.X - cardW * 0.5f;
+    const float rightX = panelCenter.X + cardW * 0.5f;
+    const float ctrlW = 196.0f;
+    const float ctrlCenterX = rightX - ctrlW * 0.5f;
     const EditorCellData target = GetInspectorTargetData();
-    const Color targetCol = LevelData::GetDisplayColorForCell(target);
-
     const bool editingCell = (m_hasSelectedCell && m_levelData.GetCell(m_selectedCol, m_selectedRow).Type != EditorTileType::Empty);
 
-    // Header
-    context.Render.DrawTextCentered("INSPECTEUR DE BRIQUE", m_fontId, 24.0f, Transform2D{Vector2f{panelCenter.X, top + 92.0f}}, Color{255, 215, 60, 255});
-
-    // Target Summary Card
-    Vector2f cardPos{panelCenter.X, top + 148.0f};
-    context.Render.DrawRectangle(cardW, 68.0f, Transform2D{cardPos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-    context.Render.DrawRectangle(cardW, 68.0f, Transform2D{cardPos}, Color{28, 33, 46, 255});
-    context.Render.DrawRectangleOutline(cardW, 68.0f, Transform2D{cardPos}, Color{70, 95, 135, 220}, 1.5f);
-
-    Vector2f swatchPos{cardPos.X - cardW * 0.36f, cardPos.Y};
-    context.Render.DrawRectangle(56.0f, 26.0f, Transform2D{swatchPos}, targetCol);
-    context.Render.DrawRectangleOutline(56.0f, 26.0f, Transform2D{swatchPos}, Colors::White, 1.3f);
-
-    std::string modeHeader = editingCell
-        ? ("CELLULE (" + std::to_string(m_selectedCol) + "," + std::to_string(m_selectedRow) + ") // PALETTE")
-        : "PRESET PALETTE (PINCEAU)";
-    context.Render.DrawText(modeHeader, m_fontId, 15.0f, Transform2D{Vector2f{cardPos.X - cardW * 0.20f, cardPos.Y - 19.0f}}, Color{120, 220, 255, 240});
-    context.Render.DrawText(GetTileTypeName(target.Type), m_fontId, 21.0f, Transform2D{Vector2f{cardPos.X - cardW * 0.20f, cardPos.Y + 4.0f}}, Colors::White);
-
-    // Section 1: HitPoints 1..9 Color Ramp
-    const bool supportsHP = (target.Type != EditorTileType::Metal && target.Type != EditorTileType::Bomb && target.Type != EditorTileType::Empty);
-    context.Render.DrawTextCentered("POINTS DE VIE (1 - 9 PV)", m_fontId, 18.0f, Transform2D{Vector2f{panelCenter.X, top + 206.0f}}, Color{210, 225, 245, 240});
-
-    const float btnSize = 36.0f;
-    const float btnGap = 4.0f;
-    const float totalRowW = 9.0f * btnSize + 8.0f * btnGap;
-    const float rowStartX = panelCenter.X - totalRowW * 0.5f + btnSize * 0.5f;
-    const float hpRowY = top + 244.0f;
-
-    for (int hp = 1; hp <= 9; ++hp)
+    // Unity-style object header: visual icon + object name ONLY (no generic title or subtitle)
+    const Vector2f headerPos{panelCenter.X, top + 92.0f};
+    context.Render.DrawRectangle(cardW, 48.0f, Transform2D{headerPos}, Color{30, 35, 48, 255});
+    context.Render.DrawRectangleOutline(cardW, 48.0f, Transform2D{headerPos}, Color{62, 74, 98, 220}, 1.3f);
+    DrawTilePreview(context, target, Vector2f{leftX + 34.0f, headerPos.Y}, 48.0f, 22.0f);
+    context.Render.DrawText(LevelData::GetTileDisplayName(target.Type), m_fontId, 20.0f,
+                            Transform2D{Vector2f{leftX + 70.0f, headerPos.Y - 10.0f}}, Colors::White);
+    if (editingCell)
     {
-        float bx = rowStartX + static_cast<float>(hp - 1) * (btnSize + btnGap);
-        Vector2f bPos{bx, hpRowY};
-        bool isCurHP = (supportsHP && target.HitPoints == hp);
-        bool isHover = supportsHP && (std::abs(worldMouse.X - bPos.X) <= btnSize * 0.5f && std::abs(worldMouse.Y - bPos.Y) <= btnSize * 0.5f);
-
-        Color swatchCol = LevelData::GetColorForHitPoints(hp);
-        if (!supportsHP)
-        {
-            swatchCol = Color{45, 50, 62, 160};
-        }
-
-        context.Render.DrawRectangle(btnSize, btnSize, Transform2D{bPos}, swatchCol);
-        Color outline = isCurHP ? Colors::White : (isHover ? Color{255, 230, 120, 255} : Color{20, 24, 34, 220});
-        context.Render.DrawRectangleOutline(btnSize, btnSize, Transform2D{bPos}, outline, isCurHP ? 3.0f : 1.2f);
-        context.Render.DrawTextCentered(std::to_string(hp), m_fontId, 19.0f, Transform2D{bPos + Vector2f{1.0f, 1.0f}}, Color{0, 0, 0, 190});
-        context.Render.DrawTextCentered(std::to_string(hp), m_fontId, 19.0f, Transform2D{bPos}, supportsHP ? Color{15, 18, 25, 255} : Color{130, 140, 160, 180});
+        const std::string coordTag = "[" + std::to_string(m_selectedCol) + "," + std::to_string(m_selectedRow) + "]";
+        context.Render.DrawTextCentered(coordTag, m_fontId, 14.0f,
+                                        Transform2D{Vector2f{rightX - 28.0f, headerPos.Y}}, Color{130, 175, 220, 210});
     }
 
-    std::string hpSummary;
-    Color hpSummaryCol{185, 210, 235, 230};
-    if (target.Type == EditorTileType::Metal)
-    {
-        hpSummary = "ETAT : INCASSABLE (METAL)";
-        hpSummaryCol = Color{180, 195, 210, 220};
-    }
-    else if (target.Type == EditorTileType::Bomb)
-    {
-        hpSummary = "ETAT : 1 PV (EXPLOSION AOE)";
-        hpSummaryCol = Color{255, 145, 70, 240};
-    }
-    else
-    {
-        hpSummary = std::to_string(target.HitPoints) + " PV - " + GetHitPointsColorName(target.HitPoints);
-        hpSummaryCol = LevelData::GetColorForHitPoints(target.HitPoints);
-    }
-    context.Render.DrawTextCentered(hpSummary, m_fontId, 17.0f, Transform2D{Vector2f{panelCenter.X, top + 278.0f}}, hpSummaryCol);
-
-    // Section 2: Type-Specific Properties
-    auto drawControlCard = [&](const Vector2f& pos, float h, const std::string& txt, Color borderCol, Color textCol) {
-        bool hov = (std::abs(worldMouse.X - pos.X) <= cardW * 0.5f && std::abs(worldMouse.Y - pos.Y) <= h * 0.5f);
-        context.Render.DrawRectangle(cardW, h, Transform2D{pos + Vector2f{2.0f, 2.0f}}, Color{0, 0, 0, 120});
-        context.Render.DrawRectangle(cardW, h, Transform2D{pos}, hov ? Color{36, 42, 58, 255} : Color{28, 32, 44, 255});
-        context.Render.DrawLine(Vector2f{pos.X - cardW * 0.5f, pos.Y - h * 0.5f + 1.0f}, Vector2f{pos.X + cardW * 0.5f, pos.Y - h * 0.5f + 1.0f}, Color{255, 255, 255, 30}, 1.5f);
-        context.Render.DrawRectangleOutline(cardW, h, Transform2D{pos}, hov ? Colors::White : borderCol, hov ? 2.0f : 1.5f);
-        context.Render.DrawTextCentered(txt, m_fontId, 19.0f, Transform2D{pos}, textCol);
+    auto drawSection = [&](float y, const char* title) {
+        context.Render.DrawRectangle(cardW, 24.0f, Transform2D{Vector2f{panelCenter.X, y}}, Color{26, 30, 41, 255});
+        context.Render.DrawLine(Vector2f{leftX, y + 12.0f}, Vector2f{rightX, y + 12.0f}, Color{52, 60, 78, 220}, 1.0f);
+        context.Render.DrawText(title, m_fontId, 14.0f, Transform2D{Vector2f{leftX + 6.0f, y - 7.0f}}, Color{150, 185, 230, 235});
     };
 
-    if (target.Type == EditorTileType::Special)
-    {
-        context.Render.DrawTextCentered("CONFIGURATION POWER-UP", m_fontId, 18.0f, Transform2D{Vector2f{panelCenter.X, top + 318.0f}}, Color{240, 120, 255, 245});
+    auto drawFieldButton = [&](float y, const char* label, const std::string& value, Color borderCol, Color valCol) {
+        context.Render.DrawText(label, m_fontId, 16.0f, Transform2D{Vector2f{leftX + 6.0f, y - 8.0f}}, Color{200, 210, 228, 240});
+        const Vector2f boxPos{ctrlCenterX, y};
+        const bool hov = (std::abs(worldMouse.X - boxPos.X) <= ctrlW * 0.5f && std::abs(worldMouse.Y - boxPos.Y) <= 16.0f);
+        context.Render.DrawRectangle(ctrlW, 32.0f, Transform2D{boxPos}, hov ? Color{40, 48, 66, 255} : Color{28, 33, 45, 255});
+        context.Render.DrawRectangleOutline(ctrlW, 32.0f, Transform2D{boxPos}, hov ? Colors::White : borderCol, hov ? 1.6f : 1.1f);
+        context.Render.DrawTextCentered(value, m_fontId, 16.0f, Transform2D{boxPos}, valCol);
+    };
 
-        Vector2f modePos{panelCenter.X, top + 364.0f};
-        std::string modeTxt = target.RandomPowerUp ? "MODE : ALEATOIRE" : "MODE : POWER-UP FIXE";
-        Color modeBorder = target.RandomPowerUp ? Color{80, 220, 255, 210} : Color{255, 200, 75, 230};
-        drawControlCard(modePos, 52.0f, modeTxt, modeBorder, Colors::White);
+    auto drawStepper = [&](float y, const char* label, const std::string& value, Color valCol = Colors::White) {
+        context.Render.DrawText(label, m_fontId, 16.0f, Transform2D{Vector2f{leftX + 6.0f, y - 8.0f}}, Color{200, 210, 228, 240});
+        const Vector2f boxPos{ctrlCenterX, y};
+        const bool hov = (std::abs(worldMouse.X - boxPos.X) <= ctrlW * 0.5f && std::abs(worldMouse.Y - boxPos.Y) <= 16.0f);
+        context.Render.DrawRectangle(ctrlW, 32.0f, Transform2D{boxPos}, Color{26, 30, 42, 255});
+        context.Render.DrawRectangleOutline(ctrlW, 32.0f, Transform2D{boxPos}, hov ? Color{130, 165, 220, 230} : Color{56, 65, 86, 210}, 1.1f);
 
-        Vector2f pwrPos{panelCenter.X, top + 432.0f};
-        std::string pwrTxt = "<  " + LevelData::GetPowerUpDisplayName(target.SpecificPowerUp) + "  >";
-        Color pwrTextCol = target.RandomPowerUp ? Color{140, 150, 175, 170} : Color{255, 220, 90, 255};
-        drawControlCard(pwrPos, 56.0f, pwrTxt, target.RandomPowerUp ? Color{55, 62, 78, 170} : Color{230, 80, 245, 220}, pwrTextCol);
+        const Vector2f minusPos{ctrlCenterX - ctrlW * 0.5f + 16.0f, y};
+        const Vector2f plusPos{ctrlCenterX + ctrlW * 0.5f - 16.0f, y};
+        const bool minHov = (std::abs(worldMouse.X - minusPos.X) <= 15.0f && std::abs(worldMouse.Y - y) <= 15.0f);
+        const bool plsHov = (std::abs(worldMouse.X - plusPos.X) <= 15.0f && std::abs(worldMouse.Y - y) <= 15.0f);
+        context.Render.DrawRectangle(28.0f, 28.0f, Transform2D{minusPos}, minHov ? Color{55, 68, 92, 255} : Color{36, 42, 56, 255});
+        context.Render.DrawTextCentered("-", m_fontId, 18.0f, Transform2D{minusPos}, Colors::White);
+        context.Render.DrawRectangle(28.0f, 28.0f, Transform2D{plusPos}, plsHov ? Color{55, 68, 92, 255} : Color{36, 42, 56, 255});
+        context.Render.DrawTextCentered("+", m_fontId, 18.0f, Transform2D{plusPos}, Colors::White);
+        context.Render.DrawTextCentered(value, m_fontId, 16.0f, Transform2D{boxPos}, valCol);
+    };
 
-        context.Render.DrawTextCentered("CLIQUEZ < > POUR SELECTIONNER UN BONUS", m_fontId, 14.0f, Transform2D{Vector2f{panelCenter.X, top + 480.0f}}, Color{150, 170, 195, 200});
-    }
-    else if (target.Type == EditorTileType::Turret)
-    {
-        context.Render.DrawTextCentered("PARAMETRES TOURELLE (CAMPAGNE)", m_fontId, 18.0f, Transform2D{Vector2f{panelCenter.X, top + 318.0f}}, Color{255, 95, 110, 250});
-
-        drawControlCard(Vector2f{panelCenter.X, top + 366.0f}, 52.0f,
-                        "[-] CADENCE TIR : " + FormatOneDecimal(target.TurretCooldown) + "s [+]",
-                        Color{225, 70, 85, 210}, Colors::White);
-
-        drawControlCard(Vector2f{panelCenter.X, top + 430.0f}, 52.0f,
-                        "[-] DELAI INITIAL : " + FormatOneDecimal(target.TurretInitialDelay) + "s [+]",
-                        Color{225, 130, 70, 210}, Colors::White);
-
-        drawControlCard(Vector2f{panelCenter.X, top + 494.0f}, 52.0f,
-                        "[-] VITESSE MISSILE : " + std::to_string(static_cast<int>(target.TurretProjectileSpeed)) + " PX/S [+]",
-                        Color{255, 185, 65, 210}, Colors::White);
-
-        context.Render.DrawTextCentered("HALO + TIR TRIANGLE + DEGATS PADDLE", m_fontId, 14.0f, Transform2D{Vector2f{panelCenter.X, top + 544.0f}}, Color{160, 180, 205, 210});
-    }
-    else
-    {
-        std::string infoLine1 = "BRIQUE CONFIGURABLE";
-        std::string infoLine2 = "SAUVEGARDEE DANS LA PALETTE";
-        if (target.Type == EditorTileType::Lantern)
+    auto drawSwatches = [&](float y, const char* label, const Color (&palette)[8], Color currentColor, bool dimmed) {
+        context.Render.DrawText(label, m_fontId, 16.0f, Transform2D{Vector2f{leftX + 6.0f, y - 8.0f}}, dimmed ? Color{120, 130, 148, 170} : Color{200, 210, 228, 240});
+        const float swSize = 21.0f;
+        const float swGap = 4.0f;
+        const float startX = ctrlCenterX - ctrlW * 0.5f + swSize * 0.5f;
+        for (int i = 0; i < 8; ++i)
         {
-            infoLine1 = "EMET UNE LUMIERE CHAUDE";
-            infoLine2 = "PV PERSONNALISABLES (1..9)";
+            const Vector2f sPos{startX + static_cast<float>(i) * (swSize + swGap), y};
+            const bool selected = !dimmed && ColorsApproxEqual(currentColor, palette[i]);
+            const bool hov = !dimmed && (std::abs(worldMouse.X - sPos.X) <= swSize * 0.5f && std::abs(worldMouse.Y - sPos.Y) <= swSize * 0.5f);
+            Color c = palette[i];
+            if (dimmed) c.a = 90;
+            context.Render.DrawRectangle(swSize, swSize, Transform2D{sPos}, c);
+            context.Render.DrawRectangleOutline(swSize, swSize, Transform2D{sPos},
+                selected ? Colors::White : (hov ? Color{255, 225, 95, 255} : Color{20, 24, 34, 220}),
+                selected ? 2.4f : 1.0f);
         }
-        else if (target.Type == EditorTileType::Metal)
-        {
-            infoLine1 = "BLOC INCASSABLE";
-            infoLine2 = "NE BLOQUE PAS LA VICTOIRE";
-        }
-        else if (target.Type == EditorTileType::Bomb)
-        {
-            infoLine1 = "DETRUIT LES BRIQUES VOISINES";
-            infoLine2 = "ONDE DE CHOC A LA DESTRUCTION";
-        }
+    };
 
-        Vector2f infoPos{panelCenter.X, top + 372.0f};
-        context.Render.DrawRectangle(cardW, 74.0f, Transform2D{infoPos}, Color{26, 30, 42, 230});
-        context.Render.DrawRectangleOutline(cardW, 74.0f, Transform2D{infoPos}, Color{55, 65, 88, 190}, 1.2f);
-        context.Render.DrawTextCentered(infoLine1, m_fontId, 17.0f, Transform2D{infoPos + Vector2f{0.0f, -13.0f}}, Color{210, 225, 245, 235});
-        context.Render.DrawTextCentered(infoLine2, m_fontId, 15.0f, Transform2D{infoPos + Vector2f{0.0f, 13.0f}}, Color{145, 165, 195, 210});
+    auto drawHitPointStrip = [&](float y, int maxHp) {
+        if (maxHp == 9)
+        {
+            const float btnW = 36.0f;
+            const float btnH = 32.0f;
+            const float gap = 4.0f;
+            const float totalW = 9.0f * btnW + 8.0f * gap;
+            const float startX = panelCenter.X - totalW * 0.5f + btnW * 0.5f;
+            for (int hp = 1; hp <= 9; ++hp)
+            {
+                const Vector2f bPos{startX + static_cast<float>(hp - 1) * (btnW + gap), y};
+                const bool isCur = (target.HitPoints == hp);
+                const bool isHov = (std::abs(worldMouse.X - bPos.X) <= btnW * 0.5f && std::abs(worldMouse.Y - bPos.Y) <= btnH * 0.5f);
+                context.Render.DrawRectangle(btnW, btnH, Transform2D{bPos}, LevelData::GetColorForHitPoints(hp));
+                context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{bPos},
+                    isCur ? Colors::White : (isHov ? Color{255, 230, 120, 255} : Color{20, 24, 34, 220}),
+                    isCur ? 2.6f : 1.1f);
+                context.Render.DrawTextCentered(std::to_string(hp), m_fontId, 18.0f, Transform2D{bPos + Vector2f{1.0f, 1.0f}}, Color{0, 0, 0, 190});
+                context.Render.DrawTextCentered(std::to_string(hp), m_fontId, 18.0f, Transform2D{bPos}, Color{15, 18, 25, 255});
+            }
+        }
+        else
+        {
+            const float btnW = 60.0f;
+            const float btnH = 32.0f;
+            const float gap = 8.0f;
+            const float startX = ctrlCenterX - ctrlW * 0.5f + btnW * 0.5f;
+            context.Render.DrawText("Hit Points", m_fontId, 16.0f, Transform2D{Vector2f{leftX + 6.0f, y - 8.0f}}, Color{200, 210, 228, 240});
+            for (int hp = 1; hp <= maxHp; ++hp)
+            {
+                const Vector2f bPos{startX + static_cast<float>(hp - 1) * (btnW + gap), y};
+                const bool isCur = (target.HitPoints == hp);
+                const bool isHov = (std::abs(worldMouse.X - bPos.X) <= btnW * 0.5f && std::abs(worldMouse.Y - bPos.Y) <= btnH * 0.5f);
+                context.Render.DrawRectangle(btnW, btnH, Transform2D{bPos}, isCur ? Color{55, 76, 112, 255} : (isHov ? Color{40, 48, 66, 255} : Color{28, 33, 45, 255}));
+                context.Render.DrawRectangleOutline(btnW, btnH, Transform2D{bPos}, isCur ? Color{255, 215, 65, 255} : Color{60, 70, 92, 210}, isCur ? 2.0f : 1.1f);
+                context.Render.DrawTextCentered(std::to_string(hp) + " HP", m_fontId, 15.0f, Transform2D{bPos}, isCur ? Color{255, 225, 90, 255} : Colors::White);
+            }
+        }
+    };
+
+    switch (target.Type)
+    {
+    case EditorTileType::Light:
+    case EditorTileType::Medium:
+    case EditorTileType::Hard:
+        drawSection(top + 136.0f, "DURABILITY (1 - 9 HP)");
+        drawHitPointStrip(top + 172.0f, 9);
+        drawSection(top + 220.0f, "APPEARANCE");
+        drawFieldButton(top + 258.0f, "Color Mode", target.UseCustomColor ? "Custom Tint" : "HP Auto",
+                        target.UseCustomColor ? Color{95, 215, 255, 220} : Color{65, 78, 102, 210},
+                        target.UseCustomColor ? Color{140, 235, 255, 255} : Colors::White);
+        drawSwatches(top + 304.0f, "Tint", kAccentSwatches, target.CustomColor, !target.UseCustomColor);
+        break;
+
+    case EditorTileType::Special:
+        drawSection(top + 136.0f, "DURABILITY (1 - 9 HP)");
+        drawHitPointStrip(top + 172.0f, 9);
+        drawSection(top + 220.0f, "PAYLOAD");
+        drawFieldButton(top + 258.0f, "Selection", target.RandomPowerUp ? "Random" : "Fixed",
+                        target.RandomPowerUp ? Color{220, 95, 255, 220} : Color{90, 225, 165, 220},
+                        target.RandomPowerUp ? Color{240, 175, 255, 255} : Color{165, 255, 210, 255});
+        drawFieldButton(top + 302.0f, "Power-Up", "< " + LevelData::GetPowerUpDisplayName(target.SpecificPowerUp) + " >",
+                        Color{75, 95, 130, 210}, target.RandomPowerUp ? Color{145, 155, 175, 200} : Color{255, 225, 95, 255});
+        drawSection(top + 350.0f, "RESPAWN");
+        drawFieldButton(top + 388.0f, "Auto Respawn", target.PowerUpRegenEnabled ? "ON" : "OFF",
+                        target.PowerUpRegenEnabled ? Color{85, 225, 140, 210} : Color{215, 75, 90, 210},
+                        target.PowerUpRegenEnabled ? Color{165, 255, 200, 255} : Color{255, 165, 175, 255});
+        drawStepper(top + 432.0f, "Cooldown", std::to_string(static_cast<int>(target.PowerUpRegenCooldown)) + "s",
+                    target.PowerUpRegenEnabled ? Colors::White : Color{130, 140, 160, 180});
+        break;
+
+    case EditorTileType::Event:
+    {
+        drawSection(top + 136.0f, "DURABILITY (1 - 9 HP)");
+        drawHitPointStrip(top + 172.0f, 9);
+        drawSection(top + 220.0f, "EVENT");
+        drawFieldButton(top + 258.0f, "Selection", target.RandomEvent ? "Random" : "Fixed",
+                        target.RandomEvent ? Color{65, 225, 240, 220} : Color{255, 200, 65, 220},
+                        target.RandomEvent ? Color{155, 245, 255, 255} : Color{255, 230, 120, 255});
+        const auto* desc = FindArenaEventDescriptor(target.SpecificEvent);
+        const std::string evName = desc ? desc->DisplayName : "Meteor Shower";
+        drawFieldButton(top + 302.0f, "Event Type", "< " + evName + " >",
+                        Color{75, 95, 130, 210}, target.RandomEvent ? Color{145, 155, 175, 200} : GetArenaEventColor(target.SpecificEvent));
+        drawFieldButton(top + 346.0f, "Trigger", target.EventTriggerOnHit ? "On Hit" : "On Break",
+                        Color{80, 155, 235, 215}, Color{190, 230, 255, 255});
+        break;
     }
 
-    // Bottom Reset Preset Button
-    Vector2f resetPos{panelCenter.X, halfH - 58.0f};
-    drawControlCard(resetPos, 48.0f, "REINITIALISER PRESET PAR DEFAUT", Color{190, 80, 95, 210}, Color{255, 200, 205, 255});
+    case EditorTileType::Metal:
+        drawSection(top + 136.0f, "PHYSICS");
+        drawStepper(top + 174.0f, "Bounce Boost", FormatOneDecimal(target.MetalBounceBoost) + "x", Color{175, 225, 255, 255});
+        break;
 
-    context.Render.DrawTextCentered("SHIFT+CLIC OU MOLETTE = INSPECTER", m_fontId, 14.0f, Transform2D{Vector2f{panelCenter.X, halfH - 22.0f}}, Color{140, 165, 195, 200});
+    case EditorTileType::Bomb:
+        drawSection(top + 136.0f, "DURABILITY");
+        drawHitPointStrip(top + 174.0f, 3);
+        drawSection(top + 224.0f, "EXPLOSION");
+        drawFieldButton(top + 262.0f, "Blast Radius", std::string("< ") + LevelData::GetBombBlastLabel(target.BombBlastTier) + " >",
+                        Color{255, 135, 65, 220}, Color{255, 195, 115, 255});
+        break;
+
+    case EditorTileType::Turret:
+        drawSection(top + 136.0f, "DURABILITY (1 - 9 HP)");
+        drawHitPointStrip(top + 172.0f, 9);
+        drawSection(top + 220.0f, "COMBAT");
+        drawStepper(top + 258.0f, "Fire Rate", FormatOneDecimal(target.TurretCooldown) + "s");
+        drawStepper(top + 302.0f, "First Shot", FormatOneDecimal(target.TurretInitialDelay) + "s");
+        drawStepper(top + 346.0f, "Shot Speed", std::to_string(static_cast<int>(target.TurretProjectileSpeed)) + " px/s");
+        drawStepper(top + 390.0f, "Hull Damage", std::to_string(static_cast<int>(target.TurretDamage)));
+        drawFieldButton(top + 434.0f, "Targeting", target.TurretAimed ? "Aimed" : "Straight",
+                        target.TurretAimed ? Color{255, 95, 105, 220} : Color{75, 105, 145, 210},
+                        target.TurretAimed ? Color{255, 180, 185, 255} : Color{195, 225, 255, 255});
+        break;
+
+    case EditorTileType::Lantern:
+        drawSection(top + 136.0f, "DURABILITY (1 - 9 HP)");
+        drawHitPointStrip(top + 172.0f, 9);
+        drawSection(top + 220.0f, "LIGHT SOURCE");
+        drawSwatches(top + 258.0f, "Light Color", kLanternSwatches, target.LanternLightColor, false);
+        drawStepper(top + 304.0f, "Radius", std::to_string(static_cast<int>(target.LanternLightRadius)) + " px");
+        drawStepper(top + 348.0f, "Intensity", FormatTwoDecimals(target.LanternLightIntensity) + "x");
+        break;
+
+    default:
+        break;
+    }
+
+    // Compact Reset Defaults Button at bottom
+    const Vector2f resetPos{panelCenter.X, halfH - 46.0f};
+    const bool resetHov = (std::abs(worldMouse.X - resetPos.X) <= cardW * 0.5f && std::abs(worldMouse.Y - resetPos.Y) <= 20.0f);
+    context.Render.DrawRectangle(cardW, 40.0f, Transform2D{resetPos}, resetHov ? Color{68, 34, 44, 255} : Color{36, 26, 34, 255});
+    context.Render.DrawRectangleOutline(cardW, 40.0f, Transform2D{resetPos}, resetHov ? Color{255, 120, 135, 255} : Color{155, 70, 82, 210}, 1.3f);
+    context.Render.DrawTextCentered("RESET DEFAULTS", m_fontId, 16.0f, Transform2D{resetPos}, resetHov ? Colors::White : Color{240, 185, 192, 240});
 }
 
 bool EditorScene::HandleInspectorTabInput(GameContext& context, const Vector2f& panelCenter, float sideWidth, float toolbarH, float halfH, const Vector2f& worldMouse, bool leftClick)
@@ -3290,52 +3323,93 @@ bool EditorScene::HandleInspectorTabInput(GameContext& context, const Vector2f& 
     if (!leftClick) return false;
 
     const float top = -halfH + toolbarH;
-    const float cardW = sideWidth - 36.0f;
+    const float cardW = sideWidth - 32.0f;
+    const float rightX = panelCenter.X + cardW * 0.5f;
+    const float ctrlW = 196.0f;
+    const float ctrlCenterX = rightX - ctrlW * 0.5f;
     EditorCellData target = GetInspectorTargetData();
-    const bool supportsHP = (target.Type != EditorTileType::Metal && target.Type != EditorTileType::Bomb && target.Type != EditorTileType::Empty);
 
-    // 1. HitPoints 1..9 swatch row
-    if (supportsHP)
-    {
-        const float btnSize = 36.0f;
-        const float btnGap = 4.0f;
-        const float totalRowW = 9.0f * btnSize + 8.0f * btnGap;
-        const float rowStartX = panelCenter.X - totalRowW * 0.5f + btnSize * 0.5f;
-        const float hpRowY = top + 244.0f;
+    auto hitCtrl = [&](float y) {
+        return std::abs(worldMouse.X - ctrlCenterX) <= ctrlW * 0.5f && std::abs(worldMouse.Y - y) <= 16.0f;
+    };
 
-        if (std::abs(worldMouse.Y - hpRowY) <= btnSize * 0.55f)
+    auto hitStepperDelta = [&](float y, int& outDir) {
+        if (!hitCtrl(y)) return false;
+        outDir = (worldMouse.X < ctrlCenterX) ? -1 : 1;
+        return true;
+    };
+
+    auto hitSwatches = [&](float y, const Color (&palette)[8], Color& outColor) {
+        const float swSize = 21.0f;
+        const float swGap = 4.0f;
+        const float startX = ctrlCenterX - ctrlW * 0.5f + swSize * 0.5f;
+        if (std::abs(worldMouse.Y - y) > swSize * 0.55f) return false;
+        for (int i = 0; i < 8; ++i)
         {
-            for (int hp = 1; hp <= 9; ++hp)
+            const float sx = startX + static_cast<float>(i) * (swSize + swGap);
+            if (std::abs(worldMouse.X - sx) <= swSize * 0.5f)
             {
-                float bx = rowStartX + static_cast<float>(hp - 1) * (btnSize + btnGap);
-                if (std::abs(worldMouse.X - bx) <= btnSize * 0.5f)
-                {
-                    target.HitPoints = hp;
-                    ApplyInspectorTargetData(target);
-                    m_statusMessage = std::to_string(hp) + " PV APPLIQUE (" + GetHitPointsColorName(hp) + ")";
-                    m_statusTimer = 1.6f;
-                    m_statusColor = LevelData::GetColorForHitPoints(hp);
-                    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
-                    return true;
-                }
+                outColor = palette[i];
+                return true;
             }
         }
-    }
+        return false;
+    };
 
-    // 2. Special Brick Power-up controls
-    if (target.Type == EditorTileType::Special)
+    auto handleHpStrip9 = [&](float y) -> bool {
+        const float btnW = 36.0f;
+        const float btnH = 32.0f;
+        const float gap = 4.0f;
+        const float totalW = 9.0f * btnW + 8.0f * gap;
+        const float startX = panelCenter.X - totalW * 0.5f + btnW * 0.5f;
+        if (std::abs(worldMouse.Y - y) > btnH * 0.55f) return false;
+        for (int hp = 1; hp <= 9; ++hp)
+        {
+            const float bx = startX + static_cast<float>(hp - 1) * (btnW + gap);
+            if (std::abs(worldMouse.X - bx) <= btnW * 0.5f)
+            {
+                target.HitPoints = hp;
+                ApplyInspectorTargetData(target);
+                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    int dir = 0;
+    switch (target.Type)
     {
-        if (std::abs(worldMouse.X - panelCenter.X) <= cardW * 0.5f && std::abs(worldMouse.Y - (top + 364.0f)) <= 26.0f)
+    case EditorTileType::Light:
+    case EditorTileType::Medium:
+    case EditorTileType::Hard:
+        if (handleHpStrip9(top + 172.0f)) return true;
+        if (hitCtrl(top + 258.0f))
+        {
+            target.UseCustomColor = !target.UseCustomColor;
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        if (hitSwatches(top + 304.0f, kAccentSwatches, target.CustomColor))
+        {
+            target.UseCustomColor = true;
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        break;
+
+    case EditorTileType::Special:
+        if (handleHpStrip9(top + 172.0f)) return true;
+        if (hitCtrl(top + 258.0f))
         {
             target.RandomPowerUp = !target.RandomPowerUp;
             ApplyInspectorTargetData(target);
-            m_statusMessage = target.RandomPowerUp ? "CAPSULE : ALEATOIRE" : ("CAPSULE FIXE : " + LevelData::GetPowerUpDisplayName(target.SpecificPowerUp));
-            m_statusTimer = 1.8f;
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
             return true;
         }
-
-        if (std::abs(worldMouse.X - panelCenter.X) <= cardW * 0.5f && std::abs(worldMouse.Y - (top + 432.0f)) <= 28.0f)
+        if (hitCtrl(top + 302.0f))
         {
             const auto& list = LevelData::GetSelectablePowerUps();
             if (!list.empty())
@@ -3343,70 +3417,623 @@ bool EditorScene::HandleInspectorTabInput(GameContext& context, const Vector2f& 
                 size_t curIdx = 0;
                 for (size_t i = 0; i < list.size(); ++i)
                 {
-                    if (list[i] == target.SpecificPowerUp)
-                    {
-                        curIdx = i;
-                        break;
-                    }
+                    if (list[i] == target.SpecificPowerUp) { curIdx = i; break; }
                 }
-                if (worldMouse.X < panelCenter.X)
-                {
-                    curIdx = (curIdx == 0) ? (list.size() - 1) : (curIdx - 1);
-                }
-                else
-                {
-                    curIdx = (curIdx + 1) % list.size();
-                }
+                curIdx = (worldMouse.X < ctrlCenterX)
+                    ? ((curIdx == 0) ? (list.size() - 1) : (curIdx - 1))
+                    : ((curIdx + 1) % list.size());
                 target.RandomPowerUp = false;
                 target.SpecificPowerUp = list[curIdx];
                 ApplyInspectorTargetData(target);
-                m_statusMessage = "POWER-UP : " + LevelData::GetPowerUpDisplayName(target.SpecificPowerUp);
-                m_statusTimer = 1.8f;
-                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
             }
             return true;
         }
-    }
-    // 3. Turret Brick Controls
-    else if (target.Type == EditorTileType::Turret)
+        if (hitCtrl(top + 388.0f))
+        {
+            target.PowerUpRegenEnabled = !target.PowerUpRegenEnabled;
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        if (hitStepperDelta(top + 432.0f, dir))
+        {
+            target.PowerUpRegenCooldown = std::clamp(target.PowerUpRegenCooldown + static_cast<float>(dir) * 5.0f, 10.0f, 60.0f);
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        break;
+
+    case EditorTileType::Event:
+        if (handleHpStrip9(top + 172.0f)) return true;
+        if (hitCtrl(top + 258.0f))
+        {
+            target.RandomEvent = !target.RandomEvent;
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        if (hitCtrl(top + 302.0f))
+        {
+            const auto& catalog = GetArenaEventCatalog();
+            if (!catalog.empty())
+            {
+                size_t curIdx = 0;
+                for (size_t i = 0; i < catalog.size(); ++i)
+                {
+                    if (catalog[i].Type == target.SpecificEvent) { curIdx = i; break; }
+                }
+                curIdx = (worldMouse.X < ctrlCenterX)
+                    ? ((curIdx == 0) ? (catalog.size() - 1) : (curIdx - 1))
+                    : ((curIdx + 1) % catalog.size());
+                target.RandomEvent = false;
+                target.SpecificEvent = catalog[curIdx].Type;
+                ApplyInspectorTargetData(target);
+                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            }
+            return true;
+        }
+        if (hitCtrl(top + 346.0f))
+        {
+            target.EventTriggerOnHit = !target.EventTriggerOnHit;
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        break;
+
+    case EditorTileType::Metal:
+        if (hitStepperDelta(top + 174.0f, dir))
+        {
+            target.MetalBounceBoost = std::clamp(target.MetalBounceBoost + static_cast<float>(dir) * 0.1f, 1.0f, 1.4f);
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        break;
+
+    case EditorTileType::Bomb:
     {
-        if (std::abs(worldMouse.X - panelCenter.X) <= cardW * 0.5f && std::abs(worldMouse.Y - (top + 366.0f)) <= 26.0f)
+        const float btnW = 60.0f;
+        const float btnH = 32.0f;
+        const float gap = 8.0f;
+        const float startX = ctrlCenterX - ctrlW * 0.5f + btnW * 0.5f;
+        if (std::abs(worldMouse.Y - (top + 174.0f)) <= btnH * 0.55f)
         {
-            if (worldMouse.X < panelCenter.X) target.TurretCooldown = std::max(0.5f, target.TurretCooldown - 0.2f);
-            else target.TurretCooldown = std::min(10.0f, target.TurretCooldown + 0.2f);
+            for (int hp = 1; hp <= 3; ++hp)
+            {
+                const float bx = startX + static_cast<float>(hp - 1) * (btnW + gap);
+                if (std::abs(worldMouse.X - bx) <= btnW * 0.5f)
+                {
+                    target.HitPoints = hp;
+                    ApplyInspectorTargetData(target);
+                    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+                    return true;
+                }
+            }
+        }
+        if (hitStepperDelta(top + 262.0f, dir))
+        {
+            target.BombBlastTier = (target.BombBlastTier + (dir > 0 ? 1 : 2)) % 3;
             ApplyInspectorTargetData(target);
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
             return true;
         }
-
-        if (std::abs(worldMouse.X - panelCenter.X) <= cardW * 0.5f && std::abs(worldMouse.Y - (top + 430.0f)) <= 26.0f)
-        {
-            if (worldMouse.X < panelCenter.X) target.TurretInitialDelay = std::max(0.5f, target.TurretInitialDelay - 0.5f);
-            else target.TurretInitialDelay = std::min(12.0f, target.TurretInitialDelay + 0.5f);
-            ApplyInspectorTargetData(target);
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
-            return true;
-        }
-
-        if (std::abs(worldMouse.X - panelCenter.X) <= cardW * 0.5f && std::abs(worldMouse.Y - (top + 494.0f)) <= 26.0f)
-        {
-            if (worldMouse.X < panelCenter.X) target.TurretProjectileSpeed = std::max(100.0f, target.TurretProjectileSpeed - 20.0f);
-            else target.TurretProjectileSpeed = std::min(450.0f, target.TurretProjectileSpeed + 20.0f);
-            ApplyInspectorTargetData(target);
-            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
-            return true;
-        }
+        break;
     }
 
-    // 4. Reset Preset Button
-    Vector2f resetPos{panelCenter.X, halfH - 58.0f};
-    if (std::abs(worldMouse.X - resetPos.X) <= cardW * 0.5f && std::abs(worldMouse.Y - resetPos.Y) <= 24.0f)
+    case EditorTileType::Turret:
+        if (handleHpStrip9(top + 172.0f)) return true;
+        if (hitStepperDelta(top + 258.0f, dir))
+        {
+            target.TurretCooldown = std::clamp(target.TurretCooldown + static_cast<float>(dir) * 0.2f, 0.5f, 10.0f);
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        if (hitStepperDelta(top + 302.0f, dir))
+        {
+            target.TurretInitialDelay = std::clamp(target.TurretInitialDelay + static_cast<float>(dir) * 0.5f, 0.5f, 12.0f);
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        if (hitStepperDelta(top + 346.0f, dir))
+        {
+            target.TurretProjectileSpeed = std::clamp(target.TurretProjectileSpeed + static_cast<float>(dir) * 20.0f, 100.0f, 450.0f);
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        if (hitStepperDelta(top + 390.0f, dir))
+        {
+            target.TurretDamage = std::clamp(target.TurretDamage + static_cast<float>(dir) * 5.0f, 15.0f, 50.0f);
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        if (hitCtrl(top + 434.0f))
+        {
+            target.TurretAimed = !target.TurretAimed;
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        break;
+
+    case EditorTileType::Lantern:
+        if (handleHpStrip9(top + 172.0f)) return true;
+        if (hitSwatches(top + 258.0f, kLanternSwatches, target.LanternLightColor))
+        {
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        if (hitStepperDelta(top + 304.0f, dir))
+        {
+            target.LanternLightRadius = std::clamp(target.LanternLightRadius + static_cast<float>(dir) * 20.0f, 120.0f, 420.0f);
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        if (hitStepperDelta(top + 348.0f, dir))
+        {
+            target.LanternLightIntensity = std::clamp(target.LanternLightIntensity + static_cast<float>(dir) * 0.15f, 0.5f, 2.5f);
+            ApplyInspectorTargetData(target);
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+            return true;
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    // Reset Defaults Button
+    const Vector2f resetPos{panelCenter.X, halfH - 46.0f};
+    if (std::abs(worldMouse.X - resetPos.X) <= cardW * 0.5f && std::abs(worldMouse.Y - resetPos.Y) <= 20.0f)
     {
         EditorCellData def = EditorCellData::CreateDefaultForType(target.Type);
         ApplyInspectorTargetData(def);
-        m_statusMessage = "PRESET REINITIALISE";
-        m_statusTimer = 1.6f;
+        ShowToast("Defaults restored", Color{140, 210, 255, 255}, 1.4f);
         if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
+        return true;
+    }
+
+    return false;
+}
+
+void EditorScene::RenderThemeTab(GameContext& context, const Vector2f& panelCenter, float sideWidth, float toolbarH, float halfH, const Vector2f& worldMouse)
+{
+    const float top = -halfH + toolbarH;
+    const float cardW = sideWidth - 32.0f;
+    const float leftX = panelCenter.X - cardW * 0.5f;
+    const float rightX = panelCenter.X + cardW * 0.5f;
+    const float ctrlW = 196.0f;
+    const float ctrlCenterX = rightX - ctrlW * 0.5f;
+    const EditorThemeData& thm = m_levelData.GetTheme();
+
+    auto drawSection = [&](float y, const char* title) {
+        context.Render.DrawRectangle(cardW, 22.0f, Transform2D{Vector2f{panelCenter.X, y}}, Color{26, 30, 41, 255});
+        context.Render.DrawLine(Vector2f{leftX, y + 11.0f}, Vector2f{rightX, y + 11.0f}, Color{52, 60, 78, 220}, 1.0f);
+        context.Render.DrawText(title, m_fontId, 13.5f, Transform2D{Vector2f{leftX + 6.0f, y - 7.0f}}, Color{150, 185, 230, 235});
+    };
+
+    auto drawFullSelector = [&](float y, const std::string& text, Color accentCol) {
+        const Vector2f pos{panelCenter.X, y};
+        const bool hov = (std::abs(worldMouse.X - pos.X) <= cardW * 0.5f && std::abs(worldMouse.Y - y) <= 16.0f);
+        context.Render.DrawRectangle(cardW, 32.0f, Transform2D{pos}, hov ? Color{38, 46, 64, 255} : Color{28, 33, 45, 255});
+        context.Render.DrawRectangleOutline(cardW, 32.0f, Transform2D{pos}, hov ? Colors::White : Color{58, 68, 90, 210}, 1.2f);
+        context.Render.DrawTextCentered(text, m_fontId, 16.0f, Transform2D{pos}, accentCol);
+    };
+
+    auto drawSwatches = [&](float y, const char* label, const Color (&palette)[8], Color currentColor) {
+        context.Render.DrawText(label, m_fontId, 15.0f, Transform2D{Vector2f{leftX + 6.0f, y - 8.0f}}, Color{200, 210, 228, 240});
+        const float swSize = 21.0f;
+        const float swGap = 4.0f;
+        const float startX = ctrlCenterX - ctrlW * 0.5f + swSize * 0.5f;
+        for (int i = 0; i < 8; ++i)
+        {
+            const Vector2f sPos{startX + static_cast<float>(i) * (swSize + swGap), y};
+            const bool selected = ColorsApproxEqual(currentColor, palette[i]);
+            const bool hov = (std::abs(worldMouse.X - sPos.X) <= swSize * 0.5f && std::abs(worldMouse.Y - sPos.Y) <= swSize * 0.5f);
+            context.Render.DrawRectangle(swSize, swSize, Transform2D{sPos}, palette[i]);
+            context.Render.DrawRectangleOutline(swSize, swSize, Transform2D{sPos},
+                selected ? Colors::White : (hov ? Color{255, 225, 95, 255} : Color{20, 24, 34, 220}),
+                selected ? 2.4f : 1.0f);
+        }
+    };
+
+    auto drawStepper = [&](float y, const char* label, const std::string& value) {
+        context.Render.DrawText(label, m_fontId, 15.0f, Transform2D{Vector2f{leftX + 6.0f, y - 8.0f}}, Color{200, 210, 228, 240});
+        const Vector2f boxPos{ctrlCenterX, y};
+        const bool hov = (std::abs(worldMouse.X - boxPos.X) <= ctrlW * 0.5f && std::abs(worldMouse.Y - y) <= 15.0f);
+        context.Render.DrawRectangle(ctrlW, 30.0f, Transform2D{boxPos}, Color{26, 30, 42, 255});
+        context.Render.DrawRectangleOutline(ctrlW, 30.0f, Transform2D{boxPos}, hov ? Color{130, 165, 220, 230} : Color{56, 65, 86, 210}, 1.1f);
+        const Vector2f minusPos{ctrlCenterX - ctrlW * 0.5f + 15.0f, y};
+        const Vector2f plusPos{ctrlCenterX + ctrlW * 0.5f - 15.0f, y};
+        context.Render.DrawRectangle(26.0f, 26.0f, Transform2D{minusPos}, Color{36, 42, 56, 255});
+        context.Render.DrawTextCentered("-", m_fontId, 17.0f, Transform2D{minusPos}, Colors::White);
+        context.Render.DrawRectangle(26.0f, 26.0f, Transform2D{plusPos}, Color{36, 42, 56, 255});
+        context.Render.DrawTextCentered("+", m_fontId, 17.0f, Transform2D{plusPos}, Colors::White);
+        context.Render.DrawTextCentered(value, m_fontId, 15.0f, Transform2D{boxPos}, Colors::White);
+    };
+
+    // 0. Lighting Mode Presets (reuses the 3 Debug Panel lighting presets directly)
+    drawSection(top + 84.0f, "LIGHTING MODE");
+    const LightingMode lightingModes[3] = {
+        LightingMode::Lit,
+        LightingMode::Atmospheric,
+        LightingMode::PitchBlack
+    };
+    const char* lightingLabels[3] = {"LIT", "ATMOSPHERIC", "PITCH BLACK"};
+    const Color lightingAccents[3] = {
+        Color{255, 225, 115, 255},
+        Color{95, 210, 255, 255},
+        Color{190, 120, 255, 255}
+    };
+    const float modeGap = 6.0f;
+    const float modeW = (cardW - modeGap * 2.0f) / 3.0f;
+    const float modeY = top + 118.0f;
+    for (int i = 0; i < 3; ++i)
+    {
+        const float mx = leftX + modeW * 0.5f + static_cast<float>(i) * (modeW + modeGap);
+        const Vector2f mPos{mx, modeY};
+        const bool selected = (thm.Lighting == lightingModes[i]);
+        const bool hov = (std::abs(worldMouse.X - mx) <= modeW * 0.5f && std::abs(worldMouse.Y - modeY) <= 17.0f);
+        const Color bg = selected
+            ? Color{40, 56, 84, 255}
+            : (hov ? Color{36, 44, 62, 255} : Color{25, 29, 40, 255});
+        context.Render.DrawRectangle(modeW, 34.0f, Transform2D{mPos}, bg);
+        if (selected)
+        {
+            context.Render.DrawRectangle(modeW - 4.0f, 3.0f, Transform2D{Vector2f{mx, modeY + 14.5f}}, lightingAccents[i]);
+        }
+        context.Render.DrawRectangleOutline(modeW, 34.0f, Transform2D{mPos},
+            selected ? lightingAccents[i] : (hov ? Colors::White : Color{56, 66, 88, 210}),
+            selected ? 2.0f : 1.1f);
+        context.Render.DrawTextCentered(lightingLabels[i], m_fontId, 13.5f, Transform2D{mPos},
+            selected ? lightingAccents[i] : (hov ? Colors::White : Color{185, 198, 220, 230}));
+    }
+
+    // 1. Built-in Environment Presets
+    drawSection(top + 160.0f, "ENVIRONMENT PRESETS");
+    const std::string presetLabel = (m_selectedCustomThemeIdx >= 0)
+        ? ("< Preset: " + LevelData::CreatePresetTheme(thm.Preset).Name + " >")
+        : ("< " + thm.Name + " >");
+    drawFullSelector(top + 192.0f, presetLabel, Color{255, 215, 75, 255});
+
+    // 2. Custom Reusable Themes (Create / Save / Rename / Delete)
+    drawSection(top + 232.0f, "CUSTOM THEMES");
+    const auto& customThemes = m_themeLibrary.GetThemes();
+    std::string customLabel;
+    Color customCol{165, 185, 210, 225};
+    if (customThemes.empty())
+    {
+        customLabel = "No custom themes saved";
+    }
+    else if (m_selectedCustomThemeIdx >= 0 && m_selectedCustomThemeIdx < static_cast<int>(customThemes.size()))
+    {
+        customLabel = "< " + customThemes[m_selectedCustomThemeIdx].Name + " >";
+        customCol = Color{110, 235, 255, 255};
+    }
+    else
+    {
+        customLabel = "< Select Custom Theme (" + std::to_string(customThemes.size()) + ") >";
+        customCol = Color{175, 215, 245, 240};
+    }
+    drawFullSelector(top + 264.0f, customLabel, customCol);
+
+    const float actGap = 6.0f;
+    const float actW = (cardW - actGap * 3.0f) / 4.0f;
+    const float actY = top + 302.0f;
+    const bool hasCustomSel = (m_selectedCustomThemeIdx >= 0 && m_selectedCustomThemeIdx < static_cast<int>(customThemes.size()));
+    const char* actLabels[4] = {"NEW", "SAVE", "RENAME", "DELETE"};
+    const bool actEnabled[4] = {true, true, hasCustomSel, hasCustomSel};
+    const Color actBorders[4] = {
+        Color{85, 205, 130, 220},
+        Color{80, 175, 245, 220},
+        Color{230, 185, 75, 220},
+        Color{220, 75, 90, 220}
+    };
+    for (int i = 0; i < 4; ++i)
+    {
+        const float ax = leftX + actW * 0.5f + static_cast<float>(i) * (actW + actGap);
+        const Vector2f aPos{ax, actY};
+        const bool hov = actEnabled[i] && (std::abs(worldMouse.X - ax) <= actW * 0.5f && std::abs(worldMouse.Y - actY) <= 15.0f);
+        context.Render.DrawRectangle(actW, 30.0f, Transform2D{aPos},
+            !actEnabled[i] ? Color{24, 27, 35, 200} : (hov ? Color{44, 54, 72, 255} : Color{30, 35, 48, 255}));
+        context.Render.DrawRectangleOutline(actW, 30.0f, Transform2D{aPos},
+            !actEnabled[i] ? Color{46, 52, 66, 150} : (hov ? Colors::White : actBorders[i]), 1.2f);
+        context.Render.DrawTextCentered(actLabels[i], m_fontId, 14.0f, Transform2D{aPos},
+            actEnabled[i] ? Colors::White : Color{95, 102, 118, 160});
+    }
+
+    // 3. Expanded Lighting Controls
+    drawSection(top + 342.0f, "LIGHTING & ATMOSPHERE");
+    drawSwatches(top + 374.0f, "Background", kBgDarkSwatches, thm.BgColor);
+    drawSwatches(top + 410.0f, "Secondary Bg", kBgSecondarySwatches, thm.BgSecondaryColor);
+    drawSwatches(top + 446.0f, "Ambient Tint", kAmbientSwatches, thm.AmbientColor);
+    drawStepper(top + 482.0f, "Ambient", std::to_string(static_cast<int>(std::round(thm.AmbientIntensity * 100.0f))) + "%");
+    drawSwatches(top + 518.0f, "Paddle Light", kAccentSwatches, thm.PaddleConeColor);
+    drawStepper(top + 554.0f, "Cone Angle", std::to_string(static_cast<int>(std::round(thm.PaddleConeAngle))) + " deg");
+    drawStepper(top + 590.0f, "Light Power", FormatTwoDecimals(thm.PaddleLightIntensity) + "x");
+    drawStepper(top + 626.0f, "Light Range", std::to_string(static_cast<int>(std::round(thm.PaddleLightRange))) + " px");
+    drawStepper(top + 662.0f, "Vignette", std::to_string(static_cast<int>(std::round(thm.VignetteIntensity * 100.0f))) + "%");
+
+    // 4. Audio Track & Background Music Mute Toggle
+    drawSection(top + 702.0f, "AUDIO");
+    context.Render.DrawText("Music Track", m_fontId, 15.0f, Transform2D{Vector2f{leftX + 6.0f, top + 726.0f}}, Color{200, 210, 228, 240});
+    const Vector2f musPos{ctrlCenterX, top + 734.0f};
+    const bool musHov = (std::abs(worldMouse.X - musPos.X) <= ctrlW * 0.5f && std::abs(worldMouse.Y - musPos.Y) <= 15.0f);
+    context.Render.DrawRectangle(ctrlW, 30.0f, Transform2D{musPos}, musHov ? Color{38, 48, 66, 255} : Color{28, 33, 45, 255});
+    context.Render.DrawRectangleOutline(ctrlW, 30.0f, Transform2D{musPos}, musHov ? Colors::White : Color{75, 110, 165, 210}, 1.2f);
+    context.Render.DrawTextCentered("< " + LevelData::GetMusicTrackLabel(thm.MusicTrack) + " >", m_fontId, 15.0f, Transform2D{musPos}, Color{170, 235, 255, 255});
+
+    context.Render.DrawText("Background Music", m_fontId, 15.0f, Transform2D{Vector2f{leftX + 6.0f, top + 762.0f}}, Color{200, 210, 228, 240});
+    const Vector2f mutePos{ctrlCenterX, top + 770.0f};
+    const bool muteHov = (std::abs(worldMouse.X - mutePos.X) <= ctrlW * 0.5f && std::abs(worldMouse.Y - mutePos.Y) <= 15.0f);
+    const Color muteBg = m_environmentMusicMuted
+        ? (muteHov ? Color{70, 32, 38, 255} : Color{54, 24, 30, 255})
+        : (muteHov ? Color{26, 62, 52, 255} : Color{20, 48, 40, 255});
+    const Color muteBorder = m_environmentMusicMuted ? Color{240, 105, 115, 225} : Color{95, 230, 160, 225};
+    const Color muteText = m_environmentMusicMuted ? Color{255, 145, 155, 255} : Color{135, 245, 185, 255};
+    context.Render.DrawRectangle(ctrlW, 30.0f, Transform2D{mutePos}, muteBg);
+    context.Render.DrawRectangleOutline(ctrlW, 30.0f, Transform2D{mutePos}, muteHov ? Colors::White : muteBorder, 1.3f);
+    context.Render.DrawTextCentered(m_environmentMusicMuted ? "MUTED" : "ON", m_fontId, 16.0f, Transform2D{mutePos}, muteText);
+}
+
+bool EditorScene::HandleThemeTabInput(GameContext& context, const Vector2f& panelCenter, float sideWidth, float toolbarH, float halfH, const Vector2f& worldMouse, bool leftClick)
+{
+    if (!leftClick) return false;
+
+    const float top = -halfH + toolbarH;
+    const float cardW = sideWidth - 32.0f;
+    const float leftX = panelCenter.X - cardW * 0.5f;
+    const float rightX = panelCenter.X + cardW * 0.5f;
+    const float ctrlW = 196.0f;
+    const float ctrlCenterX = rightX - ctrlW * 0.5f;
+
+    auto playThemeMusic = [&]() {
+        SyncEditorThemeMusic(context);
+    };
+
+    // 0. Lighting Mode Selector (LIT | ATMOSPHERIC | PITCH BLACK at Y = top + 118)
+    const float modeGap = 6.0f;
+    const float modeW = (cardW - modeGap * 2.0f) / 3.0f;
+    const float modeY = top + 118.0f;
+    if (std::abs(worldMouse.Y - modeY) <= 17.0f)
+    {
+        const LightingMode lightingModes[3] = {
+            LightingMode::Lit,
+            LightingMode::Atmospheric,
+            LightingMode::PitchBlack
+        };
+        for (int i = 0; i < 3; ++i)
+        {
+            const float mx = leftX + modeW * 0.5f + static_cast<float>(i) * (modeW + modeGap);
+            if (std::abs(worldMouse.X - mx) <= modeW * 0.5f)
+            {
+                if (m_levelData.GetLightingMode() != lightingModes[i])
+                {
+                    PushUndo();
+                    m_levelData.ApplyLightingMode(lightingModes[i]);
+                    ShowToast(std::string("Lighting: ") + GetLightingModeName(lightingModes[i]), Color{110, 230, 255, 255}, 1.5f);
+                }
+                if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+                return true;
+            }
+        }
+    }
+
+    // 1. Built-in Environment Preset Selector (Y = top + 192)
+    if (std::abs(worldMouse.X - panelCenter.X) <= cardW * 0.5f && std::abs(worldMouse.Y - (top + 192.0f)) <= 16.0f)
+    {
+        const int count = static_cast<int>(EditorThemePreset::Count);
+        int p = static_cast<int>(m_levelData.GetTheme().Preset);
+        p = (worldMouse.X < panelCenter.X) ? ((p - 1 + count) % count) : ((p + 1) % count);
+        PushUndo();
+        m_levelData.ApplyThemePreset(static_cast<EditorThemePreset>(p));
+        m_selectedCustomThemeIdx = -1;
+        playThemeMusic();
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+        return true;
+    }
+
+    // 2. Custom Theme Selector (Y = top + 264)
+    const auto& customThemes = m_themeLibrary.GetThemes();
+    if (std::abs(worldMouse.X - panelCenter.X) <= cardW * 0.5f && std::abs(worldMouse.Y - (top + 264.0f)) <= 16.0f)
+    {
+        if (!customThemes.empty())
+        {
+            const int n = static_cast<int>(customThemes.size());
+            if (m_selectedCustomThemeIdx < 0 || m_selectedCustomThemeIdx >= n)
+            {
+                m_selectedCustomThemeIdx = (worldMouse.X < panelCenter.X) ? (n - 1) : 0;
+            }
+            else
+            {
+                m_selectedCustomThemeIdx = (worldMouse.X < panelCenter.X)
+                    ? ((m_selectedCustomThemeIdx - 1 + n) % n)
+                    : ((m_selectedCustomThemeIdx + 1) % n);
+            }
+            PushUndo();
+            m_levelData.SetTheme(customThemes[m_selectedCustomThemeIdx]);
+            playThemeMusic();
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+        }
+        return true;
+    }
+
+    // 3. Custom Theme Action Buttons (NEW / SAVE / RENAME / DELETE at Y = top + 302)
+    const float actGap = 6.0f;
+    const float actW = (cardW - actGap * 3.0f) / 4.0f;
+    const float actY = top + 302.0f;
+    if (std::abs(worldMouse.Y - actY) <= 15.0f)
+    {
+        for (int i = 0; i < 4; ++i)
+        {
+            const float ax = leftX + actW * 0.5f + static_cast<float>(i) * (actW + actGap);
+            if (std::abs(worldMouse.X - ax) <= actW * 0.5f)
+            {
+                const bool hasCustomSel = (m_selectedCustomThemeIdx >= 0 && m_selectedCustomThemeIdx < static_cast<int>(customThemes.size()));
+                if (i == 0) // NEW
+                {
+                    OpenThemeModal(EditorTextModalMode::NewTheme);
+                    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+                }
+                else if (i == 1) // SAVE
+                {
+                    if (hasCustomSel)
+                    {
+                        const std::string id = customThemes[m_selectedCustomThemeIdx].ThemeId;
+                        EditorThemeData updated = m_levelData.GetTheme();
+                        updated.ThemeId = id;
+                        updated.Name = customThemes[m_selectedCustomThemeIdx].Name;
+                        if (m_themeLibrary.UpdateTheme(id, updated))
+                        {
+                            m_levelData.SetTheme(updated);
+                            ShowToast("Theme updated: " + updated.Name, Color{110, 235, 165, 255}, 1.8f);
+                            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+                        }
+                    }
+                    else
+                    {
+                        OpenThemeModal(EditorTextModalMode::NewTheme);
+                        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+                    }
+                }
+                else if (i == 2 && hasCustomSel) // RENAME
+                {
+                    OpenThemeModal(EditorTextModalMode::RenameTheme);
+                    if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
+                }
+                else if (i == 3 && hasCustomSel) // DELETE
+                {
+                    const std::string id = customThemes[m_selectedCustomThemeIdx].ThemeId;
+                    const std::string name = customThemes[m_selectedCustomThemeIdx].Name;
+                    if (m_themeLibrary.DeleteTheme(id))
+                    {
+                        m_selectedCustomThemeIdx = -1;
+                        m_levelData.GetTheme().ThemeId.clear();
+                        ShowToast("Theme deleted: " + name, Color{255, 130, 140, 255}, 1.8f);
+                        if (m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
+                    }
+                }
+                return true;
+            }
+        }
+    }
+
+    auto& thm = m_levelData.GetTheme();
+
+    auto hitSwatches = [&](float y, const Color (&palette)[8], Color& outColor) {
+        const float swSize = 21.0f;
+        const float swGap = 4.0f;
+        const float startX = ctrlCenterX - ctrlW * 0.5f + swSize * 0.5f;
+        if (std::abs(worldMouse.Y - y) > swSize * 0.55f) return false;
+        for (int i = 0; i < 8; ++i)
+        {
+            const float sx = startX + static_cast<float>(i) * (swSize + swGap);
+            if (std::abs(worldMouse.X - sx) <= swSize * 0.5f)
+            {
+                outColor = palette[i];
+                return true;
+            }
+        }
+        return false;
+    };
+
+    auto hitStepperDelta = [&](float y, int& outDir) {
+        if (std::abs(worldMouse.X - ctrlCenterX) > ctrlW * 0.5f || std::abs(worldMouse.Y - y) > 15.0f) return false;
+        outDir = (worldMouse.X < ctrlCenterX) ? -1 : 1;
+        return true;
+    };
+
+    if (hitSwatches(top + 374.0f, kBgDarkSwatches, thm.BgColor))
+    {
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+        return true;
+    }
+    if (hitSwatches(top + 410.0f, kBgSecondarySwatches, thm.BgSecondaryColor))
+    {
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+        return true;
+    }
+    if (hitSwatches(top + 446.0f, kAmbientSwatches, thm.AmbientColor))
+    {
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+        return true;
+    }
+
+    int dir = 0;
+    if (hitStepperDelta(top + 482.0f, dir))
+    {
+        thm.AmbientIntensity = std::clamp(thm.AmbientIntensity + static_cast<float>(dir) * 0.05f, 0.10f, 1.00f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+        return true;
+    }
+    if (hitSwatches(top + 518.0f, kAccentSwatches, thm.PaddleConeColor))
+    {
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+        return true;
+    }
+    if (hitStepperDelta(top + 554.0f, dir))
+    {
+        thm.PaddleConeAngle = std::clamp(thm.PaddleConeAngle + static_cast<float>(dir) * 5.0f, 20.0f, 110.0f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+        return true;
+    }
+    if (hitStepperDelta(top + 590.0f, dir))
+    {
+        thm.PaddleLightIntensity = std::clamp(thm.PaddleLightIntensity + static_cast<float>(dir) * 0.10f, 0.40f, 2.40f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+        return true;
+    }
+    if (hitStepperDelta(top + 626.0f, dir))
+    {
+        thm.PaddleLightRange = std::clamp(thm.PaddleLightRange + static_cast<float>(dir) * 25.0f, 220.0f, 650.0f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+        return true;
+    }
+    if (hitStepperDelta(top + 662.0f, dir))
+    {
+        thm.VignetteIntensity = std::clamp(thm.VignetteIntensity + static_cast<float>(dir) * 0.05f, 0.0f, 0.75f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 12.0f);
+        return true;
+    }
+
+    // 4. Music Track Selector (Y = top + 734)
+    if (hitStepperDelta(top + 734.0f, dir))
+    {
+        const auto& tracks = LevelData::GetAvailableMusicTracks();
+        if (!tracks.empty())
+        {
+            size_t idx = 0;
+            for (size_t i = 0; i < tracks.size(); ++i)
+            {
+                if (tracks[i] == thm.MusicTrack) { idx = i; break; }
+            }
+            idx = (dir < 0)
+                ? ((idx == 0) ? (tracks.size() - 1) : (idx - 1))
+                : ((idx + 1) % tracks.size());
+            thm.MusicTrack = tracks[idx];
+            playThemeMusic();
+            if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+        }
+        return true;
+    }
+
+    // 5. Background Music Mute Toggle (Y = top + 770) — affects only level background music, never SFX/UI
+    if (std::abs(worldMouse.X - ctrlCenterX) <= ctrlW * 0.5f && std::abs(worldMouse.Y - (top + 770.0f)) <= 15.0f)
+    {
+        m_environmentMusicMuted = !m_environmentMusicMuted;
+        SyncEditorThemeMusic(context);
+        ShowToast(m_environmentMusicMuted ? "Background Music: Muted" : "Background Music: Active",
+                  m_environmentMusicMuted ? Color{255, 145, 155, 255} : Color{110, 235, 165, 255},
+                  1.5f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
         return true;
     }
 
@@ -3417,17 +4044,40 @@ void EditorScene::RenderEventQueueTab(GameContext& context, const Vector2f& pane
 {
     const float top = -halfH + toolbarH;
     const float cardW = sideWidth - 36.0f;
+    const float leftX = panelCenter.X - cardW * 0.5f;
 
-    // Header + Count Badge
+    // 0. Initial Event Selector (triggers immediately on level start)
+    context.Render.DrawText("INITIAL EVENT", m_fontId, 18.0f, Transform2D{Vector2f{leftX, top + 74.0f}}, Color{110, 230, 255, 255});
+    const ArenaEventType initEv = m_levelData.GetInitialEvent();
+    const bool hasInitEv = (initEv != ArenaEventType::None);
+    const ArenaEventDescriptor* initDesc = FindArenaEventDescriptor(initEv);
+    const Color initAccent = (hasInitEv && initDesc) ? initDesc->AccentColor : Color{140, 155, 180, 220};
+    const std::string initLabel = (hasInitEv && initDesc) ? ("< " + std::string(initDesc->DisplayName) + " >") : "< NONE >";
+
+    const Vector2f initPos{panelCenter.X, top + 114.0f};
+    const bool initHov = (std::abs(worldMouse.X - initPos.X) <= cardW * 0.5f && std::abs(worldMouse.Y - initPos.Y) <= 18.0f);
+    context.Render.DrawRectangle(cardW, 36.0f, Transform2D{initPos},
+        initHov ? Color{38, 48, 68, 255} : (hasInitEv ? Color{30, 38, 54, 255} : Color{24, 28, 38, 255}));
+    if (hasInitEv)
+    {
+        context.Render.DrawRectangle(6.0f, 32.0f, Transform2D{Vector2f{leftX + 4.0f, initPos.Y}}, initAccent);
+    }
+    context.Render.DrawRectangleOutline(cardW, 36.0f, Transform2D{initPos},
+        initHov ? Colors::White : (hasInitEv ? initAccent : Color{56, 66, 88, 210}),
+        (initHov || hasInitEv) ? 1.8f : 1.2f);
+    context.Render.DrawTextCentered(initLabel, m_fontId, 17.0f, Transform2D{initPos},
+        hasInitEv ? initAccent : Color{180, 195, 215, 225});
+
+    // 1. Header + Count Badge for Scheduled Event Queue
     const auto& q = m_levelData.GetEventQueue();
-    context.Render.DrawText("EVENEMENTS", m_fontId, 23.0f, Transform2D{Vector2f{panelCenter.X - cardW * 0.5f, top + 78.0f}}, Color{255, 215, 60, 255});
+    context.Render.DrawText("EVENT QUEUE", m_fontId, 20.0f, Transform2D{Vector2f{leftX, top + 150.0f}}, Color{255, 215, 60, 255});
 
-    Vector2f cntBadge{panelCenter.X + cardW * 0.5f - 28.0f, top + 90.0f};
+    Vector2f cntBadge{panelCenter.X + cardW * 0.5f - 28.0f, top + 162.0f};
     context.Render.DrawRectangle(54.0f, 26.0f, Transform2D{cntBadge}, Color{28, 36, 52, 255});
     context.Render.DrawRectangleOutline(54.0f, 26.0f, Transform2D{cntBadge}, Color{80, 220, 255, 200}, 1.2f);
     context.Render.DrawTextCentered(std::to_string(q.size()), m_fontId, 18.0f, Transform2D{cntBadge}, Color{170, 235, 255, 255});
 
-    // 2x3 Graphical Event Palette Chips
+    // 2. 2x3 Graphical Event Palette Chips
     struct EventChipDesc
     {
         EditorEventType Type;
@@ -3435,24 +4085,24 @@ void EditorScene::RenderEventQueueTab(GameContext& context, const Vector2f& pane
         Color Accent;
     };
     const EventChipDesc chips[6] = {
-        {EditorEventType::HazardSurge,      "METEORES", Color{255, 75, 75, 255}},
-        {EditorEventType::LaserSweep,       "GRAVITE",  Color{255, 160, 40, 255}},
+        {EditorEventType::HazardSurge,      "METEORS",  Color{255, 75, 75, 255}},
+        {EditorEventType::LaserSweep,       "GRAVITY",  Color{255, 160, 40, 255}},
         {EditorEventType::DarknessEclipse,  "ECLIPSE",  Color{150, 75, 255, 255}},
         {EditorEventType::TurretOvercharge, "LOCKDOWN", Color{255, 45, 95, 255}},
-        {EditorEventType::BossAlert,        "SEISME",   Color{255, 215, 0, 255}},
+        {EditorEventType::BossAlert,        "QUAKE",    Color{255, 215, 0, 255}},
         {EditorEventType::SpeedBoost,       "TEMPO",    Color{65, 225, 255, 255}}
     };
 
     const float chipGap = 8.0f;
     const float chipW = (cardW - chipGap * 2.0f) / 3.0f;
     const float chipH = 42.0f;
-    const float startX = panelCenter.X - cardW * 0.5f + chipW * 0.5f;
+    const float startX = leftX + chipW * 0.5f;
 
     for (int i = 0; i < 6; ++i)
     {
         const int col = i % 3;
         const int row = i / 3;
-        const Vector2f cPos{startX + static_cast<float>(col) * (chipW + chipGap), top + 138.0f + static_cast<float>(row) * 50.0f};
+        const Vector2f cPos{startX + static_cast<float>(col) * (chipW + chipGap), top + 210.0f + static_cast<float>(row) * 50.0f};
         const bool hover = (std::abs(worldMouse.X - cPos.X) <= chipW * 0.5f && std::abs(worldMouse.Y - cPos.Y) <= chipH * 0.5f);
 
         context.Render.DrawRectangle(chipW, chipH, Transform2D{cPos}, hover ? Color{40, 48, 66, 255} : Color{28, 32, 44, 255});
@@ -3461,9 +4111,9 @@ void EditorScene::RenderEventQueueTab(GameContext& context, const Vector2f& pane
         context.Render.DrawTextCentered(std::string("+ ") + chips[i].ShortLabel, m_fontId, 16.0f, Transform2D{Vector2f{cPos.X + 3.0f, cPos.Y}}, Colors::White);
     }
 
-    // 3 Compact Sort Pills (A-Z | Z-A | MIX)
-    const char* sortLabels[3] = {"TRI A-Z", "TRI Z-A", "MELANGER"};
-    const float sortY = top + 246.0f;
+    // 3. 3 Compact Sort Pills (A-Z | Z-A | SHUFFLE)
+    const char* sortLabels[3] = {"SORT A-Z", "SORT Z-A", "SHUFFLE"};
+    const float sortY = top + 318.0f;
     const float sortH = 32.0f;
     for (int s = 0; s < 3; ++s)
     {
@@ -3476,19 +4126,19 @@ void EditorScene::RenderEventQueueTab(GameContext& context, const Vector2f& pane
         context.Render.DrawTextCentered(sortLabels[s], m_fontId, 15.0f, Transform2D{sPos}, hover ? Color{255, 225, 90, 255} : Color{185, 205, 225, 240});
     }
 
-    // Queue Cards (up to 6 visible, scrollable)
-    const int maxVisible = 6;
+    // 4. Queue Cards (up to kEventQueueMaxVisible visible, scrollable)
+    const int maxVisible = kEventQueueMaxVisible;
     const int maxScroll = std::max(0, static_cast<int>(q.size()) - maxVisible);
     const int clampedScroll = std::clamp(m_eventQueueScroll, 0, maxScroll);
-    const float listStartY = top + 312.0f;
+    const float listStartY = top + kEventQueueListStartOffsetY;
     const float itemH = 52.0f;
 
     if (q.empty())
     {
-        Vector2f emptyBox{panelCenter.X, listStartY + 95.0f};
-        context.Render.DrawRectangle(cardW, 110.0f, Transform2D{emptyBox}, Color{20, 24, 34, 200});
-        context.Render.DrawRectangleOutline(cardW, 110.0f, Transform2D{emptyBox}, Color{48, 56, 74, 180}, 1.2f);
-        context.Render.DrawTextCentered("AUCUN EVENEMENT", m_fontId, 20.0f, Transform2D{emptyBox}, Color{135, 155, 180, 190});
+        Vector2f emptyBox{panelCenter.X, listStartY + 80.0f};
+        context.Render.DrawRectangle(cardW, 100.0f, Transform2D{emptyBox}, Color{20, 24, 34, 200});
+        context.Render.DrawRectangleOutline(cardW, 100.0f, Transform2D{emptyBox}, Color{48, 56, 74, 180}, 1.2f);
+        context.Render.DrawTextCentered("NO EVENTS QUEUED", m_fontId, 20.0f, Transform2D{emptyBox}, Color{135, 155, 180, 190});
     }
     else
     {
@@ -3591,11 +4241,28 @@ bool EditorScene::HandleEventQueueTabInput(GameContext& context, const Vector2f&
     const float wheel = context.Input.GetMouseWheelDelta();
     if (std::abs(wheel) > 0.01f)
     {
-        const int maxScroll = std::max(0, static_cast<int>(q.size()) - 6);
+        const int maxScroll = std::max(0, static_cast<int>(q.size()) - kEventQueueMaxVisible);
         m_eventQueueScroll = std::clamp(m_eventQueueScroll - (wheel > 0.0f ? 1 : -1), 0, maxScroll);
     }
 
     if (!leftClick) return false;
+
+    // 0. Initial Event Selector (Y = top + 114)
+    if (std::abs(worldMouse.X - panelCenter.X) <= cardW * 0.5f && std::abs(worldMouse.Y - (top + 114.0f)) <= 18.0f)
+    {
+        PushUndo();
+        const int dir = (worldMouse.X < panelCenter.X) ? -1 : 1;
+        m_levelData.CycleInitialEvent(dir);
+        const ArenaEventType ev = m_levelData.GetInitialEvent();
+        const ArenaEventDescriptor* evDesc = FindArenaEventDescriptor(ev);
+        ShowToast((ev == ArenaEventType::None || !evDesc)
+            ? "Initial Event: None"
+            : ("Initial Event: " + std::string(evDesc->DisplayName)),
+            ev == ArenaEventType::None ? Color{175, 195, 220, 255} : GetArenaEventColor(ev),
+            1.6f);
+        if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
+        return true;
+    }
 
     const EditorEventType chipTypes[6] = {
         EditorEventType::HazardSurge,
@@ -3616,12 +4283,12 @@ bool EditorScene::HandleEventQueueTabInput(GameContext& context, const Vector2f&
     {
         const int col = i % 3;
         const int row = i / 3;
-        const Vector2f cPos{startX + static_cast<float>(col) * (chipW + chipGap), top + 138.0f + static_cast<float>(row) * 50.0f};
+        const Vector2f cPos{startX + static_cast<float>(col) * (chipW + chipGap), top + 210.0f + static_cast<float>(row) * 50.0f};
         if (std::abs(worldMouse.X - cPos.X) <= chipW * 0.5f && std::abs(worldMouse.Y - cPos.Y) <= chipH * 0.5f)
         {
             PushUndo();
             m_levelData.AddEvent(chipTypes[i]);
-            const int maxScroll = std::max(0, static_cast<int>(m_levelData.GetEventQueue().size()) - 6);
+            const int maxScroll = std::max(0, static_cast<int>(m_levelData.GetEventQueue().size()) - kEventQueueMaxVisible);
             m_eventQueueScroll = maxScroll;
             if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 14.0f);
             return true;
@@ -3629,7 +4296,7 @@ bool EditorScene::HandleEventQueueTabInput(GameContext& context, const Vector2f&
     }
 
     // 2. Sort Pills
-    const float sortY = top + 246.0f;
+    const float sortY = top + 318.0f;
     for (int s = 0; s < 3; ++s)
     {
         const Vector2f sPos{startX + static_cast<float>(s) * (chipW + chipGap), sortY};
@@ -3643,12 +4310,12 @@ bool EditorScene::HandleEventQueueTabInput(GameContext& context, const Vector2f&
     }
 
     // 3. Queue Cards: [-], [+], [X], or start Drag
-    const int maxScroll = std::max(0, static_cast<int>(q.size()) - 6);
+    const int maxScroll = std::max(0, static_cast<int>(q.size()) - kEventQueueMaxVisible);
     m_eventQueueScroll = std::clamp(m_eventQueueScroll, 0, maxScroll);
-    const float listStartY = top + 312.0f;
+    const float listStartY = top + kEventQueueListStartOffsetY;
     const float itemH = 52.0f;
 
-    for (int vis = 0; vis < 6; ++vis)
+    for (int vis = 0; vis < kEventQueueMaxVisible; ++vis)
     {
         const int idx = m_eventQueueScroll + vis;
         if (idx >= static_cast<int>(q.size())) break;
@@ -3717,90 +4384,38 @@ void EditorScene::RenderEventTrashBin(GameContext& context, const Vector2f& tras
 
     DrawIconTrash(context, Vector2f{trashPos.X - trashSize.X * 0.34f, trashPos.Y}, 24.0f, isHovered ? Colors::White : Color{255, 110, 125, 255});
     const char* trashText = m_isDraggingEvent
-        ? (isHovered ? "RELACHER POUR SUPPRIMER" : "GLISSER ICI POUR SUPPRIMER")
-        : "VIDER LA FILE";
+        ? (isHovered ? "RELEASE TO DELETE" : "DROP HERE TO DELETE")
+        : "CLEAR QUEUE";
     context.Render.DrawTextCentered(trashText, m_fontId, 19.0f, Transform2D{Vector2f{trashPos.X + 18.0f, trashPos.Y}}, isHovered ? Colors::White : Color{245, 190, 200, 240});
+}
+
+void EditorScene::ResetTurretsAndProjectiles()
+{
+    m_turretBullets.clear();
+
+    for (size_t i = 0; i < m_turretBricks.size(); ++i)
+    {
+        auto& tb = m_turretBricks[i];
+        tb.ShootTimer = std::max(1.2f, tb.Cooldown * 0.65f) + 0.45f * static_cast<float>(i % 4);
+        if (m_registry.IsAlive(tb.EntityId) && m_registry.HasComponent<SpriteComponent>(tb.EntityId))
+        {
+            const Color baseCol = (tb.BaseHP > 3)
+                ? BrickFactory::GetColorForHitPoints(tb.BaseHP)
+                : Color{255, 45, 55, 255};
+            m_registry.GetComponent<SpriteComponent>(tb.EntityId).Tint = baseCol;
+        }
+    }
 }
 
 void EditorScene::UpdateTurrets(float dt, GameContext& context)
 {
-    // Match Campaign (StoryScene): do NOT advance turret timers during countdown
-    if (IsCountdownActive())
+    // Match Campaign (StoryScene): do NOT advance turrets or projectiles during countdown, death, or paddle respawn
+    if (IsCountdownActive() || IsPaddleExploding() || IsBallDying())
     {
         return;
     }
 
-    for (auto it = m_turretBricks.begin(); it != m_turretBricks.end(); )
-    {
-        if (!m_registry.IsAlive(it->EntityId) || !m_registry.HasComponent<BrickComponent>(it->EntityId) ||
-            m_registry.GetComponent<BrickComponent>(it->EntityId).HitPoints == 0)
-        {
-            it = m_turretBricks.erase(it);
-            continue;
-        }
-
-        const auto& brick = m_registry.GetComponent<BrickComponent>(it->EntityId);
-        if (brick.IsDescending)
-        {
-            ++it;
-            continue;
-        }
-
-        it->ShootTimer -= dt;
-
-        // Visual warning charge in the last 0.45s before firing
-        if (it->ShootTimer <= 0.45f && m_registry.HasComponent<Transform2D>(it->EntityId))
-        {
-            const float pulse = 0.5f + 0.5f * std::sin(it->ShootTimer * 30.0f);
-            if (m_registry.HasComponent<SpriteComponent>(it->EntityId))
-            {
-                m_registry.GetComponent<SpriteComponent>(it->EntityId).Tint = Color{
-                    255,
-                    static_cast<uint8_t>(45 + 140 * pulse),
-                    static_cast<uint8_t>(55 + 140 * pulse),
-                    255
-                };
-            }
-        }
-
-        // Fire downward triangle missile!
-        if (it->ShootTimer <= 0.0f)
-        {
-            it->ShootTimer = it->Cooldown;
-
-            if (m_registry.HasComponent<Transform2D>(it->EntityId))
-            {
-                const auto& bTrans = m_registry.GetComponent<Transform2D>(it->EntityId);
-                Vector2f spawnPos{bTrans.Position.X, bTrans.Position.Y + 18.0f};
-
-                TriangleProjectile proj;
-                proj.Position = spawnPos;
-                proj.Velocity = Vector2f{0.0f, it->ProjectileSpeed};
-                proj.Size = 16.0f;
-                m_turretBullets.push_back(proj);
-
-                SpawnExplosionParticles(spawnPos, Color{255, 80, 40, 255}, 12);
-                if (m_audioEnabled && m_bossLaserSfxId != 0)
-                {
-                    context.Audio.PlaySfx(m_bossLaserSfxId, 55.0f, 1.45f);
-                }
-            }
-
-            if (m_registry.HasComponent<SpriteComponent>(it->EntityId))
-            {
-                const Color baseCol = (it->BaseHP > 3)
-                    ? BrickFactory::GetColorForHitPoints(it->BaseHP)
-                    : Color{255, 45, 55, 255};
-                m_registry.GetComponent<SpriteComponent>(it->EntityId).Tint = baseCol;
-            }
-        }
-        ++it;
-    }
-
-    // Update Projectiles (Campaign-fidelity paddle collision & feedback)
-    if (m_turretBullets.empty()) return;
-
-    const bool hasPaddle = m_registry.IsAlive(m_paddle) && !m_isPaddleDestroyed &&
+    const bool hasPaddle = m_registry.IsAlive(m_paddle) && !IsPaddleExploding() &&
                            m_registry.HasComponent<Transform2D>(m_paddle) &&
                            m_registry.HasComponent<BoxCollider>(m_paddle);
 
@@ -3814,11 +4429,107 @@ void EditorScene::UpdateTurrets(float dt, GameContext& context)
         halfSize = pCol.GetEffectiveSize(pTrans.Scale) * 0.5f;
     }
 
+    // Pause turret charging & firing while ball is waiting on the paddle for launch
+    if (!IsBallAttached())
+    {
+        for (auto it = m_turretBricks.begin(); it != m_turretBricks.end(); )
+        {
+            if (!m_registry.IsAlive(it->EntityId) || !m_registry.HasComponent<BrickComponent>(it->EntityId) ||
+                m_registry.GetComponent<BrickComponent>(it->EntityId).HitPoints == 0)
+            {
+                it = m_turretBricks.erase(it);
+                continue;
+            }
+
+            const auto& brick = m_registry.GetComponent<BrickComponent>(it->EntityId);
+            if (brick.IsDescending)
+            {
+                ++it;
+                continue;
+            }
+
+            it->ShootTimer -= dt;
+
+            // Visual warning charge in the last 0.45s before firing
+            if (it->ShootTimer <= 0.45f && m_registry.HasComponent<Transform2D>(it->EntityId))
+            {
+                const float pulse = 0.5f + 0.5f * std::sin(it->ShootTimer * 30.0f);
+                if (m_registry.HasComponent<SpriteComponent>(it->EntityId))
+                {
+                    m_registry.GetComponent<SpriteComponent>(it->EntityId).Tint = Color{
+                        255,
+                        static_cast<uint8_t>(45 + 140 * pulse),
+                        static_cast<uint8_t>(55 + 140 * pulse),
+                        255
+                    };
+                }
+            }
+
+            // Fire downward (or aimed) triangle missile
+            if (it->ShootTimer <= 0.0f)
+            {
+                it->ShootTimer = it->Cooldown;
+
+                if (m_registry.HasComponent<Transform2D>(it->EntityId))
+                {
+                    const auto& bTrans = m_registry.GetComponent<Transform2D>(it->EntityId);
+                    Vector2f spawnPos{bTrans.Position.X, bTrans.Position.Y + 18.0f};
+
+                    TriangleProjectile proj;
+                    proj.Position = spawnPos;
+                    proj.Size = 16.0f;
+                    proj.Damage = it->Damage;
+
+                    if (it->Aimed && hasPaddle)
+                    {
+                        Vector2f dir = paddlePos - spawnPos;
+                        dir.Y = std::max(80.0f, dir.Y);
+                        const float len = std::sqrt(dir.X * dir.X + dir.Y * dir.Y);
+                        if (len > 0.001f)
+                        {
+                            proj.Velocity = Vector2f{(dir.X / len) * it->ProjectileSpeed,
+                                                     (dir.Y / len) * it->ProjectileSpeed};
+                        }
+                        else
+                        {
+                            proj.Velocity = Vector2f{0.0f, it->ProjectileSpeed};
+                        }
+                    }
+                    else
+                    {
+                        proj.Velocity = Vector2f{0.0f, it->ProjectileSpeed};
+                    }
+
+                    m_turretBullets.push_back(proj);
+
+                    SpawnExplosionParticles(spawnPos, Color{255, 80, 40, 255}, 12);
+                    if (m_audioEnabled && m_bossLaserSfxId != 0)
+                    {
+                        context.Audio.PlaySfx(m_bossLaserSfxId, 55.0f, 1.45f);
+                    }
+                }
+
+                if (m_registry.HasComponent<SpriteComponent>(it->EntityId))
+                {
+                    const Color baseCol = (it->BaseHP > 3)
+                        ? BrickFactory::GetColorForHitPoints(it->BaseHP)
+                        : Color{255, 45, 55, 255};
+                    m_registry.GetComponent<SpriteComponent>(it->EntityId).Tint = baseCol;
+                }
+            }
+            ++it;
+        }
+    }
+
+    // Update Projectiles (unified GameScene paddle durability & feedback)
+    if (m_turretBullets.empty()) return;
+
     for (auto it = m_turretBullets.begin(); it != m_turretBullets.end(); )
     {
+        it->Position.X += it->Velocity.X * dt;
         it->Position.Y += it->Velocity.Y * dt;
 
-        if (it->Position.Y > 450.0f)
+        if (it->Position.Y > 450.0f || std::abs(it->Position.X) > 760.0f)
         {
             it = m_turretBullets.erase(it);
             continue;
@@ -3836,38 +4547,16 @@ void EditorScene::UpdateTurrets(float dt, GameContext& context)
 
             if (hitX && hitY)
             {
-                Vector2f impactPos = it->Position;
+                const Vector2f impactPos = it->Position;
+                const float dmg = it->Damage;
                 it = m_turretBullets.erase(it);
 
-                // 1. Impact feedback (particles + camera shake + crack SFX)
-                SpawnExplosionParticles(impactPos, Color{255, 60, 40, 255}, 28);
-                TweenEffects::Shake(m_registry, m_camera, 0.35f, 16.0f);
-                if (m_audioEnabled && m_paddleCrackSfxId != 0)
+                DamagePaddle(dmg, impactPos, context);
+                // OnPaddleShattered clears m_turretBullets; stop iterating immediately!
+                if (IsPaddleExploding())
                 {
-                    context.Audio.PlaySfx(m_paddleCrackSfxId, 85.0f, 0.85f);
+                    return;
                 }
-
-                // 2. Paddle red damage flash
-                m_paddleDamageFlashTimer = 0.28f;
-                if (m_registry.HasComponent<SpriteComponent>(m_paddle))
-                {
-                    m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Color{255, 50, 50, 255};
-                }
-
-                // 3. Life loss (unless InfiniteLives rule is enabled)
-                if (!context.Rules.GetRule(Rule::Gameplay::InfiniteLives))
-                {
-                    m_lives--;
-                    context.Events.Publish(LivesChangedEvent(m_lives));
-
-                    if (m_lives <= 0)
-                    {
-                        m_lives = 0;
-                        TriggerPaddleExplosion(context);
-                        return;
-                    }
-                }
-
                 continue;
             }
         }
@@ -3929,89 +4618,3 @@ void EditorScene::RenderTurrets(GameContext& context)
     }
 }
 
-void EditorScene::TriggerPaddleExplosion(GameContext& context)
-{
-    m_isPaddleDestroyed = true;
-    m_paddleDestroyedTimer = 0.85f;
-    m_lives = 0;
-
-    Vector2f paddlePos{0.0f, 350.0f};
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
-    {
-        paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
-    }
-
-    Color paddleThemeColor{200, 235, 255, 255};
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<LightSourceComponent>(m_paddle))
-    {
-        paddleThemeColor = m_registry.GetComponent<LightSourceComponent>(m_paddle).LightColor;
-    }
-    else
-    {
-        std::string skin = ProfileManager::Get().GetEquippedCosmetic(CosmeticSlot::PaddleSkin);
-        if (skin == "paddle_gold_plating")
-        {
-            paddleThemeColor = Color{255, 215, 0, 255};
-        }
-        else if (skin == "paddle_obsidian")
-        {
-            paddleThemeColor = Color{140, 60, 220, 255};
-        }
-    }
-
-    Color secondaryColor{
-        static_cast<uint8_t>(std::min(255, paddleThemeColor.r + 40)),
-        static_cast<uint8_t>(std::min(255, paddleThemeColor.g + 40)),
-        static_cast<uint8_t>(std::min(255, paddleThemeColor.b + 40)),
-        255
-    };
-
-    SpawnExplosionParticles(paddlePos, paddleThemeColor, 75);
-    SpawnExplosionParticles(paddlePos, secondaryColor, 55);
-    SpawnLightFlash(paddlePos, 420.0f, paddleThemeColor, 3.0f, 0.5f);
-    TweenEffects::Shake(m_registry, m_camera, 0.55f, 22.0f);
-
-    if (m_audioEnabled && m_explosionSfxId != 0)
-    {
-        context.Audio.PlaySfx(m_explosionSfxId, 100.0f, 0.85f);
-    }
-
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-    {
-        m_registry.GetComponent<SpriteComponent>(m_paddle).Tint.a = 0;
-    }
-    if (mp_paddleSystem)
-    {
-        mp_paddleSystem->SetInputEnabled(false);
-    }
-    if (mp_ballSystem)
-    {
-        mp_ballSystem->ClearBalls(m_ball);
-    }
-}
-
-void EditorScene::RenderPaddleDurabilityOverlay(GameContext& context)
-{
-    if (!m_registry.IsAlive(m_paddle) || m_isPaddleDestroyed ||
-        !m_registry.HasComponent<Transform2D>(m_paddle) || !m_registry.HasComponent<BoxCollider>(m_paddle))
-        return;
-
-    const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
-    const auto& pCol = m_registry.GetComponent<BoxCollider>(m_paddle);
-    const Vector2f effSize = pCol.GetEffectiveSize(pTrans.Scale);
-
-    if (m_lives < 3 && m_lives > 0)
-    {
-        Color crackCol = (m_lives == 1) ? Color{255, 50, 50, 220} : Color{220, 220, 220, 170};
-        const float halfW = effSize.X * 0.5f;
-        const float halfH = effSize.Y * 0.5f;
-
-        context.Render.DrawLine(Vector2f{pTrans.Position.X - halfW * 0.35f, pTrans.Position.Y - halfH},
-                                Vector2f{pTrans.Position.X - halfW * 0.15f, pTrans.Position.Y + halfH}, crackCol, 2.0f);
-        if (m_lives == 1)
-        {
-            context.Render.DrawLine(Vector2f{pTrans.Position.X + halfW * 0.25f, pTrans.Position.Y - halfH},
-                                    Vector2f{pTrans.Position.X + halfW * 0.40f, pTrans.Position.Y + halfH}, crackCol, 2.0f);
-        }
-    }
-}

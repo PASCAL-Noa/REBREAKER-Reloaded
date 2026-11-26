@@ -23,7 +23,7 @@ void PlaylistManager::PlayNext(const GameContext& context, float fadeDuration)
     if (m_tracks.empty()) return;
 
     m_currentTrack = (m_currentTrack + 1) % m_tracks.size();
-    context.Audio.FadeToMusic(m_tracks[m_currentTrack], fadeDuration, 60.0f, false);
+    context.Audio.FadeToMusic(m_tracks[m_currentTrack], fadeDuration, AudioMixer::kNominalMusicLevel, false);
 }
 
 void PlaylistManager::Update(const GameContext& context)

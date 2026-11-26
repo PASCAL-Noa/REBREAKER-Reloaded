@@ -540,7 +540,7 @@ void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
         auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
-        statusComp.Text = "PLAYER: " + defaultName + " (CLICK PSEUDO TO EDIT)";
+        statusComp.Text = "PLAYER: " + defaultName + " (CLICK NAME TO EDIT)";
         statusComp.Tint = Color{120, 230, 255, 255};
     }
 
@@ -552,7 +552,7 @@ void GameUIController::SetupGameOver(uint32_t finalScore, int finalLevel)
     {
         auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
         input.Text = defaultName;
-        input.Placeholder = "ENTER PSEUDO";
+        input.Placeholder = "ENTER NAME";
         input.IsFocused = false;
     }
     if (m_submitNameBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_submitNameBtn))
@@ -613,7 +613,7 @@ void GameUIController::SetupVictory(uint32_t finalScore)
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
         auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
-        statusComp.Text = "CHAMPION: " + defaultName + " (CLICK PSEUDO TO EDIT)";
+        statusComp.Text = "CHAMPION: " + defaultName + " (CLICK NAME TO EDIT)";
         statusComp.Tint = Color{255, 215, 0, 255};
     }
 
@@ -625,7 +625,7 @@ void GameUIController::SetupVictory(uint32_t finalScore)
     {
         auto& input = m_registry.GetComponent<TextInputComponent>(m_nameInputEntity);
         input.Text = defaultName;
-        input.Placeholder = "ENTER PSEUDO";
+        input.Placeholder = "ENTER NAME";
         input.IsFocused = false;
     }
     if (m_submitNameBtn != NULL_ENTITY && m_registry.HasComponent<RectTransform>(m_submitNameBtn))
@@ -681,7 +681,7 @@ void GameUIController::PromptEnterName()
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
         auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
-        statusComp.Text = "PLEASE ENTER YOUR PSEUDO BEFORE PROCEEDING!";
+        statusComp.Text = "PLEASE ENTER YOUR NAME BEFORE PROCEEDING!";
         statusComp.Tint = Color{255, 75, 75, 255};
     }
 
@@ -761,7 +761,7 @@ void GameUIController::SubmitHighScore(const std::string& name, uint32_t score, 
 
     if (m_gameOverStatusText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_gameOverStatusText))
     {
-        std::string rankMsg = (rank > 0 && rank <= 5) ? ("RANK #" + std::to_string(rank) + " - CONGRATULATIONS!") : "PSEUDO SAVED!";
+        std::string rankMsg = (rank > 0 && rank <= 5) ? ("RANK #" + std::to_string(rank) + " - CONGRATULATIONS!") : "NAME SAVED!";
         auto& statusComp = m_registry.GetComponent<TextComponent>(m_gameOverStatusText);
         statusComp.Text = rankMsg;
         statusComp.Tint = Color{50, 255, 120, 255};
@@ -933,7 +933,7 @@ void GameUIController::CreatePauseMenu()
                 m_onQuitOverride();
                 return;
             }
-            m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
             MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
@@ -1231,7 +1231,7 @@ void GameUIController::CreateGameOverMenu()
                 m_onQuitOverride();
                 return;
             }
-            m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
             MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
@@ -1541,7 +1541,7 @@ void GameUIController::CreateVictoryMenu()
                 m_onQuitOverride();
                 return;
             }
-            m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            m_context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
             MenuScene::SetReturnWithDezoom(true);
             m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },

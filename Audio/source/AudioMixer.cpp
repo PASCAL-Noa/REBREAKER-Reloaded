@@ -14,6 +14,7 @@ struct SoundInstance
 {
     uint32_t soundId = 0;
     std::unique_ptr<sf::Sound> sound;
+    float baseVolume = 100.0f; // pre-bus volume (after headroom), rescaled on Master/SFX changes
 };
 
 struct MusicTrack
@@ -31,6 +32,7 @@ struct AudioMixer::Impl
     ResourceManager& resourceManager;
     std::list<SoundInstance> sfxPool;
     std::unordered_map<uint32_t, std::unique_ptr<sf::Sound>> loopingSfx;
+    std::unordered_map<uint32_t, float> loopingBaseVolume;
     std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> lastTriggerTime;
 
     // Ducking state: lower music by 30-50% during heavy streaks, restoring over 0.5s
@@ -70,8 +72,42 @@ struct AudioMixer::Impl
 
     [[nodiscard]] float GetEffectiveMusicVolume(float rawVolume) const
     {
-        return rawVolume * (musicVolume / 100.0f) * (masterVolume / 100.0f) * duckingMultiplier;
+        return std::clamp(rawVolume, 0.0f, 100.0f) * kMusicBusHeadroom * (musicVolume / 100.0f) * (masterVolume / 100.0f) * duckingMultiplier;
     }
+
+    [[nodiscard]] float GetEffectiveSfxScale() const
+    {
+        return (sfxVolume / 100.0f) * (masterVolume / 100.0f);
+    }
+
+    void ReapplySfxVolumes()
+    {
+        const float scale = GetEffectiveSfxScale();
+        for (auto& item : sfxPool)
+        {
+            if (item.sound) item.sound->setVolume(item.baseVolume * scale);
+        }
+        for (auto& [id, sound] : loopingSfx)
+        {
+            if (!sound) continue;
+            const auto it = loopingBaseVolume.find(id);
+            sound->setVolume((it != loopingBaseVolume.end() ? it->second : 100.0f) * scale);
+        }
+    }
+
+    void ReapplyMusicVolumes()
+    {
+        for (MusicTrack* track : {&activeTrack, &fadingTrack})
+        {
+            if (track->music && track->music->getStatus() == sf::SoundSource::Status::Playing)
+            {
+                track->music->setVolume(GetEffectiveMusicVolume(track->currentVolume));
+            }
+        }
+    }
+
+    // Single mixing headroom for the whole music bus (leaves room for SFX). Never per-track.
+    static constexpr float kMusicBusHeadroom = 0.6f;
 };
 
 AudioMixer::AudioMixer(ResourceManager& resourceManager)
@@ -295,8 +331,9 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
     }
 
     // Dynamic inverse-power headroom scaling prevents multi-voice clipping distortion
-    float headroom = (totalActive > 1) ? (1.0f / std::sqrt(1.0f + static_cast<float>(totalActive - 1) * 0.35f)) : 1.0f;
-    float finalVolume = volume * headroom * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
+    float headroom = (totalActive > 0) ? (1.0f / std::sqrt(1.0f + static_cast<float>(totalActive) * 0.65f)) : 1.0f;
+    const float baseVolume = std::clamp(volume, 0.0f, 100.0f) * headroom;
+    float finalVolume = baseVolume * mp_impl->GetEffectiveSfxScale();
     float clampedPan = std::clamp(pan, -1.0f, 1.0f);
 
     auto soundPtr = std::make_unique<sf::Sound>(*buffer);
@@ -304,7 +341,7 @@ void AudioMixer::PlaySfx(uint32_t soundId, float volume, float pitch, float pan)
     soundPtr->setPitch(pitch * mp_impl->temporalSfxMultiplier);
     soundPtr->setPan(clampedPan);
     soundPtr->play();
-    mp_impl->sfxPool.push_back(SoundInstance{soundId, std::move(soundPtr)});
+    mp_impl->sfxPool.push_back(SoundInstance{soundId, std::move(soundPtr), baseVolume});
 }
 
 void AudioMixer::StopSfx() const
@@ -327,6 +364,7 @@ void AudioMixer::StopSfx() const
         }
     }
     mp_impl->loopingSfx.clear();
+    mp_impl->loopingBaseVolume.clear();
 
     mp_impl->lastTriggerTime.clear();
     mp_impl->recentSfxTriggers.clear();
@@ -336,10 +374,12 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
 {
     if (!mp_impl) return;
 
+    mp_impl->loopingBaseVolume[soundId] = volume;
+    const float finalVolume = volume * mp_impl->GetEffectiveSfxScale();
+
     auto it = mp_impl->loopingSfx.find(soundId);
     if (it != mp_impl->loopingSfx.end() && it->second)
     {
-        float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
         it->second->setVolume(finalVolume);
         it->second->setPitch(pitch * mp_impl->temporalSfxMultiplier);
         if (it->second->getStatus() != sf::SoundSource::Status::Playing)
@@ -353,7 +393,6 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
     if (!buffer) return;
 
     auto snd = std::make_unique<sf::Sound>(*buffer);
-    float finalVolume = volume * (mp_impl->sfxVolume / 100.0f) * (mp_impl->masterVolume / 100.0f);
     snd->setLooping(true);
     snd->setVolume(finalVolume);
     snd->setPitch(pitch * mp_impl->temporalSfxMultiplier);
@@ -364,6 +403,7 @@ void AudioMixer::PlayLoopingSfx(uint32_t soundId, float volume, float pitch) con
 void AudioMixer::StopLoopingSfx(uint32_t soundId) const
 {
     if (!mp_impl) return;
+    mp_impl->loopingBaseVolume.erase(soundId);
     auto it = mp_impl->loopingSfx.find(soundId);
     if (it != mp_impl->loopingSfx.end())
     {
@@ -702,17 +742,9 @@ float AudioMixer::GetDuckingMultiplier() const
 void AudioMixer::SetMasterVolume(float volume) const
 {
     if (!mp_impl) return;
-    mp_impl->masterVolume = volume;
-    SetMusicVolume(mp_impl->musicVolume);
-
-    for (auto& item : mp_impl->sfxPool)
-    {
-        if (item.sound) item.sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
-    }
-    for (auto& [id, sound] : mp_impl->loopingSfx)
-    {
-        if (sound) sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
-    }
+    mp_impl->masterVolume = std::clamp(volume, 0.0f, 100.0f);
+    mp_impl->ReapplyMusicVolumes();
+    mp_impl->ReapplySfxVolumes();
 }
 
 float AudioMixer::GetMasterVolume() const
@@ -724,29 +756,27 @@ float AudioMixer::GetMasterVolume() const
 void AudioMixer::SetSfxVolume(float volume) const
 {
     if (!mp_impl) return;
-    mp_impl->sfxVolume = volume;
-    for (auto& item : mp_impl->sfxPool)
-    {
-        if (item.sound) item.sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
-    }
-    for (auto& [id, sound] : mp_impl->loopingSfx)
-    {
-        if (sound) sound->setVolume(mp_impl->sfxVolume * (mp_impl->masterVolume / 100.0f));
-    }
+    mp_impl->sfxVolume = std::clamp(volume, 0.0f, 100.0f);
+    mp_impl->ReapplySfxVolumes();
 }
 
 void AudioMixer::SetMusicVolume(float volume) const
 {
     if (!mp_impl) return;
-    mp_impl->musicVolume = volume;
-    if (mp_impl->activeTrack.music && mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing)
-    {
-        mp_impl->activeTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(mp_impl->activeTrack.currentVolume));
-    }
-    if (mp_impl->fadingTrack.music && mp_impl->fadingTrack.music->getStatus() == sf::SoundSource::Status::Playing)
-    {
-        mp_impl->fadingTrack.music->setVolume(mp_impl->GetEffectiveMusicVolume(mp_impl->fadingTrack.currentVolume));
-    }
+    mp_impl->musicVolume = std::clamp(volume, 0.0f, 100.0f);
+    mp_impl->ReapplyMusicVolumes();
+}
+
+float AudioMixer::GetMusicLevel() const
+{
+    if (!mp_impl || !mp_impl->activeTrack.music) return 0.0f;
+    return mp_impl->activeTrack.currentVolume;
+}
+
+float AudioMixer::GetEffectiveMusicGain() const
+{
+    if (!mp_impl) return 0.0f;
+    return mp_impl->GetEffectiveMusicVolume(mp_impl->activeTrack.music ? mp_impl->activeTrack.currentVolume : kNominalMusicLevel);
 }
 
 void AudioMixer::StopAll() const

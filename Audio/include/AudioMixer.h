@@ -27,13 +27,21 @@ public:
     void    StopLoopingSfx(uint32_t soundId) const;
     [[nodiscard]] bool IsLoopingSfxPlaying(uint32_t soundId) const;
 
-    void    PlayMusic(const std::string& filepath, float volume = 100.0f, bool loop = true) const;
-    void    FadeToMusic(const std::string& filepath, float fadeDuration = 1.5f, float volume = 100.0f, bool loop = true) const;
+    // Music levels are RELATIVE fade levels (0..kNominalMusicLevel). The absolute loudness of
+    // every track is decided centrally: level * bus headroom * MusicVolume * MasterVolume * ducking.
+    static constexpr float kNominalMusicLevel = 100.0f;
+
+    void    PlayMusic(const std::string& filepath, float volume = kNominalMusicLevel, bool loop = true) const;
+    void    PlayMusic(const std::string& filepath, bool loop) const = delete; // prevents bool->float volume bugs
+    void    FadeToMusic(const std::string& filepath, float fadeDuration = 1.5f, float volume = kNominalMusicLevel, bool loop = true) const;
+    void    FadeToMusic(const std::string& filepath, bool loop) const = delete;
     void    FadeToMusic(const std::string& filepath, const TweenConfig<float>& config, bool loop = true) const;
     void    FadeOutMusic(float fadeDuration = 1.0f) const;
     void    FadeOutMusic(const TweenConfig<float>& config) const;
     void    FadeMusicVolume(float targetVolume, float duration = 1.0f, EasingFunctions::EasingType ease = EasingFunctions::EasingType::Linear) const;
     void    StopMusic() const;
+    [[nodiscard]] float GetMusicLevel() const;     // current relative level of the active track
+    [[nodiscard]] float GetEffectiveMusicGain() const; // final 0..100 gain sent to the device (for diagnostics/tests)
 
     // Audio Ducking
     void    TriggerDucking(float duckAmount = 0.4f, float restoreDuration = 0.5f) const;

@@ -107,6 +107,18 @@ struct PaddleDurabilityComponent
         CurrentDurability = std::clamp(CurrentDurability + amount, 0.0f, MaxDurability);
     }
 
+    // Restores full hull integrity (used on respawn after paddle destruction costs a life)
+    void ResetFull(float spawnInvulnSeconds = 0.0f)
+    {
+        CurrentDurability = MaxDurability;
+        CurrentShield = 0.0f;
+        ShieldDuration = 0.0f;
+        IsShieldActive = false;
+        DamageFlashTimer = 0.0f;
+        InvulnerabilityTimer = std::max(0.0f, spawnInvulnSeconds);
+        SparkTimer = 0.0f;
+    }
+
     // Grants temporary energy shield
     void AddShield(float amount, float duration)
     {

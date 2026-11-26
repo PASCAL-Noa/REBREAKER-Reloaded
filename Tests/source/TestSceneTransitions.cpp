@@ -452,36 +452,26 @@ TEST_SUITE("Scene Transition Overlay & Lifecycle Tests")
         CHECK(current == 6);
     }
 
-    TEST_CASE("TV Power Dialog 3-way navigation & Standby state (#90)")
+    TEST_CASE("TV Power Dialog 2-way navigation (Cancel / Power Off)")
     {
-        // 3 choices: 0 = Cancel, 1 = Standby, 2 = Power Off
-        int choice = 1; // Default choice is Standby
+        // 2 choices: 0 = Cancel, 1 = Power Off (Standby mode removed)
+        int choice = 1; // Default choice when clicking chassis power button is Power Off
         CHECK(choice == 1);
 
-        auto navLeft = [](int ch) { return (ch + 2) % 3; };
-        auto navRight = [](int ch) { return (ch + 1) % 3; };
+        auto toggle = [](int ch) { return 1 - (ch & 1); };
 
-        CHECK(navLeft(choice) == 0);  // Standby -> Cancel
-        CHECK(navRight(choice) == 2); // Standby -> Power Off
-        CHECK(navRight(2) == 0); // Power Off -> Cancel (wrap)
-        CHECK(navLeft(0) == 2);  // Cancel -> Power Off (wrap)
+        CHECK(toggle(choice) == 0); // Power Off -> Cancel
+        CHECK(toggle(0) == 1);      // Cancel -> Power Off
 
-        // Standby state transition
-        bool isStandby = false;
         bool isPoweringOff = false;
-
         auto confirm = [&](int selected) {
-            if (selected == 1) isStandby = true;
-            else if (selected == 2) isPoweringOff = true;
+            if (selected == 1) isPoweringOff = true;
         };
 
-        confirm(1);
-        CHECK(isStandby == true);
+        confirm(0);
         CHECK(isPoweringOff == false);
-
-        // Wake up restores standby
-        isStandby = false;
-        CHECK(isStandby == false);
+        confirm(1);
+        CHECK(isPoweringOff == true);
     }
 
     TEST_CASE("Speaker Music Note Particles spawn interval scaling with volume (#90)")

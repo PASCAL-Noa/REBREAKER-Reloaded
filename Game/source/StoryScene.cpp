@@ -46,7 +46,6 @@ void StoryScene::OnInit(GameContext& context)
 
     // Audio & Resources
     m_bossLaserSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup_laser.wav");
-    m_paddleCrackSfxId = context.Resources.LoadResource("Resources/audio/sfx/brick_hit.wav");
     m_shieldAbsorbSfxId = context.Resources.LoadResource("Resources/audio/sfx/ball_hit.wav");
     m_repairSfxId = context.Resources.LoadResource("Resources/audio/sfx/powerup.wav");
 
@@ -63,11 +62,7 @@ void StoryScene::OnDestroy(GameContext& context)
 
 bool StoryScene::IsGameOver() const
 {
-    if (m_isPaddleDestroyed)
-    {
-        return m_paddleDestroyedTimer <= 0.0f;
-    }
-    return false;
+    return GameScene::IsGameOver();
 }
 
 bool StoryScene::IsLevelCleared() const
@@ -149,7 +144,7 @@ void StoryScene::OnGameOverEnter()
     {
         if (m_musicEnabled)
         {
-            mp_context->Audio.FadeToMusic("Resources/audio/music/Game-death.ogg", 0.6f, 50.0f, false);
+            mp_context->Audio.FadeToMusic("Resources/audio/music/Game-death.ogg", 0.6f, AudioMixer::kNominalMusicLevel, false);
         }
         if (m_audioEnabled && m_gameOverSfxId != 0)
         {
@@ -211,30 +206,10 @@ void StoryScene::FullReset()
         mp_context->Events.Publish(ScoreChangedEvent(m_scoreManager.GetScore(), m_scoreManager.GetComboMultiplier()));
     }
 
-    // 3. Reset paddle destruction & visual state
-    m_isPaddleDestroyed = false;
-    m_paddleDestroyedTimer = 0.0f;
-    m_paddleDamageFlashTimer = 0.0f;
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-    {
-        m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Colors::White;
-    }
-    if (mp_paddleSystem)
-    {
-        mp_paddleSystem->SetInputEnabled(true);
-    }
+    // 3. Reset paddle durability, damage feedback & visual state
+    ResetPaddleDurability(0.0f);
 
-    // 4. Reset paddle durability
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
-    {
-        auto& dur = m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle);
-        dur.CurrentDurability = dur.MaxDurability;
-        dur.CurrentShield = 0.0f;
-        dur.IsShieldActive = false;
-        dur.InvulnerabilityTimer = 0.0f;
-    }
-
-    // 5. Clean up any hostile projectiles
+    // 4. Clean up any hostile projectiles
     m_triangleProjectiles.clear();
     for (Entity b : m_bossBullets)
     {
@@ -246,26 +221,18 @@ void StoryScene::FullReset()
     m_bossBullets.clear();
     m_bossLaserSweepTimer = 0.0f;
 
-    // 6. Reload CURRENT CHAPTER (stay on current level!)
+    // 5. Reload CURRENT CHAPTER (stay on current level!)
     LoadChapter(m_currentChapterIndex);
 }
 
 float StoryScene::GetBasePaddleScaleX() const
 {
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
-    {
-        const auto& dur = const_cast<Registry&>(m_registry).GetComponent<PaddleDurabilityComponent>(m_paddle);
-        return dur.GetEffectiveWidthMultiplier();
-    }
     return 1.0f;
 }
 
 void StoryScene::LoadChapter(int chapterIndex)
 {
     m_currentChapterIndex = std::clamp(chapterIndex, 0, static_cast<int>(m_chapters.size()) - 1);
-    m_isPaddleDestroyed = false;
-    m_paddleDestroyedTimer = 0.0f;
-    m_paddleDamageFlashTimer = 0.0f;
     m_triangleProjectiles.clear();
     m_turretBricks.clear();
     m_isDialogueActive = false;
@@ -290,15 +257,8 @@ void StoryScene::LoadChapter(int chapterIndex)
         }
     }
 
-    // Reset paddle visual tint & ensure input is active
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-    {
-        m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Colors::White;
-    }
-    if (mp_paddleSystem)
-    {
-        mp_paddleSystem->SetInputEnabled(true);
-    }
+    // Reset paddle durability, visual tint & ensure input is active
+    ResetPaddleDurability(0.0f);
 
     // Gamerules Sync in Story Mode:
     // If ManualOverride is false, chapter rules define GameRules.
@@ -659,53 +619,15 @@ void StoryScene::OnUpdate(float dt, GameContext& context)
         return;
     }
 
-    // Update paddle damage flash timer only during active play
-    if (m_paddleDamageFlashTimer > 0.0f)
+    if (IsPaddleExploding() || IsBallDying())
     {
-        m_paddleDamageFlashTimer -= dt;
-        if (m_paddleDamageFlashTimer <= 0.0f)
-        {
-            m_paddleDamageFlashTimer = 0.0f;
-            if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle) && !m_isPaddleDestroyed)
-            {
-                m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Colors::White;
-            }
-        }
-    }
-
-    if (m_lives <= 0 && !m_isPaddleDestroyed)
-    {
-        TriggerPaddleExplosion(context);
         return;
     }
 
-    // If paddle was destroyed, countdown the death timer and spawn smoldering smoke/sparks
-    if (m_isPaddleDestroyed)
+    // Hazards & Dynamic Event projectile collisions with paddle
+    CheckHazardPaddleCollisions(context);
+    if (IsPaddleExploding())
     {
-        if (m_paddleDestroyedTimer > 0.0f)
-        {
-            m_paddleDestroyedTimer -= dt;
-
-            // Smoldering embers and smoke during the death delay
-            m_sparkEmissionTimer += dt;
-            if (m_sparkEmissionTimer >= 0.07f)
-            {
-                m_sparkEmissionTimer = 0.0f;
-                Vector2f paddlePos{0.0f, 350.0f};
-                if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
-                {
-                    paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
-                }
-                const float offsetRnd = (static_cast<float>(rand() % 100) - 50.0f) * 1.4f;
-                Color sparkCol{200, 235, 255, 200};
-                if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<LightSourceComponent>(m_paddle))
-                {
-                    sparkCol = m_registry.GetComponent<LightSourceComponent>(m_paddle).LightColor;
-                    sparkCol.a = 200;
-                }
-                SpawnExplosionParticles(paddlePos + Vector2f{offsetRnd, 0.0f}, sparkCol, 8);
-            }
-        }
         return;
     }
 
@@ -723,10 +645,35 @@ void StoryScene::OnUpdate(float dt, GameContext& context)
     }
 }
 
+void StoryScene::ResetTurretsAndProjectiles()
+{
+    m_triangleProjectiles.clear();
+    for (Entity b : m_bossBullets)
+    {
+        if (m_registry.IsAlive(b))
+        {
+            m_registry.DestroyEntityDeferred(b);
+        }
+    }
+    m_bossBullets.clear();
+
+    // Reset all live turret charge/fire timers cleanly so none fire immediately upon respawn
+    float stagger = 0.0f;
+    for (auto& tb : m_turretBricks)
+    {
+        tb.ShootTimer = std::max(tb.Cooldown, 2.2f) + stagger;
+        stagger += 0.45f;
+        if (m_registry.IsAlive(tb.EntityId) && m_registry.HasComponent<SpriteComponent>(tb.EntityId))
+        {
+            m_registry.GetComponent<SpriteComponent>(tb.EntityId).Tint = Color{255, 45, 55, 255};
+        }
+    }
+}
+
 void StoryScene::UpdateTurretBricks(float dt, GameContext& context)
 {
-    // Do NOT advance turret timers or fire missiles while the countdown is active!
-    if (IsCountdownActive())
+    // Do NOT advance turret timers or fire missiles during countdown, death/respawn, or before ball launch
+    if (IsCountdownActive() || IsPaddleExploding() || IsBallDying() || IsBallAttached())
     {
         return;
     }
@@ -776,6 +723,7 @@ void StoryScene::UpdateTurretBricks(float dt, GameContext& context)
                 proj.Position = spawnPos;
                 proj.Velocity = Vector2f{0.0f, 210.0f};
                 proj.Size = 16.0f;
+                proj.Damage = 34.0f;
                 m_triangleProjectiles.push_back(proj);
 
                 // Muzzle flash & audio
@@ -799,8 +747,12 @@ void StoryScene::UpdateTurretBricks(float dt, GameContext& context)
 void StoryScene::UpdateTriangleProjectiles(float dt, GameContext& context)
 {
     if (m_triangleProjectiles.empty()) return;
+    if (IsCountdownActive() || IsPaddleExploding() || IsBallDying())
+    {
+        return;
+    }
 
-    const bool hasPaddle = m_registry.IsAlive(m_paddle) && !m_isPaddleDestroyed &&
+    const bool hasPaddle = m_registry.IsAlive(m_paddle) && !IsPaddleExploding() &&
                            m_registry.HasComponent<Transform2D>(m_paddle) &&
                            m_registry.HasComponent<BoxCollider>(m_paddle);
 
@@ -816,7 +768,7 @@ void StoryScene::UpdateTriangleProjectiles(float dt, GameContext& context)
 
     for (auto it = m_triangleProjectiles.begin(); it != m_triangleProjectiles.end(); )
     {
-        it->Position.Y += it->Velocity.Y * dt;
+        it->Position += it->Velocity * dt;
 
         // Off-screen cleanup
         if (it->Position.Y > 450.0f)
@@ -826,7 +778,7 @@ void StoryScene::UpdateTriangleProjectiles(float dt, GameContext& context)
         }
 
         // Collision with paddle
-        if (hasPaddle)
+        if (hasPaddle && !IsPaddleExploding())
         {
             const float projW = it->Size * 0.75f;
             const float projH = it->Size * 0.85f;
@@ -838,36 +790,15 @@ void StoryScene::UpdateTriangleProjectiles(float dt, GameContext& context)
 
             if (hitX && hitY)
             {
-                Vector2f impactPos = it->Position;
+                const Vector2f impactPos = it->Position;
+                const float dmg = it->Damage;
                 it = m_triangleProjectiles.erase(it);
 
-                // 1. Impact feedback
-                SpawnExplosionParticles(impactPos, Color{255, 60, 40, 255}, 28);
-                TweenEffects::Shake(m_registry, m_camera, 0.35f, 16.0f);
-                if (m_audioEnabled && m_paddleCrackSfxId != 0)
+                DamagePaddle(dmg, impactPos, context);
+                if (IsPaddleExploding())
                 {
-                    context.Audio.PlaySfx(m_paddleCrackSfxId, 85.0f, 0.85f);
-                }
-
-                // 2. Paddle damage flash
-                m_paddleDamageFlashTimer = 0.28f;
-                if (m_registry.HasComponent<SpriteComponent>(m_paddle))
-                {
-                    m_registry.GetComponent<SpriteComponent>(m_paddle).Tint = Color{255, 50, 50, 255};
-                }
-
-                // 3. Player loses a heart/life
-                m_lives--;
-                context.Events.Publish(LivesChangedEvent(m_lives));
-
-                // 4. When paddle reaches 0 lives -> Explodes & triggers Game Over!
-                if (m_lives <= 0)
-                {
-                    m_lives = 0;
-                    TriggerPaddleExplosion(context);
                     return;
                 }
-
                 continue;
             }
         }
@@ -876,170 +807,47 @@ void StoryScene::UpdateTriangleProjectiles(float dt, GameContext& context)
     }
 }
 
-void StoryScene::TriggerPaddleExplosion(GameContext& context)
+void StoryScene::OnPaddleShattered(GameContext& /*context*/)
 {
-    m_isPaddleDestroyed = true;
-    m_paddleDestroyedTimer = 0.85f;
-    m_lives = 0;
-
-    Vector2f paddlePos{0.0f, 350.0f};
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
-    {
-        paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
-    }
-
-    // Determine paddle's theme color (from LightSourceComponent, equipped cosmetic skin, or default cyan)
-    Color paddleThemeColor{200, 235, 255, 255};
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<LightSourceComponent>(m_paddle))
-    {
-        paddleThemeColor = m_registry.GetComponent<LightSourceComponent>(m_paddle).LightColor;
-    }
-    else
-    {
-        std::string skin = ProfileManager::Get().GetEquippedCosmetic(CosmeticSlot::PaddleSkin);
-        if (skin == "paddle_gold_plating")
-        {
-            paddleThemeColor = Color{255, 215, 0, 255};
-        }
-        else if (skin == "paddle_obsidian")
-        {
-            paddleThemeColor = Color{140, 60, 220, 255};
-        }
-    }
-
-    Color secondaryColor{
-        static_cast<uint8_t>(std::min(255, paddleThemeColor.r + 40)),
-        static_cast<uint8_t>(std::min(255, paddleThemeColor.g + 40)),
-        static_cast<uint8_t>(std::min(255, paddleThemeColor.b + 40)),
-        255
-    };
-
-    // Paddle explosion themed to paddle color
-    SpawnExplosionParticles(paddlePos, paddleThemeColor, 75);
-    SpawnExplosionParticles(paddlePos, secondaryColor, 55);
-    SpawnLightFlash(paddlePos, 420.0f, paddleThemeColor, 3.0f, 0.5f);
-    TweenEffects::Shake(m_registry, m_camera, 0.55f, 22.0f);
-
-    if (m_audioEnabled && m_explosionSfxId != 0)
-    {
-        context.Audio.PlaySfx(m_explosionSfxId, 100.0f, 0.85f);
-    }
-
-    // Hide paddle sprite & detach ball
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
-    {
-        m_registry.GetComponent<SpriteComponent>(m_paddle).Tint.a = 0;
-    }
-    if (mp_paddleSystem)
-    {
-        mp_paddleSystem->SetInputEnabled(false);
-    }
-    if (mp_ballSystem)
-    {
-        mp_ballSystem->ClearBalls(m_ball);
-    }
+    ResetTurretsAndProjectiles();
 }
 
-void StoryScene::UpdatePaddleDurability(float dt, GameContext& context)
+void StoryScene::OnLifeLost(GameContext& /*context*/)
 {
-    if (!m_registry.IsAlive(m_paddle) || !m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
-        return;
-
-    auto& dur = m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle);
-    dur.Update(dt);
-
-    // Dynamic width scaling based on fracture state
-    if (m_registry.HasComponent<Transform2D>(m_paddle))
-    {
-        auto& paddleTrans = m_registry.GetComponent<Transform2D>(m_paddle);
-        paddleTrans.Scale.X = dur.GetEffectiveWidthMultiplier();
-    }
-
-    // Sparking VFX for fractured/critical states
-    m_sparkEmissionTimer += dt;
-    const auto state = dur.GetFractureState();
-    if (state == PaddleFractureState::Fractured || state == PaddleFractureState::Critical)
-    {
-        const float interval = (state == PaddleFractureState::Critical) ? 0.08f : 0.22f;
-        if (m_sparkEmissionTimer >= interval)
-        {
-            m_sparkEmissionTimer = 0.0f;
-            if (m_registry.HasComponent<Transform2D>(m_paddle))
-            {
-                const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
-                const float offsetX = (static_cast<float>(rand() % 100) / 100.0f - 0.5f) * 100.0f;
-                SpawnExplosionParticles(Vector2f{pTrans.Position.X + offsetX, pTrans.Position.Y}, Color{255, 200, 50, 255}, 5);
-            }
-        }
-    }
-
-    // Paddle Destruction Defeat Condition
-    if (dur.IsDestroyed() && !m_isPaddleDestroyed)
-    {
-        TriggerPaddleDestruction(context);
-    }
-}
-
-void StoryScene::TriggerPaddleDestruction(GameContext& context)
-{
-    m_isPaddleDestroyed = true;
-
-    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
-    {
-        const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
-        // Massive shatter explosion
-        SpawnExplosionParticles(pTrans.Position, Color{255, 60, 60, 255}, 50);
-        SpawnExplosionParticles(pTrans.Position, Color{255, 220, 50, 255}, 40);
-        SpawnLightFlash(pTrans.Position, 650.0f, Color{255, 100, 50, 255}, 2.5f, 0.6f);
-    }
-
-    if (m_audioEnabled && m_explosionSfxId != 0)
-    {
-        context.Audio.PlaySfx(m_explosionSfxId, 100.0f, 0.8f);
-    }
-
-    // Second immediate defeat condition alongside ball loss
-    if (mp_state_machine)
-    {
-        mp_state_machine->SetState(static_cast<int>(SceneState::GameOver));
-    }
+    ResetTurretsAndProjectiles();
 }
 
 void StoryScene::CheckHazardPaddleCollisions(GameContext& context)
 {
-    if (m_isPaddleDestroyed || !m_registry.IsAlive(m_paddle)) return;
+    if (IsPaddleExploding() || !m_registry.IsAlive(m_paddle)) return;
     if (!m_registry.HasComponent<Transform2D>(m_paddle) || !m_registry.HasComponent<BoxCollider>(m_paddle) ||
         !m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
         return;
 
     const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
     const auto& pCol = m_registry.GetComponent<BoxCollider>(m_paddle);
-    auto& dur = m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle);
 
     // 1. Debuff Hazards damaging paddle durability
     m_registry.View<Transform2D, HazardZoneComponent>([&](Entity, const Transform2D& hTrans, HazardZoneComponent& hComp)
     {
-        if (!hComp.IsActive) return;
+        if (!hComp.IsActive || IsPaddleExploding()) return;
         const float dx = std::abs(pTrans.Position.X - hTrans.Position.X);
         const float dy = std::abs(pTrans.Position.Y - hTrans.Position.Y);
         if (dx < (hComp.Size.X * 0.5f + pCol.GetEffectiveSize(pTrans.Scale).X * 0.5f) &&
             dy < (hComp.Size.Y * 0.5f + pCol.GetEffectiveSize(pTrans.Scale).Y * 0.5f))
         {
-            if (dur.TakeDamage(12.0f))
-            {
-                if (m_audioEnabled && m_paddleCrackSfxId != 0)
-                {
-                    context.Audio.PlaySfx(m_paddleCrackSfxId, 60.0f, 1.1f);
-                }
-            }
+            DamagePaddle(14.0f, pTrans.Position, context);
         }
     });
+
+    if (IsPaddleExploding()) return;
 
     // 2. Meteors / Hostile Projectiles from DynamicEventSystem
     if (mp_eventSystem)
     {
         for (Entity proj : mp_eventSystem->GetActiveProjectiles())
         {
+            if (IsPaddleExploding()) break;
             if (!m_registry.IsAlive(proj) || !m_registry.HasComponent<Transform2D>(proj) ||
                 !m_registry.HasComponent<CircleCollider>(proj) || !m_registry.HasComponent<EnvironmentalProjectileComponent>(proj))
                 continue;
@@ -1052,14 +860,7 @@ void StoryScene::CheckHazardPaddleCollisions(GameContext& context)
 
             if (Physics::IntersectCircleAABB(mCol, mTrans, pCol, pTrans).IsColliding)
             {
-                if (dur.TakeDamage(20.0f))
-                {
-                    SpawnExplosionParticles(mTrans.Position, Color{255, 120, 40, 255}, 15);
-                    if (m_audioEnabled && m_paddleCrackSfxId != 0)
-                    {
-                        context.Audio.PlaySfx(m_paddleCrackSfxId, 80.0f, 0.9f);
-                    }
-                }
+                DamagePaddle(22.0f, mTrans.Position, context);
             }
         }
     }
@@ -1190,17 +991,15 @@ void StoryScene::UpdateBossAttacks(float dt, GameContext& context)
             it->FireTimer -= dt;
 
             // Damage paddle if paddle intersects laser beam X
-            if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle) &&
-                m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+            if (!IsPaddleExploding() && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
             {
                 const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
-                auto& dur = m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle);
                 const float halfBeam = it->Width * 0.5f;
 
                 if (pTrans.Position.X >= (it->StartX - halfBeam - 40.0f) &&
                     pTrans.Position.X <= (it->StartX + halfBeam + 40.0f))
                 {
-                    dur.TakeDamage(it->DamagePerSecond * dt, true);
+                    DamagePaddle(it->DamagePerSecond * dt, Vector2f{it->StartX, pTrans.Position.Y}, context, true);
                 }
             }
 
@@ -1243,12 +1042,11 @@ void StoryScene::UpdateBossProjectiles(float dt, GameContext& context)
         }
 
         // Bullet vs Paddle Collision
-        if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle) &&
-            m_registry.HasComponent<BoxCollider>(m_paddle) && m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+        if (!IsPaddleExploding() && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle) &&
+            m_registry.HasComponent<BoxCollider>(m_paddle))
         {
             const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
             const auto& pCol = m_registry.GetComponent<BoxCollider>(m_paddle);
-            auto& dur = m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle);
 
             CircleCollider bCol{bpc.Radius, Vector2f{0.0f, 0.0f}, false, true};
             if (!bpc.IsDeflected && bpc.Velocity.Y > 0.0f && Physics::IntersectCircleAABB(bCol, bTrans, pCol, pTrans).IsColliding)
@@ -1271,8 +1069,7 @@ void StoryScene::UpdateBossProjectiles(float dt, GameContext& context)
                 else
                 {
                     // Direct hit on paddle edge damages durability
-                    dur.TakeDamage(bpc.Damage);
-                    SpawnExplosionParticles(bTrans.Position, Color{255, 60, 60, 255}, 15);
+                    DamagePaddle(bpc.Damage, bTrans.Position, context);
                     m_registry.DestroyEntityDeferred(b);
                 }
             }
@@ -1403,7 +1200,6 @@ void StoryScene::RenderSceneSpecificHUD(GameContext& context)
 
     RenderTurretBricks(context);
     RenderTriangleProjectiles(context);
-    RenderPaddleDurabilityOverlay(context);
 
     if (m_chapters[m_currentChapterIndex].IsBossChapter)
     {
@@ -1425,6 +1221,8 @@ void StoryScene::RenderTurretBricks(GameContext& context)
     for (const auto& tb : m_turretBricks)
     {
         if (!m_registry.IsAlive(tb.EntityId) || !m_registry.HasComponent<Transform2D>(tb.EntityId))
+            continue;
+        if (m_registry.HasComponent<BrickComponent>(tb.EntityId) && m_registry.GetComponent<BrickComponent>(tb.EntityId).IsDescending)
             continue;
 
         const auto& bTrans = m_registry.GetComponent<Transform2D>(tb.EntityId);
@@ -1474,34 +1272,6 @@ void StoryScene::RenderTriangleProjectiles(GameContext& context)
 
         // Point light glow
         context.Render.DrawPointLight(pos, 45.0f, Color{255, 60, 40, 200}, 0.8f, BlendMode::Add);
-    }
-}
-
-void StoryScene::RenderPaddleDurabilityOverlay(GameContext& context)
-{
-    if (!m_registry.IsAlive(m_paddle) || m_isPaddleDestroyed ||
-        !m_registry.HasComponent<Transform2D>(m_paddle) || !m_registry.HasComponent<BoxCollider>(m_paddle))
-        return;
-
-    const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
-    const auto& pCol = m_registry.GetComponent<BoxCollider>(m_paddle);
-    const Vector2f effSize = pCol.GetEffectiveSize(pTrans.Scale);
-
-    // Paddle Visual Fracture Decals when damaged (lives < 3)
-    if (m_lives < 3 && m_lives > 0)
-    {
-        Color crackCol = (m_lives == 1) ? Color{255, 50, 50, 220} : Color{220, 220, 220, 170};
-        const float halfW = effSize.X * 0.5f;
-        const float halfH = effSize.Y * 0.5f;
-
-        // Render jagged crack fracture lines across paddle
-        context.Render.DrawLine(Vector2f{pTrans.Position.X - halfW * 0.35f, pTrans.Position.Y - halfH},
-                                Vector2f{pTrans.Position.X - halfW * 0.15f, pTrans.Position.Y + halfH}, crackCol, 2.0f);
-        if (m_lives == 1)
-        {
-            context.Render.DrawLine(Vector2f{pTrans.Position.X + halfW * 0.25f, pTrans.Position.Y - halfH},
-                                    Vector2f{pTrans.Position.X + halfW * 0.40f, pTrans.Position.Y + halfH}, crackCol, 2.0f);
-        }
     }
 }
 

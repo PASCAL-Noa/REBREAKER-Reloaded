@@ -256,7 +256,7 @@ void GameScene::OnInit(GameContext& context)
     mp_eventSystem = m_systemManager.AddSystem<DynamicEventSystem>(m_registry, context);
     if (mp_eventSystem)
     {
-        mp_eventSystem->SetEnabled(context.Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled));
+        mp_eventSystem->SetEnabled(m_arenaEventsAllowed && context.Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled));
         mp_eventSystem->SetBrickCollisionCallback([this](Entity bEntity, Entity /*proj*/)
         {
             HandleBrickCollision(bEntity, NULL_ENTITY, false, true, 1);
@@ -289,6 +289,7 @@ void GameScene::OnInit(GameContext& context)
 
     m_powerUpSub = context.Events.SubscribeScoped<PowerUpEvent>([this](const PowerUpEvent& e)
     {
+        if (!m_renderGameUI && !m_isInUpdateStep) return;
         ApplyPowerUp(e.Type);
         if (m_renderGameUI && m_uiController && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
         {
@@ -299,6 +300,7 @@ void GameScene::OnInit(GameContext& context)
 
     m_nextLevelSub = context.Events.SubscribeScoped<NextLevelEvent>([this](const NextLevelEvent&)
     {
+        if (!m_renderGameUI && !m_isInUpdateStep) return;
         AdvanceToNextLevel();
     });
 
@@ -321,6 +323,7 @@ void GameScene::OnInit(GameContext& context)
 
     m_collisionSub = context.Events.SubscribeScoped<CollisionEvent>([&context, this](const CollisionEvent& e)
     {
+        if (!m_renderGameUI && !m_isInUpdateStep) return;
         // 1. Check laser projectile collision with bricks
         auto& lasers = mp_ballSystem->GetLasers();
         for (auto it = lasers.begin(); it != lasers.end(); )
@@ -406,7 +409,7 @@ void GameScene::OnInit(GameContext& context)
             }
             if (m_audioEnabled)
             {
-                context.Audio.PlaySfx(m_bounceSfxId, 50.0f, 1.0f, bouncePan);
+                PlaySfx(m_bounceSfxId, 50.0f, 1.0f, bouncePan);
             }
         }
 
@@ -437,6 +440,9 @@ void GameScene::OnInit(GameContext& context)
     m_registry.AddComponent<SpriteComponent>(m_paddle, SpriteComponent{m_paddleTexId});
     m_registry.AddComponent<TweenComponent>(m_paddle, TweenComponent{});
     m_registry.AddComponent<PaddleComponent>(m_paddle, PaddleComponent{});
+    m_registry.AddComponent<PaddleDurabilityComponent>(m_paddle, PaddleDurabilityComponent{});
+    m_paddleCrackSfxId = context.Resources.LoadResource("Resources/audio/sfx/brick_hit.wav");
+    m_paddleBaseY = 300.0f;
 
     LightSourceComponent paddleLight{};
     paddleLight.Type = LightType::Cone;
@@ -558,6 +564,13 @@ void GameScene::OnInit(GameContext& context)
 
 void GameScene::OnUpdate(const float dt, GameContext& context)
 {
+    struct UpdateStepScope
+    {
+        bool& flag;
+        explicit UpdateStepScope(bool& f) : flag(f) { flag = true; }
+        ~UpdateStepScope() { flag = false; }
+    } updateScope(m_isInUpdateStep);
+
     DefaultScene::OnUpdate(dt, context);
     mp_context = &context;
 
@@ -599,7 +612,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
                 m_countdownWhooshPlayedForSecond = m_countdownLastSecond;
                 if (m_countdownWhooshSfxId != 0)
                 {
-                    context.Audio.PlaySfx(m_countdownWhooshSfxId, 45.0f);
+                    PlaySfx(m_countdownWhooshSfxId, 45.0f);
                 }
             }
 
@@ -609,15 +622,15 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
                 m_countdownLastSecond = currentSec;
                 if (currentSec == 3 && m_countdown3SfxId != 0)
                 {
-                    context.Audio.PlaySfx(m_countdown3SfxId, 45.0f);
+                    PlaySfx(m_countdown3SfxId, 45.0f);
                 }
                 else if (currentSec == 2 && m_countdown2SfxId != 0)
                 {
-                    context.Audio.PlaySfx(m_countdown2SfxId, 45.0f);
+                    PlaySfx(m_countdown2SfxId, 45.0f);
                 }
                 else if (currentSec == 1 && m_countdown1SfxId != 0)
                 {
-                    context.Audio.PlaySfx(m_countdown1SfxId, 45.0f);
+                    PlaySfx(m_countdown1SfxId, 45.0f);
                 }
             }
 
@@ -629,7 +642,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
 
                 if (m_countdownGoSfxId != 0)
                 {
-                    context.Audio.PlaySfx(m_countdownGoSfxId, 45.0f);
+                    PlaySfx(m_countdownGoSfxId, 45.0f);
                 }
 
                 if (mp_paddleSystem)
@@ -685,7 +698,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
                 m_uiController->TriggerQuitOverride();
                 return;
             }
-            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
             MenuScene::SetReturnWithDezoom(true);
             context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
             return;
@@ -820,7 +833,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
 
                     if (m_bounceSfxId != 0 && m_audioEnabled)
                     {
-                        context.Audio.PlaySfx(m_bounceSfxId, sweetSpotHit ? 45.0f : 35.0f);
+                        PlaySfx(m_bounceSfxId, sweetSpotHit ? 45.0f : 35.0f);
                     }
 
                     it = m_stuckBalls.erase(it);
@@ -935,11 +948,12 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     if (currentState != static_cast<int>(SceneState::Paused))
     {
         m_ambientBackground.OnUpdate(dt, paddlePos, camPos);
+        UpdateEventBrickFeedback(dt);
 
-        // 3. Post-process parameter decay towards resting baseline
+        // 3. Post-process parameter decay towards resting theme baseline
         constexpr float kBaseCA = 0.005f;
-        constexpr float kBaseVig = 0.25f;
-        const Color kBaseVigColor{0, 0, 0, 255};
+        const float kBaseVig = m_currentTheme.VignetteBaseIntensity;
+        const Color kBaseVigColor = m_currentTheme.VignetteBaseColor;
 
         if (m_postProcessParams.ChromaticAberration > kBaseCA)
         {
@@ -948,6 +962,10 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         if (m_postProcessParams.VignetteIntensity > kBaseVig)
         {
             m_postProcessParams.VignetteIntensity = std::max(kBaseVig, m_postProcessParams.VignetteIntensity - dt * 0.9f);
+        }
+        else if (m_postProcessParams.VignetteIntensity < kBaseVig)
+        {
+            m_postProcessParams.VignetteIntensity = std::min(kBaseVig, m_postProcessParams.VignetteIntensity + dt * 0.9f);
         }
         if (m_postProcessParams.FlashIntensity > 0.0f)
         {
@@ -960,14 +978,15 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         m_postProcessParams.VignetteColor.b = static_cast<uint8_t>(m_postProcessParams.VignetteColor.b + (kBaseVigColor.b - m_postProcessParams.VignetteColor.b) * decayAlpha);
     }
 
-    // Update screen disruption and stage hazard zones (#83)
+    // Update screen disruption, stage hazard zones (#83), and unified paddle damage/respawn
     if (currentState == static_cast<int>(SceneState::Playing))
     {
         UpdateVisualMalus(dt);
         UpdateHazardZones(dt);
+        UpdatePaddleDamageSystem(dt, context);
     }
 
-    const bool canControlPaddle = (currentState == static_cast<int>(SceneState::Playing)) && !m_countdownActive;
+    const bool canControlPaddle = (currentState == static_cast<int>(SceneState::Playing)) && !m_countdownActive && !m_isPaddleExploding;
     if (mp_paddleSystem)
     {
         mp_paddleSystem->SetInputEnabled(canControlPaddle);
@@ -976,22 +995,36 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
     // Dynamic arena events lifecycle update (wall-clock time)
     if (mp_eventSystem)
     {
-        if (mp_context)
+        if (!m_arenaEventsAllowed)
         {
-            const bool ruleEnabled = mp_context->Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled);
-            if (ruleEnabled != mp_eventSystem->IsEnabled())
+            if (mp_eventSystem->IsEnabled())
             {
-                mp_eventSystem->SetEnabled(ruleEnabled);
+                mp_eventSystem->SetEnabled(false);
+            }
+            if (mp_eventSystem->IsEventActive() || mp_eventSystem->IsWarningActive())
+            {
+                mp_eventSystem->StopActiveEvent();
             }
         }
+        else
+        {
+            if (mp_context)
+            {
+                const bool ruleEnabled = mp_context->Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled);
+                if (ruleEnabled != mp_eventSystem->IsEnabled())
+                {
+                    mp_eventSystem->SetEnabled(ruleEnabled);
+                }
+            }
 
-        if (currentState == static_cast<int>(SceneState::Playing) && !m_countdownActive)
-        {
-            mp_eventSystem->UpdateLifecycle(dt);
-        }
-        else if (currentState != static_cast<int>(SceneState::Paused))
-        {
-            mp_eventSystem->RestoreStandardPhysics();
+            if (currentState == static_cast<int>(SceneState::Playing) && !m_countdownActive)
+            {
+                mp_eventSystem->UpdateLifecycle(dt);
+            }
+            else if (currentState != static_cast<int>(SceneState::Paused))
+            {
+                mp_eventSystem->RestoreStandardPhysics();
+            }
         }
     }
 
@@ -1181,7 +1214,7 @@ void GameScene::OnRender(GameContext& context)
     }
 
     // Visual accents for Metal (riveted steel plate outline) and Bomb (hazard pulsing rim + core)
-    m_registry.View<Transform2D, BoxCollider, BrickComponent>([&](Entity, const Transform2D& t, const BoxCollider& b, const BrickComponent& brick)
+    m_registry.View<Transform2D, BoxCollider, BrickComponent>([&](Entity e, const Transform2D& t, const BoxCollider& b, const BrickComponent& brick)
     {
         if (brick.IsUnbreakable)
         {
@@ -1198,9 +1231,30 @@ void GameScene::OnRender(GameContext& context)
         else if (brick.IsLantern)
         {
             float pulse = (std::sin(m_gameplayTime * 4.5f) + 1.0f) * 0.5f;
-            Color lanternBorder{255, 235, 120, static_cast<uint8_t>(180 + 75 * pulse)};
+            Color baseLantern{255, 235, 120, 255};
+            if (m_registry.HasComponent<SpriteComponent>(e))
+            {
+                baseLantern = m_registry.GetComponent<SpriteComponent>(e).Tint;
+            }
+            Color lanternBorder{baseLantern.r, baseLantern.g, baseLantern.b, static_cast<uint8_t>(180 + 75 * pulse)};
             context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, lanternBorder, -2.0f);
             context.Render.DrawCircle(6.0f, t, Color{255, 245, 180, static_cast<uint8_t>(200 + 55 * pulse)});
+        }
+        else if (brick.IsEventBrick)
+        {
+            const float pulse = (std::sin(m_gameplayTime * 5.2f) + 1.0f) * 0.5f;
+            Color accent = brick.RandomEvent ? Color{45, 230, 245, 255} : GetArenaEventColor(brick.TriggeredEvent);
+            Color borderCol{accent.r, accent.g, accent.b, static_cast<uint8_t>(175 + 80 * pulse)};
+            Color innerCol{235, 250, 255, static_cast<uint8_t>(110 + 70 * pulse)};
+            context.Render.DrawRectangleOutline(b.Size.X, b.Size.Y, t, borderCol, -2.0f);
+            context.Render.DrawRectangleOutline(b.Size.X - 10.0f, b.Size.Y - 8.0f, t, innerCol, -1.0f);
+
+            // Crisp centered lightning bolt glyph indicating instant event trigger
+            const Vector2f c = t.Position;
+            Color glyphCol{255, 255, 255, static_cast<uint8_t>(215 + 40 * pulse)};
+            context.Render.DrawLine(Vector2f{c.X + 3.0f, c.Y - 9.0f}, Vector2f{c.X - 4.0f, c.Y + 0.5f}, glyphCol, 2.2f);
+            context.Render.DrawLine(Vector2f{c.X - 4.0f, c.Y + 0.5f}, Vector2f{c.X + 4.0f, c.Y + 0.5f}, glyphCol, 2.2f);
+            context.Render.DrawLine(Vector2f{c.X + 4.0f, c.Y + 0.5f}, Vector2f{c.X - 3.0f, c.Y + 9.0f}, glyphCol, 2.2f);
         }
     });
 
@@ -1307,9 +1361,9 @@ void GameScene::OnRender(GameContext& context)
 
     // 2D Dynamic Lighting Pass
     const bool isDiscoDarkActive = (discoDarkFactor > 0.0f);
-    const float blackoutFactor = mp_eventSystem ? mp_eventSystem->GetBlackoutIntensity() : 0.0f;
+    const float blackoutFactor = (m_arenaEventsAllowed && mp_eventSystem) ? mp_eventSystem->GetBlackoutIntensity() : 0.0f;
     const bool isBlackoutActive = (blackoutFactor > 0.01f);
-    const float alarmFactor = mp_eventSystem ? mp_eventSystem->GetAlarmIntensity() : 0.0f;
+    const float alarmFactor = (m_arenaEventsAllowed && mp_eventSystem) ? mp_eventSystem->GetAlarmIntensity() : 0.0f;
     const bool isAlarmLightActive = (alarmFactor > 0.01f);
     if (m_currentTheme.HasLighting() || isDiscoDarkActive || isBlackoutActive || isAlarmLightActive)
     {
@@ -1362,8 +1416,8 @@ void GameScene::OnRender(GameContext& context)
             }
         }
 
-        // 3. Paddle dynamic light emission (proportional to paddle size)
-        if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+        // 3. Paddle dynamic light emission (proportional to paddle size & driven by LightSourceComponent)
+        if (!m_isPaddleExploding && m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
         {
             const auto& pTrans = m_registry.GetComponent<Transform2D>(m_paddle);
             const float paddleScaleX = pTrans.Scale.X;
@@ -1371,26 +1425,57 @@ void GameScene::OnRender(GameContext& context)
             const Vector2f pLeft{pTrans.Position.X - halfWidth, pTrans.Position.Y};
             const Vector2f pRight{pTrans.Position.X + halfWidth, pTrans.Position.Y};
 
-            // A. Paddle body glow (capsule light spanning the full paddle length)
-            const float bodyRadius = 110.0f * std::sqrt(paddleScaleX);
-            const float bodyIntensity = 1.35f * std::clamp(paddleScaleX, 0.7f, 1.5f);
-            context.Render.DrawCapsuleLight(pLeft, pRight, bodyRadius, Color{190, 235, 255, 255}, bodyIntensity, BlendMode::Add);
-
-            // B. Paddle upward spotlight (widens and reaches further as paddle scales up)
-            const float coneAngle = 65.0f + 25.0f * (paddleScaleX - 1.0f);
-            const float coneRadius = 420.0f * (0.8f + 0.2f * paddleScaleX);
-            const float coneIntensity = 1.3f * std::clamp(paddleScaleX, 0.7f, 1.4f);
-            const Vector2f coneApex{pTrans.Position.X, pTrans.Position.Y - 10.0f};
-            context.Render.DrawConeLight(coneApex, coneRadius, -90.0f, coneAngle, Color{210, 240, 255, 255}, coneIntensity, BlendMode::Add);
-
-            if (m_stormCharges > 0 || m_stormDuration > 0.0f)
+            Color lightCol{200, 235, 255, 255};
+            float baseConeAngle = 70.0f;
+            float baseConeRadius = 430.0f;
+            float baseIntensity = 1.3f;
+            bool lightActive = true;
+            if (m_registry.HasComponent<LightSourceComponent>(m_paddle))
             {
-                float strobe = 1.0f;
-                if (PowerUpManager::Get().Storm().IsTempest() && m_stormDuration > 0.0f)
+                const auto& pl = m_registry.GetComponent<LightSourceComponent>(m_paddle);
+                lightCol = pl.LightColor;
+                baseConeAngle = pl.ConeAngleDeg;
+                baseConeRadius = pl.Radius;
+                baseIntensity = pl.Intensity;
+                lightActive = pl.IsActive;
+            }
+
+            // Subtle warning tint shift when hull is critical
+            if (m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+            {
+                const auto& dur = m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle);
+                if (dur.GetFractureState() == PaddleFractureState::Critical)
                 {
-                    strobe = 1.0f + 0.45f * std::sin(m_gameplayTime * 25.0f);
+                    const float warn = 0.25f + 0.25f * (0.5f + 0.5f * std::sin(m_gameplayTime * 11.0f));
+                    lightCol.r = static_cast<uint8_t>(std::min(255.0f, lightCol.r * (1.0f - warn) + 255.0f * warn));
+                    lightCol.g = static_cast<uint8_t>(lightCol.g * (1.0f - warn) + 75.0f * warn);
+                    lightCol.b = static_cast<uint8_t>(lightCol.b * (1.0f - warn) + 55.0f * warn);
                 }
-                context.Render.DrawCapsuleLight(pLeft, pRight, bodyRadius * 1.6f, Color{255, 240, 120, 255}, bodyIntensity * 1.6f * strobe, BlendMode::Add);
+            }
+
+            if (lightActive && baseIntensity > 0.01f)
+            {
+                // A. Paddle body glow (capsule light spanning the full paddle length)
+                const float bodyRadius = 110.0f * std::sqrt(std::max(0.25f, paddleScaleX));
+                const float bodyIntensity = baseIntensity * std::clamp(paddleScaleX, 0.7f, 1.5f);
+                context.Render.DrawCapsuleLight(pLeft, pRight, bodyRadius, lightCol, bodyIntensity, BlendMode::Add);
+
+                // B. Paddle upward spotlight (widens and reaches further as paddle scales up)
+                const float coneAngle = std::clamp(baseConeAngle + 20.0f * (paddleScaleX - 1.0f), 15.0f, 165.0f);
+                const float coneRadius = baseConeRadius * (0.8f + 0.2f * paddleScaleX);
+                const float coneIntensity = baseIntensity * std::clamp(paddleScaleX, 0.7f, 1.4f);
+                const Vector2f coneApex{pTrans.Position.X, pTrans.Position.Y - 10.0f};
+                context.Render.DrawConeLight(coneApex, coneRadius, -90.0f, coneAngle, lightCol, coneIntensity, BlendMode::Add);
+
+                if (m_stormCharges > 0 || m_stormDuration > 0.0f)
+                {
+                    float strobe = 1.0f;
+                    if (PowerUpManager::Get().Storm().IsTempest() && m_stormDuration > 0.0f)
+                    {
+                        strobe = 1.0f + 0.45f * std::sin(m_gameplayTime * 25.0f);
+                    }
+                    context.Render.DrawCapsuleLight(pLeft, pRight, bodyRadius * 1.6f, Color{255, 240, 120, 255}, bodyIntensity * 1.6f * strobe, BlendMode::Add);
+                }
             }
         }
 
@@ -1509,7 +1594,7 @@ void GameScene::OnRender(GameContext& context)
             }
         }
 
-        if (mp_eventSystem)
+        if (m_arenaEventsAllowed && mp_eventSystem)
         {
             mp_eventSystem->RenderSearchlights(context);
             mp_eventSystem->RenderAlarmLights(context);
@@ -1525,9 +1610,14 @@ void GameScene::OnRender(GameContext& context)
     }
 
     RenderRegeneratingBricks(context);
+    if (m_arenaEventsAllowed)
+    {
+        RenderEventBrickWorldFeedback(context);
+    }
+    RenderPaddleDamageFeedback(context);
     RenderActiveUltimateVisuals(context);
 
-    if (mp_eventSystem)
+    if (m_arenaEventsAllowed && mp_eventSystem)
     {
         mp_eventSystem->RenderProjectiles(context);
     }
@@ -1602,9 +1692,14 @@ void GameScene::OnRender(GameContext& context)
         const bool isPaused = IsPaused();
         const bool isModalOpen = (m_uiController && m_uiController->IsModalOrSubMenuOpen());
 
-        if (mp_eventSystem && m_renderGameUI && !isPaused && !isModalOpen)
+        if (m_arenaEventsAllowed && mp_eventSystem && m_renderGameUI && !isPaused && !isModalOpen)
         {
             mp_eventSystem->RenderUI(context, m_fontId);
+        }
+
+        if (m_arenaEventsAllowed && !isPaused && !isModalOpen)
+        {
+            RenderEventBrickToastHUD(context);
         }
 
         RenderSceneSpecificHUD(context);
@@ -1615,6 +1710,15 @@ void GameScene::OnRender(GameContext& context)
         {
             m_uiController->OnRender(context);
         }
+    }
+    else if (m_arenaEventsAllowed && !IsPaused())
+    {
+        // Even in editor playtest (where GameUIController is off), show event feedback toast & active event bar
+        if (mp_eventSystem)
+        {
+            mp_eventSystem->RenderUI(context, m_fontId);
+        }
+        RenderEventBrickToastHUD(context);
     }
 }
 
@@ -1718,6 +1822,44 @@ void GameScene::ApplyLevelTheme(int levelNumber)
     else
     {
         m_bgColor = m_currentTheme.BgBase1;
+    }
+
+    m_currentComboMultiplier = 0;
+}
+
+void GameScene::ApplyCustomLighting(const LevelTheme& theme, const Color& paddleLightColor, float coneAngleDeg, float lightRange, float lightIntensity)
+{
+    m_currentTheme = theme;
+    m_ambientBackground.SetTheme(m_currentTheme);
+
+    m_postProcessParams.VignetteColor = m_currentTheme.VignetteBaseColor;
+    m_postProcessParams.VignetteIntensity = m_currentTheme.VignetteBaseIntensity;
+
+    if (m_registry.IsAlive(m_bgTweenEntity) && m_registry.HasComponent<TweenComponent>(m_bgTweenEntity))
+    {
+        auto& tweenComp = m_registry.GetComponent<TweenComponent>(m_bgTweenEntity);
+        tweenComp.Clear();
+        TweenEffects::BackgroundColorShift(
+            tweenComp,
+            m_currentTheme.BgBase1,
+            m_currentTheme.BgBase2,
+            [this](Color c) { m_bgColor = c; },
+            3.5f
+        );
+    }
+    else
+    {
+        m_bgColor = m_currentTheme.BgBase1;
+    }
+
+    if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<LightSourceComponent>(m_paddle))
+    {
+        auto& pl = m_registry.GetComponent<LightSourceComponent>(m_paddle);
+        pl.LightColor = paddleLightColor;
+        pl.ConeAngleDeg = std::clamp(coneAngleDeg, 15.0f, 160.0f);
+        pl.Radius = std::clamp(lightRange, 180.0f, 750.0f);
+        pl.Intensity = std::clamp(lightIntensity, 0.0f, 2.5f);
+        pl.IsActive = (pl.Intensity > 0.01f);
     }
 
     m_currentComboMultiplier = 0;
@@ -2015,7 +2157,7 @@ void GameScene::LoadLevel(int levelIndex, bool preserveStats)
     // Gamerules Sync:
     // If ManualOverride is false, the level sets the GameRules.
     // If ManualOverride is true, user settings in Settings override level rules.
-    if (mp_context)
+    if (mp_context && m_arenaEventsAllowed)
     {
         const bool manualOverride = mp_context->Rules.GetRule(Rule::Gameplay::ManualOverride);
         if (!manualOverride)
@@ -2029,14 +2171,23 @@ void GameScene::LoadLevel(int levelIndex, bool preserveStats)
 
     if (mp_eventSystem)
     {
-        if (mp_context)
+        if (!m_arenaEventsAllowed)
         {
-            mp_eventSystem->SetEnabled(mp_context->Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled));
+            mp_eventSystem->SetEnabled(false);
+            mp_eventSystem->StopActiveEvent();
+            mp_eventSystem->ResetLifecycle();
         }
-        const float minInterval = std::max(12.0f, 22.0f - lvl * 1.0f);
-        const float maxInterval = std::max(minInterval + 5.0f, 32.0f - lvl * 1.5f);
-        mp_eventSystem->SetIntervalRange(minInterval, maxInterval);
-        mp_eventSystem->ResetLifecycle();
+        else
+        {
+            if (mp_context)
+            {
+                mp_eventSystem->SetEnabled(mp_context->Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled));
+            }
+            const float minInterval = std::max(12.0f, 22.0f - lvl * 1.0f);
+            const float maxInterval = std::max(minInterval + 5.0f, 32.0f - lvl * 1.5f);
+            mp_eventSystem->SetIntervalRange(minInterval, maxInterval);
+            mp_eventSystem->ResetLifecycle();
+        }
     }
 
     if (!preserveStats)
@@ -2073,6 +2224,9 @@ void GameScene::LoadLevel(int levelIndex, bool preserveStats)
         m_brickCount = mp_levelGenerator->Generate(m_registry, *mp_context, m_brickTexId);
     }
 
+    ResetPaddleDurability(0.0f);
+    m_eventRipples.clear();
+    m_eventToastTimer = 0.0f;
     ResetBallAndPaddle();
 }
 
@@ -2119,7 +2273,7 @@ void GameScene::StartLevelTransition()
         if (m_musicEnabled) mp_context->Audio.FadeOutMusic(0.8f);
         if (m_audioEnabled && m_levelClearSfxId != 0)
         {
-            mp_context->Audio.PlaySfx(m_levelClearSfxId, 100.0f);
+            PlaySfx(m_levelClearSfxId, 100.0f);
         }
     }
 
@@ -2165,7 +2319,7 @@ void GameScene::StartCountdown()
         mp_context->Events.Publish(GameStateChangedEvent(GameUIState::Countdown));
         if (m_audioEnabled && m_countdownReadySfxId != 0)
         {
-            mp_context->Audio.PlaySfx(m_countdownReadySfxId, 45.0f);
+            PlaySfx(m_countdownReadySfxId, 45.0f);
         }
     }
 }
@@ -2185,10 +2339,10 @@ void GameScene::OnGameOverEnter()
     if (mp_context)
     {
         // Smoothly fade out stage music and fade in game-over stinger
-        if (m_musicEnabled) mp_context->Audio.FadeToMusic("Resources/audio/music/Game-death.ogg", 0.6f, 50.0f, false);
+        if (m_musicEnabled) mp_context->Audio.FadeToMusic("Resources/audio/music/Game-death.ogg", 0.6f, AudioMixer::kNominalMusicLevel, false);
         if (m_audioEnabled && m_gameOverSfxId != 0)
         {
-            mp_context->Audio.PlaySfx(m_gameOverSfxId, 100.0f);
+            PlaySfx(m_gameOverSfxId, 100.0f);
         }
     }
 
@@ -2238,7 +2392,7 @@ void GameScene::OnVictoryEnter()
     if (mp_context)
     {
         // Smoothly fade out stage music and fade in victory stinger
-        mp_context->Audio.FadeToMusic("Resources/audio/sfx/victory.mp3", 0.6f, 85.0f, false);
+        mp_context->Audio.FadeToMusic("Resources/audio/sfx/victory.mp3", 0.6f, AudioMixer::kNominalMusicLevel, false);
     }
 
     if (m_uiController)
@@ -2451,7 +2605,7 @@ void GameScene::HandleInput(const float /*dt*/, const GameContext& context)
         PowerUpManager::Get().SetLevel(PowerUpType::MagnetPaddle, nextLvl);
         PowerUpManager::Get().SetLevel(PowerUpType::GhostBall, nextLvl);
     }
-    if (testerActive && context.Input.IsKeyPress(KeyCode::E))
+    if (m_arenaEventsAllowed && testerActive && context.Input.IsKeyPress(KeyCode::E))
     {
         if (mp_eventSystem)
         {
@@ -2465,7 +2619,7 @@ void GameScene::HandleInput(const float /*dt*/, const GameContext& context)
             }
         }
     }
-    if (context.Input.IsKeyPress(KeyCode::Y))
+    if (m_arenaEventsAllowed && context.Input.IsKeyPress(KeyCode::Y))
     {
         const bool curEvents = context.Rules.GetRule(Rule::Gameplay::ArenaEventsEnabled);
         context.Rules.SetRule(Rule::Gameplay::ArenaEventsEnabled, !curEvents);
@@ -2639,6 +2793,11 @@ void GameScene::HandleDeath()
     if (m_ballState == BallState::Dying) return;
     m_ballState = BallState::Dying;
 
+    if (mp_context)
+    {
+        OnLifeLost(*mp_context);
+    }
+
     // Dramatic red chromatic aberration and vignette flash on ball lost
     TriggerPostProcessFlash(0.035f, 0.85f, Color{220, 20, 20, 255}, 0.35f, Color{190, 25, 25, 255});
 
@@ -2715,7 +2874,7 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
         mp_context->Audio.TriggerDucking(0.45f, 0.5f);
         if (m_explosionSfxId != 0)
         {
-            mp_context->Audio.PlaySfx(m_explosionSfxId, 100.0f);
+            PlaySfx(m_explosionSfxId, 100.0f);
         }
     }
 
@@ -2735,23 +2894,27 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
             bombPos = m_registry.GetComponent<Transform2D>(currentBomb).Position;
         }
 
-        SpawnFireExplosionParticles(bombPos, 85.0f, 35);
-        SpawnLightFlash(bombPos, 650.0f, Color{255, 210, 110, 255}, 2.6f, 0.55f);
-
+        int blastTier = 1;
         if (m_registry.HasComponent<BrickComponent>(currentBomb))
         {
             auto& bombComp = m_registry.GetComponent<BrickComponent>(currentBomb);
+            blastTier = std::clamp(bombComp.BombBlastTier, 0, 2);
             m_scoreManager.AddScore(bombComp.ScoreValue);
             m_brickCount--;
             mp_context->Events.Publish(BrickHitEvent(currentBomb, true, bombComp.IsSpecial, m_scoreManager.GetComboMultiplier(), bombPos));
         }
 
+        const float blastVisualRadius = (blastTier == 0) ? 55.0f : (blastTier == 2 ? 140.0f : 85.0f);
+        const float blastLightRadius = (blastTier == 0) ? 450.0f : (blastTier == 2 ? 850.0f : 650.0f);
+        SpawnFireExplosionParticles(bombPos, blastVisualRadius, blastTier == 2 ? 48 : 35);
+        SpawnLightFlash(bombPos, blastLightRadius, Color{255, 210, 110, 255}, 2.6f, 0.55f);
+
         m_registry.DestroyEntityDeferred(currentBomb);
 
         // Brick spacing: Col = 110.0f (100 + 10 pad), Row = 40.0f (30 + 10 pad)
-        // 3x3 grid covers dx in [-125, 125], dy in [-55, 55]
-        constexpr float kMaxDx = 125.0f;
-        constexpr float kMaxDy = 55.0f;
+        // Tier 0 = Small (tight), Tier 1 = Standard (3x3), Tier 2 = Large (5x5)
+        const float maxDx = (blastTier == 0) ? 65.0f : (blastTier == 2 ? 235.0f : 125.0f);
+        const float maxDy = (blastTier == 0) ? 35.0f : (blastTier == 2 ? 95.0f : 55.0f);
 
         std::vector<Entity> neighbors;
         m_registry.View<Transform2D, BrickComponent>([&](Entity otherEntity, const Transform2D& otherTrans, const BrickComponent&)
@@ -2763,7 +2926,7 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
             float dx = std::abs(otherTrans.Position.X - bombPos.X);
             float dy = std::abs(otherTrans.Position.Y - bombPos.Y);
 
-            if (dx <= kMaxDx && dy <= kMaxDy)
+            if (dx <= maxDx && dy <= maxDy)
             {
                 neighbors.push_back(otherEntity);
             }
@@ -2816,20 +2979,43 @@ void GameScene::DetonateBombBrick(Entity initialBomb)
 
             if (nBrick.IsSpecial)
             {
-                SpawnPowerUp(nPos);
-                nBrick.IsRegenerating = true;
-                nBrick.RegenCooldown = PowerUpManager::Get().ItemRegen().GetEffectiveCooldown();
-                nBrick.RegenTimer = nBrick.RegenCooldown;
-                if (m_registry.HasComponent<SpriteComponent>(neighbor))
+                if (nBrick.HasForcedPowerUp)
                 {
-                    m_registry.GetComponent<SpriteComponent>(neighbor).Tint.a = 0;
+                    SpawnSpecificPowerUp(nPos, nBrick.ForcedPowerUp);
                 }
-                if (m_registry.HasComponent<BoxCollider>(neighbor))
+                else
                 {
-                    m_registry.GetComponent<BoxCollider>(neighbor).IsTrigger = true;
+                    SpawnPowerUp(nPos);
                 }
-                mp_context->Events.Publish(BrickHitEvent(neighbor, true, true, m_scoreManager.GetComboMultiplier(), nPos));
-                continue;
+
+                if (nBrick.RegenEnabled)
+                {
+                    nBrick.IsRegenerating = true;
+                    const float customCd = (nBrick.RegenCooldown > 0.1f) ? nBrick.RegenCooldown : PowerUpManager::Get().ItemRegen().GetEffectiveCooldown();
+                    nBrick.RegenCooldown = customCd;
+                    nBrick.RegenTimer = customCd;
+                    if (m_registry.HasComponent<SpriteComponent>(neighbor))
+                    {
+                        m_registry.GetComponent<SpriteComponent>(neighbor).Tint.a = 0;
+                    }
+                    if (m_registry.HasComponent<BoxCollider>(neighbor))
+                    {
+                        m_registry.GetComponent<BoxCollider>(neighbor).IsTrigger = true;
+                    }
+                    mp_context->Events.Publish(BrickHitEvent(neighbor, true, true, m_scoreManager.GetComboMultiplier(), nPos));
+                    continue;
+                }
+                else
+                {
+                    mp_context->Events.Publish(BrickHitEvent(neighbor, true, true, m_scoreManager.GetComboMultiplier(), nPos));
+                    m_registry.DestroyEntityDeferred(neighbor);
+                    continue;
+                }
+            }
+
+            if (nBrick.IsEventBrick && !nBrick.EventAlreadyTriggered)
+            {
+                TriggerEventBrick(neighbor, nPos);
             }
 
             m_scoreManager.AddScore(nBrick.ScoreValue);
@@ -2854,11 +3040,15 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
     auto& brick = m_registry.GetComponent<BrickComponent>(entity);
     if (brick.IsRegenerating) return;
 
-    // 1. Bomb Bricks: Detonates on any strike (ball, laser, or explosion) and triggers chain reaction
+    // 1. Bomb Bricks: Detonates on fatal hit (or instant for 1-HP bombs, lasers, explosions)
     if (brick.IsBomb)
     {
-        DetonateBombBrick(entity);
-        return;
+        const int effDmg = std::max(1, damage);
+        if (brick.HitPoints <= static_cast<uint32_t>(effDmg) || isExplosion || m_bigBallDuration > 0.0f)
+        {
+            DetonateBombBrick(entity);
+            return;
+        }
     }
 
     bool isFireBall = false;
@@ -2885,7 +3075,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
     // 2. Metal / Unbreakable Bricks
     if (brick.IsUnbreakable || brick.Type == BrickType::Metal)
     {
-        // Lightning CANNOT destroy metal bricks ("les éclaires ne peuvent pas casser les briques en métal")
+        // Lightning CANNOT destroy metal bricks
         if (isLaser)
         {
             Vector2f contactPos{0.0f, 0.0f};
@@ -2897,7 +3087,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
             }
             if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
-                mp_context->Audio.PlaySfx(m_bounceSfxId, 40.0f, 1.4f);
+                PlaySfx(m_bounceSfxId, 40.0f, 1.4f);
             }
             return;
         }
@@ -2918,7 +3108,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
             if (mp_context && m_audioEnabled && m_explosionSfxId != 0)
             {
-                mp_context->Audio.PlaySfx(m_explosionSfxId, 50.0f);
+                PlaySfx(m_explosionSfxId, 50.0f);
             }
 
             m_registry.DestroyEntityDeferred(entity);
@@ -2939,6 +3129,18 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
                 return;
             }
 
+            // Optional bounce speed boost for customized Metal blocks
+            if (brick.MetalBounceBoost > 1.01f && ballEntity != NULL_ENTITY && m_registry.IsAlive(ballEntity) && m_registry.HasComponent<RigidBody>(ballEntity))
+            {
+                auto& bRb = m_registry.GetComponent<RigidBody>(ballEntity);
+                const float curSpeed = bRb.Velocity.Length();
+                if (curSpeed > 1.0f)
+                {
+                    const float boosted = std::min(1050.0f, curSpeed * std::clamp(brick.MetalBounceBoost, 1.0f, 1.45f));
+                    bRb.Velocity = bRb.Velocity.Normalized() * boosted;
+                }
+            }
+
             // Standard ball bounces off with spark feedback and high-pitch metallic clank
             Vector2f contactPos{0.0f, 0.0f};
             if (m_registry.HasComponent<Transform2D>(entity))
@@ -2950,7 +3152,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
             if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
-                mp_context->Audio.PlaySfx(m_bounceSfxId, 45.0f, 1.25f);
+                PlaySfx(m_bounceSfxId, 45.0f, 1.25f);
             }
 
             mp_context->Events.Publish(BrickHitEvent(entity, false, false, m_scoreManager.GetComboMultiplier(), contactPos));
@@ -2999,6 +3201,17 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
 
     bool isDestroyed = (brick.HitPoints == 0);
 
+    // Event Brick instant trigger on hit (when configured to trigger on hit)
+    if (brick.IsEventBrick && brick.EventTriggerOnHit && !brick.EventAlreadyTriggered)
+    {
+        Vector2f evPos{0.0f, 0.0f};
+        if (m_registry.HasComponent<Transform2D>(entity))
+        {
+            evPos = m_registry.GetComponent<Transform2D>(entity).Position;
+        }
+        TriggerEventBrick(entity, evPos);
+    }
+
     // Charge Ultimate Meter with dynamic progression based on brick destruction and combo scaling
     uint32_t combo = m_scoreManager.GetComboMultiplier();
     float comboBonus = 1.0f;
@@ -3029,14 +3242,18 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
                     SpawnPowerUp(transform.Position);
                 }
 
-                brick.IsRegenerating = true;
-                brick.RegenCooldown = PowerUpManager::Get().ItemRegen().GetEffectiveCooldown();
-                brick.RegenTimer = brick.RegenCooldown;
-
-                sprite.Tint.a = 0;
-                if (m_registry.HasComponent<BoxCollider>(entity))
+                if (brick.RegenEnabled)
                 {
-                    m_registry.GetComponent<BoxCollider>(entity).IsTrigger = true;
+                    brick.IsRegenerating = true;
+                    const float customCd = (brick.RegenCooldown > 0.1f) ? brick.RegenCooldown : PowerUpManager::Get().ItemRegen().GetEffectiveCooldown();
+                    brick.RegenCooldown = customCd;
+                    brick.RegenTimer = customCd;
+
+                    sprite.Tint.a = 0;
+                    if (m_registry.HasComponent<BoxCollider>(entity))
+                    {
+                        m_registry.GetComponent<BoxCollider>(entity).IsTrigger = true;
+                    }
                 }
             }
 
@@ -3051,7 +3268,21 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
             }
 
             mp_context->Events.Publish(BrickHitEvent(entity, true, true, m_scoreManager.GetComboMultiplier(), contactPos));
+            if (!brick.RegenEnabled)
+            {
+                m_registry.DestroyEntityDeferred(entity);
+            }
             return;
+        }
+
+        if (brick.IsEventBrick && !brick.EventAlreadyTriggered)
+        {
+            Vector2f evPos{0.0f, 0.0f};
+            if (m_registry.HasComponent<Transform2D>(entity))
+            {
+                evPos = m_registry.GetComponent<Transform2D>(entity).Position;
+            }
+            TriggerEventBrick(entity, evPos);
         }
 
         m_scoreManager.AddScore(brick.ScoreValue);
@@ -3196,7 +3427,7 @@ void GameScene::HandlePaddleCollision(Entity ballEntity)
 
         if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
         {
-            mp_context->Audio.PlaySfx(m_bounceSfxId, 40.0f);
+            PlaySfx(m_bounceSfxId, 40.0f);
         }
         mp_context->Events.Publish(PaddleHitEvent(m_paddle, ballEntity, mutableBallTrans.Position));
         return;
@@ -3251,7 +3482,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
 
             if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
             {
-                mp_context->Audio.PlaySfx(m_bounceSfxId, 45.0f, 1.35f);
+                PlaySfx(m_bounceSfxId, 45.0f, 1.35f);
             }
             return;
         }
@@ -3279,7 +3510,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
 
             if (m_bounceSfxId != 0 && mp_context && m_audioEnabled)
             {
-                mp_context->Audio.PlaySfx(m_bounceSfxId, 45.0f);
+                PlaySfx(m_bounceSfxId, 45.0f);
             }
 
             m_bottomBarrierCharges--;
@@ -3305,7 +3536,7 @@ void GameScene::HandleBallBottomCollision(Entity ballEntity)
             const auto& sprite = m_registry.GetComponent<SpriteComponent>(ballEntity);
             SpawnExplosionParticles(transform.Position, sprite.Tint, 15);
         }
-        if (mp_context && m_audioEnabled) mp_context->Audio.PlaySfx(m_despawnSfxId, 80.0f);
+        if (mp_context && m_audioEnabled) PlaySfx(m_despawnSfxId, 80.0f);
 
         if (ballEntity == m_ball)
         {
@@ -3635,7 +3866,7 @@ void GameScene::TriggerStormStrike()
         if (mp_context && m_audioEnabled && m_conductionSfxId != 0)
         {
             float zapPitch = 0.95f + static_cast<float>(rand() % 15) * 0.01f;
-            mp_context->Audio.PlaySfx(m_conductionSfxId, 100.0f, zapPitch);
+            PlaySfx(m_conductionSfxId, 100.0f, zapPitch);
         }
     }
 
@@ -3666,7 +3897,7 @@ void GameScene::TriggerStormStrike()
         if (m_lightningSfxId != 0)
         {
             float pitch = 0.92f + static_cast<float>(rand() % 20) * 0.01f;
-            mp_context->Audio.PlaySfx(m_lightningSfxId, 100.0f, pitch);
+            PlaySfx(m_lightningSfxId, 100.0f, pitch);
         }
     }
 
@@ -4612,7 +4843,7 @@ void GameScene::AddUltimateCharge(float amount)
         m_ultimateReady = true;
         if (mp_context && m_audioEnabled && m_ultimateReadySfxId != 0)
         {
-            mp_context->Audio.PlaySfx(m_ultimateReadySfxId, 95.0f);
+            PlaySfx(m_ultimateReadySfxId, 95.0f);
         }
         TriggerPostProcessFlash(0.015f, 0.4f, Color{0, 220, 255, 255}, 0.2f, Color{255, 240, 150, 255});
     }
@@ -4640,7 +4871,7 @@ void GameScene::TryTriggerUltimate()
     {
         if (m_audioEnabled && m_bounceSfxId != 0 && mp_context)
         {
-            mp_context->Audio.PlaySfx(m_bounceSfxId, 50.0f, 0.6f);
+            PlaySfx(m_bounceSfxId, 50.0f, 0.6f);
         }
         TriggerPostProcessFlash(0.015f, 0.4f, Color{0, 220, 255, 255}, 0.2f, Color{0, 240, 255, 255});
         return;
@@ -4691,7 +4922,7 @@ void GameScene::ClearActiveUltimates()
         {
             if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
             {
-                mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f, 60.0f, false);
+                mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f, AudioMixer::kNominalMusicLevel, false);
             }
             else
             {
@@ -4715,7 +4946,7 @@ void GameScene::ClearActiveUltimates()
         {
             if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
             {
-                mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f, 60.0f, false);
+                mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f, AudioMixer::kNominalMusicLevel, false);
             }
             else
             {
@@ -4742,7 +4973,7 @@ void GameScene::ClearActiveUltimates()
             {
                 if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
                 {
-                    mp_context->Audio.FadeToMusic(m_prePowerUpRainMusicPath, 1.2f, 60.0f, false);
+                    mp_context->Audio.FadeToMusic(m_prePowerUpRainMusicPath, 1.2f, AudioMixer::kNominalMusicLevel, false);
                 }
                 else
                 {
@@ -4754,7 +4985,7 @@ void GameScene::ClearActiveUltimates()
                 std::string cur = mp_context->Audio.GetCurrentMusicPath();
                 if (cur.find("lucky_drop_ultimate") != std::string::npos)
                 {
-                    mp_context->Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+                    mp_context->Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
                 }
             }
             m_prePowerUpRainMusicPath.clear();
@@ -4857,7 +5088,7 @@ void GameScene::ExecutePlasmaOrb(int level)
     {
         if (m_plasmaLaunchSfxId != 0 && m_audioEnabled)
         {
-            mp_context->Audio.PlaySfx(m_plasmaLaunchSfxId, 100.0f);
+            PlaySfx(m_plasmaLaunchSfxId, 100.0f);
         }
 
         std::string cur = mp_context->Audio.GetCurrentMusicPath();
@@ -4870,7 +5101,7 @@ void GameScene::ExecutePlasmaOrb(int level)
         }
         if (m_musicEnabled)
         {
-            mp_context->Audio.PlayMusic("Resources/audio/music/plasma_ultimate.wav", 100.0f, true);
+            mp_context->Audio.PlayMusic("Resources/audio/music/plasma_ultimate.wav");
         }
     }
     TriggerPostProcessFlash(0.04f, 0.65f, Color{150, 40, 255, 255}, 0.35f, Color{0, 220, 255, 255});
@@ -4905,7 +5136,7 @@ void GameScene::TriggerSoundWave(float targetHeightRatio, int damage, float dela
     {
         if (mp_context && m_audioEnabled && m_discoShockwaveSfxId != 0)
         {
-            mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f);
+            PlaySfx(m_discoShockwaveSfxId, 100.0f);
         }
         TweenEffects::Shake(m_registry, m_camera, 0.22f, 8.0f);
     }
@@ -4940,7 +5171,7 @@ void GameScene::ExecuteDiscoBall(int level)
         std::string musicPath = "Resources/audio/music/disco_ultimate_lvl" + std::to_string(m_discoLevel) + ".wav";
         if (m_musicEnabled)
         {
-            mp_context->Audio.PlayMusic(musicPath, 100.0f, true);
+            mp_context->Audio.PlayMusic(musicPath);
         }
     }
 
@@ -5108,7 +5339,7 @@ void GameScene::ExecutePowerUpRain(int level)
         }
         if (m_musicEnabled)
         {
-            mp_context->Audio.PlayMusic("Resources/audio/music/lucky_drop_ultimate.wav", 80.0f, true);
+            mp_context->Audio.PlayMusic("Resources/audio/music/lucky_drop_ultimate.wav");
         }
     }
 
@@ -5283,7 +5514,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
             if (mp_context && m_audioEnabled && m_bounceSfxId != 0)
             {
                 float pan = std::clamp(it->Position.X / 800.0f, -1.0f, 1.0f);
-                mp_context->Audio.PlaySfx(m_bounceSfxId, 45.0f, 1.35f, pan);
+                PlaySfx(m_bounceSfxId, 45.0f, 1.35f, pan);
             }
         }
 
@@ -5338,7 +5569,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                 SpawnPlasmaExplosionParticles(spawnPos, 40.0f, 10);
                 if (mp_context && m_audioEnabled && m_plasmaLaunchSfxId != 0)
                 {
-                    mp_context->Audio.PlaySfx(m_plasmaLaunchSfxId, 80.0f, 1.35f);
+                    PlaySfx(m_plasmaLaunchSfxId, 80.0f, 1.35f);
                 }
             }
             else
@@ -5350,7 +5581,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                     if (m_gameplayTime - s_lastDetonationSfx >= 0.05f)
                     {
                         s_lastDetonationSfx = m_gameplayTime;
-                        mp_context->Audio.PlaySfx(m_plasmaExplodeSfxId, 85.0f);
+                        PlaySfx(m_plasmaExplodeSfxId, 85.0f);
                     }
                 }
                 SpawnPlasmaExplosionParticles(it->Position, 75.0f, 18);
@@ -5399,7 +5630,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
             {
                 if (!m_prePlasmaMusicPath.empty() && m_prePlasmaMusicPath.find("plasma_ultimate") == std::string::npos)
                 {
-                    mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f, 60.0f, false);
+                    mp_context->Audio.FadeToMusic(m_prePlasmaMusicPath, 1.2f, AudioMixer::kNominalMusicLevel, false);
                 }
                 else
                 {
@@ -5430,7 +5661,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                 }
                 if (mp_context && m_audioEnabled && m_discoShockwaveSfxId != 0)
                 {
-                    mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f);
+                    PlaySfx(m_discoShockwaveSfxId, 100.0f);
                 }
                 TweenEffects::Shake(m_registry, m_camera, 0.22f, 8.0f);
             }
@@ -5603,11 +5834,11 @@ void GameScene::UpdateUltimateAbilities(float dt)
                         uint32_t hitSfx = (db.InstrumentIndex >= 0 && db.InstrumentIndex < 6) ? m_discoHitSfxIds[db.InstrumentIndex] : 0;
                         if (hitSfx != 0 && mp_context && m_audioEnabled)
                         {
-                            mp_context->Audio.PlaySfx(hitSfx, 100.0f);
+                            PlaySfx(hitSfx, 100.0f);
                         }
                         else if (m_conductionSfxId != 0 && mp_context && m_audioEnabled)
                         {
-                            mp_context->Audio.PlaySfx(m_conductionSfxId, 85.0f);
+                            PlaySfx(m_conductionSfxId, 85.0f);
                         }
                     }
                 });
@@ -5769,11 +6000,11 @@ void GameScene::UpdateUltimateAbilities(float dt)
             {
                 if (m_discoShockwaveSfxId != 0 && m_audioEnabled)
                 {
-                    mp_context->Audio.PlaySfx(m_discoShockwaveSfxId, 100.0f, 1.3f);
+                    PlaySfx(m_discoShockwaveSfxId, 100.0f, 1.3f);
                 }
                 if (m_musicEnabled)
                 {
-                    mp_context->Audio.PlayMusic("Resources/audio/music/disco_ultimate_crazy.wav", 100.0f, true);
+                    mp_context->Audio.PlayMusic("Resources/audio/music/disco_ultimate_crazy.wav");
                 }
             }
         }
@@ -5870,7 +6101,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
             }
             if (m_plasmaExplodeSfxId != 0 && mp_context && m_audioEnabled)
             {
-                mp_context->Audio.PlaySfx(m_plasmaExplodeSfxId, 90.0f);
+                PlaySfx(m_plasmaExplodeSfxId, 90.0f);
             }
             m_discoBigBalls.clear();
 
@@ -5896,7 +6127,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                     mp_context->Audio.TriggerDucking(0.20f, 1.6f);
                     if (m_discoVoiceoverSfxId != 0)
                     {
-                        mp_context->Audio.PlaySfx(m_discoVoiceoverSfxId, 100.0f);
+                        PlaySfx(m_discoVoiceoverSfxId, 100.0f);
                     }
                 }
                 m_discoGrandFinaleBannerTimer = 2.4f;
@@ -5909,7 +6140,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                 {
                     if (!m_preDiscoMusicPath.empty() && m_preDiscoMusicPath.find("disco_ultimate") == std::string::npos)
                     {
-                        mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f, 60.0f, false);
+                        mp_context->Audio.FadeToMusic(m_preDiscoMusicPath, 1.2f, AudioMixer::kNominalMusicLevel, false);
                     }
                     else
                     {
@@ -5921,7 +6152,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
                     std::string cur = mp_context->Audio.GetCurrentMusicPath();
                     if (cur.find("disco_ultimate") != std::string::npos)
                     {
-                        mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg", 100.0f, true);
+                        mp_context->Audio.PlayMusic("Resources/audio/music/Game-menu.ogg");
                     }
                 }
                 m_preDiscoMusicPath.clear();
@@ -5976,7 +6207,7 @@ void GameScene::UpdateUltimateAbilities(float dt)
             {
                 if (!m_prePowerUpRainMusicPath.empty() && m_prePowerUpRainMusicPath.find("lucky_drop_ultimate") == std::string::npos)
                 {
-                    mp_context->Audio.FadeToMusic(m_prePowerUpRainMusicPath, 1.2f, 60.0f, false);
+                    mp_context->Audio.FadeToMusic(m_prePowerUpRainMusicPath, 1.2f, AudioMixer::kNominalMusicLevel, false);
                 }
                 else
                 {
@@ -6030,7 +6261,7 @@ void GameScene::UpdateRegeneratingItemBricks(float dt)
 
             if (mp_context && m_audioEnabled && m_itemRegenRestoreSfxId != 0)
             {
-                mp_context->Audio.PlaySfx(m_itemRegenRestoreSfxId, 85.0f);
+                PlaySfx(m_itemRegenRestoreSfxId, 85.0f);
             }
         }
     });
@@ -6785,11 +7016,11 @@ void GameScene::UpdateVisualMalus(const float dt)
     {
         auto& cam = m_registry.GetComponent<Camera2D>(m_camera);
         cam.Zoom = currentZoom;
-        const float eventTilt = mp_eventSystem ? mp_eventSystem->GetArenaTiltAngle() : 0.0f;
-        const float eventShakeAngle = mp_eventSystem ? mp_eventSystem->GetCameraShakeAngle() : 0.0f;
+        const float eventTilt = (m_arenaEventsAllowed && mp_eventSystem) ? mp_eventSystem->GetArenaTiltAngle() : 0.0f;
+        const float eventShakeAngle = (m_arenaEventsAllowed && mp_eventSystem) ? mp_eventSystem->GetCameraShakeAngle() : 0.0f;
         cam.Rotation = currentRotation + eventTilt + eventShakeAngle;
 
-        const Vector2f eventShakeOffset = mp_eventSystem ? mp_eventSystem->GetCameraShakeOffset() : Vector2f{0.0f, 0.0f};
+        const Vector2f eventShakeOffset = (m_arenaEventsAllowed && mp_eventSystem) ? mp_eventSystem->GetCameraShakeOffset() : Vector2f{0.0f, 0.0f};
         cam.Position = eventShakeOffset;
     }
 
@@ -6813,7 +7044,7 @@ void GameScene::UpdateVisualMalus(const float dt)
     }
 
     // Emergency Arena Event Alarm Post-Processing Indicator
-    if (mp_eventSystem)
+    if (m_arenaEventsAllowed && mp_eventSystem)
     {
         m_postProcessParams.AlarmIntensity = mp_eventSystem->GetAlarmIntensity();
         m_postProcessParams.AlarmColor = mp_eventSystem->GetAlarmColor();
@@ -6918,7 +7149,7 @@ void GameScene::UpdateHazardZones(const float dt)
                     TriggerPostProcessFlash(0.02f, 0.45f, Color{0, 220, 255, 255}, 0.2f, Color{255, 255, 255, 255});
                     if (m_audioEnabled && m_bounceSfxId != 0 && mp_context)
                     {
-                        mp_context->Audio.PlaySfx(m_bounceSfxId, 120.0f, 0.6f);
+                        PlaySfx(m_bounceSfxId, 120.0f, 0.6f);
                     }
                     break;
                 case HazardEffectType::UltimateDrain:
@@ -6926,7 +7157,7 @@ void GameScene::UpdateHazardZones(const float dt)
                     TriggerPostProcessFlash(0.025f, 0.55f, Color{190, 20, 240, 255}, 0.25f, Color{240, 50, 255, 255});
                     if (m_audioEnabled && m_bounceSfxId != 0 && mp_context)
                     {
-                        mp_context->Audio.PlaySfx(m_bounceSfxId, 65.0f, 0.45f);
+                        PlaySfx(m_bounceSfxId, 65.0f, 0.45f);
                     }
                     break;
                 case HazardEffectType::AllMaluses:
@@ -7130,4 +7361,672 @@ void GameScene::RenderTopSpawnLight(GameContext& context)
     const Color lineCol{baseCol.r, baseCol.g, baseCol.b, static_cast<uint8_t>(std::clamp(190.0f * m_topSpawnLightAlpha, 0.0f, 220.0f))};
     context.Render.DrawLine(Vector2f{leftX, -448.5f}, Vector2f{rightX, -448.5f}, lineCol, 3.0f);
 }
+
+// =========================================================================
+// EVENT BRICK INSTANT TRIGGER & SUBTLE VISUAL FEEDBACK
+// =========================================================================
+
+void GameScene::TriggerEventBrick(Entity entity, const Vector2f& pos)
+{
+    if (!m_arenaEventsAllowed) return;
+    if (!m_registry.IsAlive(entity) || !m_registry.HasComponent<BrickComponent>(entity)) return;
+    auto& brick = m_registry.GetComponent<BrickComponent>(entity);
+    if (!brick.IsEventBrick || brick.EventAlreadyTriggered) return;
+    brick.EventAlreadyTriggered = true;
+
+    ArenaEventType fired = brick.TriggeredEvent;
+    if (mp_eventSystem)
+    {
+        if (brick.RandomEvent)
+        {
+            fired = mp_eventSystem->TriggerRandomEvent(/*skipWarning=*/true, /*subtleNotification=*/true);
+        }
+        else
+        {
+            mp_eventSystem->TriggerEvent(brick.TriggeredEvent, /*skipWarning=*/true, /*subtleNotification=*/true);
+            fired = brick.TriggeredEvent;
+        }
+    }
+
+    const ArenaEventDescriptor* desc = FindArenaEventDescriptor(fired);
+    const Color accent = desc ? desc->AccentColor : GetArenaEventColor(fired);
+
+    // Two staggered expanding energy ripples (crisp inner + wide soft outer)
+    m_eventRipples.push_back(EventRipple{pos, accent, 18.0f, 150.0f, 0.42f, 0.42f});
+    m_eventRipples.push_back(EventRipple{pos, Color{255, 255, 255, 220}, 10.0f, 220.0f, 0.58f, 0.58f});
+
+    SpawnExplosionParticles(pos, accent, 22);
+    SpawnLightFlash(pos, 460.0f, accent, 1.85f, 0.42f);
+    TriggerPostProcessFlash(
+        0.012f,
+        std::clamp(m_currentTheme.VignetteBaseIntensity + 0.14f, 0.28f, 0.55f),
+        accent,
+        0.08f,
+        accent
+    );
+
+    if (mp_context && m_audioEnabled)
+    {
+        const uint32_t sfx = (m_ultimateReadySfxId != 0) ? m_ultimateReadySfxId : m_scoreRecordedSfxId;
+        if (sfx != 0)
+        {
+            PlaySfx(sfx, 70.0f, 1.15f);
+        }
+    }
+
+    m_eventToastTitle = desc ? std::string(desc->DisplayName) : GetArenaEventName(fired);
+    m_eventToastDesc = desc ? std::string(desc->Description) : GetArenaEventDescription(fired);
+    m_eventToastColor = accent;
+    m_eventToastMaxDuration = 2.8f;
+    m_eventToastTimer = m_eventToastMaxDuration;
+}
+
+void GameScene::UpdateEventBrickFeedback(float dt)
+{
+    for (auto it = m_eventRipples.begin(); it != m_eventRipples.end(); )
+    {
+        it->Lifetime -= dt;
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_eventRipples.erase(it);
+        }
+        else
+        {
+            const float progress = 1.0f - (it->Lifetime / std::max(0.001f, it->MaxLifetime));
+            const float eased = 1.0f - (1.0f - progress) * (1.0f - progress);
+            it->Radius = 14.0f + (it->MaxRadius - 14.0f) * eased;
+            ++it;
+        }
+    }
+
+    if (m_eventToastTimer > 0.0f)
+    {
+        m_eventToastTimer = std::max(0.0f, m_eventToastTimer - dt);
+    }
+}
+
+void GameScene::RenderEventBrickWorldFeedback(GameContext& context)
+{
+    for (const auto& ripple : m_eventRipples)
+    {
+        const float ratio = std::clamp(ripple.Lifetime / std::max(0.001f, ripple.MaxLifetime), 0.0f, 1.0f);
+        const uint8_t alpha = static_cast<uint8_t>(220.0f * ratio * ratio);
+        Color col{ripple.Accent.r, ripple.Accent.g, ripple.Accent.b, alpha};
+        context.Render.DrawCircleOutline(ripple.Radius, Transform2D{ripple.Position}, col, -(1.5f + 2.5f * ratio));
+    }
+}
+
+void GameScene::RenderEventBrickToastHUD(GameContext& context)
+{
+    if (m_eventToastTimer <= 0.0f || m_fontId == 0 || m_eventToastTitle.empty()) return;
+
+    const float elapsed = m_eventToastMaxDuration - m_eventToastTimer;
+    const float fadeIn = std::clamp(elapsed / 0.18f, 0.0f, 1.0f);
+    const float fadeOut = std::clamp(m_eventToastTimer / 0.45f, 0.0f, 1.0f);
+    const float alphaRatio = std::min(fadeIn, fadeOut);
+    if (alphaRatio <= 0.01f) return;
+
+    const Vector2f winSize = context.Render.GetLogicalViewSize();
+    const float cx = winSize.X * 0.5f;
+    const float slideOffset = (1.0f - fadeIn) * -14.0f;
+    const float cy = 88.0f + slideOffset;
+    const float pillW = 340.0f;
+    const float pillH = 44.0f;
+
+    const uint8_t bgA = static_cast<uint8_t>(205.0f * alphaRatio);
+    const uint8_t borderA = static_cast<uint8_t>(215.0f * alphaRatio);
+    const uint8_t textA = static_cast<uint8_t>(255.0f * alphaRatio);
+    const uint8_t subA = static_cast<uint8_t>(210.0f * alphaRatio);
+
+    context.Render.DrawRectangle(pillW, pillH, Transform2D{Vector2f{cx, cy}}, Color{12, 16, 28, bgA});
+    context.Render.DrawRectangleOutline(pillW, pillH, Transform2D{Vector2f{cx, cy}}, Color{m_eventToastColor.r, m_eventToastColor.g, m_eventToastColor.b, borderA}, 1.5f);
+    // Left accent bar
+    context.Render.DrawRectangle(5.0f, pillH, Transform2D{Vector2f{cx - pillW * 0.5f + 2.5f, cy}}, Color{m_eventToastColor.r, m_eventToastColor.g, m_eventToastColor.b, textA});
+
+    context.Render.DrawTextCentered("EVENT: " + m_eventToastTitle, m_fontId, 18.0f, Transform2D{Vector2f{cx + 2.0f, cy - 8.0f}}, Color{m_eventToastColor.r, m_eventToastColor.g, m_eventToastColor.b, textA});
+    if (!m_eventToastDesc.empty())
+    {
+        context.Render.DrawTextCentered(m_eventToastDesc, m_fontId, 13.0f, Transform2D{Vector2f{cx + 2.0f, cy + 10.0f}}, Color{215, 228, 245, subA});
+    }
+}
+
+// =========================================================================
+// UNIFIED REWORKED PADDLE DAMAGE, FEEDBACK & LIFE-BASED RESPAWN SYSTEM
+// =========================================================================
+
+void GameScene::ResetPaddleDurability(float spawnInvuln)
+{
+    m_isPaddleExploding = false;
+    m_paddleRespawnTimer = 0.0f;
+    m_paddleHitFlashTimer = 0.0f;
+    m_paddleShieldFlashTimer = 0.0f;
+    m_paddleRecoilY = 0.0f;
+    m_paddleRecoilTilt = 0.0f;
+    m_paddleSquashTimer = 0.0f;
+    m_paddleRematerializeTimer = (spawnInvuln > 0.0f) ? 0.42f : 0.0f;
+    m_paddleCritSparkTimer = 0.0f;
+    m_paddleHudRevealTimer = 0.0f;
+    m_paddleBeamFeedbackCooldown = 0.0f;
+    m_paddleImpactRipples.clear();
+    m_floatingCallouts.clear();
+
+    if (m_registry.IsAlive(m_paddle))
+    {
+        if (m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+        {
+            m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle).ResetFull(spawnInvuln);
+        }
+        if (m_registry.HasComponent<SpriteComponent>(m_paddle))
+        {
+            auto& sp = m_registry.GetComponent<SpriteComponent>(m_paddle);
+            sp.Tint = Colors::White;
+            sp.Tint.a = 255;
+        }
+        if (m_registry.HasComponent<Transform2D>(m_paddle))
+        {
+            auto& tr = m_registry.GetComponent<Transform2D>(m_paddle);
+            tr.Position.Y = m_paddleBaseY;
+            tr.Rotation = 0.0f;
+            tr.Scale.Y = 1.0f;
+        }
+    }
+}
+
+bool GameScene::DamagePaddle(float rawDamage, const Vector2f& impactPos, GameContext& context, bool ignoreInvuln)
+{
+    if (rawDamage <= 0.0f || m_isPaddleExploding) return false;
+    if (!m_registry.IsAlive(m_paddle)) return false;
+    if (context.Rules.GetRule(Rule::Gameplay::Invincible)) return false;
+
+    if (!m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+    {
+        m_registry.AddComponent<PaddleDurabilityComponent>(m_paddle, PaddleDurabilityComponent{});
+    }
+
+    auto& dur = m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle);
+    if (!ignoreInvuln && dur.IsInvulnerable()) return false;
+
+    const float prevShield = dur.CurrentShield;
+    const float prevHull = dur.CurrentDurability;
+    const PaddleFractureState prevState = dur.GetFractureState();
+
+    const bool applied = dur.TakeDamage(rawDamage, ignoreInvuln);
+    if (!applied) return false;
+
+    const float hullLost = std::max(0.0f, prevHull - dur.CurrentDurability);
+    const float shieldLost = std::max(0.0f, prevShield - dur.CurrentShield);
+    const bool shieldOnly = (shieldLost > 0.01f && hullLost <= 0.01f);
+
+    Vector2f paddlePos{0.0f, m_paddleBaseY};
+    if (m_registry.HasComponent<Transform2D>(m_paddle))
+    {
+        paddlePos = m_registry.GetComponent<Transform2D>(m_paddle).Position;
+    }
+
+    const Vector2f hitPoint = (impactPos.Length() > 0.001f) ? impactPos : paddlePos;
+    const float hitOffsetX = std::clamp((hitPoint.X - paddlePos.X) / 70.0f, -1.0f, 1.0f);
+
+    // Throttle continuous beam feedback so beams drain smoothly without audio/callout spam
+    const bool isContinuous = ignoreInvuln && rawDamage < 12.0f;
+    const bool emitDiscreteFeedback = !isContinuous || (m_paddleBeamFeedbackCooldown <= 0.0f);
+    if (isContinuous && emitDiscreteFeedback)
+    {
+        m_paddleBeamFeedbackCooldown = 0.14f;
+    }
+
+    m_paddleHudRevealTimer = 3.5f;
+
+    if (dur.IsDestroyed())
+    {
+        // Paddle shattered -> deduct 1 life, play visceral burst, respawn cleanly if lives remain!
+        m_isPaddleExploding = true;
+        m_paddleRespawnTimer = 0.92f;
+        m_paddleRecoilY = 0.0f;
+        m_paddleRecoilTilt = 0.0f;
+        m_paddleHitFlashTimer = 0.0f;
+        m_paddleShieldFlashTimer = 0.0f;
+
+        if (m_registry.HasComponent<SpriteComponent>(m_paddle))
+        {
+            m_registry.GetComponent<SpriteComponent>(m_paddle).Tint.a = 0;
+        }
+        if (mp_paddleSystem)
+        {
+            mp_paddleSystem->SetInputEnabled(false);
+            mp_paddleSystem->DetachBall();
+        }
+        if (mp_ballSystem)
+        {
+            mp_ballSystem->ClearBalls(m_ball);
+            mp_ballSystem->ClearLasers();
+        }
+        if (m_registry.IsAlive(m_ball) && m_registry.HasComponent<RigidBody>(m_ball))
+        {
+            auto& bRb = m_registry.GetComponent<RigidBody>(m_ball);
+            bRb.Velocity = Vector2f{0.0f, 0.0f};
+            bRb.IsKinematic = true;
+        }
+        if (m_registry.IsAlive(m_ball) && m_registry.HasComponent<SpriteComponent>(m_ball))
+        {
+            m_registry.GetComponent<SpriteComponent>(m_ball).Tint.a = 0;
+        }
+
+        // Layered shatter explosion (hot core + hull shards + expanding shockwaves + light flash)
+        SpawnFireExplosionParticles(paddlePos, 115.0f, 52);
+        SpawnExplosionParticles(paddlePos, Color{255, 110, 60, 255}, 34);
+        SpawnExplosionParticles(paddlePos, Color{230, 240, 255, 255}, 24);
+        SpawnLightFlash(paddlePos, 580.0f, Color{255, 120, 65, 255}, 2.4f, 0.55f);
+
+        m_paddleImpactRipples.push_back(PaddleImpactRipple{paddlePos, Color{255, 85, 55, 255}, 14.0f, 185.0f, 0.48f, 0.48f});
+        m_paddleImpactRipples.push_back(PaddleImpactRipple{paddlePos, Color{255, 225, 160, 255}, 8.0f, 125.0f, 0.34f, 0.34f});
+
+        TweenEffects::Shake(m_registry, m_camera, 0.34f, 15.0f);
+        TriggerPostProcessFlash(0.032f, 0.72f, Color{220, 35, 35, 255}, 0.24f, Color{255, 110, 50, 255});
+
+        if (m_audioEnabled)
+        {
+            if (m_explosionSfxId != 0) PlaySfx(m_explosionSfxId, 95.0f, 0.78f);
+            if (m_despawnSfxId != 0) PlaySfx(m_despawnSfxId, 75.0f, 0.85f);
+        }
+
+        m_scoreManager.BreakCombo();
+
+        const bool infiniteLives = context.Rules.GetRule(Rule::Gameplay::InfiniteLives);
+        if (!infiniteLives)
+        {
+            if (m_uiController)
+            {
+                m_uiController->TriggerLifeLostAnimation(m_lives);
+            }
+            m_lives = std::max(0, m_lives - 1);
+            context.Events.Publish(LivesChangedEvent(m_lives));
+        }
+
+        m_floatingCallouts.push_back(FloatingCallout{
+            Vector2f{paddlePos.X, paddlePos.Y - 26.0f},
+            Vector2f{0.0f, -46.0f},
+            infiniteLives ? "HULL BREACH!" : "HULL BREACH  -1 LIFE",
+            Color{255, 95, 80, 255},
+            1.15f,
+            1.15f,
+            22.0f
+        });
+
+        OnPaddleShattered(context);
+        return true;
+    }
+
+    if (emitDiscreteFeedback)
+    {
+        if (shieldOnly)
+        {
+            m_paddleShieldFlashTimer = 0.24f;
+            m_paddleRecoilY = std::min(7.0f, m_paddleRecoilY + 3.5f);
+            m_paddleRecoilTilt = std::clamp(hitOffsetX * 5.0f, -6.0f, 6.0f);
+            m_paddleSquashTimer = 0.14f;
+
+            SpawnExplosionParticles(hitPoint, Color{85, 225, 255, 255}, 12);
+            SpawnLightFlash(hitPoint, 200.0f, Color{80, 215, 255, 255}, 1.25f, 0.18f);
+            m_paddleImpactRipples.push_back(PaddleImpactRipple{hitPoint, Color{85, 225, 255, 255}, 8.0f, 76.0f, 0.28f, 0.28f});
+
+            if (m_audioEnabled && m_bounceSfxId != 0)
+            {
+                PlaySfx(m_bounceSfxId, 60.0f, 1.45f);
+            }
+
+            if (!isContinuous)
+            {
+                m_floatingCallouts.push_back(FloatingCallout{
+                    Vector2f{hitPoint.X, paddlePos.Y - 24.0f},
+                    Vector2f{hitOffsetX * 18.0f, -52.0f},
+                    "SHIELD",
+                    Color{110, 235, 255, 255},
+                    0.75f,
+                    0.75f,
+                    17.0f
+                });
+            }
+        }
+        else
+        {
+            const float hullRatio = dur.GetDurabilityRatio();
+            m_paddleHitFlashTimer = 0.22f;
+            m_paddleRecoilY = std::min(11.0f, m_paddleRecoilY + (isContinuous ? 3.5f : 6.5f));
+            m_paddleRecoilTilt = std::clamp(hitOffsetX * 8.5f, -9.0f, 9.0f);
+            m_paddleSquashTimer = 0.19f;
+
+            const Color impactColor = (hullRatio < 0.30f) ? Color{255, 65, 55, 255} : Color{255, 145, 55, 255};
+            SpawnExplosionParticles(hitPoint, impactColor, isContinuous ? 8 : 18);
+            SpawnExplosionParticles(hitPoint, Color{255, 235, 185, 255}, isContinuous ? 4 : 8);
+            SpawnLightFlash(hitPoint, 250.0f, impactColor, 1.55f, 0.22f);
+            m_paddleImpactRipples.push_back(PaddleImpactRipple{hitPoint, impactColor, 10.0f, 96.0f, 0.32f, 0.32f});
+
+            // Calibrated micro-shake & clean non-distracting vignette pulse
+            TweenEffects::Shake(m_registry, m_camera, isContinuous ? 0.08f : 0.16f, isContinuous ? 4.5f : 8.5f);
+            TriggerPostProcessFlash(
+                isContinuous ? 0.010f : 0.020f,
+                std::max(m_currentTheme.VignetteBaseIntensity + 0.16f, isContinuous ? 0.38f : 0.48f),
+                Color{225, 45, 45, 255},
+                isContinuous ? 0.04f : 0.10f,
+                impactColor
+            );
+
+            if (m_audioEnabled)
+            {
+                const float crackPitch = 0.72f + 0.52f * hullRatio;
+                const uint32_t sfx = (m_paddleCrackSfxId != 0) ? m_paddleCrackSfxId : m_bounceSfxId;
+                if (sfx != 0)
+                {
+                    PlaySfx(sfx, isContinuous ? 48.0f : 82.0f, crackPitch);
+                }
+            }
+
+            if (!isContinuous)
+            {
+                const PaddleFractureState newState = dur.GetFractureState();
+                const bool enteredCritical = (newState == PaddleFractureState::Critical && prevState != PaddleFractureState::Critical);
+                const std::string label = enteredCritical
+                    ? "CRITICAL!"
+                    : ("-" + std::to_string(std::max(1, static_cast<int>(std::round(hullLost)))));
+                m_floatingCallouts.push_back(FloatingCallout{
+                    Vector2f{hitPoint.X, paddlePos.Y - 24.0f},
+                    Vector2f{hitOffsetX * 22.0f, -58.0f},
+                    label,
+                    enteredCritical ? Color{255, 70, 60, 255} : Color{255, 195, 95, 255},
+                    enteredCritical ? 1.05f : 0.80f,
+                    enteredCritical ? 1.05f : 0.80f,
+                    enteredCritical ? 21.0f : 18.0f
+                });
+            }
+        }
+    }
+
+    return true;
+}
+
+void GameScene::UpdatePaddleDamageSystem(float dt, GameContext& context)
+{
+    if (m_paddleHitFlashTimer > 0.0f) m_paddleHitFlashTimer = std::max(0.0f, m_paddleHitFlashTimer - dt);
+    if (m_paddleShieldFlashTimer > 0.0f) m_paddleShieldFlashTimer = std::max(0.0f, m_paddleShieldFlashTimer - dt);
+    if (m_paddleSquashTimer > 0.0f) m_paddleSquashTimer = std::max(0.0f, m_paddleSquashTimer - dt);
+    if (m_paddleRematerializeTimer > 0.0f) m_paddleRematerializeTimer = std::max(0.0f, m_paddleRematerializeTimer - dt);
+    if (m_paddleHudRevealTimer > 0.0f) m_paddleHudRevealTimer = std::max(0.0f, m_paddleHudRevealTimer - dt);
+    if (m_paddleBeamFeedbackCooldown > 0.0f) m_paddleBeamFeedbackCooldown = std::max(0.0f, m_paddleBeamFeedbackCooldown - dt);
+
+    // Decay directional recoil and impact tilt smoothly back to neutral
+    const float decay = std::exp(-16.0f * dt);
+    m_paddleRecoilY *= decay;
+    m_paddleRecoilTilt *= decay;
+    if (std::abs(m_paddleRecoilY) < 0.05f) m_paddleRecoilY = 0.0f;
+    if (std::abs(m_paddleRecoilTilt) < 0.05f) m_paddleRecoilTilt = 0.0f;
+
+    // Update impact ripples
+    for (auto it = m_paddleImpactRipples.begin(); it != m_paddleImpactRipples.end(); )
+    {
+        it->Lifetime -= dt;
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_paddleImpactRipples.erase(it);
+        }
+        else
+        {
+            const float progress = 1.0f - (it->Lifetime / std::max(0.001f, it->MaxLifetime));
+            const float eased = 1.0f - (1.0f - progress) * (1.0f - progress);
+            it->Radius = 8.0f + (it->MaxRadius - 8.0f) * eased;
+            ++it;
+        }
+    }
+
+    // Update floating damage callouts
+    for (auto it = m_floatingCallouts.begin(); it != m_floatingCallouts.end(); )
+    {
+        it->Lifetime -= dt;
+        if (it->Lifetime <= 0.0f)
+        {
+            it = m_floatingCallouts.erase(it);
+        }
+        else
+        {
+            it->Position = it->Position + it->Velocity * dt;
+            it->Velocity.Y *= std::exp(-2.2f * dt);
+            ++it;
+        }
+    }
+
+    // Handle shatter explosion countdown and clean respawn if lives remain
+    if (m_isPaddleExploding)
+    {
+        m_paddleRespawnTimer -= dt;
+        if (m_paddleRespawnTimer <= 0.0f)
+        {
+            m_paddleRespawnTimer = 0.0f;
+            const bool infiniteLives = context.Rules.GetRule(Rule::Gameplay::InfiniteLives);
+            if (m_lives > 0 || infiniteLives)
+            {
+                m_isPaddleExploding = false;
+                if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+                {
+                    m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle).ResetFull(1.8f);
+                }
+                if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<SpriteComponent>(m_paddle))
+                {
+                    auto& sp = m_registry.GetComponent<SpriteComponent>(m_paddle);
+                    sp.Tint = Colors::White;
+                    sp.Tint.a = 255;
+                }
+                if (m_registry.IsAlive(m_ball) && m_registry.HasComponent<SpriteComponent>(m_ball))
+                {
+                    m_registry.GetComponent<SpriteComponent>(m_ball).Tint.a = 255;
+                }
+
+                m_paddleRematerializeTimer = 0.45f;
+                m_paddleHudRevealTimer = 2.0f;
+
+                ResetBallAndPaddle(true);
+                if (m_registry.IsAlive(m_paddle) && m_registry.HasComponent<Transform2D>(m_paddle))
+                {
+                    const Vector2f rp = m_registry.GetComponent<Transform2D>(m_paddle).Position;
+                    SpawnExplosionParticles(rp, Color{90, 235, 255, 255}, 24);
+                    SpawnLightFlash(rp, 360.0f, Color{90, 235, 255, 255}, 1.7f, 0.35f);
+                    m_paddleImpactRipples.push_back(PaddleImpactRipple{rp, Color{90, 235, 255, 255}, 12.0f, 130.0f, 0.38f, 0.38f});
+                }
+
+                OnPaddleRespawned(context);
+            }
+        }
+        return;
+    }
+
+    if (!m_registry.IsAlive(m_paddle)) return;
+
+    if (m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+    {
+        auto& dur = m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle);
+        dur.Update(dt);
+
+        // Ambient warning sparks when hull is critical
+        if (dur.GetFractureState() == PaddleFractureState::Critical && m_registry.HasComponent<Transform2D>(m_paddle))
+        {
+            m_paddleCritSparkTimer -= dt;
+            if (m_paddleCritSparkTimer <= 0.0f)
+            {
+                m_paddleCritSparkTimer = 0.16f + static_cast<float>(rand() % 12) * 0.01f;
+                const auto& pt = m_registry.GetComponent<Transform2D>(m_paddle);
+                const float offX = (static_cast<float>(rand() % 100) - 50.0f) * pt.Scale.X;
+                SpawnExplosionParticles(Vector2f{pt.Position.X + offX, pt.Position.Y - 4.0f}, Color{255, 110, 45, 255}, 2);
+            }
+        }
+    }
+
+    // Apply subtle non-destructive visual recoil, tilt, squash & arrival scale-in
+    if (m_registry.HasComponent<Transform2D>(m_paddle))
+    {
+        auto& pt = m_registry.GetComponent<Transform2D>(m_paddle);
+        pt.Position.Y = m_paddleBaseY + m_paddleRecoilY;
+        pt.Rotation = m_paddleRecoilTilt;
+
+        float targetScaleY = 1.0f;
+        if (m_paddleSquashTimer > 0.0f)
+        {
+            const float t = m_paddleSquashTimer / 0.19f;
+            targetScaleY = 1.0f - 0.24f * std::sin(t * 3.14159265f);
+        }
+        else if (m_paddleRematerializeTimer > 0.0f)
+        {
+            const float progress = 1.0f - (m_paddleRematerializeTimer / 0.45f);
+            targetScaleY = 0.35f + 0.65f * (1.0f - (1.0f - progress) * (1.0f - progress));
+        }
+        pt.Scale.Y = targetScaleY;
+    }
+}
+
+void GameScene::RenderPaddleDamageFeedback(GameContext& context)
+{
+    // 1. Expanding impact & rematerialize ripples
+    for (const auto& ripple : m_paddleImpactRipples)
+    {
+        const float ratio = std::clamp(ripple.Lifetime / std::max(0.001f, ripple.MaxLifetime), 0.0f, 1.0f);
+        const uint8_t alpha = static_cast<uint8_t>(225.0f * ratio * ratio);
+        Color col{ripple.Accent.r, ripple.Accent.g, ripple.Accent.b, alpha};
+        context.Render.DrawCircleOutline(ripple.Radius, Transform2D{ripple.Position}, col, -(1.5f + 2.5f * ratio));
+    }
+
+    // 2. Paddle surface damage overlays, shield rim, invulnerability shimmer & docked micro hull bar
+    if (!m_isPaddleExploding && m_registry.IsAlive(m_paddle) &&
+        m_registry.HasComponent<Transform2D>(m_paddle) &&
+        m_registry.HasComponent<BoxCollider>(m_paddle) &&
+        m_registry.HasComponent<PaddleDurabilityComponent>(m_paddle))
+    {
+        const auto& pt = m_registry.GetComponent<Transform2D>(m_paddle);
+        const auto& col = m_registry.GetComponent<BoxCollider>(m_paddle);
+        const auto& dur = m_registry.GetComponent<PaddleDurabilityComponent>(m_paddle);
+
+        const Vector2f size = col.GetEffectiveSize(pt.Scale);
+        const float halfW = size.X * 0.5f;
+        const float halfH = size.Y * 0.5f;
+        const Vector2f p = pt.Position;
+
+        // A. Spawn invulnerability shimmer
+        if (dur.IsInvulnerable())
+        {
+            const float shimmer = 0.5f + 0.5f * std::sin(m_gameplayTime * 22.0f);
+            const uint8_t a = static_cast<uint8_t>(95 + 125 * shimmer);
+            context.Render.DrawRectangleOutline(size.X + 8.0f, size.Y + 8.0f, Transform2D{p, pt.Rotation}, Color{135, 240, 255, a}, 2.0f);
+        }
+
+        // B. Rematerialize holographic scan glow
+        if (m_paddleRematerializeTimer > 0.0f)
+        {
+            const float t = m_paddleRematerializeTimer / 0.45f;
+            const uint8_t a = static_cast<uint8_t>(180.0f * t);
+            context.Render.DrawRectangle(size.X + 6.0f, size.Y + 6.0f, Transform2D{p, pt.Rotation}, Color{100, 235, 255, a});
+        }
+
+        // C. Progressive glowing fracture veins (clearly readable without obscuring silhouette)
+        const PaddleFractureState fState = dur.GetFractureState();
+        if (fState != PaddleFractureState::Pristine)
+        {
+            const float pulse = 0.5f + 0.5f * std::sin(m_gameplayTime * (fState == PaddleFractureState::Critical ? 14.0f : 6.0f));
+            Color crackGlow = (fState == PaddleFractureState::Scratched)
+                ? Color{255, 200, 95, 195}
+                : (fState == PaddleFractureState::Fractured
+                    ? Color{255, 125, 45, static_cast<uint8_t>(205 + 45 * pulse)}
+                    : Color{255, 55, 45, static_cast<uint8_t>(215 + 40 * pulse)});
+
+            const float thick = (fState == PaddleFractureState::Critical) ? 2.4f : 1.8f;
+
+            // Left fracture vein
+            context.Render.DrawLine(Vector2f{p.X - halfW * 0.42f, p.Y - halfH + 1.0f}, Vector2f{p.X - halfW * 0.28f, p.Y + 1.0f}, crackGlow, thick);
+            context.Render.DrawLine(Vector2f{p.X - halfW * 0.28f, p.Y + 1.0f}, Vector2f{p.X - halfW * 0.36f, p.Y + halfH - 1.0f}, crackGlow, thick * 0.85f);
+
+            if (fState == PaddleFractureState::Fractured || fState == PaddleFractureState::Critical)
+            {
+                // Right branching fissure
+                context.Render.DrawLine(Vector2f{p.X + halfW * 0.38f, p.Y - halfH + 1.0f}, Vector2f{p.X + halfW * 0.22f, p.Y - 1.0f}, crackGlow, thick);
+                context.Render.DrawLine(Vector2f{p.X + halfW * 0.22f, p.Y - 1.0f}, Vector2f{p.X + halfW * 0.30f, p.Y + halfH - 1.0f}, crackGlow, thick);
+                context.Render.DrawLine(Vector2f{p.X + halfW * 0.22f, p.Y - 1.0f}, Vector2f{p.X + halfW * 0.05f, p.Y + 3.0f}, crackGlow, thick * 0.8f);
+            }
+
+            if (fState == PaddleFractureState::Critical)
+            {
+                // Center magma fault line + pulsing danger perimeter
+                context.Render.DrawLine(Vector2f{p.X - 4.0f, p.Y - halfH + 1.0f}, Vector2f{p.X + 7.0f, p.Y}, Color{255, 235, 190, 235}, 2.0f);
+                context.Render.DrawLine(Vector2f{p.X + 7.0f, p.Y}, Vector2f{p.X - 6.0f, p.Y + halfH - 1.0f}, crackGlow, 2.2f);
+                context.Render.DrawRectangleOutline(size.X + 4.0f, size.Y + 4.0f, Transform2D{p, pt.Rotation}, Color{255, 55, 45, static_cast<uint8_t>(110 + 125 * pulse)}, 2.0f);
+            }
+        }
+
+        // D. Crisp white-amber impact flash overlay
+        if (m_paddleHitFlashTimer > 0.0f)
+        {
+            const float f = m_paddleHitFlashTimer / 0.22f;
+            const uint8_t flashA = static_cast<uint8_t>(210.0f * f);
+            context.Render.DrawRectangle(size.X, size.Y, Transform2D{p, pt.Rotation}, Color{255, 225, 195, flashA});
+            context.Render.DrawRectangleOutline(size.X + 4.0f, size.Y + 4.0f, Transform2D{p, pt.Rotation}, Color{255, 90, 55, flashA}, 2.2f);
+        }
+
+        // E. Energy Shield upper rim arc
+        if (dur.CurrentShield > 0.0f)
+        {
+            const float shieldFlash = (m_paddleShieldFlashTimer > 0.0f) ? (m_paddleShieldFlashTimer / 0.24f) : 0.0f;
+            const float sPulse = 0.5f + 0.5f * std::sin(m_gameplayTime * 8.0f);
+            const uint8_t rimA = static_cast<uint8_t>(std::min(255.0f, 165.0f + 50.0f * sPulse + 80.0f * shieldFlash));
+            Color rimCol{static_cast<uint8_t>(85 + 150 * shieldFlash), static_cast<uint8_t>(220 + 35 * shieldFlash), 255, rimA};
+            context.Render.DrawRectangleOutline(size.X + 10.0f, size.Y + 10.0f, Transform2D{p, pt.Rotation}, rimCol, 2.2f + shieldFlash * 1.5f);
+            context.Render.DrawLine(Vector2f{p.X - halfW - 4.0f, p.Y - halfH - 5.0f}, Vector2f{p.X + halfW + 4.0f, p.Y - halfH - 5.0f}, Color{190, 248, 255, rimA}, 2.8f);
+        }
+
+        // F. Sleek docked hull micro-bar (auto-hides when 100% hull & no shield)
+        const float hullRatio = dur.GetDurabilityRatio();
+        const bool showBar = (hullRatio < 0.995f) || (dur.CurrentShield > 0.0f) || (m_paddleHudRevealTimer > 0.0f);
+        if (showBar)
+        {
+            float barAlpha = 1.0f;
+            if (hullRatio >= 0.995f && dur.CurrentShield <= 0.0f)
+            {
+                barAlpha = std::clamp(m_paddleHudRevealTimer / 0.8f, 0.0f, 1.0f);
+            }
+
+            const float barW = std::clamp(size.X * 0.88f, 84.0f, 180.0f);
+            const float barH = 5.0f;
+            const float barY = p.Y + halfH + 14.0f;
+
+            const uint8_t bgA = static_cast<uint8_t>(185.0f * barAlpha);
+            const uint8_t fgA = static_cast<uint8_t>(240.0f * barAlpha);
+
+            context.Render.DrawRectangle(barW + 4.0f, barH + 4.0f, Transform2D{Vector2f{p.X, barY}}, Color{10, 14, 24, bgA});
+            context.Render.DrawRectangleOutline(barW + 4.0f, barH + 4.0f, Transform2D{Vector2f{p.X, barY}}, Color{90, 115, 150, static_cast<uint8_t>(145.0f * barAlpha)}, 1.0f);
+
+            Color hullCol = (hullRatio > 0.60f)
+                ? Color{70, 235, 130, fgA}
+                : (hullRatio > 0.30f ? Color{255, 195, 55, fgA} : Color{255, 65, 55, fgA});
+
+            const float fillW = barW * hullRatio;
+            if (fillW > 0.5f)
+            {
+                context.Render.DrawRectangle(fillW, barH, Transform2D{Vector2f{p.X - barW * 0.5f + fillW * 0.5f, barY}}, hullCol);
+            }
+
+            if (dur.CurrentShield > 0.0f)
+            {
+                const float shieldRatio = std::clamp(dur.CurrentShield / std::max(1.0f, dur.MaxShield), 0.0f, 1.0f);
+                const float shW = barW * shieldRatio;
+                context.Render.DrawRectangle(shW, 2.5f, Transform2D{Vector2f{p.X - barW * 0.5f + shW * 0.5f, barY - barH * 0.5f - 2.0f}}, Color{85, 225, 255, fgA});
+            }
+        }
+    }
+
+    // 3. Floating damage & breach callouts in world space
+    if (m_fontId != 0)
+    {
+        for (const auto& c : m_floatingCallouts)
+        {
+            const float ratio = std::clamp(c.Lifetime / std::max(0.001f, c.MaxLifetime), 0.0f, 1.0f);
+            const uint8_t a = static_cast<uint8_t>(255.0f * std::min(1.0f, ratio * 1.6f));
+            context.Render.DrawTextCentered(c.Text, m_fontId, c.FontSize, Transform2D{Vector2f{c.Position.X + 1.5f, c.Position.Y + 1.5f}}, Color{0, 0, 0, static_cast<uint8_t>(a * 0.65f)});
+            context.Render.DrawTextCentered(c.Text, m_fontId, c.FontSize, Transform2D{c.Position}, Color{c.Tint.r, c.Tint.g, c.Tint.b, a});
+        }
+    }
+}
+
 

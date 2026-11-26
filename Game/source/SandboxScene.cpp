@@ -97,7 +97,7 @@ namespace
             case PowerUpType::BottomBarrier: return "LASER BARRIER";
             case PowerUpType::MagnetPaddle:  return "MAGNET PADDLE";
             case PowerUpType::GhostBall:     return "GHOST BALL";
-            case PowerUpType::GlitchMalus:   return "GLITCH MALUS";
+            case PowerUpType::GlitchMalus:   return "GLITCH DEBUFF";
             default:                         return "POWER-UP";
         }
     }
@@ -134,7 +134,7 @@ namespace
         }
     }
 
-    const char* GetLightingModeName(LightingMode mode)
+    const char* GetLightingLcdLabel(LightingMode mode)
     {
         switch (mode)
         {
@@ -149,14 +149,14 @@ namespace
     {
         switch (type)
         {
-            case HazardEffectType::AllMaluses:        return "MALUS: ALL COMBINED";
-            case HazardEffectType::ScreenGlitch:      return "MALUS: SCREEN GLITCH";
-            case HazardEffectType::CameraTilt:        return "MALUS: CAMERA TILT";
-            case HazardEffectType::CameraZoomPulse:   return "MALUS: ZOOM PULSE";
-            case HazardEffectType::TemporalAudioWarp: return "MALUS: AUDIO WARP";
-            case HazardEffectType::UltimateDrain:     return "MALUS: ULTIMATE DRAIN";
+            case HazardEffectType::AllMaluses:        return "DEBUFF: ALL COMBINED";
+            case HazardEffectType::ScreenGlitch:      return "DEBUFF: SCREEN GLITCH";
+            case HazardEffectType::CameraTilt:        return "DEBUFF: CAMERA TILT";
+            case HazardEffectType::CameraZoomPulse:   return "DEBUFF: ZOOM PULSE";
+            case HazardEffectType::TemporalAudioWarp: return "DEBUFF: AUDIO WARP";
+            case HazardEffectType::UltimateDrain:     return "DEBUFF: ULTIMATE DRAIN";
             case HazardEffectType::SpeedSurge:        return "HAZARD: SPEED SURGE";
-            default:                                  return "MALUS";
+            default:                                  return "DEBUFF";
         }
     }
 
@@ -318,18 +318,7 @@ void SandboxScene::OnVictoryEnter()
 void SandboxScene::SetLightingMode(LightingMode mode)
 {
     m_lightingMode = mode;
-    switch (m_lightingMode)
-    {
-        case LightingMode::Lit:
-            m_currentTheme.AmbientLight = Color{255, 255, 255, 255};
-            break;
-        case LightingMode::Atmospheric:
-            m_currentTheme.AmbientLight = Color{45, 50, 75, 255};
-            break;
-        case LightingMode::PitchBlack:
-            m_currentTheme.AmbientLight = Color{0, 0, 0, 255};
-            break;
-    }
+    m_currentTheme.AmbientLight = GetAmbientLightForLightingMode(m_lightingMode);
     UpdateSandboxUIDisplay();
 }
 
@@ -899,7 +888,7 @@ void SandboxScene::HandleSandboxInput(const GameContext& context)
     // [ESC]: Back to Main Menu
     if (context.Input.IsKeyPress(KeyCode::Escape))
     {
-        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
         MenuScene::SetReturnWithDezoom(true);
         context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         return;
@@ -1351,7 +1340,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
 
     // Malus LCD Display & Direct Trigger
     m_btnMalusLCD = UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
-        .Text = "MALUS: ALL COMBINED",
+        .Text = "DEBUFF: ALL COMBINED",
         .OnClick = [this]() { TriggerSelectedMalus(); },
         .Position = {-185.0f, row3Y},
         .Size = {310.0f, padH},
@@ -1725,7 +1714,7 @@ void SandboxScene::CreateStreamDeckUI(const GameContext& context)
     UIFactory::CreateButton(m_registry, m_sandboxCanvas, ButtonDescriptor{
         .Text = "MENU",
         .OnClick = [&context]() {
-            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+            context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
             MenuScene::SetReturnWithDezoom(true);
             context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
         },
@@ -1967,7 +1956,7 @@ void SandboxScene::UpdateSandboxUIDisplay()
     // Update Lighting LCD Pad
     if (m_btnLightingLCD != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_btnLightingLCD))
     {
-        m_registry.GetComponent<TextComponent>(m_btnLightingLCD).Text = GetLightingModeName(m_lightingMode);
+        m_registry.GetComponent<TextComponent>(m_btnLightingLCD).Text = GetLightingLcdLabel(m_lightingMode);
     }
 
     // Update Barrier Pad

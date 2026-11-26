@@ -160,6 +160,23 @@ private:
         float RelY = 0.0f;
         Color BaseColor{80, 200, 255, 255};
         bool Alive = true;
+        bool IsTurret = false;
+        float HitFlash = 0.0f;
+    };
+
+    struct CampaignPreviewSpark
+    {
+        Vector2f RelPos{0.0f, 0.0f};
+        Vector2f RelVel{0.0f, 0.0f};
+        Color    Col{255, 220, 100, 255};
+        float    Life = 0.0f;
+        float    MaxLife = 0.45f;
+    };
+
+    struct CampaignPreviewShot
+    {
+        Vector2f RelPos{0.0f, 0.0f};
+        float    RelVy = 0.46f;
     };
 
     struct MusicNoteParticle
@@ -180,6 +197,10 @@ private:
     void    UpdateCampaignPreviewSimulation(float dt);
     void    UpdateMusicParticles(float dt);
     void    RenderCampaignPreview(GameContext& context, const Vector2f& pos, float sc, bool isZoomed) const;
+    void    RenderStageSelectPreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const;
+    void    RenderLevelEditorPreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const;
+    void    RenderStrixVaultPreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const;
+    void    RenderProfilePreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const;
     void    RenderTwoGears(GameContext& context, const Vector2f& pos, float sc) const;
     void    RenderMusicParticles(GameContext& context) const;
     void    RenderWiiZoomedChannel(GameContext& context);
@@ -191,7 +212,7 @@ private:
     void    RenderCRTBezelAndGlass(GameContext& context) const;
     void    RenderChannelGrid(GameContext& context);
     void    RenderTVScreenContent(GameContext& context);
-    void    RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float scale) const;
+    void    RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float scale, bool isZoomed = false) const;
     void    RenderTVOSD(GameContext& context) const;
     void    RenderPowerOffDialog(GameContext& context);
     void    RenderPowerOffAnimation(GameContext& context) const;
@@ -339,10 +360,9 @@ private:
     float               m_volumeKnobAngle = 45.0f;
     float               m_masterVolume = 100.0f;
     bool                m_showPowerOffDialog = false;
-    int                 m_powerDialogChoice = 0; // 0 = Cancel, 1 = Standby, 2 = Power Off
+    int                 m_powerDialogChoice = 0; // 0 = Cancel, 1 = Power Off
     bool                m_isPoweringOff = false;
     float               m_powerOffTimer = 0.0f;
-    bool                m_isStandby = false;
 
     std::vector<MusicNoteParticle> m_musicParticles;
     float               m_musicParticleTimer = 0.0f;
@@ -364,10 +384,17 @@ private:
     inline static ChannelType s_returnChannelType = ChannelType::Campaign;
     inline static bool  s_hasReturnChannel = false;
 
-    // Campaign Gameplay Preview (10s live loop with current level layout)
+    // Campaign Gameplay Preview (live loop with current level layout, debris, trail & turret fire)
     float               m_campaignPreviewTimer = 0.0f;
     int                 m_campaignLoadedLevel = -1;
     std::vector<CampaignPreviewBrick> m_campaignBricks;
+    std::vector<CampaignPreviewSpark> m_campaignSparks;
+    std::vector<CampaignPreviewShot>  m_campaignShots;
+    std::array<Vector2f, 10>          m_campaignBallTrail{};
+    size_t              m_campaignTrailCount = 0;
+    float               m_campaignTrailAccum = 0.0f;
+    float               m_campaignTurretCooldown = 1.6f;
+    float               m_campaignPaddleFlash = 0.0f;
     Vector2f            m_campaignBallPos{0.0f, 0.35f};
     Vector2f            m_campaignBallVel{0.48f, -0.62f};
     float               m_campaignPaddleX = 0.0f;

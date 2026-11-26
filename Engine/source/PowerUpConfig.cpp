@@ -495,7 +495,7 @@ std::string PowerUpManager::GetDescription(PowerUpType type) const
         case PowerUpType::TempoBall:
             return "Dynamic pacing: accelerates ball and paddle, with smooth slowdown near the paddle.";
         case PowerUpType::ExtraLife:
-            return "Restaure et renforce les coeurs : Vert (Niv. 3 max), Jaune (Niv. 2) et Rouge (Base).";
+            return "Restores and reinforces hearts: Green (Tier 3 max), Yellow (Tier 2), and Red (Base).";
         case PowerUpType::BigBall:
             return "Massive kinetic sphere piercing and shattering regular bricks on contact.";
         case PowerUpType::FireBall:
@@ -576,12 +576,12 @@ std::string PowerUpManager::GetTierInfoForLevel(PowerUpType type, int level) con
         case PowerUpType::ExtraLife:
             switch (level)
             {
-                case 1: return "+1 Vie | Cap : 4 vies (Debloque 1er coeur Jaune)";
-                case 2: return "+2 Vies | Cap : 5 vies (Jusqu'a 2 coeurs Jaunes)";
-                case 3: return "+3 Vies | Cap : 6 vies (3 coeurs Jaunes)";
-                case 4: return "+4 Vies | Cap : 7 vies (Debloque 1er coeur Vert)";
-                case 5: return "+6 Vies | Cap : 9 vies (3 coeurs Verts max)";
-                default: return "+1 Vie | Cap : 4 vies";
+                case 1: return "+1 Life | Cap: 4 lives (Unlocks 1st Yellow heart)";
+                case 2: return "+2 Lives | Cap: 5 lives (Up to 2 Yellow hearts)";
+                case 3: return "+3 Lives | Cap: 6 lives (3 Yellow hearts)";
+                case 4: return "+4 Lives | Cap: 7 lives (Unlocks 1st Green heart)";
+                case 5: return "+6 Lives | Cap: 9 lives (3 Green hearts max)";
+                default: return "+1 Life | Cap: 4 lives";
             }
         case PowerUpType::BigBall:
         {
@@ -668,10 +668,10 @@ std::string PowerUpManager::GetNextTierInfo(PowerUpType type) const
         case PowerUpType::TempoBall:
             return "Next: +" + std::to_string(static_cast<int>(m_tempo.SpeedMultiplierPerLevel * 100.0f)) + "% ball speed, +" + std::to_string(static_cast<int>(m_tempo.PaddleSpeedBonusPerLevel * 100.0f)) + "% paddle speed, +" + std::to_string(static_cast<int>(m_tempo.DurationPerLevel)) + "s duration";
         case PowerUpType::ExtraLife:
-            if (lvl == 1) return "Next: +2 vies par capsule, Cap 5 vies";
-            if (lvl == 2) return "Next: +3 vies par capsule, Cap 6 vies (3 coeurs Jaunes)";
-            if (lvl == 3) return "Next: +4 vies par capsule, Cap 7 vies (1er coeur Vert)";
-            return "Next: +6 vies par capsule, Cap 9 vies (3 coeurs Verts)";
+            if (lvl == 1) return "Next: +2 lives per capsule, Cap 5 lives";
+            if (lvl == 2) return "Next: +3 lives per capsule, Cap 6 lives (3 Yellow hearts)";
+            if (lvl == 3) return "Next: +4 lives per capsule, Cap 7 lives (1st Green heart)";
+            return "Next: +6 lives per capsule, Cap 9 lives (3 Green hearts)";
         case PowerUpType::BigBall:
             return "Next: +" + std::to_string(static_cast<int>(m_big.DurationPerLevel)) + "s duration, +" + std::to_string(static_cast<int>(m_big.ScaleBonusPerLevel * 100.0f)) + "% size";
         case PowerUpType::FireBall:

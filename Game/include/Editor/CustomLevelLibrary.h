@@ -47,7 +47,7 @@ public:
         Load();
     }
 
-    static std::string SanitizeName(const std::string& raw, const std::string& fallback = "NIVEAU")
+    static std::string SanitizeName(const std::string& raw, const std::string& fallback = "LEVEL")
     {
         std::string out;
         out.reserve(raw.size());
@@ -188,7 +188,7 @@ public:
     {
         EnsureCountersAboveExisting();
         const std::string id = FormatId("RBK-", m_nextLevelCounter++, 4);
-        const std::string cleanName = SanitizeName(rawName, "NIVEAU " + std::to_string(m_levels.size() + 1));
+        const std::string cleanName = SanitizeName(rawName, "LEVEL " + std::to_string(m_levels.size() + 1));
         const std::string filePath = m_baseDir + "/" + id + ".txt";
 
         data.SetLevelId(id);
@@ -307,7 +307,7 @@ public:
         EnsureCountersAboveExisting();
         CustomPlaylist pl;
         pl.Id = FormatId("LST-", m_nextPlaylistCounter++, 2);
-        pl.Name = SanitizeName(rawName, "LISTE " + FormatNumber(static_cast<int>(m_playlists.size()) + 1, 2));
+        pl.Name = SanitizeName(rawName, "PLAYLIST " + FormatNumber(static_cast<int>(m_playlists.size()) + 1, 2));
         m_playlists.push_back(pl);
         Save();
         return pl.Id;
@@ -534,7 +534,7 @@ private:
             if (data.LoadFromFile(p.string()) && data.GetTotalBrickCount() > 0)
             {
                 const std::string name = data.GetLevelName().empty()
-                    ? ("NIVEAU " + FormatNumber(m_nextLevelCounter, 2))
+                    ? ("LEVEL " + FormatNumber(m_nextLevelCounter, 2))
                     : data.GetLevelName();
                 SaveNewLevel(name, data);
             }

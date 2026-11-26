@@ -4,19 +4,14 @@
 #include <vector>
 #include <string>
 
+#include "LevelTheme.h"
+
 enum class PlaygroundLayout : int
 {
     TacticalMix = 0,
     MetalChains = 1,
     BombClusters = 2,
     RegeneratingItemLab = 3
-};
-
-enum class LightingMode : int
-{
-    Lit = 0,
-    Atmospheric = 1,
-    PitchBlack = 2
 };
 
 class SandboxScene : public GameScene

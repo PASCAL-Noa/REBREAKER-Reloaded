@@ -40,7 +40,7 @@ public:
     [[nodiscard]] const StoryChapter& GetCurrentStoryChapter() const { return m_chapters[m_currentChapterIndex]; }
     [[nodiscard]] bool  IsDialogueActive() const noexcept { return m_isDialogueActive; }
     [[nodiscard]] bool  IsBossEncounter() const noexcept { return m_chapters[m_currentChapterIndex].IsBossChapter; }
-    [[nodiscard]] bool  IsPaddleDestroyed() const noexcept { return m_isPaddleDestroyed; }
+    [[nodiscard]] bool  IsPaddleDestroyed() const noexcept { return IsPaddleExploding(); }
 
     // Dialogue Navigation
     void AdvanceDialogue();
@@ -57,6 +57,8 @@ public:
 protected:
     void RenderSceneSpecificHUD(GameContext& context) override;
     void HandleBrickCollision(Entity entity, Entity ballEntity = NULL_ENTITY, bool isLaser = false, bool isExplosion = false, int damage = 1) override;
+    void OnPaddleShattered(GameContext& context) override;
+    void OnLifeLost(GameContext& context) override;
 
 private:
     void InitChapters();
@@ -80,6 +82,7 @@ private:
         Vector2f Position{0.0f, 0.0f};
         Vector2f Velocity{0.0f, 210.0f};
         float    Size = 16.0f;
+        float    Damage = 34.0f;
     };
 
     struct TurretBrick
@@ -89,20 +92,17 @@ private:
         float  Cooldown = 2.5f;
     };
 
+    void ResetTurretsAndProjectiles();
     void UpdateTurretBricks(float dt, GameContext& context);
     void UpdateTriangleProjectiles(float dt, GameContext& context);
     void RenderTurretBricks(GameContext& context);
     void RenderTriangleProjectiles(GameContext& context);
-    void TriggerPaddleExplosion(GameContext& context);
 
-    // Paddle Durability & Hazards Loop
-    void UpdatePaddleDurability(float dt, GameContext& context);
+    // Hazards Loop (routed through GameScene::DamagePaddle)
     void CheckHazardPaddleCollisions(GameContext& context);
-    void TriggerPaddleDestruction(GameContext& context);
 
     // Rendering Sub-passes
     void RenderDialogueModal(GameContext& context);
-    void RenderPaddleDurabilityOverlay(GameContext& context);
     void RenderBossHUD(GameContext& context);
     void RenderBossLasers(GameContext& context);
     void RenderBossWeakPoint(GameContext& context);
@@ -119,12 +119,6 @@ private:
     // Turret and Triangle Projectiles State
     std::vector<TurretBrick>        m_turretBricks;
     std::vector<TriangleProjectile> m_triangleProjectiles;
-    float                           m_paddleDamageFlashTimer = 0.0f;
-
-    // Paddle Durability state
-    bool  m_isPaddleDestroyed = false;
-    float m_paddleDestroyedTimer = 0.0f;
-    float m_sparkEmissionTimer = 0.0f;
 
     // Boss state
     Entity              m_bossEntity = NULL_ENTITY;
@@ -144,7 +138,6 @@ private:
     uint32_t m_bossHitSfxId = 0;
     uint32_t m_bossDefeatSfxId = 0;
     uint32_t m_dialogueBlipSfxId = 0;
-    uint32_t m_paddleCrackSfxId = 0;
     uint32_t m_shieldAbsorbSfxId = 0;
     uint32_t m_repairSfxId = 0;
 };

@@ -97,6 +97,14 @@ Entity BrickFactory::Create(Registry& registry, float x, float y, BrickType type
             tint = Color{255, 235, 120, 255};
             break;
 
+        case BrickType::Event:
+            comp.HitPoints = 1 + armorTier;
+            comp.ScoreValue = 120;
+            comp.IsEventBrick = true;
+            comp.RandomEvent = true;
+            tint = Color{45, 220, 235, 255};
+            break;
+
         default:
             tint = Colors::White;
             break;

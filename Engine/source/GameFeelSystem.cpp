@@ -33,21 +33,34 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
         if (!m_audioEnabled) return;
         if (!m_registry.IsAlive(e.BrickEntity)) return;
 
-        float pitch = 1.0f + (e.Combo * 0.05f);
+        const float pitch = std::min(1.45f, 1.0f + (e.Combo * 0.035f));
         constexpr float kHalfPlayfieldWidth = 800.0f;
-        float pan = std::clamp(e.ContactPoint.X / kHalfPlayfieldWidth, -1.0f, 1.0f);
+        const float pan = std::clamp(e.ContactPoint.X / kHalfPlayfieldWidth, -1.0f, 1.0f);
+        const auto now = std::chrono::steady_clock::now();
+        const bool canPlayBrickSfx = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastBrickSfxTime).count() >= 45;
+        const bool canPlayComboSfx = (e.Combo > 1) &&
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastComboSfxTime).count() >= 120;
 
         if (e.IsDestroyed)
         {
-            m_context.Audio.PlaySfx(m_sfxBrickDestroy, 90.0f * m_volumeMultiplier, pitch, pan);
-            if (e.Combo > 1)
+            if (canPlayBrickSfx)
             {
-                m_context.Audio.PlaySfx(m_sfxCombo, 85.0f * m_volumeMultiplier, pitch - 0.5f, pan);
+                m_lastBrickSfxTime = now;
+                m_context.Audio.PlaySfx(m_sfxBrickDestroy, 82.0f * m_volumeMultiplier, pitch, pan);
+            }
+            if (canPlayComboSfx)
+            {
+                m_lastComboSfxTime = now;
+                m_context.Audio.PlaySfx(m_sfxCombo, 52.0f * m_volumeMultiplier, std::max(0.75f, pitch - 0.35f), pan);
             }
         }
         else
         {
-            m_context.Audio.PlaySfx(m_sfxBrickHit, 80.0f * m_volumeMultiplier, pitch, pan);
+            if (canPlayBrickSfx)
+            {
+                m_lastBrickSfxTime = now;
+                m_context.Audio.PlaySfx(m_sfxBrickHit, 74.0f * m_volumeMultiplier, pitch, pan);
+            }
 
             if (m_registry.HasComponent<TweenComponent>(e.BrickEntity) &&
                 m_registry.HasComponent<Transform2D>(e.BrickEntity))
@@ -56,9 +69,10 @@ GameFeelSystem::GameFeelSystem(Registry& registry, GameContext& context)
                 TweenEffects::Shake(tween, m_registry, e.BrickEntity, 0.15f, 5.0f);
             }
 
-            if (e.Combo > 1)
+            if (canPlayComboSfx)
             {
-                m_context.Audio.PlaySfx(m_sfxCombo, 85.0f * m_volumeMultiplier, pitch - 0.5f, pan);
+                m_lastComboSfxTime = now;
+                m_context.Audio.PlaySfx(m_sfxCombo, 52.0f * m_volumeMultiplier, std::max(0.75f, pitch - 0.35f), pan);
             }
         }
     });

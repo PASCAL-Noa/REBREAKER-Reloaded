@@ -25,6 +25,8 @@ private:
     bool            m_audioEnabled = true;
     float           m_volumeMultiplier = 1.0f;
     std::chrono::steady_clock::time_point m_lastPowerUpSfxTime{};
+    std::chrono::steady_clock::time_point m_lastBrickSfxTime{};
+    std::chrono::steady_clock::time_point m_lastComboSfxTime{};
 
     ScopedSubscription m_brickHitSub;
     ScopedSubscription m_paddleHitSub;

@@ -2,6 +2,35 @@
 #include "Data/Color.h"
 #include <string>
 
+enum class LightingMode : int
+{
+    Lit = 0,
+    Atmospheric = 1,
+    PitchBlack = 2
+};
+
+inline Color GetAmbientLightForLightingMode(LightingMode mode) noexcept
+{
+    switch (mode)
+    {
+    case LightingMode::Lit:         return Color{255, 255, 255, 255};
+    case LightingMode::Atmospheric: return Color{45, 50, 75, 255};
+    case LightingMode::PitchBlack:  return Color{0, 0, 0, 255};
+    default:                        return Color{255, 255, 255, 255};
+    }
+}
+
+inline const char* GetLightingModeName(LightingMode mode) noexcept
+{
+    switch (mode)
+    {
+    case LightingMode::Lit:         return "LIT";
+    case LightingMode::Atmospheric: return "ATMOSPHERIC";
+    case LightingMode::PitchBlack:  return "PITCH BLACK";
+    default:                        return "LIT";
+    }
+}
+
 struct LevelTheme
 {
     std::string Name;

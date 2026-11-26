@@ -37,6 +37,8 @@ public:
 
 protected:
     void RenderSceneSpecificHUD(GameContext& context) override;
+    void OnPaddleShattered(GameContext& context) override;
+    void OnLifeLost(GameContext& context) override;
 
 private:
     struct TriangleProjectile
@@ -44,6 +46,7 @@ private:
         Vector2f Position{0.0f, 0.0f};
         Vector2f Velocity{0.0f, 210.0f};
         float    Size = 16.0f;
+        float    Damage = 34.0f;
     };
 
     struct TurretBrick
@@ -52,6 +55,8 @@ private:
         float  ShootTimer = 3.5f;
         float  Cooldown = 3.2f;
         float  ProjectileSpeed = 210.0f;
+        float  Damage = 34.0f;
+        bool   Aimed = false;
         int    BaseHP = 3;
     };
 
@@ -59,10 +64,9 @@ private:
     void LoadSlotLevel(size_t slotIndex, GameContext& context, bool preserveStats);
     void RebuildPlayfieldFromPage(size_t pageIdx, GameContext& context, bool withDescent);
     void ApplyCustomTheme(GameContext& context);
+    void ResetTurretsAndProjectiles();
     void UpdateTurrets(float dt, GameContext& context);
     void RenderTurrets(GameContext& context) const;
-    void TriggerPaddleExplosion(GameContext& context);
-    void RenderPaddleDurabilityOverlay(GameContext& context) const;
     void ReturnToRobostock(GameContext& context);
 
     CustomLevelLibrary              m_library;
@@ -75,22 +79,18 @@ private:
     size_t                          m_activePageIndex = 0;
     float                           m_pageBannerTimer = 0.0f;
 
-    // Scheduled EventQueue runtime
+    // Scheduled EventQueue & Initial Event runtime
     float                           m_levelElapsed = 0.0f;
     size_t                          m_nextQueuedEventIdx = 0;
+    bool                            m_initialEventTriggered = false;
 
-    // Campaign-fidelity turrets & paddle durability
+    // Campaign-fidelity turrets
     std::vector<TurretBrick>        m_turretBricks;
     std::vector<TriangleProjectile> m_turretBullets;
-    float                           m_paddleDamageFlashTimer = 0.0f;
-    bool                            m_isPaddleDestroyed = false;
-    float                           m_paddleDestroyedTimer = 0.0f;
-    float                           m_sparkEmissionTimer = 0.0f;
 
-    // Auto-return timer on Victory so completed runs return cleanly to Robostock
+    // Auto-return timer on Victory so completed runs return cleanly to Vault
     bool                            m_victoryReturnActive = false;
     float                           m_victoryReturnTimer = 0.0f;
 
     uint32_t                        m_bossLaserSfxId = 0;
-    uint32_t                        m_paddleCrackSfxId = 0;
 };

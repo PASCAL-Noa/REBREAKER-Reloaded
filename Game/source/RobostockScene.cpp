@@ -44,14 +44,14 @@ void RobostockScene::OnInit(GameContext& context)
     m_clickSfxId = context.Resources.LoadResource("Resources/audio/sfx/ui_click.wav");
     m_switchSfxId = context.Resources.LoadResource("Resources/audio/sfx/tv_switch.wav");
 
-    context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 0.8f, 60.0f, true);
+    context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 0.8f, AudioMixer::kNominalMusicLevel, true);
 
     m_library.Load();
 
     // Ensure at least one default Special Playlist exists for immediate drag & drop convenience
     if (m_library.GetPlaylists().empty())
     {
-        m_library.CreatePlaylist("LISTE 01");
+        m_library.CreatePlaylist("LIST 01");
     }
 
     if (!m_initialSelectedId.empty())
@@ -287,7 +287,7 @@ void RobostockScene::HandleInput(GameContext& context)
                             // Drop level into Special Playlist (auto-create if none)
                             if (m_library.GetPlaylists().empty())
                             {
-                                m_library.CreatePlaylist("LISTE 01");
+                                m_library.CreatePlaylist("LIST 01");
                                 m_activePlaylistIdx = 0;
                             }
                             const auto& playlists = m_library.GetPlaylists();
@@ -551,7 +551,7 @@ void RobostockScene::HandleInput(GameContext& context)
 
     if (createPlBtn.Contains(mouse))
     {
-        OpenModal(ModalMode::CreatePlaylist, "LISTE " + FormatTwoDigits(static_cast<int>(playlists.size()) + 1));
+        OpenModal(ModalMode::CreatePlaylist, "LIST " + FormatTwoDigits(static_cast<int>(playlists.size()) + 1));
         if (m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 16.0f);
         return;
     }
@@ -684,11 +684,11 @@ void RobostockScene::RenderTopBar(GameContext& context, const Vector2f& viewSize
                                         backHover ? Colors::White : Color{80, 140, 190, 210}, 1.6f);
     context.Render.DrawTextCentered("< TV", m_fontId, 22.0f, Transform2D{backBtn.Center}, Colors::White);
 
-    // Coursebot Emblem + ROBOSTOCK Title + Count Pill
+    // Strix Emblem + STRIX VAULT Title + Count Pill
     DrawBotBadge(context, Vector2f{-halfW + 178.0f, barY + 2.0f}, 36.0f);
-    context.Render.DrawText("ROBOSTOCK", m_fontId, 30.0f, Transform2D{Vector2f{-halfW + 210.0f, barY - 16.0f}}, Color{65, 235, 195, 255});
+    context.Render.DrawText("STRIX VAULT", m_fontId, 30.0f, Transform2D{Vector2f{-halfW + 210.0f, barY - 16.0f}}, Color{65, 235, 195, 255});
 
-    const Vector2f countPill{Vector2f{-halfW + 390.0f, barY}};
+    const Vector2f countPill{Vector2f{-halfW + 420.0f, barY}};
     context.Render.DrawRectangle(58.0f, 30.0f, Transform2D{countPill}, Color{12, 18, 26, 255});
     context.Render.DrawRectangleOutline(58.0f, 30.0f, Transform2D{countPill}, Color{65, 235, 195, 180}, 1.4f);
     context.Render.DrawTextCentered(FormatTwoDigits(static_cast<int>(m_library.GetLevels().size())),
@@ -715,7 +715,7 @@ void RobostockScene::RenderTopBar(GameContext& context, const Vector2f& viewSize
         context.Render.DrawTextCentered(">", m_fontId, 22.0f, Transform2D{nextPageBtn.Center}, Colors::White);
     }
 
-    // [+ CREER] Quick Editor Shortcut
+    // [+ CREATE] Quick Editor Shortcut
     const CardRect newBtn{Vector2f{vaultMaxX - 74.0f, barY}, Vector2f{148.0f, 44.0f}};
     const bool newHover = newBtn.Contains(mouse) && (m_modalMode == ModalMode::None);
     context.Render.DrawRectangle(newBtn.Size.X, newBtn.Size.Y, Transform2D{newBtn.Center},
@@ -723,7 +723,7 @@ void RobostockScene::RenderTopBar(GameContext& context, const Vector2f& viewSize
     context.Render.DrawRectangleOutline(newBtn.Size.X, newBtn.Size.Y, Transform2D{newBtn.Center},
                                         newHover ? Colors::White : Color{255, 225, 110, 230}, 1.6f);
     DrawIconPlus(context, Vector2f{newBtn.Center.X - 46.0f, newBtn.Center.Y}, 14.0f, Colors::White);
-    context.Render.DrawTextCentered("CREER", m_fontId, 21.0f, Transform2D{Vector2f{newBtn.Center.X + 12.0f, newBtn.Center.Y}}, Colors::White);
+    context.Render.DrawTextCentered("CREATE", m_fontId, 21.0f, Transform2D{Vector2f{newBtn.Center.X + 12.0f, newBtn.Center.Y}}, Colors::White);
 }
 
 void RobostockScene::RenderVaultGrid(GameContext& context, const Vector2f& viewSize, const Vector2f& mouse)
@@ -749,7 +749,7 @@ void RobostockScene::RenderVaultGrid(GameContext& context, const Vector2f& viewS
         context.Render.DrawRectangleOutline(emptyNewBtn.Size.X, emptyNewBtn.Size.Y, Transform2D{emptyNewBtn.Center},
                                             hov ? Colors::White : Color{95, 240, 190, 230}, 1.8f);
         DrawIconPlus(context, Vector2f{emptyNewBtn.Center.X - 58.0f, emptyNewBtn.Center.Y}, 16.0f, Colors::White);
-        context.Render.DrawTextCentered("NOUVEAU", m_fontId, 23.0f, Transform2D{Vector2f{emptyNewBtn.Center.X + 14.0f, emptyNewBtn.Center.Y}}, Colors::White);
+        context.Render.DrawTextCentered("NEW LEVEL", m_fontId, 23.0f, Transform2D{Vector2f{emptyNewBtn.Center.X + 14.0f, emptyNewBtn.Center.Y}}, Colors::White);
         return;
     }
 
@@ -829,7 +829,7 @@ void RobostockScene::RenderVaultGrid(GameContext& context, const Vector2f& viewS
                                         isSelected ? Colors::White : Color{215, 228, 242, 255});
     }
 
-    // Selected Level Action Bar: [JOUER] [EDITER] [NOM] [SUPPR]
+    // Selected Level Action Bar: [PLAY] [EDIT] [RENAME] [DELETE]
     if (m_selectedLevelIdx >= 0 && m_selectedLevelIdx < static_cast<int>(levels.size()))
     {
         const float actY = halfH - 46.0f;
@@ -846,10 +846,10 @@ void RobostockScene::RenderVaultGrid(GameContext& context, const Vector2f& viewS
             int IconType;
         };
         const ActBtnSpec specs[4] = {
-            {"JOUER",  Color{34, 130, 74, 255}, Color{48, 172, 98, 255}, Color{95, 235, 145, 255}, 0},
-            {"EDITER", Color{165, 115, 24, 255}, Color{215, 152, 34, 255}, Color{255, 215, 85, 255}, 1},
-            {"NOM",    Color{36, 78, 116, 255}, Color{50, 108, 158, 255}, Color{105, 195, 255, 255}, 2},
-            {"SUPPR",  Color{128, 34, 46, 255}, Color{176, 46, 62, 255}, Color{255, 105, 120, 255}, 3}
+            {"PLAY",   Color{34, 130, 74, 255}, Color{48, 172, 98, 255}, Color{95, 235, 145, 255}, 0},
+            {"EDIT",   Color{165, 115, 24, 255}, Color{215, 152, 34, 255}, Color{255, 215, 85, 255}, 1},
+            {"RENAME", Color{36, 78, 116, 255}, Color{50, 108, 158, 255}, Color{105, 195, 255, 255}, 2},
+            {"DELETE", Color{128, 34, 46, 255}, Color{176, 46, 62, 255}, Color{255, 105, 120, 255}, 3}
         };
 
         for (int b = 0; b < 4; ++b)
@@ -889,7 +889,7 @@ void RobostockScene::RenderPlaylistPanel(GameContext& context, const Vector2f& v
                                         draggingLevelOverPanel ? Colors::Gold : Color{65, 235, 195, 185},
                                         draggingLevelOverPanel ? 2.8f : 1.8f);
 
-    // 1. Header Selector: [<] LISTE NAME (N/10) [>]
+    // 1. Header Selector: [<] PLAYLIST NAME (N/10) [>]
     const float headerY = -halfH + kTopBarH + 40.0f;
     context.Render.DrawRectangle(kRightPanelW - 12.0f, 42.0f, Transform2D{Vector2f{panelCenterX, headerY}}, Color{24, 32, 46, 255});
 
@@ -915,10 +915,10 @@ void RobostockScene::RenderPlaylistPanel(GameContext& context, const Vector2f& v
     }
     else
     {
-        context.Render.DrawTextCentered("LISTE SPECIALE (0/10)", m_fontId, 21.0f, Transform2D{Vector2f{panelCenterX, headerY}}, Color{165, 180, 200, 255});
+        context.Render.DrawTextCentered("PLAYLIST (0/10)", m_fontId, 21.0f, Transform2D{Vector2f{panelCenterX, headerY}}, Color{165, 180, 200, 255});
     }
 
-    // 2. Compact CRUD Row: [+ LISTE] [NOM] [SUPPR]
+    // 2. Compact CRUD Row: [+ LIST] [NAME] [DEL]
     const float subBarY = -halfH + kTopBarH + 86.0f;
     const float pBtnW = (kRightPanelW - 52.0f) / 3.0f;
     const CardRect createPlBtn{Vector2f{panelCenterX - pBtnW - 8.0f, subBarY}, Vector2f{pBtnW, 34.0f}};
@@ -929,7 +929,7 @@ void RobostockScene::RenderPlaylistPanel(GameContext& context, const Vector2f& v
     context.Render.DrawRectangle(createPlBtn.Size.X, createPlBtn.Size.Y, Transform2D{createPlBtn.Center}, cHov ? Color{42, 138, 96, 255} : Color{28, 96, 68, 255});
     context.Render.DrawRectangleOutline(createPlBtn.Size.X, createPlBtn.Size.Y, Transform2D{createPlBtn.Center}, cHov ? Colors::White : Color{85, 225, 165, 210}, 1.3f);
     DrawIconPlus(context, Vector2f{createPlBtn.Center.X - 38.0f, createPlBtn.Center.Y}, 12.0f, Colors::White);
-    context.Render.DrawTextCentered("LISTE", m_fontId, 18.0f, Transform2D{Vector2f{createPlBtn.Center.X + 10.0f, createPlBtn.Center.Y}}, Colors::White);
+    context.Render.DrawTextCentered("LIST", m_fontId, 18.0f, Transform2D{Vector2f{createPlBtn.Center.X + 10.0f, createPlBtn.Center.Y}}, Colors::White);
 
     const bool rHov = hasPl && renamePlBtn.Contains(mouse) && (m_modalMode == ModalMode::None);
     context.Render.DrawRectangle(renamePlBtn.Size.X, renamePlBtn.Size.Y, Transform2D{renamePlBtn.Center},
@@ -937,7 +937,7 @@ void RobostockScene::RenderPlaylistPanel(GameContext& context, const Vector2f& v
     context.Render.DrawRectangleOutline(renamePlBtn.Size.X, renamePlBtn.Size.Y, Transform2D{renamePlBtn.Center},
                                         hasPl ? (rHov ? Colors::White : Color{95, 180, 245, 200}) : Color{50, 56, 68, 140}, 1.3f);
     DrawIconRename(context, Vector2f{renamePlBtn.Center.X - 32.0f, renamePlBtn.Center.Y}, 12.0f, hasPl ? Colors::White : Color{110, 120, 135, 200});
-    context.Render.DrawTextCentered("NOM", m_fontId, 18.0f, Transform2D{Vector2f{renamePlBtn.Center.X + 10.0f, renamePlBtn.Center.Y}},
+    context.Render.DrawTextCentered("NAME", m_fontId, 18.0f, Transform2D{Vector2f{renamePlBtn.Center.X + 10.0f, renamePlBtn.Center.Y}},
                                     hasPl ? Colors::White : Color{110, 120, 135, 200});
 
     const bool dHov = hasPl && deletePlBtn.Contains(mouse) && (m_modalMode == ModalMode::None);
@@ -946,7 +946,7 @@ void RobostockScene::RenderPlaylistPanel(GameContext& context, const Vector2f& v
     context.Render.DrawRectangleOutline(deletePlBtn.Size.X, deletePlBtn.Size.Y, Transform2D{deletePlBtn.Center},
                                         hasPl ? (dHov ? Colors::White : Color{245, 95, 110, 200}) : Color{50, 56, 68, 140}, 1.3f);
     DrawIconTrash(context, Vector2f{deletePlBtn.Center.X - 36.0f, deletePlBtn.Center.Y}, 13.0f, hasPl ? Colors::White : Color{110, 120, 135, 200});
-    context.Render.DrawTextCentered("SUPPR", m_fontId, 18.0f, Transform2D{Vector2f{deletePlBtn.Center.X + 10.0f, deletePlBtn.Center.Y}},
+    context.Render.DrawTextCentered("DEL", m_fontId, 18.0f, Transform2D{Vector2f{deletePlBtn.Center.X + 10.0f, deletePlBtn.Center.Y}},
                                     hasPl ? Colors::White : Color{110, 120, 135, 200});
 
     // 3. 10 Slots (01 .. 10)
@@ -1001,7 +1001,7 @@ void RobostockScene::RenderPlaylistPanel(GameContext& context, const Vector2f& v
         }
     }
 
-    // 4. Bottom [JOUER LISTE] Button
+    // 4. Bottom [PLAY LIST] Button
     const bool canLaunch = hasPl && !playlists[static_cast<size_t>(m_activePlaylistIdx)].LevelIds.empty();
     const CardRect launchBtn{Vector2f{panelCenterX, halfH - 46.0f}, Vector2f{kRightPanelW - 36.0f, 50.0f}};
     const bool lHov = canLaunch && launchBtn.Contains(mouse) && (m_modalMode == ModalMode::None);
@@ -1012,7 +1012,7 @@ void RobostockScene::RenderPlaylistPanel(GameContext& context, const Vector2f& v
                                         canLaunch ? (lHov ? Colors::White : Color{95, 250, 205, 240}) : Color{52, 62, 78, 160},
                                         lHov ? 2.4f : 1.6f);
     DrawIconPlay(context, Vector2f{launchBtn.Center.X - 78.0f, launchBtn.Center.Y}, 16.0f, canLaunch ? Colors::White : Color{105, 118, 136, 200});
-    context.Render.DrawTextCentered("JOUER LISTE", m_fontId, 23.0f, Transform2D{Vector2f{launchBtn.Center.X + 14.0f, launchBtn.Center.Y}},
+    context.Render.DrawTextCentered("PLAY LIST", m_fontId, 23.0f, Transform2D{Vector2f{launchBtn.Center.X + 14.0f, launchBtn.Center.Y}},
                                     canLaunch ? Colors::White : Color{105, 118, 136, 200});
 }
 
@@ -1091,10 +1091,10 @@ void RobostockScene::RenderModal(GameContext& context, const Vector2f& viewSize,
     context.Render.DrawRectangle(boxSz.X, boxSz.Y, Transform2D{Vector2f{0.0f, 0.0f}}, Color{22, 28, 40, 255});
     context.Render.DrawRectangleOutline(boxSz.X, boxSz.Y, Transform2D{Vector2f{0.0f, 0.0f}}, Color{65, 235, 195, 255}, 2.0f);
 
-    const char* title = "NOM";
-    if (m_modalMode == ModalMode::RenameLevel) title = "NOM DU NIVEAU";
-    else if (m_modalMode == ModalMode::CreatePlaylist) title = "NOUVELLE LISTE";
-    else if (m_modalMode == ModalMode::RenamePlaylist) title = "NOM DE LA LISTE";
+    const char* title = "NAME";
+    if (m_modalMode == ModalMode::RenameLevel) title = "LEVEL NAME";
+    else if (m_modalMode == ModalMode::CreatePlaylist) title = "NEW PLAYLIST";
+    else if (m_modalMode == ModalMode::RenamePlaylist) title = "PLAYLIST NAME";
 
     context.Render.DrawRectangle(boxSz.X - 4.0f, 42.0f, Transform2D{Vector2f{0.0f, -92.0f}}, Color{30, 40, 56, 255});
     context.Render.DrawTextCentered(title, m_fontId, 22.0f, Transform2D{Vector2f{0.0f, -92.0f}}, Color{255, 220, 85, 255});
@@ -1118,7 +1118,7 @@ void RobostockScene::RenderModal(GameContext& context, const Vector2f& viewSize,
 
     context.Render.DrawRectangle(cancelBtn.Size.X, cancelBtn.Size.Y, Transform2D{cancelBtn.Center}, caHov ? Color{82, 48, 58, 255} : Color{46, 52, 66, 255});
     context.Render.DrawRectangleOutline(cancelBtn.Size.X, cancelBtn.Size.Y, Transform2D{cancelBtn.Center}, caHov ? Colors::White : Color{95, 105, 125, 255}, 1.5f);
-    context.Render.DrawTextCentered("ANNULER", m_fontId, 21.0f, Transform2D{cancelBtn.Center}, Color{225, 232, 242, 255});
+    context.Render.DrawTextCentered("CANCEL", m_fontId, 21.0f, Transform2D{cancelBtn.Center}, Color{225, 232, 242, 255});
 }
 
 void RobostockScene::DrawIconPlay(GameContext& context, const Vector2f& pos, float size, Color color) const
@@ -1162,13 +1162,48 @@ void RobostockScene::DrawIconRename(GameContext& context, const Vector2f& pos, f
 
 void RobostockScene::DrawBotBadge(GameContext& context, const Vector2f& pos, float size) const
 {
+    // Strix — the Neon Archivist Owl emblem (matches the CH 06 TV preview)
     const float sc = size / 36.0f;
-    context.Render.DrawLine(pos + Vector2f{0.0f, -13.0f * sc}, pos + Vector2f{0.0f, -20.0f * sc}, Color{65, 235, 195, 230}, 2.0f * sc);
-    context.Render.DrawCircle(2.8f * sc, Transform2D{pos + Vector2f{0.0f, -21.5f * sc}}, Colors::Gold);
-    context.Render.DrawRectangle(28.0f * sc, 22.0f * sc, Transform2D{pos}, Color{34, 48, 56, 255});
-    context.Render.DrawRectangleOutline(28.0f * sc, 22.0f * sc, Transform2D{pos}, Color{65, 235, 195, 255}, 1.6f * sc);
-    context.Render.DrawRectangle(20.0f * sc, 8.0f * sc, Transform2D{pos + Vector2f{0.0f, -3.0f * sc}}, Color{10, 16, 20, 255});
-    context.Render.DrawCircle(2.2f * sc, Transform2D{pos + Vector2f{-5.0f * sc, -3.0f * sc}}, Color{85, 255, 215, 255});
-    context.Render.DrawCircle(2.2f * sc, Transform2D{pos + Vector2f{5.0f * sc, -3.0f * sc}}, Color{85, 255, 215, 255});
-    context.Render.DrawRectangle(13.0f * sc, 3.2f * sc, Transform2D{pos + Vector2f{0.0f, 5.5f * sc}}, Colors::Gold);
+    const Color teal{65, 235, 195, 255};
+    const Color gold{255, 210, 70, 255};
+
+    // Crescent ear tufts
+    for (int side = -1; side <= 1; side += 2)
+    {
+        const float d = static_cast<float>(side);
+        std::vector<Vertex> tuft = {
+            Vertex{pos.X + d * 4.0f * sc, pos.Y - 9.0f * sc, Color{24, 54, 66, 255}, 0.0f, 0.0f},
+            Vertex{pos.X + d * 13.0f * sc, pos.Y - 19.0f * sc, teal, 0.0f, 0.0f},
+            Vertex{pos.X + d * 11.0f * sc, pos.Y - 4.0f * sc, Color{30, 72, 84, 255}, 0.0f, 0.0f}
+        };
+        context.Render.DrawVertices(tuft, PrimitiveType::Triangles);
+    }
+
+    // Head disc
+    context.Render.DrawCircle(13.0f * sc, Transform2D{pos}, Color{22, 48, 60, 255});
+    context.Render.DrawCircleOutline(13.0f * sc, Transform2D{pos}, teal, 1.6f * sc);
+
+    // Blinking amber eyes with cyan pupils
+    const bool blink = std::fmod(m_animTimer, 4.2f) > 3.98f;
+    for (int side = -1; side <= 1; side += 2)
+    {
+        const Vector2f eye = pos + Vector2f{static_cast<float>(side) * 5.2f * sc, -1.0f * sc};
+        if (blink)
+        {
+            context.Render.DrawLine(eye - Vector2f{3.2f * sc, 0.0f}, eye + Vector2f{3.2f * sc, 0.0f}, gold, 1.4f * sc);
+        }
+        else
+        {
+            context.Render.DrawCircle(3.6f * sc, Transform2D{eye}, gold);
+            context.Render.DrawCircle(1.6f * sc, Transform2D{eye}, Color{75, 250, 220, 255});
+        }
+    }
+
+    // Golden beak
+    std::vector<Vertex> beak = {
+        Vertex{pos.X - 2.4f * sc, pos.Y + 3.0f * sc, Color{255, 225, 110, 255}, 0.0f, 0.0f},
+        Vertex{pos.X + 2.4f * sc, pos.Y + 3.0f * sc, Color{255, 225, 110, 255}, 0.0f, 0.0f},
+        Vertex{pos.X, pos.Y + 8.0f * sc, Color{235, 155, 30, 255}, 0.0f, 0.0f}
+    };
+    context.Render.DrawVertices(beak, PrimitiveType::Triangles);
 }

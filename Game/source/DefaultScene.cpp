@@ -50,7 +50,7 @@ void DefaultScene::OnUpdate(float dt, GameContext& context)
     else if (context.Input.IsKeyPress(KeyCode::F12) || context.Input.IsKeyPress(KeyCode::Num0))
     {
         MenuScene::SetReturnWithDezoom(true);
-        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, 60.0f, true);
+        context.Audio.FadeToMusic("Resources/audio/music/Game-menu.ogg", 1.0f, AudioMixer::kNominalMusicLevel, true);
         context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
     }
 }
