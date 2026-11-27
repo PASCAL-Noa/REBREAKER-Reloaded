@@ -10,8 +10,12 @@
 
 enum class TrailShape : uint8_t
 {
-    Ribbon,    // Continuous smooth mesh along trajectory
-    Particles  // Discrete fading particle streak
+    Ribbon,       // Continuous smooth mesh along trajectory
+    Particles,    // Discrete fading particle streak
+    Stardust,     // Twinkling cosmic diamond sparkles along wake
+    Flame,        // Incandescent fiery core + flickering ember sparks
+    MatrixBinary, // Digital 0/1 binary glyphs & glowing cyber data blocks
+    ArcPulse      // Crackling jagged electric lightning arc segments
 };
 
 enum class TrailCosmeticId : uint8_t

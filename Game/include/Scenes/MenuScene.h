@@ -225,7 +225,6 @@ private:
     void    CreateWorkshopModal(const GameContext& context);
     void    OpenWorkshopTab(Entity targetCanvas);
     void    RefreshWorkshopUI();
-    void    ResetSaveData();
     void    RenderWorkshopBackgroundVisuals(GameContext& context);
     void    RenderWorkshopForegroundVisuals(GameContext& context);
     [[nodiscard]] uint32_t GetWorkshopBadgeTexture(PowerUpType type) const;
@@ -251,16 +250,14 @@ private:
     Entity  m_workshopCanvas = NULL_ENTITY;
     Entity  m_workshopUpgradesCanvas = NULL_ENTITY;
     Entity  m_workshopUltimatesCanvas = NULL_ENTITY;
-    Entity  m_workshopProfileCanvas = NULL_ENTITY;
+    Entity  m_workshopEndlessPerksCanvas = NULL_ENTITY;
     Entity  m_workshopActiveTabCanvas = NULL_ENTITY;
     Entity  m_workshopBankText = NULL_ENTITY;
     Entity  m_workshopPlayerText = NULL_ENTITY;
     Entity  m_workshopPageText = NULL_ENTITY;
-    Entity  m_workshopProfileNameText = NULL_ENTITY;
-    Entity  m_workshopProfileStatsText = NULL_ENTITY;
     Entity  m_workshopEndlessPerkBtns[4]{NULL_ENTITY, NULL_ENTITY, NULL_ENTITY, NULL_ENTITY};
     Entity  m_workshopEndlessPerkTexts[4]{NULL_ENTITY, NULL_ENTITY, NULL_ENTITY, NULL_ENTITY};
-    Entity  m_resetSaveBtn = NULL_ENTITY;
+    Entity  m_workshopEndlessPerkDescTexts[4]{NULL_ENTITY, NULL_ENTITY, NULL_ENTITY, NULL_ENTITY};
     Entity  m_activeModal = NULL_ENTITY;
 
     // Workshop Inspector Entities (Right Column)

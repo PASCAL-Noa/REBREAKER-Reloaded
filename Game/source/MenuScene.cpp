@@ -10,6 +10,7 @@
 #include "Scenes/SandboxScene.h"
 #include "Scenes/EditorScene.h"
 #include "Scenes/RobostockScene.h"
+#include "Scenes/ProfileScene.h"
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleAudio.h"
 #include "Scenes/SampleStateMachine.h"
@@ -24,6 +25,7 @@
 #include "Core/GameRules.h"
 #include "AudioMixer.h"
 #include "Graphics/Renderer.h"
+#include "Graphics/CosmeticRenderer.h"
 #include "Resources/ResourceManager.h"
 #include "UI/UIFactory.h"
 #include "ECS/Systems/UISystem.h"
@@ -779,7 +781,7 @@ void MenuScene::CloseModals()
             m_registry.GetComponent<CanvasComponent>(canvas).IsEnabled = false;
         }
     }
-    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopProfileCanvas, m_workshopDescCanvas})
+    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopEndlessPerksCanvas, m_workshopDescCanvas})
     {
         if (subCanvas != NULL_ENTITY && m_registry.IsAlive(subCanvas) && m_registry.HasComponent<CanvasComponent>(subCanvas))
         {
@@ -1049,13 +1051,13 @@ void MenuScene::InitTVChannels()
         .BaseSize = cardSize
     });
 
-    // 7: Achievements / Profile
+    // 7: Achievements / Profile Customization Garage
     m_tvChannels.push_back(TVChannel{
         .Type = ChannelType::Achievements,
         .ChannelNumber = "CH 08",
         .Title = "PROFILE",
-        .Subtitle = "CAREER STATS",
-        .Description = "Inspect unlocked badges, career stats, prestige rank, and performance medals.",
+        .Subtitle = "GARAGE & CAREER",
+        .Description = "Customize paddle & ball skins, colors, particle trails, death effects, and track career milestones.",
         .ThemeColor = Color{50, 225, 140, 255},
         .CardBgColor = Color{14, 26, 22, 245},
         .Position = Vector2f{colX[1], rowY[2]},
@@ -2196,9 +2198,7 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
         OpenModal(m_leaderboardCanvas);
         break;
     case ChannelType::Achievements:
-        m_channelSwitchGlitch = 0.0f;
-        OpenModal(m_workshopCanvas);
-        OpenWorkshopTab(m_workshopProfileCanvas);
+        context.Scenes.LoadSceneWithTransition<ProfileScene>(SceneTransitionType::StaticSnow, 0.55f);
         break;
     case ChannelType::LevelMaker:
         context.Scenes.LoadSceneWithTransition<EditorScene>(SceneTransitionType::StaticSnow, 0.65f);
@@ -3057,28 +3057,43 @@ void MenuScene::RenderProfilePreview(GameContext& context, const Vector2f& pos, 
     context.Render.DrawRectangle(20.0f * ps, 20.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -72.0f * ps}, 0.7854f}, Colors::Gold);
     context.Render.DrawRectangle(10.0f * ps, 10.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -72.0f * ps}, 0.7854f}, Colors::White);
 
-    // 4. Hovering Equipped Paddle & Orbiting Energy Ball on Luminous Pedestal
+    // 4. Hovering Equipped Paddle & Orbiting Equipped Ball on Luminous Pedestal
+    const auto& pm = ProfileManager::Get();
+    const Color eqPrimary = pm.GetEquippedPrimaryColor();
+    const Color eqSecondary = pm.GetEquippedSecondaryColor();
     const Vector2f pedPos = pos + Vector2f{0.0f, h * 0.31f};
-    const float padW = w * 0.22f;
-    const float padH = h * 0.042f;
-    context.Render.DrawCircle(padW * 0.52f, Transform2D{pedPos + Vector2f{0.0f, padH * 0.9f}, 0.0f, Vector2f{1.0f, 0.22f}}, Color{50, 235, 150, 65});
-    const Vector2f padTexSz = (m_paddleTexId != 0) ? context.Render.GetTextureSize(m_paddleTexId) : Vector2f{0.0f, 0.0f};
-    if (m_paddleTexId != 0 && padTexSz.X > 0.0f && padTexSz.Y > 0.0f)
-    {
-        context.Render.DrawSprite(
-            SpriteComponent{m_paddleTexId, Color{80, 245, 175, 255}},
-            Transform2D{pedPos, 0.0f, Vector2f{padW / padTexSz.X, padH / padTexSz.Y}},
-            BlendMode::Alpha);
-    }
-    else
-    {
-        context.Render.DrawRectangle(padW, padH, Transform2D{pedPos}, Color{70, 240, 165, 255});
-    }
+    const float padW = w * 0.25f;
+    const float padH = h * 0.048f;
+    context.Render.DrawCircle(padW * 0.52f, Transform2D{pedPos + Vector2f{0.0f, padH * 0.9f}, 0.0f, Vector2f{1.0f, 0.22f}},
+                              Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 70});
+    CosmeticRenderer::DrawPaddle(
+        context.Render,
+        pedPos,
+        Vector2f{padW, padH},
+        std::sin(m_animTime * 1.8f) * 3.0f,
+        pm.GetEquippedPaddleSkinStyle(),
+        eqPrimary,
+        eqSecondary,
+        m_animTime,
+        1.0f,
+        m_paddleTexId);
 
-    // Orbiting energy ball circling the crest
+    // Orbiting equipped ball circling the crest
     const Vector2f orbPos = crestCenter + Vector2f{std::cos(m_animTime * 2.2f) * (outerR * 1.18f), std::sin(m_animTime * 2.2f) * (outerR * 0.42f)};
-    context.Render.DrawPointLight(orbPos, 48.0f * ps, Color{90, 255, 200, 210}, 0.75f, BlendMode::Add);
-    context.Render.DrawCircle(10.5f * ps, Transform2D{orbPos}, Colors::White);
+    context.Render.DrawPointLight(orbPos, 48.0f * ps, Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 210}, 0.75f, BlendMode::Add);
+    CosmeticRenderer::DrawBall(
+        context.Render,
+        orbPos,
+        std::max(5.5f, 13.5f * ps),
+        pm.GetEquippedBallSkinStyle(),
+        eqPrimary,
+        eqSecondary,
+        m_animTime,
+        1.0f,
+        false,
+        false,
+        false,
+        m_ballTexId);
 
     // 5. Achievement Medal Constellation (Left & Right Floating Badges in Zoomed View)
     if (isZoomed)
@@ -3924,18 +3939,18 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     });
 
     UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
-        .Text = "PROFILE",
+        .Text = "ENDLESS PERKS",
         .OnClick = [this]() {
             if (m_showDescriptionModal) return;
-            OpenWorkshopTab(m_workshopProfileCanvas);
+            OpenWorkshopTab(m_workshopEndlessPerksCanvas);
         },
-        .Position = {310.0f, -635.0f},
-        .Size = {270.0f, 54.0f},
+        .Position = {325.0f, -635.0f},
+        .Size = {300.0f, 54.0f},
         .DefaultColor = Color{35, 50, 85, 255},
         .HoverColor = Color{55, 80, 135, 255},
         .PressedColor = Color{25, 35, 60, 255},
         .FontId = m_fontId,
-        .FontSize = 28.0f,
+        .FontSize = 26.0f,
         .ZOrder = 2
     });
 
@@ -3956,8 +3971,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     m_workshopUltimatesCanvas = m_registry.CreateEntity();
     m_registry.AddComponent<CanvasComponent>(m_workshopUltimatesCanvas, CanvasComponent{.IsEnabled = false});
 
-    m_workshopProfileCanvas = m_registry.CreateEntity();
-    m_registry.AddComponent<CanvasComponent>(m_workshopProfileCanvas, CanvasComponent{.IsEnabled = false});
+    m_workshopEndlessPerksCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_workshopEndlessPerksCanvas, CanvasComponent{.IsEnabled = false});
 
     // =========================================================================
     // --- TAB 1: UPGRADES LAB (CLASH ROYALE CARD GRID + INSPECTOR PREVIEW) ---
@@ -4523,113 +4538,66 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     });
 
     // =========================================================================
-    // --- TAB 3: PLAYER PROFILE & CAREER RECORD ---
+    // --- TAB 3: ENDLESS MODE PERKS LAB (2x2 DEDICATED UPGRADE GRID) ---
     // =========================================================================
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "PLAYER PROFILE & CAREER RECORD",
+    UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
+        .Text = "ENDLESS MODE PERKS & SURVIVAL UPGRADES",
         .Position = {0.0f, -540.0f},
         .FontId = m_fontId,
-        .FontSize = 30.0f,
+        .FontSize = 32.0f,
         .Tint = Colors::Gold,
         .ZOrder = 2
     });
 
-    // Left Card: Player Identity
-    UIFactory::CreatePanel(m_registry, m_workshopProfileCanvas, PanelDescriptor{
-        .Position = {-580.0f, -30.0f},
-        .Size = {1060.0f, 960.0f},
-        .Tint = Color{20, 26, 44, 250},
-        .ZOrder = 1
+    UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
+        .Text = "PERMANENT PASSIVES APPLIED TO EVERY ENDLESS MODE RUN  •  CUSTOMIZE YOUR PILOT IN CH 08 PROFILE GARAGE",
+        .Position = {0.0f, -496.0f},
+        .FontId = m_fontId,
+        .FontSize = 20.0f,
+        .Tint = Color{130, 210, 245, 220},
+        .ZOrder = 2
     });
 
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "PLAYER PROFILE DOSSIER",
-        .Position = {-580.0f, -440.0f},
-        .FontId = m_fontId,
-        .FontSize = 36.0f,
-        .Tint = Colors::Gold,
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "ENTER NICKNAME (PRE-FILLS LEADERBOARDS AUTOMATICALLY):",
-        .Position = {-580.0f, -390.0f},
-        .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Color{80, 220, 255, 255},
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateTextInput(m_registry, m_workshopProfileCanvas, TextInputDescriptor{
-        .Placeholder = "ENTER NICKNAME...",
-        .OnSubmit = [this](const std::string& text) {
-            ProfileManager::Get().SetUsername(text);
-            if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
-            RefreshWorkshopUI();
-        },
-        .Position = {-580.0f, -320.0f},
-        .Size = {540.0f, 64.0f},
-        .DefaultColor = Color{35, 45, 68, 255},
-        .FocusedColor = Color{55, 75, 115, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f,
-        .MaxLength = 16,
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "VESSEL EQUIPPED: RETRO CYBER-PADDLE MK-II",
-        .Position = {-580.0f, -210.0f},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .Tint = Color{255, 215, 80, 255},
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "BALL CORE: HIGH-VELOCITY PLASMA ORB",
-        .Position = {-580.0f, -150.0f},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .Tint = Color{80, 220, 255, 255},
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "TRAIL FX: NEON CHROMATIC STREAM",
-        .Position = {-580.0f, -90.0f},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .Tint = Color{255, 120, 180, 255},
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "ENDLESS MODE PERKS & UPGRADES",
-        .Position = {-580.0f, 15.0f},
-        .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Colors::Gold,
-        .ZOrder = 3
-    });
+    const float perkCardX[2] = {-530.0f, 530.0f};
+    const float perkCardY[2] = {-215.0f, 195.0f};
 
     for (int i = 0; i < 4; ++i)
     {
         EndlessPerkType perkType = static_cast<EndlessPerkType>(i);
-        float py = 75.0f + static_cast<float>(i) * 65.0f;
+        const int col = i % 2;
+        const int row = i / 2;
+        const float cx = perkCardX[col];
+        const float cy = perkCardY[row];
 
-        m_workshopEndlessPerkTexts[i] = UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
+        UIFactory::CreatePanel(m_registry, m_workshopEndlessPerksCanvas, PanelDescriptor{
+            .Position = {cx, cy},
+            .Size = {980.0f, 360.0f},
+            .Tint = Color{20, 28, 46, 250},
+            .ZOrder = 1
+        });
+
+        m_workshopEndlessPerkTexts[i] = UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
             .Text = ProfileManager::GetEndlessPerkName(perkType),
-            .Position = {-740.0f, py},
+            .Position = {cx, cy - 125.0f},
             .FontId = m_fontId,
-            .FontSize = 20.0f,
-            .Tint = Colors::White,
+            .FontSize = 32.0f,
+            .Tint = Colors::Gold,
             .ZOrder = 3
         });
 
-        m_workshopEndlessPerkBtns[i] = UIFactory::CreateButton(m_registry, m_workshopProfileCanvas, ButtonDescriptor{
+        m_workshopEndlessPerkDescTexts[i] = UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
+            .Text = ProfileManager::GetEndlessPerkDescription(perkType),
+            .Position = {cx, cy - 20.0f},
+            .FontId = m_fontId,
+            .FontSize = 22.0f,
+            .Tint = Color{215, 230, 250, 245},
+            .ZOrder = 3
+        });
+
+        m_workshopEndlessPerkBtns[i] = UIFactory::CreateButton(m_registry, m_workshopEndlessPerksCanvas, ButtonDescriptor{
             .Text = "UPGRADE",
             .OnClick = [this, perkType]() {
+                if (m_showDescriptionModal) return;
                 if (ProfileManager::Get().UpgradeEndlessPerk(perkType))
                 {
                     uint32_t sfx = (m_powerupBuffSfxId != 0) ? m_powerupBuffSfxId : m_clickSfxId;
@@ -4641,80 +4609,19 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 25.0f, 0.8f);
                 }
             },
-            .Position = {-390.0f, py},
-            .Size = {240.0f, 44.0f},
-            .DefaultColor = Color{45, 60, 90, 255},
-            .HoverColor = Color{65, 90, 135, 255},
-            .PressedColor = Color{30, 42, 65, 255},
+            .Position = {cx, cy + 115.0f},
+            .Size = {420.0f, 56.0f},
+            .DefaultColor = Color{45, 65, 105, 255},
+            .HoverColor = Color{68, 100, 155, 255},
+            .PressedColor = Color{30, 44, 72, 255},
             .FontId = m_fontId,
-            .FontSize = 18.0f,
+            .FontSize = 24.0f,
             .ZOrder = 3
         });
     }
 
-    // Right Card: Career Log
-    UIFactory::CreatePanel(m_registry, m_workshopProfileCanvas, PanelDescriptor{
-        .Position = {580.0f, -30.0f},
-        .Size = {1060.0f, 960.0f},
-        .Tint = Color{20, 26, 44, 250},
-        .ZOrder = 1
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "CAREER METRICS & FLIGHT LOG",
-        .Position = {580.0f, -440.0f},
-        .FontId = m_fontId,
-        .FontSize = 36.0f,
-        .Tint = Colors::Gold,
-        .ZOrder = 3
-    });
-
-    m_workshopProfileStatsText = UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "CAREER STATS",
-        .Position = {580.0f, -160.0f},
-        .FontId = m_fontId,
-        .FontSize = 32.0f,
-        .Tint = Colors::White,
-        .ZOrder = 3
-    });
-
-    // Reset Save Data Warning & Button (Profile Tab)
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "RESET ALL CREDITS, UPGRADES, ULTIMATES AND PROGRESSION",
-        .Position = {580.0f, 215.0f},
-        .FontId = m_fontId,
-        .FontSize = 18.0f,
-        .Tint = Color{255, 120, 120, 220},
-        .ZOrder = 3
-    });
-
-    m_resetSaveBtn = UIFactory::CreateButton(m_registry, m_workshopProfileCanvas, ButtonDescriptor{
-        .Text = "RESET SAVE DATA",
-        .OnClick = [this]() {
-            if (m_showDescriptionModal) return;
-            ResetSaveData();
-            if (m_brickDestroySfxId != 0 && mp_context)
-            {
-                mp_context->Audio.PlaySfx(m_brickDestroySfxId, 45.0f);
-            }
-            if (m_resetSaveBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_resetSaveBtn))
-            {
-                m_registry.GetComponent<TextComponent>(m_resetSaveBtn).Text = "[ SAVE DATA RESET ! ]";
-                m_registry.GetComponent<TextComponent>(m_resetSaveBtn).Tint = Colors::Gold;
-            }
-        },
-        .Position = {580.0f, 280.0f},
-        .Size = {540.0f, 60.0f},
-        .DefaultColor = Color{140, 35, 45, 255},
-        .HoverColor = Color{195, 50, 65, 255},
-        .PressedColor = Color{90, 20, 30, 255},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .ZOrder = 3
-    });
-
-    // Back to Menu Button (Profile Tab)
-    UIFactory::CreateButton(m_registry, m_workshopProfileCanvas, ButtonDescriptor{
+    // Back to Menu Button (Endless Perks Tab)
+    UIFactory::CreateButton(m_registry, m_workshopEndlessPerksCanvas, ButtonDescriptor{
         .Text = "BACK TO MENU",
         .OnClick = [this]() {
             if (m_showDescriptionModal) return;
@@ -4763,7 +4670,7 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
         }
     }
 
-    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopProfileCanvas})
+    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopEndlessPerksCanvas})
     {
         if (subCanvas != NULL_ENTITY && m_registry.IsAlive(subCanvas) && m_registry.HasComponent<CanvasComponent>(subCanvas))
         {
@@ -4808,24 +4715,6 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
         }
     }
 
-    if (m_resetSaveBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_resetSaveBtn))
-    {
-        m_registry.GetComponent<TextComponent>(m_resetSaveBtn).Text = "RESET SAVE DATA";
-        m_registry.GetComponent<TextComponent>(m_resetSaveBtn).Tint = Colors::White;
-    }
-
-    RefreshWorkshopUI();
-}
-
-void MenuScene::ResetSaveData()
-{
-    PowerUpManager::Get().ResetToDefaults();
-    ProfileManager::Get().ResetToDefaults();
-    m_levelManager.ResetProgression();
-    m_leaderboard.ResetToDefaults();
-    PlayerPrefs::Save();
-    m_inspectedLevel = PowerUpManager::Get().GetPersistedLevel(m_selectedPowerUp);
-    m_workshopPreviewLevel = m_inspectedLevel;
     RefreshWorkshopUI();
 }
 
@@ -5188,35 +5077,7 @@ void MenuScene::RefreshWorkshopUI()
         }
     }
 
-    // 4. Profile & Stats Refresh
-    if (m_workshopProfileStatsText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopProfileStatsText))
-    {
-        auto& textComp = m_registry.GetComponent<TextComponent>(m_workshopProfileStatsText);
-        std::stringstream ss;
-        ss << "LIFETIME COMBAT SCORE: " << ProfileManager::Get().GetLifetimeScore() << " PTS\n\n";
-        ss << "TOTAL CREDITS EARNED:  " << ProfileManager::Get().GetLifetimeCredits() << " CR\n\n";
-        ss << "CURRENT BANK BALANCE:  " << PowerUpManager::Get().GetCoins() << " CR\n\n";
-        ss << "HIGHEST STAGE CLEARED: STAGE " << m_levelManager.GetHighestClearedLevel() << "\n\n";
-        ss << "ENDLESS BEST SURVIVAL: " << ProfileManager::Get().GetEndlessBestTimeFormatted() << "\n\n";
-        ss << "ENDLESS WAVES CLEARED: " << ProfileManager::Get().GetEndlessBestWaves() << " WAVES\n\n";
-        ss << "ENDLESS HIGH SCORE:    " << ProfileManager::Get().GetEndlessHighScore() << " PTS\n\n";
-        
-        int totalPurchased = 0;
-        const PowerUpType allTypes[] = {
-            PowerUpType::MultiBall, PowerUpType::ExpandPaddle, PowerUpType::Storm, PowerUpType::TempoBall,
-            PowerUpType::ExtraLife, PowerUpType::BigBall, PowerUpType::FireBall, PowerUpType::StickyPaddle,
-            PowerUpType::BottomBarrier, PowerUpType::MagnetPaddle, PowerUpType::GhostBall, PowerUpType::ItemRegen
-        };
-        for (PowerUpType pt : allTypes)
-        {
-            totalPurchased += (PowerUpManager::Get().GetPersistedLevel(pt) - 1);
-        }
-        ss << "UPGRADES INSTALLED:    " << totalPurchased << " / 48 TIERS";
-
-        textComp.Text = ss.str();
-    }
-
-    // Endless Mode Perks Refresh
+    // 4. Endless Mode Perks Refresh
     for (int i = 0; i < 4; ++i)
     {
         EndlessPerkType perk = static_cast<EndlessPerkType>(i);
@@ -5225,8 +5086,23 @@ void MenuScene::RefreshWorkshopUI()
 
         if (m_workshopEndlessPerkTexts[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkTexts[i]))
         {
-            std::string perkInfo = ProfileManager::GetEndlessPerkName(perk) + " (T" + std::to_string(lvl) + "/" + std::to_string(maxLvl) + ")";
+            std::string perkInfo = ProfileManager::GetEndlessPerkName(perk) + "  (TIER " + std::to_string(lvl) + " / " + std::to_string(maxLvl) + ")";
             m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkTexts[i]).Text = perkInfo;
+        }
+
+        if (m_workshopEndlessPerkDescTexts[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkDescTexts[i]))
+        {
+            std::string tierLine = "CURRENT: " + ProfileManager::GetEndlessPerkTierInfo(perk, lvl);
+            if (lvl < maxLvl)
+            {
+                tierLine += "\nNEXT: " + ProfileManager::GetEndlessPerkTierInfo(perk, lvl + 1);
+            }
+            else
+            {
+                tierLine += "\n[ MAXIMUM TIER REACHED ]";
+            }
+            m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkDescTexts[i]).Text =
+                ProfileManager::GetEndlessPerkDescription(perk) + "\n\n" + tierLine;
         }
 
         if (m_workshopEndlessPerkBtns[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkBtns[i]))

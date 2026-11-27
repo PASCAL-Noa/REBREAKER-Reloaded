@@ -1,4 +1,5 @@
 #include "Core/PlayerPrefs.h"
+#include "Core/ProfileManager.h"
 #include "Core/Debug.h"
 #include "Application.h"
 #include <iostream>
@@ -163,6 +164,8 @@ int main(int argc, char* argv[])
     {
         Debug::Init();
         PlayerPrefs::Load();
+        ProfileManager::Get().LoadProfile();
+        ProfileManager::Get().EvaluateAchievementUnlocks();
         Debug::Info("Engine initialized successfully.");
 
         WindowConfig config{};
@@ -220,6 +223,7 @@ int main(int argc, char* argv[])
         Application app(config);
         app.Run();
 
+        ProfileManager::Get().SaveProfile();
         PlayerPrefs::Save();
         return 0;
     }

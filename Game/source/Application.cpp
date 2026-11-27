@@ -7,6 +7,7 @@
 #include "Scenes/EndlessScene.h"
 #include "Scenes/EditorScene.h"
 #include "Scenes/RobostockScene.h"
+#include "Scenes/ProfileScene.h"
 #include <algorithm>
 #include <iostream>
 
@@ -184,7 +185,13 @@ bool Application::RunSmokeTest()
     stepFrames(60);
     std::cout << "[SmokeTest] RobostockScene active and running stably!" << std::endl;
 
-    // Step 6: Return to MenuScene
+    // Step 6: Launch ProfileScene (Customization Garage) with transition
+    std::cout << "[SmokeTest] Triggering transition to ProfileScene (Customization Garage)..." << std::endl;
+    m_context.Scenes.LoadSceneWithTransition<ProfileScene>(SceneTransitionType::StaticSnow, 0.55f);
+    stepFrames(60);
+    std::cout << "[SmokeTest] ProfileScene active and running stably!" << std::endl;
+
+    // Step 7: Return to MenuScene
     std::cout << "[SmokeTest] Returning to MenuScene with transition..." << std::endl;
     m_context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.65f);
     stepFrames(70);

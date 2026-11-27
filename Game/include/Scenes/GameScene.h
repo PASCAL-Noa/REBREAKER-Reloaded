@@ -20,6 +20,7 @@
 #include "ECS/Components/LightSourceComponent.h"
 #include "ECS/Components/HazardZoneComponent.h"
 #include "ECS/Components/PaddleDurabilityComponent.h"
+#include "Graphics/CosmeticRenderer.h"
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -206,6 +207,7 @@ protected:
     static Color HsvToRgb(float h, float s, float v, uint8_t a = 255);
 
     void    SpawnExplosionParticles(const Vector2f& position, const Color& color, int count = 20);
+    void    SpawnCosmeticExplosion(const Vector2f& position, float scale = 1.0f);
     void    SpawnBleedParticles(const Vector2f& position);
     void    UpdatePowerUpTimers(float dt);
     void    UpdatePaddleSpeed();
@@ -636,4 +638,7 @@ protected:
         float       FontSize = 20.0f;
     };
     std::vector<FloatingCallout> m_floatingCallouts;
+
+    // Equipped Death / Impact Explosion Cosmetic Pool
+    CosmeticExplosionPool m_cosmeticExplosions;
 };

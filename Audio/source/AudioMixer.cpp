@@ -37,6 +37,43 @@ struct EditModeFilterState
     std::array<float, 8> z2{};
 };
 
+namespace
+{
+    struct AudioDeviceCache
+    {
+        std::mutex mutex;
+        std::vector<std::string> devices;
+        std::optional<std::string> defaultDevice;
+        std::chrono::steady_clock::time_point lastQueryTime{};
+        static constexpr std::chrono::seconds kCacheTtl{4};
+
+        void Refresh(bool force = false)
+        {
+            auto now = std::chrono::steady_clock::now();
+            if (!force && !devices.empty() && (now - lastQueryTime) < kCacheTtl)
+            {
+                return;
+            }
+            try
+            {
+                devices = sf::PlaybackDevice::getAvailableDevices();
+                defaultDevice = sf::PlaybackDevice::getDefaultDevice();
+                lastQueryTime = now;
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << "[AudioMixer] Exception querying audio devices: " << e.what() << std::endl;
+            }
+            catch (...)
+            {
+                std::cerr << "[AudioMixer] Unknown exception querying audio devices." << std::endl;
+            }
+        }
+    };
+
+    AudioDeviceCache s_deviceCache;
+}
+
 struct AudioMixer::Impl
 {
     ResourceManager& resourceManager;
@@ -962,7 +999,9 @@ float AudioMixer::GetMusicVolume() const
 
 std::vector<std::string> AudioMixer::GetAvailableAudioDevices() const
 {
-    return sf::PlaybackDevice::getAvailableDevices();
+    std::lock_guard<std::mutex> lock(s_deviceCache.mutex);
+    s_deviceCache.Refresh(false);
+    return s_deviceCache.devices;
 }
 
 std::string AudioMixer::GetCurrentAudioDevice() const
@@ -974,46 +1013,82 @@ std::string AudioMixer::GetCurrentAudioDevice() const
 bool AudioMixer::SetAudioDevice(const std::string& name) const
 {
     std::string targetDevice = name;
-    auto def = sf::PlaybackDevice::getDefaultDevice();
-    if (targetDevice.empty() || targetDevice == "Default Device" || targetDevice == "< DEFAULT DEVICE >")
-    {
-        targetDevice = def.value_or("");
-    }
+    std::string resolvedTarget;
 
-    auto dev = sf::PlaybackDevice::getDevice();
-    if (dev.has_value() && !targetDevice.empty() && dev.value() == targetDevice)
     {
-        return true;
-    }
+        std::lock_guard<std::mutex> lock(s_deviceCache.mutex);
+        s_deviceCache.Refresh(false);
 
-    // If no custom device has been explicitly bound, the active stream is already the system default
-    if (!dev.has_value() && def.has_value() && targetDevice == def.value())
-    {
-        return true;
-    }
+        if (targetDevice.empty() || targetDevice == "Default Device" || targetDevice == "< DEFAULT DEVICE >")
+        {
+            resolvedTarget = s_deviceCache.defaultDevice.value_or("");
+        }
+        else
+        {
+            resolvedTarget = targetDevice;
+        }
 
-    if (targetDevice.empty())
-    {
-        return true;
+        auto currentDev = sf::PlaybackDevice::getDevice();
+        // Check if already playing on this exact device
+        if (currentDev.has_value() && !resolvedTarget.empty() && currentDev.value() == resolvedTarget)
+        {
+            return true;
+        }
+        // If no explicit device is bound and target matches default, already active
+        if (!currentDev.has_value() && s_deviceCache.defaultDevice.has_value() && resolvedTarget == s_deviceCache.defaultDevice.value())
+        {
+            return true;
+        }
+
+        if (resolvedTarget.empty())
+        {
+            return true;
+        }
+
+        // Check if device is in available devices list
+        auto it = std::find(s_deviceCache.devices.begin(), s_deviceCache.devices.end(), resolvedTarget);
+        if (it == s_deviceCache.devices.end())
+        {
+            // Force refresh once in case a new device was just connected
+            s_deviceCache.Refresh(true);
+            it = std::find(s_deviceCache.devices.begin(), s_deviceCache.devices.end(), resolvedTarget);
+            if (it == s_deviceCache.devices.end())
+            {
+                return false;
+            }
+        }
     }
 
     try
     {
-        auto available = sf::PlaybackDevice::getAvailableDevices();
-        if (std::find(available.begin(), available.end(), targetDevice) == available.end())
+        bool wasPlaying = false;
+        sf::Time savedOffset = sf::Time::Zero;
+        if (mp_impl && mp_impl->activeTrack.music)
         {
-            return false;
+            wasPlaying = (mp_impl->activeTrack.music->getStatus() == sf::SoundSource::Status::Playing);
+            if (wasPlaying)
+            {
+                savedOffset = mp_impl->activeTrack.music->getPlayingOffset();
+            }
         }
 
-        StopAll();
+        bool ok = false;
+        {
+            std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
+            ok = sf::PlaybackDevice::setDevice(resolvedTarget);
+        }
 
-        // Allow any active miniaudio WASAPI device worker to flush and terminate safely
-        std::this_thread::sleep_for(std::chrono::milliseconds(60));
+        // SFML 3 automatically migrates SoundSource instances upon device reinitialization.
+        // As a safeguard, ensure active music continues playing smoothly if it was playing.
+        if (ok && wasPlaying && mp_impl && mp_impl->activeTrack.music)
+        {
+            if (mp_impl->activeTrack.music->getStatus() != sf::SoundSource::Status::Playing)
+            {
+                mp_impl->activeTrack.music->setPlayingOffset(savedOffset);
+                mp_impl->activeTrack.music->play();
+            }
+        }
 
-        std::lock_guard<std::mutex> aLock(ResourceManager::GetAudioDecodeMutex());
-        bool ok = sf::PlaybackDevice::setDevice(targetDevice);
-        // Allow the newly opened WASAPI device stream to stabilize before new sounds/music are allocated
-        std::this_thread::sleep_for(std::chrono::milliseconds(60));
         return ok;
     }
     catch (const std::exception& e)

@@ -225,5 +225,36 @@ TEST_SUITE("UI Feedback & Audio Tests")
 
         mixer.StopMusic();
     }
+
+    TEST_CASE("AudioMixer device enumeration and non-blocking device switching")
+    {
+        ResourceManager rm;
+        AudioMixer mixer(rm);
+
+        // 1. Enumeration should return without throw
+        auto devices = mixer.GetAvailableAudioDevices();
+        // Repeated calls within cache TTL should be immediate and return identical list
+        auto cachedDevices = mixer.GetAvailableAudioDevices();
+        CHECK(devices.size() == cachedDevices.size());
+
+        // 2. Querying current device should return a valid string
+        std::string current = mixer.GetCurrentAudioDevice();
+        CHECK_FALSE(current.empty());
+
+        // 3. Setting to default device should return true and not throw
+        bool ok = mixer.SetAudioDevice("Default Device");
+        CHECK(ok);
+
+        // 4. Switching device while music is playing should not destroy or crash the active music track
+        mixer.PlayMusic("Resources/audio/music/Game-1.ogg", 50.0f, true);
+        CHECK(mixer.IsMusicPlaying());
+        CHECK(mixer.GetCurrentMusicPath() == "Resources/audio/music/Game-1.ogg");
+
+        bool switchOk = mixer.SetAudioDevice("Default Device");
+        CHECK(switchOk);
+        CHECK(mixer.GetCurrentMusicPath() == "Resources/audio/music/Game-1.ogg");
+
+        mixer.StopMusic();
+    }
 }
 

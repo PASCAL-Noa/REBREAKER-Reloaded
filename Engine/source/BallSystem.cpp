@@ -8,6 +8,8 @@
 #include "ECS/Components/TweenComponent.h"
 #include "ECS/Components/LightSourceComponent.h"
 #include "PowerUps/PowerUpConfig.h"
+#include "Core/ProfileManager.h"
+#include "Graphics/CosmeticRenderer.h"
 #include "Data/Color.h"
 #include <algorithm>
 #include <cmath>
@@ -61,13 +63,13 @@ Entity BallSystem::CreateBall(const Vector2f& position, const Vector2f& velocity
     }
     else
     {
-        trailComp.Config = TrailPresets::GetPreset(m_activeTrailCosmetic);
+        trailComp.Config = GetActiveTrailConfig();
     }
     m_registry.AddComponent<TrailComponent>(ball, trailComp);
 
     LightSourceComponent lightComp{};
     lightComp.Type = LightType::Point;
-    lightComp.LightColor = isTempo ? Color{210, 160, 255, 255} : Color{225, 240, 255, 255};
+    lightComp.LightColor = isTempo ? Color{210, 160, 255, 255} : ProfileManager::Get().GetEquippedPrimaryColor();
     lightComp.Radius = isBig ? 240.0f : 180.0f;
     lightComp.Intensity = 1.25f;
     lightComp.InnerRadius = 15.0f;
@@ -86,14 +88,14 @@ void BallSystem::RegisterBall(Entity ball)
     if (!m_registry.HasComponent<TrailComponent>(ball))
     {
         TrailComponent tc{};
-        tc.Config = TrailPresets::GetPreset(m_activeTrailCosmetic);
+        tc.Config = GetActiveTrailConfig();
         m_registry.AddComponent<TrailComponent>(ball, tc);
     }
     if (!m_registry.HasComponent<LightSourceComponent>(ball))
     {
         LightSourceComponent lightComp{};
         lightComp.Type = LightType::Point;
-        lightComp.LightColor = Color{225, 240, 255, 255};
+        lightComp.LightColor = ProfileManager::Get().GetEquippedPrimaryColor();
         lightComp.Radius = 180.0f;
         lightComp.Intensity = 1.25f;
         lightComp.InnerRadius = 15.0f;
@@ -344,7 +346,8 @@ void BallSystem::UpdateFireBalls(float dt)
         {
             // Standard or Tempo ball light
             const bool isTempo = m_registry.HasComponent<SpriteComponent>(b) && (m_registry.GetComponent<SpriteComponent>(b).Tint.r == 210);
-            light.LightColor = isTempo ? Color{210, 160, 255, 255} : (bc.IsBig ? Color{255, 205, 140, 255} : Color{225, 240, 255, 255});
+            const Color equippedLight = ProfileManager::Get().GetEquippedPrimaryColor();
+            light.LightColor = isTempo ? Color{210, 160, 255, 255} : (bc.IsBig ? Color{255, 205, 140, 255} : equippedLight);
             light.Radius = bc.IsBig ? 250.0f : 180.0f;
             light.Intensity = 1.25f;
             light.InnerRadius = 15.0f;
@@ -352,8 +355,35 @@ void BallSystem::UpdateFireBalls(float dt)
     }
 }
 
+TrailConfig BallSystem::GetActiveTrailConfig() const
+{
+    if (m_useProfileTrail)
+    {
+        return CosmeticRenderer::BuildEquippedTrailConfig(ProfileManager::Get());
+    }
+    return TrailPresets::GetPreset(m_activeTrailCosmetic);
+}
+
+void BallSystem::SyncTrailFromProfile()
+{
+    m_useProfileTrail = true;
+    const TrailConfig cfg = GetActiveTrailConfig();
+    for (Entity ball : m_balls)
+    {
+        if (m_registry.IsAlive(ball) && m_registry.HasComponent<TrailComponent>(ball))
+        {
+            bool isFire = m_registry.HasComponent<BallComponent>(ball) && m_registry.GetComponent<BallComponent>(ball).IsFireBall;
+            if (!isFire && !m_isTempoActive)
+            {
+                m_registry.GetComponent<TrailComponent>(ball).Config = cfg;
+            }
+        }
+    }
+}
+
 void BallSystem::SetBallTrailCosmetic(TrailCosmeticId cosmetic)
 {
+    m_useProfileTrail = false;
     m_activeTrailCosmetic = cosmetic;
     for (Entity ball : m_balls)
     {
@@ -376,8 +406,9 @@ void BallSystem::SetBallTrailCosmetic(TrailCosmeticId cosmetic)
 void BallSystem::UpdateTrails(float dt)
 {
     constexpr size_t MAX_TRAIL_POINTS = 64;
+    const TrailConfig activeCfg = GetActiveTrailConfig();
 
-    m_registry.View<Transform2D, TrailComponent>([this, dt](Entity entity, Transform2D& transform, TrailComponent& trail)
+    m_registry.View<Transform2D, TrailComponent>([this, dt, &activeCfg](Entity entity, Transform2D& transform, TrailComponent& trail)
     {
         // 1. Synchronize cosmetic state with ball modifiers (FireBall, TempoBall, etc.)
         if (m_registry.HasComponent<BallComponent>(entity))
@@ -385,9 +416,9 @@ void BallSystem::UpdateTrails(float dt)
             const auto& bc = m_registry.GetComponent<BallComponent>(entity);
             if (bc.IsFireBall)
             {
-                if (trail.Config.CosmeticId != TrailCosmeticId::FireStreak)
+                if (trail.Config.CosmeticId != TrailCosmeticId::FireStreak || trail.Config.Shape != TrailShape::Flame)
                 {
-                    trail.Config = TrailPresets::GetPreset(TrailCosmeticId::FireStreak);
+                    trail.Config = CosmeticRenderer::BuildTrailConfig(TrailStyle::Flame, Color{255, 160, 30, 255}, Color{255, 40, 10, 255});
                 }
             }
             else if (m_isTempoActive)
@@ -399,10 +430,7 @@ void BallSystem::UpdateTrails(float dt)
             }
             else
             {
-                if (trail.Config.CosmeticId != m_activeTrailCosmetic)
-                {
-                    trail.Config = TrailPresets::GetPreset(m_activeTrailCosmetic);
-                }
+                trail.Config = activeCfg;
             }
         }
 
