@@ -10,6 +10,7 @@
 #include "Scenes/SandboxScene.h"
 #include "Scenes/EditorScene.h"
 #include "Scenes/RobostockScene.h"
+#include "Scenes/ProfileScene.h"
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleAudio.h"
 #include "Scenes/SampleStateMachine.h"
@@ -24,6 +25,7 @@
 #include "Core/GameRules.h"
 #include "AudioMixer.h"
 #include "Graphics/Renderer.h"
+#include "Graphics/CosmeticRenderer.h"
 #include "Resources/ResourceManager.h"
 #include "UI/UIFactory.h"
 #include "ECS/Systems/UISystem.h"
@@ -44,12 +46,46 @@
 #include <sstream>
 #include <cmath>
 
+namespace
+{
+    struct ProfileChannelSimState
+    {
+        Vector2f BallPos{0.0f, -40.0f};
+        Vector2f BallVel{320.0f, -420.0f};
+        float PaddleX = 0.0f;
+        float PaddleVelX = 0.0f;
+        float PaddleBounceFlash = 0.0f;
+        TrailComponent Trail;
+        std::vector<Vertex> TrailScratch;
+        CosmeticExplosionPool Explosions;
+        bool TrailInitialized = false;
+        TrailStyle CachedTrailStyle = TrailStyle::ClassicWhite;
+        Color CachedPri{0, 230, 255, 255};
+        Color CachedSec{255, 255, 255, 255};
+
+        void Reset()
+        {
+            BallPos = Vector2f{0.0f, -40.0f};
+            BallVel = Vector2f{320.0f, -420.0f};
+            PaddleX = 0.0f;
+            PaddleVelX = 0.0f;
+            PaddleBounceFlash = 0.0f;
+            Trail.Clear();
+            Explosions.Clear();
+            TrailInitialized = false;
+        }
+    };
+
+    ProfileChannelSimState s_profileSim;
+}
+
 MenuScene::MenuScene() = default;
 MenuScene::~MenuScene() = default;
 
 void MenuScene::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
+    s_profileSim.Reset();
     PowerUpManager::Get().LoadFromPrefs();
     m_bgColor = Color{8, 10, 16, 255};
 
@@ -338,6 +374,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     {
         UpdateCampaignPreviewSimulation(dt);
         UpdateTVControls(dt, context);
+        UpdateProfilePreviewSimulation(dt, context);
         if (context.Input.IsKeyPress(KeyCode::Tab))
         {
             OpenModal(m_debugCanvas);
@@ -680,6 +717,7 @@ void MenuScene::OnRender(GameContext& context)
 
 void MenuScene::OnDestroy(GameContext& context)
 {
+    s_profileSim.Reset();
     if (m_previewScene)
     {
         m_previewScene->OnDestroy(context);
@@ -779,7 +817,7 @@ void MenuScene::CloseModals()
             m_registry.GetComponent<CanvasComponent>(canvas).IsEnabled = false;
         }
     }
-    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopProfileCanvas, m_workshopDescCanvas})
+    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopEndlessPerksCanvas, m_workshopDescCanvas})
     {
         if (subCanvas != NULL_ENTITY && m_registry.IsAlive(subCanvas) && m_registry.HasComponent<CanvasComponent>(subCanvas))
         {
@@ -1049,13 +1087,13 @@ void MenuScene::InitTVChannels()
         .BaseSize = cardSize
     });
 
-    // 7: Achievements / Profile
+    // 7: Achievements / Profile Customization Garage
     m_tvChannels.push_back(TVChannel{
         .Type = ChannelType::Achievements,
         .ChannelNumber = "CH 08",
         .Title = "PROFILE",
-        .Subtitle = "CAREER STATS",
-        .Description = "Inspect unlocked badges, career stats, prestige rank, and performance medals.",
+        .Subtitle = "GARAGE & CAREER",
+        .Description = "Customize paddle & ball skins, colors, particle trails, death effects, and track career milestones.",
         .ThemeColor = Color{50, 225, 140, 255},
         .CardBgColor = Color{14, 26, 22, 245},
         .Position = Vector2f{colX[1], rowY[2]},
@@ -2196,9 +2234,7 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
         OpenModal(m_leaderboardCanvas);
         break;
     case ChannelType::Achievements:
-        m_channelSwitchGlitch = 0.0f;
-        OpenModal(m_workshopCanvas);
-        OpenWorkshopTab(m_workshopProfileCanvas);
+        ProfileScene::Launch(context.Scenes, SceneTransitionType::StaticSnow, 0.55f);
         break;
     case ChannelType::LevelMaker:
         context.Scenes.LoadSceneWithTransition<EditorScene>(SceneTransitionType::StaticSnow, 0.65f);
@@ -2993,120 +3029,293 @@ void MenuScene::RenderStrixVaultPreview(GameContext& context, const Vector2f& po
     context.Render.DrawRectangleOutline(w, h, Transform2D{pos}, Color{65, 235, 195, 195}, (isZoomed ? 2.5f : 1.1f) * s);
 }
 
-void MenuScene::RenderProfilePreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const
+void MenuScene::UpdateProfilePreviewSimulation(float dt, GameContext& context)
 {
-    const float s = isZoomed ? (w / 1220.0f) : (w / 326.0f);
-    const float ps = isZoomed ? (s * 1.05f) : (s * 0.30f);
+    auto& sim = s_profileSim;
+    const float clampedDt = std::min(dt, 0.05f);
+    constexpr float kHalfW = 610.0f;
+    constexpr float kHalfH = 360.0f;
+    constexpr float kPadW = 240.0f;
+    constexpr float kPadH = 34.0f;
+    constexpr float kPadY = 235.0f;
+    constexpr float kBallR = 19.0f;
+    constexpr float kMaxPadX = kHalfW - kPadW * 0.5f - 24.0f;
+    constexpr float kBallSpeed = 540.0f;
 
-    // 1. Deep Emerald-Obsidian Prestige Chamber Backdrop
-    context.Render.DrawRectangle(w, h, Transform2D{pos}, Color{9, 18, 16, 248});
-    context.Render.DrawRectangle(w, h * 0.45f, Transform2D{pos + Vector2f{0.0f, -h * 0.275f}}, Color{16, 40, 32, 95});
-
-    // Subtle floor perspective horizon & radial spotlight behind Crest
-    const Vector2f crestCenter = pos + Vector2f{0.0f, -12.0f * ps};
-    context.Render.DrawPointLight(crestCenter, 340.0f * ps, Color{50, 235, 150, 175}, 0.72f, BlendMode::Add);
-
-    // 2. Counter-Rotating Holographic Prestige Rings
-    const float outerR = 210.0f * ps;
-    const float midR = 152.0f * ps;
-    context.Render.DrawCircleOutline(outerR, Transform2D{crestCenter}, Color{50, 225, 140, 110}, std::max(1.0f, 2.2f * ps));
-    context.Render.DrawCircleOutline(midR, Transform2D{crestCenter}, Color{255, 215, 75, 130}, std::max(1.0f, 2.4f * ps));
-
-    // Rotating orbital tick markers around outer ring
-    for (int i = 0; i < 12; ++i)
+    const auto& pm = ProfileManager::Get();
+    const TrailStyle eqTrail = pm.GetEquippedTrailStyle();
+    const Color eqPri = pm.GetEquippedPrimaryColor();
+    const Color eqSec = pm.GetEquippedSecondaryColor();
+    if (!sim.TrailInitialized ||
+        eqTrail != sim.CachedTrailStyle ||
+        eqPri.r != sim.CachedPri.r || eqPri.g != sim.CachedPri.g || eqPri.b != sim.CachedPri.b ||
+        eqSec.r != sim.CachedSec.r || eqSec.g != sim.CachedSec.g || eqSec.b != sim.CachedSec.b)
     {
-        const float ang = m_animTime * 0.55f + static_cast<float>(i) * (6.2831853f / 12.0f);
-        const Vector2f p0 = crestCenter + Vector2f{std::cos(ang) * (outerR - 10.0f * ps), std::sin(ang) * (outerR - 10.0f * ps)};
-        const Vector2f p1 = crestCenter + Vector2f{std::cos(ang) * (outerR + 12.0f * ps), std::sin(ang) * (outerR + 12.0f * ps)};
-        context.Render.DrawLine(p0, p1, (i % 3 == 0) ? Color{255, 225, 95, 240} : Color{50, 235, 155, 180}, std::max(1.0f, 2.5f * ps));
+        sim.TrailInitialized = true;
+        sim.CachedTrailStyle = eqTrail;
+        sim.CachedPri = eqPri;
+        sim.CachedSec = eqSec;
+        sim.Trail.Config = CosmeticRenderer::BuildTrailConfig(eqTrail, eqPri, eqSec);
     }
 
-    // Counter-rotating inner diamond frames
-    context.Render.DrawRectangleOutline(185.0f * ps, 185.0f * ps, Transform2D{crestCenter, -m_animTime * 0.45f}, Color{50, 235, 155, 145}, std::max(1.0f, 2.2f * ps));
-    context.Render.DrawRectangleOutline(142.0f * ps, 142.0f * ps, Transform2D{crestCenter, m_animTime * 0.65f + 0.7854f}, Color{255, 215, 75, 175}, std::max(1.0f, 2.2f * ps));
+    const bool zoomedOnProfile =
+        (m_zoomState == ChannelZoomState::ZoomedView &&
+         m_selectedChannel >= 0 &&
+         m_selectedChannel < static_cast<int>(m_tvChannels.size()) &&
+         m_tvChannels[m_selectedChannel].Type == ChannelType::Achievements);
 
-    // 3. Winged Cyber-Arcade Pilot Crest Emblem
-    const float floatY = std::sin(m_animTime * 2.5f) * 8.0f * ps;
-    const Vector2f emblemPos = crestCenter + Vector2f{0.0f, floatY};
-    for (int side = -1; side <= 1; side += 2)
+    const auto& L = m_tvLayout;
+    auto [mx, my] = context.Input.GetMousePosition();
+    const Vector2f mPos{mx, my};
+    const float invScale = (L.Scale > 0.0001f) ? (1.0f / L.Scale) : 1.0f;
+    const Vector2f mouseOnGlass = Vector2f{695.0f, 455.0f} + (mPos - L.GlassCenter) * invScale;
+
+    bool mouseControlled = false;
+    float targetPadX = sim.BallPos.X + std::sin(m_animTime * 1.4f) * 38.0f;
+
+    if (zoomedOnProfile && !m_showPowerOffDialog)
     {
-        const float dir = static_cast<float>(side);
-        std::vector<Vertex> upperWing = {
-            Vertex{emblemPos.X + dir * 48.0f * ps, emblemPos.Y - 24.0f * ps, Color{50, 235, 150, 240}, 0.0f, 0.0f},
-            Vertex{emblemPos.X + dir * 165.0f * ps, emblemPos.Y - 58.0f * ps, Color{120, 255, 200, 230}, 0.0f, 0.0f},
-            Vertex{emblemPos.X + dir * 115.0f * ps, emblemPos.Y + 4.0f * ps, Color{24, 92, 66, 255}, 0.0f, 0.0f}
-        };
-        context.Render.DrawVertices(upperWing, PrimitiveType::Triangles);
-
-        std::vector<Vertex> lowerWing = {
-            Vertex{emblemPos.X + dir * 46.0f * ps, emblemPos.Y + 8.0f * ps, Color{255, 205, 60, 235}, 0.0f, 0.0f},
-            Vertex{emblemPos.X + dir * 130.0f * ps, emblemPos.Y + 18.0f * ps, Color{255, 235, 130, 220}, 0.0f, 0.0f},
-            Vertex{emblemPos.X + dir * 74.0f * ps, emblemPos.Y + 52.0f * ps, Color{175, 120, 25, 225}, 0.0f, 0.0f}
-        };
-        context.Render.DrawVertices(lowerWing, PrimitiveType::Triangles);
-    }
-
-    // Central Shield Core + Neon Pilot Visor Silhouette
-    context.Render.DrawCircle(68.0f * ps, Transform2D{emblemPos}, Color{16, 36, 30, 255});
-    context.Render.DrawCircleOutline(68.0f * ps, Transform2D{emblemPos}, Color{255, 220, 80, 255}, std::max(1.2f, 3.6f * ps));
-    context.Render.DrawCircle(44.0f * ps, Transform2D{emblemPos}, Color{26, 56, 46, 255});
-    // Glowing Neon Visor Bar across Pilot Helmet
-    context.Render.DrawRectangle(62.0f * ps, 16.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -6.0f * ps}}, Color{75, 255, 195, 255});
-    context.Render.DrawRectangle(44.0f * ps, 6.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -6.0f * ps}}, Colors::White);
-    // Prestige Star Crown atop shield
-    context.Render.DrawRectangle(20.0f * ps, 20.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -72.0f * ps}, 0.7854f}, Colors::Gold);
-    context.Render.DrawRectangle(10.0f * ps, 10.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -72.0f * ps}, 0.7854f}, Colors::White);
-
-    // 4. Hovering Equipped Paddle & Orbiting Energy Ball on Luminous Pedestal
-    const Vector2f pedPos = pos + Vector2f{0.0f, h * 0.31f};
-    const float padW = w * 0.22f;
-    const float padH = h * 0.042f;
-    context.Render.DrawCircle(padW * 0.52f, Transform2D{pedPos + Vector2f{0.0f, padH * 0.9f}, 0.0f, Vector2f{1.0f, 0.22f}}, Color{50, 235, 150, 65});
-    const Vector2f padTexSz = (m_paddleTexId != 0) ? context.Render.GetTextureSize(m_paddleTexId) : Vector2f{0.0f, 0.0f};
-    if (m_paddleTexId != 0 && padTexSz.X > 0.0f && padTexSz.Y > 0.0f)
-    {
-        context.Render.DrawSprite(
-            SpriteComponent{m_paddleTexId, Color{80, 245, 175, 255}},
-            Transform2D{pedPos, 0.0f, Vector2f{padW / padTexSz.X, padH / padTexSz.Y}},
-            BlendMode::Alpha);
-    }
-    else
-    {
-        context.Render.DrawRectangle(padW, padH, Transform2D{pedPos}, Color{70, 240, 165, 255});
-    }
-
-    // Orbiting energy ball circling the crest
-    const Vector2f orbPos = crestCenter + Vector2f{std::cos(m_animTime * 2.2f) * (outerR * 1.18f), std::sin(m_animTime * 2.2f) * (outerR * 0.42f)};
-    context.Render.DrawPointLight(orbPos, 48.0f * ps, Color{90, 255, 200, 210}, 0.75f, BlendMode::Add);
-    context.Render.DrawCircle(10.5f * ps, Transform2D{orbPos}, Colors::White);
-
-    // 5. Achievement Medal Constellation (Left & Right Floating Badges in Zoomed View)
-    if (isZoomed)
-    {
-        const Color medalCols[4] = {
-            Color{255, 215, 65, 255},
-            Color{80, 225, 255, 255},
-            Color{255, 95, 165, 255},
-            Color{70, 240, 155, 255}
-        };
-        const Vector2f medalOffsets[4] = {
-            Vector2f{-w * 0.34f, -h * 0.22f},
-            Vector2f{-w * 0.31f,  h * 0.16f},
-            Vector2f{ w * 0.34f, -h * 0.22f},
-            Vector2f{ w * 0.31f,  h * 0.16f}
-        };
-        for (int m = 0; m < 4; ++m)
+        const Vector2f localMouse = mouseOnGlass - Vector2f{695.0f, 419.0f};
+        const bool inArena = (std::abs(localMouse.X) <= kHalfW && std::abs(localMouse.Y) <= kHalfH);
+        if (inArena)
         {
-            const float mbob = std::sin(m_animTime * 2.6f + static_cast<float>(m) * 1.5f) * 10.0f * ps;
-            const Vector2f mp = pos + medalOffsets[m] + Vector2f{0.0f, mbob};
-            context.Render.DrawCircle(34.0f * ps, Transform2D{mp}, Color{16, 28, 24, 240});
-            context.Render.DrawCircleOutline(34.0f * ps, Transform2D{mp}, medalCols[m], 2.6f * ps);
-            context.Render.DrawRectangle(24.0f * ps, 24.0f * ps, Transform2D{mp, 0.7854f + m_animTime * 0.4f * (m % 2 == 0 ? 1.0f : -1.0f)}, medalCols[m]);
-            context.Render.DrawCircle(8.0f * ps, Transform2D{mp}, Colors::White);
+            mouseControlled = true;
+            targetPadX = localMouse.X;
+
+            if (context.Input.IsMouseButtonPress(MouseButton::Left))
+            {
+                Vector2f delta = sim.BallPos - localMouse;
+                float dist = delta.Length();
+                if (dist < 145.0f)
+                {
+                    Vector2f dir = (dist > 1.0f) ? (delta / dist) : Vector2f{0.0f, -1.0f};
+                    dir.Y = std::min(dir.Y, -0.35f);
+                    const float len = std::max(0.001f, dir.Length());
+                    sim.BallVel = (dir / len) * (kBallSpeed * 1.12f);
+                    sim.Explosions.Spawn(
+                        Vector2f{695.0f + sim.BallPos.X, 419.0f + sim.BallPos.Y},
+                        pm.GetEquippedDeathEffectStyle(), eqPri, eqSec, 1.05f);
+                }
+                else
+                {
+                    Vector2f toClick = localMouse - sim.BallPos;
+                    const float len = std::max(1.0f, toClick.Length());
+                    sim.BallVel = (toClick / len) * kBallSpeed;
+                    sim.Explosions.Spawn(
+                        Vector2f{695.0f + localMouse.X, 419.0f + localMouse.Y},
+                        pm.GetEquippedDeathEffectStyle(), eqPri, eqSec, 0.9f);
+                }
+                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 11.0f);
+            }
+            else if (context.Input.IsMouseButtonPress(MouseButton::Right))
+            {
+                sim.Explosions.Spawn(
+                    Vector2f{695.0f + localMouse.X, 419.0f + localMouse.Y},
+                    pm.GetEquippedDeathEffectStyle(), eqPri, eqSec, 1.15f);
+                if (m_brickDestroySfxId != 0) context.Audio.PlaySfx(m_brickDestroySfxId, 11.0f);
+            }
+        }
+    }
+    else if (m_zoomState == ChannelZoomState::Grid && !m_showPowerOffDialog &&
+             m_hoveredChannel >= 0 && m_hoveredChannel < static_cast<int>(m_tvChannels.size()) &&
+             m_tvChannels[m_hoveredChannel].Type == ChannelType::Achievements)
+    {
+        const auto& card = m_tvChannels[m_hoveredChannel];
+        const Vector2f cardGlassCenter = card.BasePosition - Vector2f{105.0f, 85.0f};
+        const float relX = (mouseOnGlass.X - cardGlassCenter.X) / std::max(1.0f, card.BaseSize.X * 0.5f);
+        if (std::abs(relX) <= 1.05f)
+        {
+            mouseControlled = true;
+            targetPadX = relX * kMaxPadX;
         }
     }
 
-    context.Render.DrawRectangleOutline(w, h, Transform2D{pos}, Color{50, 225, 140, 195}, (isZoomed ? 2.5f : 1.1f) * s);
+    targetPadX = std::clamp(targetPadX, -kMaxPadX, kMaxPadX);
+    const float prevPadX = sim.PaddleX;
+    const float followRate = mouseControlled ? 22.0f : 6.5f;
+    sim.PaddleX += (targetPadX - sim.PaddleX) * std::min(1.0f, followRate * clampedDt);
+    sim.PaddleVelX = (clampedDt > 0.0001f) ? ((sim.PaddleX - prevPadX) / clampedDt) : 0.0f;
+    sim.PaddleBounceFlash = std::max(0.0f, sim.PaddleBounceFlash - clampedDt * 4.5f);
+
+    sim.BallPos += sim.BallVel * clampedDt;
+
+    if (sim.BallPos.X - kBallR < -kHalfW)
+    {
+        sim.BallPos.X = -kHalfW + kBallR;
+        sim.BallVel.X = std::abs(sim.BallVel.X);
+    }
+    else if (sim.BallPos.X + kBallR > kHalfW)
+    {
+        sim.BallPos.X = kHalfW - kBallR;
+        sim.BallVel.X = -std::abs(sim.BallVel.X);
+    }
+
+    if (sim.BallPos.Y - kBallR < -kHalfH)
+    {
+        sim.BallPos.Y = -kHalfH + kBallR;
+        sim.BallVel.Y = std::abs(sim.BallVel.Y);
+    }
+
+    const float padTop = kPadY - kPadH * 0.5f;
+    if (sim.BallVel.Y > 0.0f &&
+        sim.BallPos.Y + kBallR >= padTop &&
+        sim.BallPos.Y - kBallR <= kPadY + kPadH * 0.5f &&
+        std::abs(sim.BallPos.X - sim.PaddleX) <= (kPadW * 0.5f + kBallR))
+    {
+        const float hitRatio = std::clamp((sim.BallPos.X - sim.PaddleX) / (kPadW * 0.5f), -1.0f, 1.0f);
+        const float bounceAng = hitRatio * 1.02f;
+        sim.BallPos.Y = padTop - kBallR;
+        sim.BallVel = Vector2f{std::sin(bounceAng) * kBallSpeed, -std::cos(bounceAng) * kBallSpeed};
+        sim.PaddleBounceFlash = 1.0f;
+        if (zoomedOnProfile && m_bounceSfxId != 0)
+        {
+            context.Audio.PlaySfx(m_bounceSfxId, 9.0f);
+        }
+    }
+
+    if (sim.BallPos.Y - kBallR > kHalfH)
+    {
+        if (zoomedOnProfile)
+        {
+            sim.Explosions.Spawn(
+                Vector2f{695.0f + std::clamp(sim.BallPos.X, -kHalfW + 30.0f, kHalfW - 30.0f), 419.0f + kHalfH - 18.0f},
+                pm.GetEquippedDeathEffectStyle(), eqPri, eqSec, 1.25f);
+            if (m_brickDestroySfxId != 0) context.Audio.PlaySfx(m_brickDestroySfxId, 11.0f);
+        }
+        sim.Trail.Clear();
+        sim.BallPos = Vector2f{sim.PaddleX, kPadY - 85.0f};
+        const float launchDir = (sim.PaddleVelX >= 0.0f) ? 1.0f : -1.0f;
+        sim.BallVel = Vector2f{launchDir * 280.0f, -460.0f};
+    }
+
+    for (auto& pt : sim.Trail.Points)
+    {
+        pt.Age += clampedDt;
+    }
+    while (!sim.Trail.Points.empty() && sim.Trail.Points.back().Age >= sim.Trail.Config.Lifetime)
+    {
+        sim.Trail.Points.pop_back();
+    }
+
+    if (!sim.Trail.HasRecordedFirst)
+    {
+        sim.Trail.LastRecordedPos = sim.BallPos;
+        sim.Trail.HasRecordedFirst = true;
+    }
+    else
+    {
+        const Vector2f delta = sim.BallPos - sim.Trail.LastRecordedPos;
+        const float dist = delta.Length();
+        if (dist >= sim.Trail.Config.MinPointDistance)
+        {
+            if (dist > sim.Trail.Config.MaxPointDistance && sim.Trail.Config.MaxPointDistance > 0.0f)
+            {
+                const int steps = std::min(4, static_cast<int>(std::floor(dist / sim.Trail.Config.MaxPointDistance)));
+                for (int s = 1; s <= steps; ++s)
+                {
+                    const float alpha = static_cast<float>(s) / static_cast<float>(steps + 1);
+                    const Vector2f subPos = sim.Trail.LastRecordedPos + delta * alpha;
+                    sim.Trail.Points.push_front(TrailPoint{subPos, 0.0f, sim.Trail.Config.StartWidth, sim.Trail.Config.StartColor});
+                }
+            }
+            sim.Trail.Points.push_front(TrailPoint{sim.BallPos, 0.0f, sim.Trail.Config.StartWidth, sim.Trail.Config.StartColor});
+            sim.Trail.LastRecordedPos = sim.BallPos;
+            if (sim.Trail.Points.size() > 64)
+            {
+                sim.Trail.Points.resize(64);
+            }
+        }
+    }
+
+    sim.Explosions.Update(clampedDt);
+}
+
+void MenuScene::RenderProfilePreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const
+{
+    auto& sim = s_profileSim;
+    const float sx = w / 1220.0f;
+    const float sy = h / 720.0f;
+    const float u = std::min(sx, sy);
+
+    const auto& pm = ProfileManager::Get();
+    const Color eqPrimary = pm.GetEquippedPrimaryColor();
+    const Color eqSecondary = pm.GetEquippedSecondaryColor();
+
+    context.Render.DrawRectangle(w, h, Transform2D{pos}, Color{10, 15, 24, 248});
+    context.Render.DrawRectangle(w, h * 0.48f, Transform2D{pos + Vector2f{0.0f, -h * 0.26f}}, Color{16, 26, 40, 88});
+    context.Render.DrawPointLight(pos, 320.0f * u, Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 95}, 0.65f, BlendMode::Add);
+
+    const float padY = pos.Y + 235.0f * sy;
+    const float padX = pos.X + sim.PaddleX * sx;
+    const float padW = std::max(54.0f, 240.0f * sx);
+    const float padH = std::max(8.0f, 34.0f * sy);
+    const float floorY = padY + padH * 1.15f;
+
+    context.Render.DrawLine(
+        Vector2f{pos.X - w * 0.42f, floorY},
+        Vector2f{pos.X + w * 0.42f, floorY},
+        Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 95},
+        std::max(1.0f, 2.0f * u));
+
+    if (!sim.Trail.Points.empty())
+    {
+        TrailComponent scaledTrail;
+        scaledTrail.Config = sim.Trail.Config;
+        scaledTrail.Config.StartWidth = std::max(3.0f, sim.Trail.Config.StartWidth * u * 1.15f);
+        scaledTrail.Config.EndWidth = std::max(1.0f, sim.Trail.Config.EndWidth * u * 1.15f);
+        scaledTrail.Points = sim.Trail.Points;
+        for (auto& pt : scaledTrail.Points)
+        {
+            pt.Position = Vector2f{pos.X + pt.Position.X * sx, pos.Y + pt.Position.Y * sy};
+            pt.Width = std::max(2.0f, pt.Width * u * 1.15f);
+        }
+        CosmeticRenderer::RenderTrail(context.Render, scaledTrail, m_animTime, sim.TrailScratch);
+    }
+
+    const Vector2f ballScreenPos{pos.X + sim.BallPos.X * sx, pos.Y + sim.BallPos.Y * sy};
+    const float ballR = std::max(5.5f, 19.0f * u);
+    context.Render.DrawPointLight(ballScreenPos, ballR * 3.0f, Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 175}, 0.72f, BlendMode::Add);
+    CosmeticRenderer::DrawBall(
+        context.Render,
+        ballScreenPos,
+        ballR,
+        pm.GetEquippedBallSkinStyle(),
+        eqPrimary,
+        eqSecondary,
+        m_animTime,
+        1.0f,
+        false,
+        false,
+        false,
+        m_ballTexId);
+
+    const float bounceDip = sim.PaddleBounceFlash * 6.0f * sy;
+    const float padTilt = std::clamp(sim.PaddleVelX * 0.011f, -8.5f, 8.5f);
+    context.Render.DrawCircle(
+        padW * 0.50f,
+        Transform2D{Vector2f{padX, floorY}, 0.0f, Vector2f{1.0f, 0.18f}},
+        Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 65});
+    CosmeticRenderer::DrawPaddle(
+        context.Render,
+        Vector2f{padX, padY + bounceDip},
+        Vector2f{padW, padH},
+        padTilt,
+        pm.GetEquippedPaddleSkinStyle(),
+        eqPrimary,
+        eqSecondary,
+        m_animTime,
+        1.0f,
+        m_paddleTexId);
+
+    if (isZoomed && m_zoomState == ChannelZoomState::ZoomedView)
+    {
+        sim.Explosions.Render(context.Render);
+    }
+
+    context.Render.DrawRectangleOutline(
+        w, h, Transform2D{pos},
+        Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 185},
+        std::max(1.1f, 2.4f * u));
 }
 
 void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float sc, bool isZoomed) const
@@ -3924,18 +4133,18 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     });
 
     UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
-        .Text = "PROFILE",
+        .Text = "ENDLESS PERKS",
         .OnClick = [this]() {
             if (m_showDescriptionModal) return;
-            OpenWorkshopTab(m_workshopProfileCanvas);
+            OpenWorkshopTab(m_workshopEndlessPerksCanvas);
         },
-        .Position = {310.0f, -635.0f},
-        .Size = {270.0f, 54.0f},
+        .Position = {325.0f, -635.0f},
+        .Size = {300.0f, 54.0f},
         .DefaultColor = Color{35, 50, 85, 255},
         .HoverColor = Color{55, 80, 135, 255},
         .PressedColor = Color{25, 35, 60, 255},
         .FontId = m_fontId,
-        .FontSize = 28.0f,
+        .FontSize = 26.0f,
         .ZOrder = 2
     });
 
@@ -3956,8 +4165,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     m_workshopUltimatesCanvas = m_registry.CreateEntity();
     m_registry.AddComponent<CanvasComponent>(m_workshopUltimatesCanvas, CanvasComponent{.IsEnabled = false});
 
-    m_workshopProfileCanvas = m_registry.CreateEntity();
-    m_registry.AddComponent<CanvasComponent>(m_workshopProfileCanvas, CanvasComponent{.IsEnabled = false});
+    m_workshopEndlessPerksCanvas = m_registry.CreateEntity();
+    m_registry.AddComponent<CanvasComponent>(m_workshopEndlessPerksCanvas, CanvasComponent{.IsEnabled = false});
 
     // =========================================================================
     // --- TAB 1: UPGRADES LAB (CLASH ROYALE CARD GRID + INSPECTOR PREVIEW) ---
@@ -4523,113 +4732,66 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     });
 
     // =========================================================================
-    // --- TAB 3: PLAYER PROFILE & CAREER RECORD ---
+    // --- TAB 3: ENDLESS MODE PERKS LAB (2x2 DEDICATED UPGRADE GRID) ---
     // =========================================================================
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "PLAYER PROFILE & CAREER RECORD",
+    UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
+        .Text = "ENDLESS MODE PERKS & SURVIVAL UPGRADES",
         .Position = {0.0f, -540.0f},
         .FontId = m_fontId,
-        .FontSize = 30.0f,
+        .FontSize = 32.0f,
         .Tint = Colors::Gold,
         .ZOrder = 2
     });
 
-    // Left Card: Player Identity
-    UIFactory::CreatePanel(m_registry, m_workshopProfileCanvas, PanelDescriptor{
-        .Position = {-580.0f, -30.0f},
-        .Size = {1060.0f, 960.0f},
-        .Tint = Color{20, 26, 44, 250},
-        .ZOrder = 1
+    UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
+        .Text = "PERMANENT PASSIVES APPLIED TO EVERY ENDLESS MODE RUN  •  CUSTOMIZE YOUR PILOT IN CH 08 PROFILE GARAGE",
+        .Position = {0.0f, -496.0f},
+        .FontId = m_fontId,
+        .FontSize = 20.0f,
+        .Tint = Color{130, 210, 245, 220},
+        .ZOrder = 2
     });
 
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "PLAYER PROFILE DOSSIER",
-        .Position = {-580.0f, -440.0f},
-        .FontId = m_fontId,
-        .FontSize = 36.0f,
-        .Tint = Colors::Gold,
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "ENTER NICKNAME (PRE-FILLS LEADERBOARDS AUTOMATICALLY):",
-        .Position = {-580.0f, -390.0f},
-        .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Color{80, 220, 255, 255},
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateTextInput(m_registry, m_workshopProfileCanvas, TextInputDescriptor{
-        .Placeholder = "ENTER NICKNAME...",
-        .OnSubmit = [this](const std::string& text) {
-            ProfileManager::Get().SetUsername(text);
-            if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
-            RefreshWorkshopUI();
-        },
-        .Position = {-580.0f, -320.0f},
-        .Size = {540.0f, 64.0f},
-        .DefaultColor = Color{35, 45, 68, 255},
-        .FocusedColor = Color{55, 75, 115, 255},
-        .FontId = m_fontId,
-        .FontSize = 32.0f,
-        .MaxLength = 16,
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "VESSEL EQUIPPED: RETRO CYBER-PADDLE MK-II",
-        .Position = {-580.0f, -210.0f},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .Tint = Color{255, 215, 80, 255},
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "BALL CORE: HIGH-VELOCITY PLASMA ORB",
-        .Position = {-580.0f, -150.0f},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .Tint = Color{80, 220, 255, 255},
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "TRAIL FX: NEON CHROMATIC STREAM",
-        .Position = {-580.0f, -90.0f},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .Tint = Color{255, 120, 180, 255},
-        .ZOrder = 3
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "ENDLESS MODE PERKS & UPGRADES",
-        .Position = {-580.0f, 15.0f},
-        .FontId = m_fontId,
-        .FontSize = 24.0f,
-        .Tint = Colors::Gold,
-        .ZOrder = 3
-    });
+    const float perkCardX[2] = {-530.0f, 530.0f};
+    const float perkCardY[2] = {-215.0f, 195.0f};
 
     for (int i = 0; i < 4; ++i)
     {
         EndlessPerkType perkType = static_cast<EndlessPerkType>(i);
-        float py = 75.0f + static_cast<float>(i) * 65.0f;
+        const int col = i % 2;
+        const int row = i / 2;
+        const float cx = perkCardX[col];
+        const float cy = perkCardY[row];
 
-        m_workshopEndlessPerkTexts[i] = UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
+        UIFactory::CreatePanel(m_registry, m_workshopEndlessPerksCanvas, PanelDescriptor{
+            .Position = {cx, cy},
+            .Size = {980.0f, 360.0f},
+            .Tint = Color{20, 28, 46, 250},
+            .ZOrder = 1
+        });
+
+        m_workshopEndlessPerkTexts[i] = UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
             .Text = ProfileManager::GetEndlessPerkName(perkType),
-            .Position = {-740.0f, py},
+            .Position = {cx, cy - 125.0f},
             .FontId = m_fontId,
-            .FontSize = 20.0f,
-            .Tint = Colors::White,
+            .FontSize = 32.0f,
+            .Tint = Colors::Gold,
             .ZOrder = 3
         });
 
-        m_workshopEndlessPerkBtns[i] = UIFactory::CreateButton(m_registry, m_workshopProfileCanvas, ButtonDescriptor{
+        m_workshopEndlessPerkDescTexts[i] = UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
+            .Text = ProfileManager::GetEndlessPerkDescription(perkType),
+            .Position = {cx, cy - 20.0f},
+            .FontId = m_fontId,
+            .FontSize = 22.0f,
+            .Tint = Color{215, 230, 250, 245},
+            .ZOrder = 3
+        });
+
+        m_workshopEndlessPerkBtns[i] = UIFactory::CreateButton(m_registry, m_workshopEndlessPerksCanvas, ButtonDescriptor{
             .Text = "UPGRADE",
             .OnClick = [this, perkType]() {
+                if (m_showDescriptionModal) return;
                 if (ProfileManager::Get().UpgradeEndlessPerk(perkType))
                 {
                     uint32_t sfx = (m_powerupBuffSfxId != 0) ? m_powerupBuffSfxId : m_clickSfxId;
@@ -4641,80 +4803,19 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 25.0f, 0.8f);
                 }
             },
-            .Position = {-390.0f, py},
-            .Size = {240.0f, 44.0f},
-            .DefaultColor = Color{45, 60, 90, 255},
-            .HoverColor = Color{65, 90, 135, 255},
-            .PressedColor = Color{30, 42, 65, 255},
+            .Position = {cx, cy + 115.0f},
+            .Size = {420.0f, 56.0f},
+            .DefaultColor = Color{45, 65, 105, 255},
+            .HoverColor = Color{68, 100, 155, 255},
+            .PressedColor = Color{30, 44, 72, 255},
             .FontId = m_fontId,
-            .FontSize = 18.0f,
+            .FontSize = 24.0f,
             .ZOrder = 3
         });
     }
 
-    // Right Card: Career Log
-    UIFactory::CreatePanel(m_registry, m_workshopProfileCanvas, PanelDescriptor{
-        .Position = {580.0f, -30.0f},
-        .Size = {1060.0f, 960.0f},
-        .Tint = Color{20, 26, 44, 250},
-        .ZOrder = 1
-    });
-
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "CAREER METRICS & FLIGHT LOG",
-        .Position = {580.0f, -440.0f},
-        .FontId = m_fontId,
-        .FontSize = 36.0f,
-        .Tint = Colors::Gold,
-        .ZOrder = 3
-    });
-
-    m_workshopProfileStatsText = UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "CAREER STATS",
-        .Position = {580.0f, -160.0f},
-        .FontId = m_fontId,
-        .FontSize = 32.0f,
-        .Tint = Colors::White,
-        .ZOrder = 3
-    });
-
-    // Reset Save Data Warning & Button (Profile Tab)
-    UIFactory::CreateText(m_registry, m_workshopProfileCanvas, TextDescriptor{
-        .Text = "RESET ALL CREDITS, UPGRADES, ULTIMATES AND PROGRESSION",
-        .Position = {580.0f, 215.0f},
-        .FontId = m_fontId,
-        .FontSize = 18.0f,
-        .Tint = Color{255, 120, 120, 220},
-        .ZOrder = 3
-    });
-
-    m_resetSaveBtn = UIFactory::CreateButton(m_registry, m_workshopProfileCanvas, ButtonDescriptor{
-        .Text = "RESET SAVE DATA",
-        .OnClick = [this]() {
-            if (m_showDescriptionModal) return;
-            ResetSaveData();
-            if (m_brickDestroySfxId != 0 && mp_context)
-            {
-                mp_context->Audio.PlaySfx(m_brickDestroySfxId, 45.0f);
-            }
-            if (m_resetSaveBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_resetSaveBtn))
-            {
-                m_registry.GetComponent<TextComponent>(m_resetSaveBtn).Text = "[ SAVE DATA RESET ! ]";
-                m_registry.GetComponent<TextComponent>(m_resetSaveBtn).Tint = Colors::Gold;
-            }
-        },
-        .Position = {580.0f, 280.0f},
-        .Size = {540.0f, 60.0f},
-        .DefaultColor = Color{140, 35, 45, 255},
-        .HoverColor = Color{195, 50, 65, 255},
-        .PressedColor = Color{90, 20, 30, 255},
-        .FontId = m_fontId,
-        .FontSize = 26.0f,
-        .ZOrder = 3
-    });
-
-    // Back to Menu Button (Profile Tab)
-    UIFactory::CreateButton(m_registry, m_workshopProfileCanvas, ButtonDescriptor{
+    // Back to Menu Button (Endless Perks Tab)
+    UIFactory::CreateButton(m_registry, m_workshopEndlessPerksCanvas, ButtonDescriptor{
         .Text = "BACK TO MENU",
         .OnClick = [this]() {
             if (m_showDescriptionModal) return;
@@ -4763,7 +4864,7 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
         }
     }
 
-    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopProfileCanvas})
+    for (Entity subCanvas : {m_workshopUpgradesCanvas, m_workshopUltimatesCanvas, m_workshopEndlessPerksCanvas})
     {
         if (subCanvas != NULL_ENTITY && m_registry.IsAlive(subCanvas) && m_registry.HasComponent<CanvasComponent>(subCanvas))
         {
@@ -4808,24 +4909,6 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
         }
     }
 
-    if (m_resetSaveBtn != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_resetSaveBtn))
-    {
-        m_registry.GetComponent<TextComponent>(m_resetSaveBtn).Text = "RESET SAVE DATA";
-        m_registry.GetComponent<TextComponent>(m_resetSaveBtn).Tint = Colors::White;
-    }
-
-    RefreshWorkshopUI();
-}
-
-void MenuScene::ResetSaveData()
-{
-    PowerUpManager::Get().ResetToDefaults();
-    ProfileManager::Get().ResetToDefaults();
-    m_levelManager.ResetProgression();
-    m_leaderboard.ResetToDefaults();
-    PlayerPrefs::Save();
-    m_inspectedLevel = PowerUpManager::Get().GetPersistedLevel(m_selectedPowerUp);
-    m_workshopPreviewLevel = m_inspectedLevel;
     RefreshWorkshopUI();
 }
 
@@ -5188,35 +5271,7 @@ void MenuScene::RefreshWorkshopUI()
         }
     }
 
-    // 4. Profile & Stats Refresh
-    if (m_workshopProfileStatsText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopProfileStatsText))
-    {
-        auto& textComp = m_registry.GetComponent<TextComponent>(m_workshopProfileStatsText);
-        std::stringstream ss;
-        ss << "LIFETIME COMBAT SCORE: " << ProfileManager::Get().GetLifetimeScore() << " PTS\n\n";
-        ss << "TOTAL CREDITS EARNED:  " << ProfileManager::Get().GetLifetimeCredits() << " CR\n\n";
-        ss << "CURRENT BANK BALANCE:  " << PowerUpManager::Get().GetCoins() << " CR\n\n";
-        ss << "HIGHEST STAGE CLEARED: STAGE " << m_levelManager.GetHighestClearedLevel() << "\n\n";
-        ss << "ENDLESS BEST SURVIVAL: " << ProfileManager::Get().GetEndlessBestTimeFormatted() << "\n\n";
-        ss << "ENDLESS WAVES CLEARED: " << ProfileManager::Get().GetEndlessBestWaves() << " WAVES\n\n";
-        ss << "ENDLESS HIGH SCORE:    " << ProfileManager::Get().GetEndlessHighScore() << " PTS\n\n";
-        
-        int totalPurchased = 0;
-        const PowerUpType allTypes[] = {
-            PowerUpType::MultiBall, PowerUpType::ExpandPaddle, PowerUpType::Storm, PowerUpType::TempoBall,
-            PowerUpType::ExtraLife, PowerUpType::BigBall, PowerUpType::FireBall, PowerUpType::StickyPaddle,
-            PowerUpType::BottomBarrier, PowerUpType::MagnetPaddle, PowerUpType::GhostBall, PowerUpType::ItemRegen
-        };
-        for (PowerUpType pt : allTypes)
-        {
-            totalPurchased += (PowerUpManager::Get().GetPersistedLevel(pt) - 1);
-        }
-        ss << "UPGRADES INSTALLED:    " << totalPurchased << " / 48 TIERS";
-
-        textComp.Text = ss.str();
-    }
-
-    // Endless Mode Perks Refresh
+    // 4. Endless Mode Perks Refresh
     for (int i = 0; i < 4; ++i)
     {
         EndlessPerkType perk = static_cast<EndlessPerkType>(i);
@@ -5225,8 +5280,23 @@ void MenuScene::RefreshWorkshopUI()
 
         if (m_workshopEndlessPerkTexts[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkTexts[i]))
         {
-            std::string perkInfo = ProfileManager::GetEndlessPerkName(perk) + " (T" + std::to_string(lvl) + "/" + std::to_string(maxLvl) + ")";
+            std::string perkInfo = ProfileManager::GetEndlessPerkName(perk) + "  (TIER " + std::to_string(lvl) + " / " + std::to_string(maxLvl) + ")";
             m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkTexts[i]).Text = perkInfo;
+        }
+
+        if (m_workshopEndlessPerkDescTexts[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkDescTexts[i]))
+        {
+            std::string tierLine = "CURRENT: " + ProfileManager::GetEndlessPerkTierInfo(perk, lvl);
+            if (lvl < maxLvl)
+            {
+                tierLine += "\nNEXT: " + ProfileManager::GetEndlessPerkTierInfo(perk, lvl + 1);
+            }
+            else
+            {
+                tierLine += "\n[ MAXIMUM TIER REACHED ]";
+            }
+            m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkDescTexts[i]).Text =
+                ProfileManager::GetEndlessPerkDescription(perk) + "\n\n" + tierLine;
         }
 
         if (m_workshopEndlessPerkBtns[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkBtns[i]))

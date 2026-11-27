@@ -6,6 +6,10 @@
 #include "ECS/Components/BoxCollider.h"
 #include "ECS/Components/CircleCollider.h"
 #include "ECS/Components/TrailComponent.h"
+#include "ECS/Components/PaddleComponent.h"
+#include "ECS/Components/BallComponent.h"
+#include "Core/ProfileManager.h"
+#include "Graphics/CosmeticRenderer.h"
 #include "Graphics/Renderer.h"
 
 #include <algorithm>
@@ -13,14 +17,18 @@
 
 RenderSystem::RenderSystem(Registry& registry, Renderer& renderer) : System(registry), m_renderer(renderer) {}
 
+void RenderSystem::OnUpdate(float dt)
+{
+    m_animTime += dt;
+}
+
 void RenderSystem::OnRender()
 {
     // 1. Render glowing motion trails beneath sprites
     RenderTrails();
 
-    // 2. Render sorted sprites
+    // 2. Render sorted sprites & customized paddle/ball cosmetics
     m_renderQueue.clear();
-
 
     m_registry.View<Transform2D, SpriteComponent>([this](const Entity e, const Transform2D& transform, const SpriteComponent& sprite)
     {
@@ -52,6 +60,7 @@ void RenderSystem::OnRender()
         m_renderQueue.push_back(RenderItem{
             .sprite = &sprite,
             .renderTransform = renderTransform,
+            .worldTransform = transform,
             .layer = sprite.Layer,
             .entity = e
         });
@@ -66,8 +75,62 @@ void RenderSystem::OnRender()
         return a.entity < b.entity;
     });
 
+    const auto& pm = ProfileManager::Get();
+    const Color primaryCol = pm.GetEquippedPrimaryColor();
+    const Color secondaryCol = pm.GetEquippedSecondaryColor();
+    const PaddleSkinStyle paddleSkin = pm.GetEquippedPaddleSkinStyle();
+    const BallSkinStyle ballSkin = pm.GetEquippedBallSkinStyle();
+
     for (const auto& item : m_renderQueue)
     {
+        const float alphaScale = static_cast<float>(item.sprite->Tint.a) / 255.0f;
+
+        if (m_registry.HasComponent<PaddleComponent>(item.entity) && m_registry.HasComponent<BoxCollider>(item.entity))
+        {
+            if (alphaScale > 0.01f)
+            {
+                const auto& box = m_registry.GetComponent<BoxCollider>(item.entity);
+                const Vector2f effectiveSize = box.GetEffectiveSize(item.worldTransform.Scale);
+                CosmeticRenderer::DrawPaddle(
+                    m_renderer,
+                    item.worldTransform.Position,
+                    effectiveSize,
+                    item.worldTransform.Rotation,
+                    paddleSkin,
+                    primaryCol,
+                    secondaryCol,
+                    m_animTime,
+                    alphaScale,
+                    item.sprite->TextureId);
+            }
+            continue;
+        }
+
+        if (m_registry.HasComponent<BallComponent>(item.entity) && m_registry.HasComponent<CircleCollider>(item.entity))
+        {
+            if (alphaScale > 0.01f)
+            {
+                const auto& circle = m_registry.GetComponent<CircleCollider>(item.entity);
+                const auto& bc = m_registry.GetComponent<BallComponent>(item.entity);
+                const float radius = circle.GetEffectiveRadius(item.worldTransform.Scale);
+                const bool isTempo = (item.sprite->Tint.r == 210 && item.sprite->Tint.g == 160 && item.sprite->Tint.b == 255);
+                CosmeticRenderer::DrawBall(
+                    m_renderer,
+                    item.worldTransform.Position,
+                    radius,
+                    ballSkin,
+                    primaryCol,
+                    secondaryCol,
+                    m_animTime,
+                    alphaScale,
+                    bc.IsFireBall,
+                    bc.IsGhost,
+                    isTempo,
+                    item.sprite->TextureId);
+            }
+            continue;
+        }
+
         m_renderer.DrawSprite(*item.sprite, item.renderTransform, BlendMode::Alpha);
     }
 }
@@ -76,108 +139,6 @@ void RenderSystem::RenderTrails()
 {
     m_registry.View<TrailComponent>([this](Entity /*e*/, TrailComponent& trail)
     {
-        if (trail.Points.size() < 2) return;
-
-        const auto& cfg = trail.Config;
-        const size_t numPoints = trail.Points.size();
-
-        if (cfg.Shape == TrailShape::Particles)
-        {
-            // Discrete particle/disk streak
-            for (size_t i = 0; i < numPoints; ++i)
-            {
-                const auto& pt = trail.Points[i];
-                float t = (cfg.Lifetime > 0.0f) ? std::clamp(pt.Age / cfg.Lifetime, 0.0f, 1.0f) : 1.0f;
-
-                float width = cfg.FadeWidth ? ((1.0f - t) * pt.Width + t * cfg.EndWidth) : pt.Width;
-                float radius = width * 0.5f;
-
-                Color c = cfg.StartColor;
-                if (cfg.CosmeticId == TrailCosmeticId::Rainbow)
-                {
-                    float hue = std::fmod(t * 360.0f + pt.Age * 180.0f, 360.0f);
-                    c = TrailPresets::HsvToRgb(hue, 0.9f, 1.0f);
-                }
-                else
-                {
-                    c.r = static_cast<uint8_t>((1.0f - t) * cfg.StartColor.r + t * cfg.EndColor.r);
-                    c.g = static_cast<uint8_t>((1.0f - t) * cfg.StartColor.g + t * cfg.EndColor.g);
-                    c.b = static_cast<uint8_t>((1.0f - t) * cfg.StartColor.b + t * cfg.EndColor.b);
-                }
-                if (cfg.FadeAlpha)
-                {
-                    c.a = static_cast<uint8_t>((1.0f - t) * cfg.StartColor.a + t * cfg.EndColor.a);
-                }
-
-                m_renderer.DrawCircle(radius, Transform2D{pt.Position}, c, cfg.Blend);
-            }
-        }
-        else
-        {
-            // Ribbon Quad Strip (TriangleStrip) - zero per-frame heap allocation
-            m_trailVerticesScratch.clear();
-            m_trailVerticesScratch.reserve(numPoints * 2);
-
-            for (size_t i = 0; i < numPoints; ++i)
-            {
-                const auto& pt = trail.Points[i];
-                float t = (cfg.Lifetime > 0.0f) ? std::clamp(pt.Age / cfg.Lifetime, 0.0f, 1.0f) : 1.0f;
-
-                Vector2f dir{0.0f, 0.0f};
-                if (i == 0)
-                {
-                    dir = trail.Points[0].Position - trail.Points[1].Position;
-                }
-                else if (i == numPoints - 1)
-                {
-                    dir = trail.Points[i - 1].Position - trail.Points[i].Position;
-                }
-                else
-                {
-                    dir = trail.Points[i - 1].Position - trail.Points[i + 1].Position;
-                }
-
-                float len = dir.Length();
-                Vector2f normal = (len > 0.001f) ? Vector2f{-dir.Y / len, dir.X / len} : Vector2f{0.0f, 1.0f};
-
-                float width = cfg.FadeWidth ? ((1.0f - t) * pt.Width + t * cfg.EndWidth) : pt.Width;
-                float halfWidth = width * 0.5f;
-
-                Color c = cfg.StartColor;
-                if (cfg.CosmeticId == TrailCosmeticId::Rainbow)
-                {
-                    float hue = std::fmod(t * 360.0f + pt.Age * 180.0f, 360.0f);
-                    c = TrailPresets::HsvToRgb(hue, 0.9f, 1.0f);
-                }
-                else
-                {
-                    c.r = static_cast<uint8_t>((1.0f - t) * cfg.StartColor.r + t * cfg.EndColor.r);
-                    c.g = static_cast<uint8_t>((1.0f - t) * cfg.StartColor.g + t * cfg.EndColor.g);
-                    c.b = static_cast<uint8_t>((1.0f - t) * cfg.StartColor.b + t * cfg.EndColor.b);
-                }
-
-                if (cfg.FadeAlpha)
-                {
-                    c.a = static_cast<uint8_t>((1.0f - t) * cfg.StartColor.a + t * cfg.EndColor.a);
-                }
-                else
-                {
-                    c.a = cfg.StartColor.a;
-                }
-
-                Vector2f left = pt.Position + normal * halfWidth;
-                Vector2f right = pt.Position - normal * halfWidth;
-
-                m_trailVerticesScratch.push_back(Vertex{left.X, left.Y, c, 0.0f, t});
-                m_trailVerticesScratch.push_back(Vertex{right.X, right.Y, c, 1.0f, t});
-            }
-
-            if (m_trailVerticesScratch.size() >= 4)
-            {
-                m_renderer.DrawVertices(m_trailVerticesScratch, PrimitiveType::TriangleStrip, 0, cfg.Blend);
-            }
-        }
+        CosmeticRenderer::RenderTrail(m_renderer, trail, m_animTime, m_trailVerticesScratch);
     });
 }
-
-

@@ -237,10 +237,9 @@ void GameScene::OnInit(GameContext& context)
 
     mp_paddleSystem = m_systemManager.AddSystem<PaddleSystem>(m_registry, context);
     mp_ballSystem = m_systemManager.AddSystem<BallSystem>(m_registry, context);
-    int savedTrail = PlayerPrefs::GetInt("SelectedBallTrail", static_cast<int>(TrailCosmeticId::DefaultNeon));
-    if (savedTrail >= 0 && savedTrail <= static_cast<int>(TrailCosmeticId::Rainbow))
+    if (mp_ballSystem)
     {
-        mp_ballSystem->SetBallTrailCosmetic(static_cast<TrailCosmeticId>(savedTrail));
+        mp_ballSystem->SyncTrailFromProfile();
     }
     m_systemManager.AddSystem<PhysicsSystem>(m_registry, context.Events);
     m_systemManager.AddSystem<RenderSystem>(m_registry, context.Render);
@@ -446,7 +445,15 @@ void GameScene::OnInit(GameContext& context)
 
     LightSourceComponent paddleLight{};
     paddleLight.Type = LightType::Cone;
-    paddleLight.LightColor = Color{200, 235, 255, 255};
+    {
+        const Color pri = ProfileManager::Get().GetEquippedPrimaryColor();
+        paddleLight.LightColor = Color{
+            static_cast<uint8_t>(std::min(255.0f, 140.0f + pri.r * 0.45f)),
+            static_cast<uint8_t>(std::min(255.0f, 140.0f + pri.g * 0.45f)),
+            static_cast<uint8_t>(std::min(255.0f, 140.0f + pri.b * 0.45f)),
+            255
+        };
+    }
     paddleLight.Radius = 450.0f;
     paddleLight.Intensity = 1.3f;
     paddleLight.DirectionDeg = -90.0f; // points straight up into the field
@@ -1040,6 +1047,7 @@ void GameScene::OnUpdate(const float dt, GameContext& context)
         const float timeScale = mp_eventSystem ? mp_eventSystem->GetTimeScale() : 1.0f;
         const float simDt = dt * timeScale;
         m_systemManager.OnUpdate(simDt);
+        m_cosmeticExplosions.Update(simDt);
     }
     m_registry.ProcessDeferredCommands();
 }
@@ -1080,6 +1088,7 @@ void GameScene::OnRender(GameContext& context)
     RenderDiscoBackgroundMusicNotes(context);
 
     m_systemManager.OnRender();
+    m_cosmeticExplosions.Render(context.Render);
 
     RenderTopSpawnLight(context);
 
@@ -1926,6 +1935,21 @@ void GameScene::SpawnExplosionParticles(const Vector2f& position, const Color& c
     }
 }
 
+void GameScene::SpawnCosmeticExplosion(const Vector2f& position, float scale)
+{
+    if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles))
+    {
+        return;
+    }
+    const auto& pm = ProfileManager::Get();
+    m_cosmeticExplosions.Spawn(
+        position,
+        pm.GetEquippedDeathEffectStyle(),
+        pm.GetEquippedPrimaryColor(),
+        pm.GetEquippedSecondaryColor(),
+        scale);
+}
+
 void GameScene::SpawnFireTrailParticle(const Vector2f& position, const Vector2f& ballVelocity, bool isFuseActive)
 {
     if (mp_context && !mp_context->Rules.GetRule(Rule::Graphics::EnableParticles)) {
@@ -2110,6 +2134,7 @@ void GameScene::ExplodeFireBall(Entity ballEntity, const Vector2f& explosionCent
 
 void GameScene::OnDestroy(GameContext& context)
 {
+    m_cosmeticExplosions.Clear();
     ClearActiveUltimates();
     ClearVisualMalus();
     RestoreTemporalAudio(0.05f);
@@ -2504,6 +2529,7 @@ void GameScene::OnReplayRequested()
 
 void GameScene::FullReset()
 {
+    m_cosmeticExplosions.Clear();
     ClearVisualMalus();
     RestoreTemporalAudio(0.1f);
     if (mp_eventSystem)
@@ -2721,7 +2747,9 @@ void GameScene::ResetBallAndPaddle(bool smooth)
         {
             auto& tc = m_registry.GetComponent<TrailComponent>(m_ball);
             tc.Clear();
-            tc.Config = TrailPresets::GetPreset(mp_ballSystem ? mp_ballSystem->GetBallTrailCosmetic() : TrailCosmeticId::DefaultNeon);
+            tc.Config = mp_ballSystem
+                ? mp_ballSystem->GetActiveTrailConfig()
+                : CosmeticRenderer::BuildEquippedTrailConfig(ProfileManager::Get());
         }
         if (m_registry.HasComponent<BallComponent>(m_ball))
         {
@@ -2859,6 +2887,7 @@ void GameScene::HandleDeath()
             const auto& t = m_registry.GetComponent<Transform2D>(m_ball);
             const auto& s = m_registry.GetComponent<SpriteComponent>(m_ball);
             SpawnExplosionParticles(t.Position, s.Tint);
+            SpawnCosmeticExplosion(t.Position, 1.35f);
         }
 
         bool infiniteLives = mp_context ? mp_context->Rules.GetRule(Rule::Gameplay::InfiniteLives) : false;
@@ -3260,6 +3289,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
                 auto& sprite = m_registry.GetComponent<SpriteComponent>(entity);
 
                 SpawnExplosionParticles(transform.Position, sprite.Tint);
+                SpawnCosmeticExplosion(transform.Position, 0.72f);
                 if (brick.HasForcedPowerUp)
                 {
                     SpawnSpecificPowerUp(transform.Position, brick.ForcedPowerUp);
@@ -3386,6 +3416,7 @@ void GameScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLa
             const auto& sprite = m_registry.GetComponent<SpriteComponent>(entity);
             
             SpawnExplosionParticles(transform.Position, sprite.Tint);
+            SpawnCosmeticExplosion(transform.Position, 0.58f);
 
             if (brick.IsSpecial)
             {
@@ -7642,6 +7673,7 @@ bool GameScene::DamagePaddle(float rawDamage, const Vector2f& impactPos, GameCon
         SpawnFireExplosionParticles(paddlePos, 115.0f, 52);
         SpawnExplosionParticles(paddlePos, Color{255, 110, 60, 255}, 34);
         SpawnExplosionParticles(paddlePos, Color{230, 240, 255, 255}, 24);
+        SpawnCosmeticExplosion(paddlePos, 1.55f);
         SpawnLightFlash(paddlePos, 580.0f, Color{255, 120, 65, 255}, 2.4f, 0.55f);
 
         m_paddleImpactRipples.push_back(PaddleImpactRipple{paddlePos, Color{255, 85, 55, 255}, 14.0f, 185.0f, 0.48f, 0.48f});

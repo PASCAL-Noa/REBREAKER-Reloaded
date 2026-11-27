@@ -27,29 +27,31 @@ public:
 
     // Trail & Cosmetic Configuration
     void   SetBallTrailCosmetic(TrailCosmeticId cosmetic);
+    void   SyncTrailFromProfile();
     [[nodiscard]] TrailCosmeticId GetBallTrailCosmetic() const { return m_activeTrailCosmetic; }
+    [[nodiscard]] TrailConfig     GetActiveTrailConfig() const;
 
     // Laser Lifecycle & Updates
     void   RegisterLaser(Entity laser);
     void   UnregisterLaser(Entity laser);
     void   ClearLasers();
-    [[nodiscard]] const std::vector<Entity>& GetLasers() const { return m_lasers; }\
-    [[nodiscard]] std::vector<Entity>&       GetLasers() { return m_lasers; }\
+    [[nodiscard]] const std::vector<Entity>& GetLasers() const { return m_lasers; }
+    [[nodiscard]] std::vector<Entity>&       GetLasers() { return m_lasers; }
     [[nodiscard]] bool                       IsLaser(Entity entity) const;
 
     // Speed Clamping & Trajectory Configuration
-    void   SetTempoBallActive(bool active) { m_isTempoActive = active; }\
-    [[nodiscard]] bool IsTempoBallActive() const { return m_isTempoActive; }\
+    void   SetTempoBallActive(bool active) { m_isTempoActive = active; }
+    [[nodiscard]] bool IsTempoBallActive() const { return m_isTempoActive; }
 
-    void   SetMinSpeed(float speed) { m_customMinSpeed = speed; }\
-    void   ResetMinSpeed() { m_customMinSpeed = -1.0f; }\
+    void   SetMinSpeed(float speed) { m_customMinSpeed = speed; }
+    void   ResetMinSpeed() { m_customMinSpeed = -1.0f; }
 
     void   SetPlayfieldBounds(float minX, float maxX, float minY, float maxY = 450.0f);
-    void   SetBallRadius(float radius) { m_ballRadius = radius; }\
+    void   SetBallRadius(float radius) { m_ballRadius = radius; }
 
     // Dynamic Effects Callbacks
-    void   SetFireTrailCallback(std::function<void(const Vector2f& pos, const Vector2f& vel, bool isFuseActive)> cb) { m_onFireTrail = std::move(cb); }\
-    void   SetFireExplosionCallback(std::function<void(Entity ball, const Vector2f& pos)> cb) { m_onFireExplode = std::move(cb); }\
+    void   SetFireTrailCallback(std::function<void(const Vector2f& pos, const Vector2f& vel, bool isFuseActive)> cb) { m_onFireTrail = std::move(cb); }
+    void   SetFireExplosionCallback(std::function<void(Entity ball, const Vector2f& pos)> cb) { m_onFireExplode = std::move(cb); }
 
 private:
     void   UpdateBallPhysics(float dt);
@@ -62,6 +64,7 @@ private:
     std::vector<Entity> m_lasers;
 
     TrailCosmeticId m_activeTrailCosmetic = TrailCosmeticId::DefaultNeon;
+    bool  m_useProfileTrail = true;
     bool  m_isTempoActive = false;
 
     float m_customMinSpeed = -1.0f;
