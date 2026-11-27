@@ -3,6 +3,8 @@
 #include "Core/PlayerPrefs.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Graphics/CosmeticRenderer.h"
+#include "UI/ProfileGarageState.h"
+#include "UI/ProfileGarageLayout.h"
 #include <filesystem>
 
 struct ProfileCustomizationFixture
@@ -219,5 +221,92 @@ TEST_SUITE("Profile Customization Garage & Persistence")
             pool.Update(0.05f);
         }
         CHECK(pool.GetActiveCount() == 0);
+    }
+
+    TEST_CASE_FIXTURE(ProfileCustomizationFixture, "ProfileGarageState uses 2x4 grid and paginates within active category without switching tabs")
+    {
+        ProfileGarageState state;
+        state.Initialize();
+
+        CHECK(ProfileGarageState::kTabCount == 4);
+        CHECK(ProfileGarageState::kSideButtonCount == 3);
+        CHECK(ProfileGarageState::kGridCols == 4);
+        CHECK(ProfileGarageState::kGridRows == 2);
+        CHECK(ProfileGarageState::kItemsPerPage == 8);
+        CHECK(state.GetActiveTab() == 0);
+        CHECK(state.GetActiveSlot() == CosmeticSlot::PaddleSkin);
+        CHECK(state.GetCurrentPage() == 0);
+        CHECK(state.GetPageItemCount() <= ProfileGarageState::kItemsPerPage);
+        CHECK(state.GetPageItemCount() > 0);
+
+        const int initialTab = state.GetActiveTab();
+        state.NextPage();
+        CHECK(state.GetActiveTab() == initialTab);
+        CHECK(state.GetActiveSlot() == CosmeticSlot::PaddleSkin);
+
+        state.PrevPage();
+        CHECK(state.GetActiveTab() == initialTab);
+        CHECK(state.GetCurrentPage() == 0);
+
+        CHECK(state.SwitchTab(1));
+        CHECK(state.GetActiveSlot() == CosmeticSlot::BallSkin);
+        CHECK(state.GetCurrentPage() == 0);
+
+        state.SetSelectedIndex(2);
+        CHECK_FALSE(state.GetInspectedItem()->Unlocked);
+        state.NotifySelectedLockedItem();
+        CHECK_FALSE(state.GetToastText().empty());
+        CHECK(state.ActivateSelectedItem() == ProfileActionResult::InsufficientFunds);
+
+        PowerUpManager::Get().AddCoins(1000);
+        CHECK(state.ActivateSelectedItem() == ProfileActionResult::UnlockedAndEquipped);
+        CHECK(state.GetInspectedItem()->Unlocked);
+    }
+
+    TEST_CASE("ProfileGarageLayout centers 3 action buttons above 4 tabs and lowers nickname and showcase")
+    {
+        const Vector2f view{1920.0f, 1080.0f};
+        const UIRect back = ProfileGarageLayout::GetBackButtonRect(view);
+        const UIRect nick = ProfileGarageLayout::GetNicknameRect(view, false);
+        const UIRect careerNick = ProfileGarageLayout::GetNicknameRect(view, true);
+        const UIRect careerLeft = ProfileGarageLayout::GetCareerLeftPanel(view);
+        const UIRect showcase = ProfileGarageLayout::GetShowcaseBounds(view);
+        const UIRect action0 = ProfileGarageLayout::GetSideButtonRect(0, view);
+        const UIRect action1 = ProfileGarageLayout::GetSideButtonRect(1, view);
+        const UIRect action2 = ProfileGarageLayout::GetSideButtonRect(2, view);
+        const UIRect tab0 = ProfileGarageLayout::GetTabRect(0, view);
+        const UIRect tab3 = ProfileGarageLayout::GetTabRect(3, view);
+        const UIRect drawer = ProfileGarageLayout::GetDrawerRect(view);
+        const UIRect pills = ProfileGarageLayout::GetPageIndicatorRect(0, 2, view);
+        const UIRect leftArrow = ProfileGarageLayout::GetPageArrowRect(false, view);
+        const UIRect rightArrow = ProfileGarageLayout::GetPageArrowRect(true, view);
+        const UIRect colorModal = ProfileGarageLayout::GetColorModalRect(view);
+
+        CHECK(action0.Center.Y == doctest::Approx(action1.Center.Y));
+        CHECK(action1.Center.Y == doctest::Approx(action2.Center.Y));
+        CHECK(action1.Center.X == doctest::Approx(0.0f));
+        CHECK(action0.Center.X == doctest::Approx(-action2.Center.X));
+        CHECK(action0.Right() < action1.Left());
+        CHECK(action1.Right() < action2.Left());
+
+        CHECK(tab0.Center.Y == doctest::Approx(tab3.Center.Y));
+        CHECK(tab0.Center.X == doctest::Approx(-tab3.Center.X));
+
+        CHECK(nick.Center.Y > back.Center.Y);
+        CHECK(nick.Bottom() < showcase.Top());
+        CHECK(showcase.Bottom() < action0.Top());
+        CHECK(action0.Bottom() < tab0.Top());
+        CHECK(tab0.Bottom() < drawer.Top());
+        CHECK(drawer.Bottom() < pills.Top());
+
+        CHECK(std::abs((nick.Top() + pills.Bottom()) * 0.5f) <= 15.0f);
+        CHECK(colorModal.Center.X == doctest::Approx(0.0f));
+        CHECK(colorModal.Center.Y == doctest::Approx(0.0f));
+
+        CHECK(leftArrow.Center.Y == doctest::Approx(drawer.Center.Y));
+        CHECK(rightArrow.Center.Y == doctest::Approx(drawer.Center.Y));
+        CHECK(leftArrow.Size.X == doctest::Approx(leftArrow.Size.Y));
+
+        CHECK(careerNick.Bottom() < careerLeft.Top());
     }
 }

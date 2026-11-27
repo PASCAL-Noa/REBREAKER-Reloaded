@@ -195,6 +195,7 @@ private:
     void    InitTVChannels();
     void    InitCampaignPreviewLevel();
     void    UpdateCampaignPreviewSimulation(float dt);
+    void    UpdateProfilePreviewSimulation(float dt, GameContext& context);
     void    UpdateMusicParticles(float dt);
     void    RenderCampaignPreview(GameContext& context, const Vector2f& pos, float sc, bool isZoomed) const;
     void    RenderStageSelectPreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const;

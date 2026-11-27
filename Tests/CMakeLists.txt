@@ -7,6 +7,8 @@ add_executable(RebreakerTests
     "${CMAKE_SOURCE_DIR}/Game/source/RogueliteDraft.cpp"
     "${CMAKE_SOURCE_DIR}/Game/source/ProceduralEndlessGenerator.cpp"
     "${CMAKE_SOURCE_DIR}/Game/source/BrickFactory.cpp"
+    "${CMAKE_SOURCE_DIR}/Game/source/ProfileGarageState.cpp"
+    "${CMAKE_SOURCE_DIR}/Game/source/ProfileGarageLayout.cpp"
 )
 
 target_include_directories(RebreakerTests PRIVATE "${CMAKE_SOURCE_DIR}/Game/include")

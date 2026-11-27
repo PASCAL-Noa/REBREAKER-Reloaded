@@ -46,12 +46,46 @@
 #include <sstream>
 #include <cmath>
 
+namespace
+{
+    struct ProfileChannelSimState
+    {
+        Vector2f BallPos{0.0f, -40.0f};
+        Vector2f BallVel{320.0f, -420.0f};
+        float PaddleX = 0.0f;
+        float PaddleVelX = 0.0f;
+        float PaddleBounceFlash = 0.0f;
+        TrailComponent Trail;
+        std::vector<Vertex> TrailScratch;
+        CosmeticExplosionPool Explosions;
+        bool TrailInitialized = false;
+        TrailStyle CachedTrailStyle = TrailStyle::ClassicWhite;
+        Color CachedPri{0, 230, 255, 255};
+        Color CachedSec{255, 255, 255, 255};
+
+        void Reset()
+        {
+            BallPos = Vector2f{0.0f, -40.0f};
+            BallVel = Vector2f{320.0f, -420.0f};
+            PaddleX = 0.0f;
+            PaddleVelX = 0.0f;
+            PaddleBounceFlash = 0.0f;
+            Trail.Clear();
+            Explosions.Clear();
+            TrailInitialized = false;
+        }
+    };
+
+    ProfileChannelSimState s_profileSim;
+}
+
 MenuScene::MenuScene() = default;
 MenuScene::~MenuScene() = default;
 
 void MenuScene::OnInit(GameContext& context)
 {
     DefaultScene::OnInit(context);
+    s_profileSim.Reset();
     PowerUpManager::Get().LoadFromPrefs();
     m_bgColor = Color{8, 10, 16, 255};
 
@@ -340,6 +374,7 @@ void MenuScene::OnUpdate(float dt, GameContext& context)
     {
         UpdateCampaignPreviewSimulation(dt);
         UpdateTVControls(dt, context);
+        UpdateProfilePreviewSimulation(dt, context);
         if (context.Input.IsKeyPress(KeyCode::Tab))
         {
             OpenModal(m_debugCanvas);
@@ -682,6 +717,7 @@ void MenuScene::OnRender(GameContext& context)
 
 void MenuScene::OnDestroy(GameContext& context)
 {
+    s_profileSim.Reset();
     if (m_previewScene)
     {
         m_previewScene->OnDestroy(context);
@@ -2198,7 +2234,7 @@ void MenuScene::LaunchChannel(int channelIndex, GameContext& context)
         OpenModal(m_leaderboardCanvas);
         break;
     case ChannelType::Achievements:
-        context.Scenes.LoadSceneWithTransition<ProfileScene>(SceneTransitionType::StaticSnow, 0.55f);
+        ProfileScene::Launch(context.Scenes, SceneTransitionType::StaticSnow, 0.55f);
         break;
     case ChannelType::LevelMaker:
         context.Scenes.LoadSceneWithTransition<EditorScene>(SceneTransitionType::StaticSnow, 0.65f);
@@ -2993,98 +3029,256 @@ void MenuScene::RenderStrixVaultPreview(GameContext& context, const Vector2f& po
     context.Render.DrawRectangleOutline(w, h, Transform2D{pos}, Color{65, 235, 195, 195}, (isZoomed ? 2.5f : 1.1f) * s);
 }
 
+void MenuScene::UpdateProfilePreviewSimulation(float dt, GameContext& context)
+{
+    auto& sim = s_profileSim;
+    const float clampedDt = std::min(dt, 0.05f);
+    constexpr float kHalfW = 610.0f;
+    constexpr float kHalfH = 360.0f;
+    constexpr float kPadW = 240.0f;
+    constexpr float kPadH = 34.0f;
+    constexpr float kPadY = 235.0f;
+    constexpr float kBallR = 19.0f;
+    constexpr float kMaxPadX = kHalfW - kPadW * 0.5f - 24.0f;
+    constexpr float kBallSpeed = 540.0f;
+
+    const auto& pm = ProfileManager::Get();
+    const TrailStyle eqTrail = pm.GetEquippedTrailStyle();
+    const Color eqPri = pm.GetEquippedPrimaryColor();
+    const Color eqSec = pm.GetEquippedSecondaryColor();
+    if (!sim.TrailInitialized ||
+        eqTrail != sim.CachedTrailStyle ||
+        eqPri.r != sim.CachedPri.r || eqPri.g != sim.CachedPri.g || eqPri.b != sim.CachedPri.b ||
+        eqSec.r != sim.CachedSec.r || eqSec.g != sim.CachedSec.g || eqSec.b != sim.CachedSec.b)
+    {
+        sim.TrailInitialized = true;
+        sim.CachedTrailStyle = eqTrail;
+        sim.CachedPri = eqPri;
+        sim.CachedSec = eqSec;
+        sim.Trail.Config = CosmeticRenderer::BuildTrailConfig(eqTrail, eqPri, eqSec);
+    }
+
+    const bool zoomedOnProfile =
+        (m_zoomState == ChannelZoomState::ZoomedView &&
+         m_selectedChannel >= 0 &&
+         m_selectedChannel < static_cast<int>(m_tvChannels.size()) &&
+         m_tvChannels[m_selectedChannel].Type == ChannelType::Achievements);
+
+    const auto& L = m_tvLayout;
+    auto [mx, my] = context.Input.GetMousePosition();
+    const Vector2f mPos{mx, my};
+    const float invScale = (L.Scale > 0.0001f) ? (1.0f / L.Scale) : 1.0f;
+    const Vector2f mouseOnGlass = Vector2f{695.0f, 455.0f} + (mPos - L.GlassCenter) * invScale;
+
+    bool mouseControlled = false;
+    float targetPadX = sim.BallPos.X + std::sin(m_animTime * 1.4f) * 38.0f;
+
+    if (zoomedOnProfile && !m_showPowerOffDialog)
+    {
+        const Vector2f localMouse = mouseOnGlass - Vector2f{695.0f, 419.0f};
+        const bool inArena = (std::abs(localMouse.X) <= kHalfW && std::abs(localMouse.Y) <= kHalfH);
+        if (inArena)
+        {
+            mouseControlled = true;
+            targetPadX = localMouse.X;
+
+            if (context.Input.IsMouseButtonPress(MouseButton::Left))
+            {
+                Vector2f delta = sim.BallPos - localMouse;
+                float dist = delta.Length();
+                if (dist < 145.0f)
+                {
+                    Vector2f dir = (dist > 1.0f) ? (delta / dist) : Vector2f{0.0f, -1.0f};
+                    dir.Y = std::min(dir.Y, -0.35f);
+                    const float len = std::max(0.001f, dir.Length());
+                    sim.BallVel = (dir / len) * (kBallSpeed * 1.12f);
+                    sim.Explosions.Spawn(
+                        Vector2f{695.0f + sim.BallPos.X, 419.0f + sim.BallPos.Y},
+                        pm.GetEquippedDeathEffectStyle(), eqPri, eqSec, 1.05f);
+                }
+                else
+                {
+                    Vector2f toClick = localMouse - sim.BallPos;
+                    const float len = std::max(1.0f, toClick.Length());
+                    sim.BallVel = (toClick / len) * kBallSpeed;
+                    sim.Explosions.Spawn(
+                        Vector2f{695.0f + localMouse.X, 419.0f + localMouse.Y},
+                        pm.GetEquippedDeathEffectStyle(), eqPri, eqSec, 0.9f);
+                }
+                if (m_bounceSfxId != 0) context.Audio.PlaySfx(m_bounceSfxId, 11.0f);
+            }
+            else if (context.Input.IsMouseButtonPress(MouseButton::Right))
+            {
+                sim.Explosions.Spawn(
+                    Vector2f{695.0f + localMouse.X, 419.0f + localMouse.Y},
+                    pm.GetEquippedDeathEffectStyle(), eqPri, eqSec, 1.15f);
+                if (m_brickDestroySfxId != 0) context.Audio.PlaySfx(m_brickDestroySfxId, 11.0f);
+            }
+        }
+    }
+    else if (m_zoomState == ChannelZoomState::Grid && !m_showPowerOffDialog &&
+             m_hoveredChannel >= 0 && m_hoveredChannel < static_cast<int>(m_tvChannels.size()) &&
+             m_tvChannels[m_hoveredChannel].Type == ChannelType::Achievements)
+    {
+        const auto& card = m_tvChannels[m_hoveredChannel];
+        const Vector2f cardGlassCenter = card.BasePosition - Vector2f{105.0f, 85.0f};
+        const float relX = (mouseOnGlass.X - cardGlassCenter.X) / std::max(1.0f, card.BaseSize.X * 0.5f);
+        if (std::abs(relX) <= 1.05f)
+        {
+            mouseControlled = true;
+            targetPadX = relX * kMaxPadX;
+        }
+    }
+
+    targetPadX = std::clamp(targetPadX, -kMaxPadX, kMaxPadX);
+    const float prevPadX = sim.PaddleX;
+    const float followRate = mouseControlled ? 22.0f : 6.5f;
+    sim.PaddleX += (targetPadX - sim.PaddleX) * std::min(1.0f, followRate * clampedDt);
+    sim.PaddleVelX = (clampedDt > 0.0001f) ? ((sim.PaddleX - prevPadX) / clampedDt) : 0.0f;
+    sim.PaddleBounceFlash = std::max(0.0f, sim.PaddleBounceFlash - clampedDt * 4.5f);
+
+    sim.BallPos += sim.BallVel * clampedDt;
+
+    if (sim.BallPos.X - kBallR < -kHalfW)
+    {
+        sim.BallPos.X = -kHalfW + kBallR;
+        sim.BallVel.X = std::abs(sim.BallVel.X);
+    }
+    else if (sim.BallPos.X + kBallR > kHalfW)
+    {
+        sim.BallPos.X = kHalfW - kBallR;
+        sim.BallVel.X = -std::abs(sim.BallVel.X);
+    }
+
+    if (sim.BallPos.Y - kBallR < -kHalfH)
+    {
+        sim.BallPos.Y = -kHalfH + kBallR;
+        sim.BallVel.Y = std::abs(sim.BallVel.Y);
+    }
+
+    const float padTop = kPadY - kPadH * 0.5f;
+    if (sim.BallVel.Y > 0.0f &&
+        sim.BallPos.Y + kBallR >= padTop &&
+        sim.BallPos.Y - kBallR <= kPadY + kPadH * 0.5f &&
+        std::abs(sim.BallPos.X - sim.PaddleX) <= (kPadW * 0.5f + kBallR))
+    {
+        const float hitRatio = std::clamp((sim.BallPos.X - sim.PaddleX) / (kPadW * 0.5f), -1.0f, 1.0f);
+        const float bounceAng = hitRatio * 1.02f;
+        sim.BallPos.Y = padTop - kBallR;
+        sim.BallVel = Vector2f{std::sin(bounceAng) * kBallSpeed, -std::cos(bounceAng) * kBallSpeed};
+        sim.PaddleBounceFlash = 1.0f;
+        if (zoomedOnProfile && m_bounceSfxId != 0)
+        {
+            context.Audio.PlaySfx(m_bounceSfxId, 9.0f);
+        }
+    }
+
+    if (sim.BallPos.Y - kBallR > kHalfH)
+    {
+        if (zoomedOnProfile)
+        {
+            sim.Explosions.Spawn(
+                Vector2f{695.0f + std::clamp(sim.BallPos.X, -kHalfW + 30.0f, kHalfW - 30.0f), 419.0f + kHalfH - 18.0f},
+                pm.GetEquippedDeathEffectStyle(), eqPri, eqSec, 1.25f);
+            if (m_brickDestroySfxId != 0) context.Audio.PlaySfx(m_brickDestroySfxId, 11.0f);
+        }
+        sim.Trail.Clear();
+        sim.BallPos = Vector2f{sim.PaddleX, kPadY - 85.0f};
+        const float launchDir = (sim.PaddleVelX >= 0.0f) ? 1.0f : -1.0f;
+        sim.BallVel = Vector2f{launchDir * 280.0f, -460.0f};
+    }
+
+    for (auto& pt : sim.Trail.Points)
+    {
+        pt.Age += clampedDt;
+    }
+    while (!sim.Trail.Points.empty() && sim.Trail.Points.back().Age >= sim.Trail.Config.Lifetime)
+    {
+        sim.Trail.Points.pop_back();
+    }
+
+    if (!sim.Trail.HasRecordedFirst)
+    {
+        sim.Trail.LastRecordedPos = sim.BallPos;
+        sim.Trail.HasRecordedFirst = true;
+    }
+    else
+    {
+        const Vector2f delta = sim.BallPos - sim.Trail.LastRecordedPos;
+        const float dist = delta.Length();
+        if (dist >= sim.Trail.Config.MinPointDistance)
+        {
+            if (dist > sim.Trail.Config.MaxPointDistance && sim.Trail.Config.MaxPointDistance > 0.0f)
+            {
+                const int steps = std::min(4, static_cast<int>(std::floor(dist / sim.Trail.Config.MaxPointDistance)));
+                for (int s = 1; s <= steps; ++s)
+                {
+                    const float alpha = static_cast<float>(s) / static_cast<float>(steps + 1);
+                    const Vector2f subPos = sim.Trail.LastRecordedPos + delta * alpha;
+                    sim.Trail.Points.push_front(TrailPoint{subPos, 0.0f, sim.Trail.Config.StartWidth, sim.Trail.Config.StartColor});
+                }
+            }
+            sim.Trail.Points.push_front(TrailPoint{sim.BallPos, 0.0f, sim.Trail.Config.StartWidth, sim.Trail.Config.StartColor});
+            sim.Trail.LastRecordedPos = sim.BallPos;
+            if (sim.Trail.Points.size() > 64)
+            {
+                sim.Trail.Points.resize(64);
+            }
+        }
+    }
+
+    sim.Explosions.Update(clampedDt);
+}
+
 void MenuScene::RenderProfilePreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const
 {
-    const float s = isZoomed ? (w / 1220.0f) : (w / 326.0f);
-    const float ps = isZoomed ? (s * 1.05f) : (s * 0.30f);
+    auto& sim = s_profileSim;
+    const float sx = w / 1220.0f;
+    const float sy = h / 720.0f;
+    const float u = std::min(sx, sy);
 
-    // 1. Deep Emerald-Obsidian Prestige Chamber Backdrop
-    context.Render.DrawRectangle(w, h, Transform2D{pos}, Color{9, 18, 16, 248});
-    context.Render.DrawRectangle(w, h * 0.45f, Transform2D{pos + Vector2f{0.0f, -h * 0.275f}}, Color{16, 40, 32, 95});
-
-    // Subtle floor perspective horizon & radial spotlight behind Crest
-    const Vector2f crestCenter = pos + Vector2f{0.0f, -12.0f * ps};
-    context.Render.DrawPointLight(crestCenter, 340.0f * ps, Color{50, 235, 150, 175}, 0.72f, BlendMode::Add);
-
-    // 2. Counter-Rotating Holographic Prestige Rings
-    const float outerR = 210.0f * ps;
-    const float midR = 152.0f * ps;
-    context.Render.DrawCircleOutline(outerR, Transform2D{crestCenter}, Color{50, 225, 140, 110}, std::max(1.0f, 2.2f * ps));
-    context.Render.DrawCircleOutline(midR, Transform2D{crestCenter}, Color{255, 215, 75, 130}, std::max(1.0f, 2.4f * ps));
-
-    // Rotating orbital tick markers around outer ring
-    for (int i = 0; i < 12; ++i)
-    {
-        const float ang = m_animTime * 0.55f + static_cast<float>(i) * (6.2831853f / 12.0f);
-        const Vector2f p0 = crestCenter + Vector2f{std::cos(ang) * (outerR - 10.0f * ps), std::sin(ang) * (outerR - 10.0f * ps)};
-        const Vector2f p1 = crestCenter + Vector2f{std::cos(ang) * (outerR + 12.0f * ps), std::sin(ang) * (outerR + 12.0f * ps)};
-        context.Render.DrawLine(p0, p1, (i % 3 == 0) ? Color{255, 225, 95, 240} : Color{50, 235, 155, 180}, std::max(1.0f, 2.5f * ps));
-    }
-
-    // Counter-rotating inner diamond frames
-    context.Render.DrawRectangleOutline(185.0f * ps, 185.0f * ps, Transform2D{crestCenter, -m_animTime * 0.45f}, Color{50, 235, 155, 145}, std::max(1.0f, 2.2f * ps));
-    context.Render.DrawRectangleOutline(142.0f * ps, 142.0f * ps, Transform2D{crestCenter, m_animTime * 0.65f + 0.7854f}, Color{255, 215, 75, 175}, std::max(1.0f, 2.2f * ps));
-
-    // 3. Winged Cyber-Arcade Pilot Crest Emblem
-    const float floatY = std::sin(m_animTime * 2.5f) * 8.0f * ps;
-    const Vector2f emblemPos = crestCenter + Vector2f{0.0f, floatY};
-    for (int side = -1; side <= 1; side += 2)
-    {
-        const float dir = static_cast<float>(side);
-        std::vector<Vertex> upperWing = {
-            Vertex{emblemPos.X + dir * 48.0f * ps, emblemPos.Y - 24.0f * ps, Color{50, 235, 150, 240}, 0.0f, 0.0f},
-            Vertex{emblemPos.X + dir * 165.0f * ps, emblemPos.Y - 58.0f * ps, Color{120, 255, 200, 230}, 0.0f, 0.0f},
-            Vertex{emblemPos.X + dir * 115.0f * ps, emblemPos.Y + 4.0f * ps, Color{24, 92, 66, 255}, 0.0f, 0.0f}
-        };
-        context.Render.DrawVertices(upperWing, PrimitiveType::Triangles);
-
-        std::vector<Vertex> lowerWing = {
-            Vertex{emblemPos.X + dir * 46.0f * ps, emblemPos.Y + 8.0f * ps, Color{255, 205, 60, 235}, 0.0f, 0.0f},
-            Vertex{emblemPos.X + dir * 130.0f * ps, emblemPos.Y + 18.0f * ps, Color{255, 235, 130, 220}, 0.0f, 0.0f},
-            Vertex{emblemPos.X + dir * 74.0f * ps, emblemPos.Y + 52.0f * ps, Color{175, 120, 25, 225}, 0.0f, 0.0f}
-        };
-        context.Render.DrawVertices(lowerWing, PrimitiveType::Triangles);
-    }
-
-    // Central Shield Core + Neon Pilot Visor Silhouette
-    context.Render.DrawCircle(68.0f * ps, Transform2D{emblemPos}, Color{16, 36, 30, 255});
-    context.Render.DrawCircleOutline(68.0f * ps, Transform2D{emblemPos}, Color{255, 220, 80, 255}, std::max(1.2f, 3.6f * ps));
-    context.Render.DrawCircle(44.0f * ps, Transform2D{emblemPos}, Color{26, 56, 46, 255});
-    // Glowing Neon Visor Bar across Pilot Helmet
-    context.Render.DrawRectangle(62.0f * ps, 16.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -6.0f * ps}}, Color{75, 255, 195, 255});
-    context.Render.DrawRectangle(44.0f * ps, 6.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -6.0f * ps}}, Colors::White);
-    // Prestige Star Crown atop shield
-    context.Render.DrawRectangle(20.0f * ps, 20.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -72.0f * ps}, 0.7854f}, Colors::Gold);
-    context.Render.DrawRectangle(10.0f * ps, 10.0f * ps, Transform2D{emblemPos + Vector2f{0.0f, -72.0f * ps}, 0.7854f}, Colors::White);
-
-    // 4. Hovering Equipped Paddle & Orbiting Equipped Ball on Luminous Pedestal
     const auto& pm = ProfileManager::Get();
     const Color eqPrimary = pm.GetEquippedPrimaryColor();
     const Color eqSecondary = pm.GetEquippedSecondaryColor();
-    const Vector2f pedPos = pos + Vector2f{0.0f, h * 0.31f};
-    const float padW = w * 0.25f;
-    const float padH = h * 0.048f;
-    context.Render.DrawCircle(padW * 0.52f, Transform2D{pedPos + Vector2f{0.0f, padH * 0.9f}, 0.0f, Vector2f{1.0f, 0.22f}},
-                              Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 70});
-    CosmeticRenderer::DrawPaddle(
-        context.Render,
-        pedPos,
-        Vector2f{padW, padH},
-        std::sin(m_animTime * 1.8f) * 3.0f,
-        pm.GetEquippedPaddleSkinStyle(),
-        eqPrimary,
-        eqSecondary,
-        m_animTime,
-        1.0f,
-        m_paddleTexId);
 
-    // Orbiting equipped ball circling the crest
-    const Vector2f orbPos = crestCenter + Vector2f{std::cos(m_animTime * 2.2f) * (outerR * 1.18f), std::sin(m_animTime * 2.2f) * (outerR * 0.42f)};
-    context.Render.DrawPointLight(orbPos, 48.0f * ps, Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 210}, 0.75f, BlendMode::Add);
+    context.Render.DrawRectangle(w, h, Transform2D{pos}, Color{10, 15, 24, 248});
+    context.Render.DrawRectangle(w, h * 0.48f, Transform2D{pos + Vector2f{0.0f, -h * 0.26f}}, Color{16, 26, 40, 88});
+    context.Render.DrawPointLight(pos, 320.0f * u, Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 95}, 0.65f, BlendMode::Add);
+
+    const float padY = pos.Y + 235.0f * sy;
+    const float padX = pos.X + sim.PaddleX * sx;
+    const float padW = std::max(54.0f, 240.0f * sx);
+    const float padH = std::max(8.0f, 34.0f * sy);
+    const float floorY = padY + padH * 1.15f;
+
+    context.Render.DrawLine(
+        Vector2f{pos.X - w * 0.42f, floorY},
+        Vector2f{pos.X + w * 0.42f, floorY},
+        Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 95},
+        std::max(1.0f, 2.0f * u));
+
+    if (!sim.Trail.Points.empty())
+    {
+        TrailComponent scaledTrail;
+        scaledTrail.Config = sim.Trail.Config;
+        scaledTrail.Config.StartWidth = std::max(3.0f, sim.Trail.Config.StartWidth * u * 1.15f);
+        scaledTrail.Config.EndWidth = std::max(1.0f, sim.Trail.Config.EndWidth * u * 1.15f);
+        scaledTrail.Points = sim.Trail.Points;
+        for (auto& pt : scaledTrail.Points)
+        {
+            pt.Position = Vector2f{pos.X + pt.Position.X * sx, pos.Y + pt.Position.Y * sy};
+            pt.Width = std::max(2.0f, pt.Width * u * 1.15f);
+        }
+        CosmeticRenderer::RenderTrail(context.Render, scaledTrail, m_animTime, sim.TrailScratch);
+    }
+
+    const Vector2f ballScreenPos{pos.X + sim.BallPos.X * sx, pos.Y + sim.BallPos.Y * sy};
+    const float ballR = std::max(5.5f, 19.0f * u);
+    context.Render.DrawPointLight(ballScreenPos, ballR * 3.0f, Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 175}, 0.72f, BlendMode::Add);
     CosmeticRenderer::DrawBall(
         context.Render,
-        orbPos,
-        std::max(5.5f, 13.5f * ps),
+        ballScreenPos,
+        ballR,
         pm.GetEquippedBallSkinStyle(),
         eqPrimary,
         eqSecondary,
@@ -3095,33 +3289,33 @@ void MenuScene::RenderProfilePreview(GameContext& context, const Vector2f& pos, 
         false,
         m_ballTexId);
 
-    // 5. Achievement Medal Constellation (Left & Right Floating Badges in Zoomed View)
-    if (isZoomed)
+    const float bounceDip = sim.PaddleBounceFlash * 6.0f * sy;
+    const float padTilt = std::clamp(sim.PaddleVelX * 0.011f, -8.5f, 8.5f);
+    context.Render.DrawCircle(
+        padW * 0.50f,
+        Transform2D{Vector2f{padX, floorY}, 0.0f, Vector2f{1.0f, 0.18f}},
+        Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 65});
+    CosmeticRenderer::DrawPaddle(
+        context.Render,
+        Vector2f{padX, padY + bounceDip},
+        Vector2f{padW, padH},
+        padTilt,
+        pm.GetEquippedPaddleSkinStyle(),
+        eqPrimary,
+        eqSecondary,
+        m_animTime,
+        1.0f,
+        m_paddleTexId);
+
+    if (isZoomed && m_zoomState == ChannelZoomState::ZoomedView)
     {
-        const Color medalCols[4] = {
-            Color{255, 215, 65, 255},
-            Color{80, 225, 255, 255},
-            Color{255, 95, 165, 255},
-            Color{70, 240, 155, 255}
-        };
-        const Vector2f medalOffsets[4] = {
-            Vector2f{-w * 0.34f, -h * 0.22f},
-            Vector2f{-w * 0.31f,  h * 0.16f},
-            Vector2f{ w * 0.34f, -h * 0.22f},
-            Vector2f{ w * 0.31f,  h * 0.16f}
-        };
-        for (int m = 0; m < 4; ++m)
-        {
-            const float mbob = std::sin(m_animTime * 2.6f + static_cast<float>(m) * 1.5f) * 10.0f * ps;
-            const Vector2f mp = pos + medalOffsets[m] + Vector2f{0.0f, mbob};
-            context.Render.DrawCircle(34.0f * ps, Transform2D{mp}, Color{16, 28, 24, 240});
-            context.Render.DrawCircleOutline(34.0f * ps, Transform2D{mp}, medalCols[m], 2.6f * ps);
-            context.Render.DrawRectangle(24.0f * ps, 24.0f * ps, Transform2D{mp, 0.7854f + m_animTime * 0.4f * (m % 2 == 0 ? 1.0f : -1.0f)}, medalCols[m]);
-            context.Render.DrawCircle(8.0f * ps, Transform2D{mp}, Colors::White);
-        }
+        sim.Explosions.Render(context.Render);
     }
 
-    context.Render.DrawRectangleOutline(w, h, Transform2D{pos}, Color{50, 225, 140, 195}, (isZoomed ? 2.5f : 1.1f) * s);
+    context.Render.DrawRectangleOutline(
+        w, h, Transform2D{pos},
+        Color{eqPrimary.r, eqPrimary.g, eqPrimary.b, 185},
+        std::max(1.1f, 2.4f * u));
 }
 
 void MenuScene::RenderChannelVignette(GameContext& context, const TVChannel& ch, const Vector2f& pos, float sc, bool isZoomed) const

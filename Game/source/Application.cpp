@@ -155,6 +155,11 @@ bool Application::RunSmokeTest()
     std::cout << "[SmokeTest] Stepping MenuScene..." << std::endl;
     stepFrames(15);
 
+    std::cout << "[SmokeTest] Transitioning directly from MenuScene to ProfileScene..." << std::endl;
+    ProfileScene::Launch(m_context.Scenes, SceneTransitionType::StaticSnow, 0.55f);
+    stepFrames(120);
+    std::cout << "[SmokeTest] ProfileScene direct transition stable!" << std::endl;
+
     // Step 2: Launch Campaign (StoryScene) with transition
     std::cout << "[SmokeTest] Triggering transition to StoryScene (StoryMode)..." << std::endl;
     m_context.Scenes.LoadSceneWithTransition<StoryScene>(SceneTransitionType::StaticSnow, 0.65f);
@@ -187,7 +192,7 @@ bool Application::RunSmokeTest()
 
     // Step 6: Launch ProfileScene (Customization Garage) with transition
     std::cout << "[SmokeTest] Triggering transition to ProfileScene (Customization Garage)..." << std::endl;
-    m_context.Scenes.LoadSceneWithTransition<ProfileScene>(SceneTransitionType::StaticSnow, 0.55f);
+    ProfileScene::Launch(m_context.Scenes, SceneTransitionType::StaticSnow, 0.55f);
     stepFrames(60);
     std::cout << "[SmokeTest] ProfileScene active and running stably!" << std::endl;
 
