@@ -23,12 +23,15 @@ class ProfileGarageLayout
 {
 public:
     [[nodiscard]] static UIRect GetBackButtonRect(const Vector2f& viewSize);
-    [[nodiscard]] static UIRect GetNicknameRect(const Vector2f& viewSize, bool inCareerMode = false);
+    [[nodiscard]] static UIRect GetNicknameRect(const Vector2f& viewSize);
     [[nodiscard]] static UIRect GetCreditsHudRect(const Vector2f& viewSize);
 
     [[nodiscard]] static UIRect GetSideButtonRect(int idx, const Vector2f& viewSize);
     [[nodiscard]] static UIRect GetShowcaseBounds(const Vector2f& viewSize);
     [[nodiscard]] static UIRect GetTabRect(int tabIdx, const Vector2f& viewSize);
+
+    [[nodiscard]] static UIRect GetProfileStatsLeftRect(const Vector2f& viewSize);
+    [[nodiscard]] static UIRect GetProfileStatsRightRect(const Vector2f& viewSize);
 
     [[nodiscard]] static UIRect GetDrawerRect(const Vector2f& viewSize);
     [[nodiscard]] static UIRect GetPageArrowRect(bool isRight, const Vector2f& viewSize);
@@ -40,12 +43,4 @@ public:
     [[nodiscard]] static UIRect GetColorChannelRect(int idx, const Vector2f& viewSize);
     [[nodiscard]] static UIRect GetColorPreviewArea(const Vector2f& viewSize);
     [[nodiscard]] static UIRect GetColorSwatchRect(int itemIdx, const Vector2f& viewSize);
-
-    [[nodiscard]] static UIRect GetCareerLeftPanel(const Vector2f& viewSize);
-    [[nodiscard]] static UIRect GetCareerRightPanel(const Vector2f& viewSize);
-    [[nodiscard]] static UIRect GetCareerEditNameRect(const Vector2f& viewSize);
-    [[nodiscard]] static UIRect GetCareerResetRect(const Vector2f& viewSize);
-    [[nodiscard]] static UIRect GetCareerMilestoneRect(int index, float scrollY, const Vector2f& viewSize);
-    [[nodiscard]] static float  GetCareerListTop(const Vector2f& viewSize);
-    [[nodiscard]] static float  GetCareerListBottom(const Vector2f& viewSize);
 };

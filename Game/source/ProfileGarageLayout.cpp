@@ -62,13 +62,8 @@ UIRect ProfileGarageLayout::GetBackButtonRect(const Vector2f& viewSize)
     return UIRect{Vector2f{-halfW + 84.0f, -halfH + 50.0f}, Vector2f{92.0f, 52.0f}};
 }
 
-UIRect ProfileGarageLayout::GetNicknameRect(const Vector2f& viewSize, bool inCareerMode)
+UIRect ProfileGarageLayout::GetNicknameRect(const Vector2f& viewSize)
 {
-    const float halfH = viewSize.Y * 0.5f;
-    if (inCareerMode)
-    {
-        return UIRect{Vector2f{0.0f, -halfH + 50.0f}, Vector2f{440.0f, 52.0f}};
-    }
     const GarageStackMetrics m = ComputeGarageStack(viewSize);
     return UIRect{Vector2f{0.0f, m.NickCenterY}, Vector2f{440.0f, m.NickH}};
 }
@@ -93,7 +88,7 @@ UIRect ProfileGarageLayout::GetSideButtonRect(int idx, const Vector2f& viewSize)
 UIRect ProfileGarageLayout::GetShowcaseBounds(const Vector2f& viewSize)
 {
     const GarageStackMetrics m = ComputeGarageStack(viewSize);
-    const float w = std::min(1260.0f, viewSize.X - 360.0f);
+    const float w = std::min(484.0f, viewSize.X - 360.0f);
     return UIRect{Vector2f{0.0f, m.ShowcaseCenterY}, Vector2f{w, m.ShowcaseH}};
 }
 
@@ -219,56 +214,25 @@ UIRect ProfileGarageLayout::GetColorSwatchRect(int itemIdx, const Vector2f& view
     };
 }
 
-UIRect ProfileGarageLayout::GetCareerLeftPanel(const Vector2f& viewSize)
+UIRect ProfileGarageLayout::GetProfileStatsLeftRect(const Vector2f& viewSize)
 {
-    const float halfW = viewSize.X * 0.5f;
-    const float halfH = viewSize.Y * 0.5f;
-    const float bodyTop = -halfH + 112.0f;
-    const float bodyBot = halfH - 34.0f;
-    const float leftW = 530.0f;
-    return UIRect{Vector2f{-halfW + 64.0f + leftW * 0.5f, (bodyTop + bodyBot) * 0.5f}, Vector2f{leftW, bodyBot - bodyTop}};
+    const UIRect back = GetBackButtonRect(viewSize);
+    const UIRect drawer = GetDrawerRect(viewSize);
+    const UIRect tab0 = GetTabRect(0, viewSize);
+    const float innerEdge = std::abs(tab0.Left()) + 22.0f;
+    const float outerEdge = std::min(viewSize.X * 0.5f - 26.0f, std::max(drawer.Right(), innerEdge + 310.0f));
+    const float panelW = std::clamp(outerEdge - innerEdge, 220.0f, 370.0f);
+    const float topBound = back.Bottom() + 18.0f;
+    const float botBound = drawer.Top() - 18.0f;
+    const float panelH = std::min(242.0f, std::max(160.0f, botBound - topBound));
+    const float centerX = -(outerEdge - panelW * 0.5f);
+    const float centerY = (topBound + botBound) * 0.5f;
+    return UIRect{Vector2f{centerX, centerY}, Vector2f{panelW, panelH}};
 }
 
-UIRect ProfileGarageLayout::GetCareerRightPanel(const Vector2f& viewSize)
+UIRect ProfileGarageLayout::GetProfileStatsRightRect(const Vector2f& viewSize)
 {
-    const float halfW = viewSize.X * 0.5f;
-    const UIRect left = GetCareerLeftPanel(viewSize);
-    const float rightLeft = left.Right() + 24.0f;
-    const float rightRight = halfW - 64.0f;
-    return UIRect{Vector2f{(rightLeft + rightRight) * 0.5f, left.Center.Y}, Vector2f{rightRight - rightLeft, left.Size.Y}};
-}
-
-UIRect ProfileGarageLayout::GetCareerEditNameRect(const Vector2f& viewSize)
-{
-    const UIRect left = GetCareerLeftPanel(viewSize);
-    return UIRect{Vector2f{left.Center.X, left.Top() + 184.0f}, Vector2f{220.0f, 38.0f}};
-}
-
-UIRect ProfileGarageLayout::GetCareerResetRect(const Vector2f& viewSize)
-{
-    const UIRect left = GetCareerLeftPanel(viewSize);
-    return UIRect{Vector2f{left.Center.X, left.Bottom() - 36.0f}, Vector2f{left.Size.X - 40.0f, 46.0f}};
-}
-
-float ProfileGarageLayout::GetCareerListTop(const Vector2f& viewSize)
-{
-    return GetCareerRightPanel(viewSize).Top() + 68.0f;
-}
-
-float ProfileGarageLayout::GetCareerListBottom(const Vector2f& viewSize)
-{
-    return GetCareerRightPanel(viewSize).Bottom() - 16.0f;
-}
-
-UIRect ProfileGarageLayout::GetCareerMilestoneRect(int index, float scrollY, const Vector2f& viewSize)
-{
-    const UIRect right = GetCareerRightPanel(viewSize);
-    const float cardW = (right.Size.X - 56.0f) * 0.5f;
-    const float cardH = 112.0f;
-    const float gapY = 12.0f;
-    const int col = index % 2;
-    const int row = index / 2;
-    const float cx = right.Left() + 20.0f + cardW * 0.5f + static_cast<float>(col) * (cardW + 16.0f);
-    const float cy = GetCareerListTop(viewSize) + cardH * 0.5f + static_cast<float>(row) * (cardH + gapY) - scrollY;
-    return UIRect{Vector2f{cx, cy}, Vector2f{cardW, cardH}};
+    UIRect rect = GetProfileStatsLeftRect(viewSize);
+    rect.Center.X = -rect.Center.X;
+    return rect;
 }

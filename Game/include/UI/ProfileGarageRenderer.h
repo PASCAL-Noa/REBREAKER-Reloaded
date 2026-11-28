@@ -37,6 +37,12 @@ public:
         const Vector2f& viewSize,
         const Vector2f& mouse);
 
+    static void DrawCreditsBadge(
+        Renderer& renderer,
+        const UIRect& rect,
+        uint32_t fontId,
+        int coins);
+
 private:
     static void RenderBackground(Renderer& r, const Vector2f& viewSize, Color primary);
     static void RenderCornerFrames(Renderer& r, const Vector2f& viewSize, Color primary, Color secondary);
@@ -45,7 +51,7 @@ private:
     static void RenderFocusedShowcase(Renderer& r, const ProfileGarageState& state, const ProfileRenderAssets& assets, const ProfileShowcaseSnapshot& showcase, const Vector2f& viewSize);
     static void RenderCategoryTabs(Renderer& r, const ProfileGarageState& state, const ProfileRenderAssets& assets, const Vector2f& viewSize, const Vector2f& mouse, Color primary);
     static void RenderPaginatedDrawer(Renderer& r, const ProfileGarageState& state, const ProfileRenderAssets& assets, const Vector2f& viewSize, const Vector2f& mouse, Color pri, Color sec);
+    static void RenderStatsPanels(Renderer& r, const ProfileRenderAssets& assets, const Vector2f& viewSize, Color primary);
     static void RenderColorModal(Renderer& r, const ProfileGarageState& state, const ProfileRenderAssets& assets, const ProfileShowcaseSnapshot& showcase, const Vector2f& viewSize, const Vector2f& mouse);
-    static void RenderCareerView(Renderer& r, const ProfileGarageState& state, const ProfileRenderAssets& assets, float animTime, const Vector2f& viewSize, const Vector2f& mouse, Color primary, Color secondary);
     static void RenderToast(Renderer& r, const ProfileGarageState& state, const ProfileRenderAssets& assets, const Vector2f& viewSize);
 };

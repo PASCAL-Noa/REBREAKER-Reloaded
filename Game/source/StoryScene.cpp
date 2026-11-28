@@ -1,6 +1,7 @@
 #include "Scenes/StoryScene.h"
 #include "Core/LoreManager.h"
 #include "Core/ProfileManager.h"
+#include "Core/AchievementManager.h"
 #include "Core/PlayerPrefs.h"
 #include "Core/GameRules.h"
 #include "PowerUps/PowerUpConfig.h"
@@ -325,6 +326,7 @@ void StoryScene::SetupChapterPlayfield(int chapterIndex)
         // Chapter 3: Spawn OMEGA-01 Boss Encounter
         SpawnBoss(Vector2f{0.0f, -230.0f});
         SpawnBossShieldBricks();
+        AchievementManager::Get().NotifyBossEncounterStarted();
     }
     else
     {
@@ -1165,6 +1167,7 @@ void StoryScene::TriggerBossDefeat(GameContext& /*context*/)
 {
     m_bossDefeated = true;
     GrantChapterRewards();
+    AchievementManager::Get().NotifyBossDefeated();
 }
 
 void StoryScene::HandleBrickCollision(Entity entity, Entity ballEntity, bool isLaser, bool isExplosion, int damage)

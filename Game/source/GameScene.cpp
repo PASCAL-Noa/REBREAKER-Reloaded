@@ -4,6 +4,7 @@
 #include "Core/GameData.h"
 #include "Core/InputManager.h"
 #include "Core/GameRules.h"
+#include "Core/AchievementManager.h"
 #include "ScoreManager.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Systems/ParticleSystem.h"
@@ -163,6 +164,9 @@ void GameScene::OnInit(GameContext& context)
     DefaultScene::OnInit(context);
     mp_context = &context;
 
+    AchievementManager::Get().SetTrackingEnabled(true);
+    AchievementManager::Get().ResetSessionCounters();
+
     PowerUpManager::Get().LoadFromPrefs();
 
     auto& camera = m_registry.GetComponent<Camera2D>(m_camera);
@@ -274,6 +278,7 @@ void GameScene::OnInit(GameContext& context)
     mp_paddleSystem->SetOnBallLaunchedCallback([this](Entity)
     {
         m_ballState = BallState::Active;
+        AchievementManager::Get().NotifyBallLaunched();
     });
 
     mp_ballSystem->SetFireTrailCallback([this](const Vector2f& pos, const Vector2f& vel, bool isFuseActive)
@@ -2440,6 +2445,7 @@ void GameScene::OnVictoryEnter()
 
     m_levelManager.SetHighScoreForLevel(curLevel, finalScore);
     m_levelManager.SetHighestClearedLevel(curLevel);
+    AchievementManager::Get().NotifyStageCleared(curLevel, m_lives);
 
     if (mp_context)
     {
@@ -4952,6 +4958,8 @@ void GameScene::TryTriggerUltimate()
         default:
             break;
     }
+
+    AchievementManager::Get().NotifyUltimateActivated(equipped);
 
     if (mp_context && mp_context->Rules.GetRule(Rule::Gameplay::InfiniteUltimate))
     {
@@ -7610,6 +7618,7 @@ bool GameScene::DamagePaddle(float rawDamage, const Vector2f& impactPos, GameCon
 
     const bool applied = dur.TakeDamage(rawDamage, ignoreInvuln);
     if (!applied) return false;
+    AchievementManager::Get().NotifyPaddleDamaged();
 
     const float hullLost = std::max(0.0f, prevHull - dur.CurrentDurability);
     const float shieldLost = std::max(0.0f, prevShield - dur.CurrentShield);

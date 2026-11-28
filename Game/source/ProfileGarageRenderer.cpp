@@ -1,4 +1,5 @@
 #include "UI/ProfileGarageRenderer.h"
+#include "Core/AchievementManager.h"
 #include "Core/PlayerPrefs.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Graphics/Renderer.h"
@@ -244,18 +245,11 @@ void ProfileGarageRenderer::Render(
     RenderBackground(renderer, viewSize, pri);
     RenderCornerFrames(renderer, viewSize, pri, sec);
     RenderTopHud(renderer, state, assets, showcase.AnimTime, viewSize, mouse, pri);
-
-    if (state.GetViewMode() == ProfileViewMode::Garage)
-    {
-        RenderSideRail(renderer, state, viewSize, mouse, pri, sec);
-        RenderFocusedShowcase(renderer, state, assets, showcase, viewSize);
-        RenderCategoryTabs(renderer, state, assets, viewSize, mouse, pri);
-        RenderPaginatedDrawer(renderer, state, assets, viewSize, mouse, pri, sec);
-    }
-    else
-    {
-        RenderCareerView(renderer, state, assets, showcase.AnimTime, viewSize, mouse, pri, sec);
-    }
+    RenderStatsPanels(renderer, assets, viewSize, pri);
+    RenderSideRail(renderer, state, viewSize, mouse, pri, sec);
+    RenderFocusedShowcase(renderer, state, assets, showcase, viewSize);
+    RenderCategoryTabs(renderer, state, assets, viewSize, mouse, pri);
+    RenderPaginatedDrawer(renderer, state, assets, viewSize, mouse, pri, sec);
 
     if (state.IsColorModalOpen())
     {
@@ -319,14 +313,13 @@ void ProfileGarageRenderer::RenderTopHud(
 {
     const UIRect backRect = ProfileGarageLayout::GetBackButtonRect(viewSize);
     const bool backHov = !state.IsColorModalOpen() && backRect.Contains(mouse);
-    const Color backAccent = (state.GetViewMode() == ProfileViewMode::Career) ? Color{85, 225, 255, 255} : primary;
 
-    DrawReliefPanel(r, backRect, backHov ? Color{34, 48, 72, 245} : Color{20, 28, 44, 240}, backHov ? Colors::White : backAccent, 2.0f, backHov, false, false);
+    DrawReliefPanel(r, backRect, backHov ? Color{34, 48, 72, 245} : Color{20, 28, 44, 240}, backHov ? Colors::White : primary, 2.0f, backHov, false, false);
     const float backOffY = backHov ? -2.0f : 0.0f;
     DrawChevron(r, Vector2f{backRect.Center.X - 6.0f, backRect.Center.Y + backOffY}, 20.0f, false, Colors::White, 3.2f);
-    DrawChevron(r, Vector2f{backRect.Center.X + 7.0f, backRect.Center.Y + backOffY}, 20.0f, false, ScaleAlpha(backAccent, 0.85f), 2.6f);
+    DrawChevron(r, Vector2f{backRect.Center.X + 7.0f, backRect.Center.Y + backOffY}, 20.0f, false, ScaleAlpha(primary, 0.85f), 2.6f);
 
-    const UIRect nickRect = ProfileGarageLayout::GetNicknameRect(viewSize, state.GetViewMode() == ProfileViewMode::Career);
+    const UIRect nickRect = ProfileGarageLayout::GetNicknameRect(viewSize);
     const bool nickHov = !state.IsColorModalOpen() && nickRect.Contains(mouse);
     const bool nickEdit = state.IsEditingNickname();
     const Color nickFill = nickEdit
@@ -350,14 +343,19 @@ void ProfileGarageRenderer::RenderTopHud(
     }
 
     const UIRect creditsRect = ProfileGarageLayout::GetCreditsHudRect(viewSize);
-    DrawReliefPanel(r, creditsRect, Color{24, 22, 16, 240}, Color{245, 194, 58, 235}, 2.0f, false, false, false);
-    DrawCreditTokenIcon(r, Vector2f{creditsRect.Left() + 28.0f, creditsRect.Center.Y}, 13.0f);
+    DrawCreditsBadge(r, creditsRect, assets.FontId, PowerUpManager::Get().GetCoins());
+}
 
-    if (assets.FontId != 0)
+void ProfileGarageRenderer::DrawCreditsBadge(Renderer& r, const UIRect& rect, uint32_t fontId, int coins)
+{
+    DrawReliefPanel(r, rect, Color{24, 22, 16, 240}, Color{245, 194, 58, 235}, 2.0f, false, false, false);
+    DrawCreditTokenIcon(r, Vector2f{rect.Left() + 28.0f, rect.Center.Y}, 13.0f);
+
+    if (fontId != 0)
     {
-        const std::string creditText = FormatCommas(static_cast<uint32_t>(std::max(0, PowerUpManager::Get().GetCoins())));
-        const Vector2f sz = r.GetTextSize(creditText, assets.FontId, 26.0f);
-        r.DrawText(creditText, assets.FontId, 26.0f, Transform2D{Vector2f{creditsRect.Right() - 20.0f - sz.X, creditsRect.Center.Y - 14.0f}}, Color{255, 232, 128, 255});
+        const std::string creditText = FormatCommas(static_cast<uint32_t>(std::max(0, coins)));
+        const Vector2f sz = r.GetTextSize(creditText, fontId, 26.0f);
+        r.DrawText(creditText, fontId, 26.0f, Transform2D{Vector2f{rect.Right() - 20.0f - sz.X, rect.Center.Y - 14.0f}}, Color{255, 232, 128, 255});
     }
 }
 
@@ -758,179 +756,80 @@ void ProfileGarageRenderer::RenderColorModal(
     }
 }
 
-void ProfileGarageRenderer::RenderCareerView(
+void ProfileGarageRenderer::RenderStatsPanels(
     Renderer& r,
-    const ProfileGarageState& state,
     const ProfileRenderAssets& assets,
-    float animTime,
     const Vector2f& viewSize,
-    const Vector2f& mouse,
-    Color primary,
-    Color secondary)
+    Color primary)
 {
     const auto& pm = ProfileManager::Get();
-    const UIRect leftPanel = ProfileGarageLayout::GetCareerLeftPanel(viewSize);
-    const UIRect rightPanel = ProfileGarageLayout::GetCareerRightPanel(viewSize);
+    const auto& am = AchievementManager::Get();
+    const UIRect leftPanel = ProfileGarageLayout::GetProfileStatsLeftRect(viewSize);
+    const UIRect rightPanel = ProfileGarageLayout::GetProfileStatsRightRect(viewSize);
+    const Color amber{255, 196, 92, 255};
 
-    DrawReliefPanel(r, leftPanel, Color{13, 19, 32, 242}, ScaleAlpha(primary, 0.55f), 2.0f, false, false, false);
-    DrawReliefPanel(r, rightPanel, Color{13, 19, 32, 242}, Color{255, 200, 75, 150}, 2.0f, false, false, false);
+    DrawReliefPanel(r, leftPanel, Color{11, 16, 28, 224}, ScaleAlpha(primary, 0.55f), 1.8f, false, false, true);
+    DrawReliefPanel(r, rightPanel, Color{11, 16, 28, 224}, ScaleAlpha(amber, 0.55f), 1.8f, false, false, true);
 
-    const UIRect crestBox{Vector2f{leftPanel.Center.X, leftPanel.Top() + 86.0f}, Vector2f{leftPanel.Size.X - 40.0f, 132.0f}};
-    DrawReliefPanel(r, crestBox, Color{9, 14, 24, 240}, ScaleAlpha(primary, 0.65f), 1.5f, false, false, true);
+    if (assets.FontId == 0) return;
 
-    CosmeticRenderer::DrawBall(r, Vector2f{crestBox.Center.X + 96.0f, crestBox.Center.Y}, 20.0f, pm.GetEquippedBallSkinStyle(), primary, secondary, animTime, 1.0f, false, false, false, assets.BallTexId);
-    CosmeticRenderer::DrawPaddle(r, Vector2f{crestBox.Center.X - 58.0f, crestBox.Center.Y}, Vector2f{160.0f, 24.0f}, 0.0f, pm.GetEquippedPaddleSkinStyle(), primary, secondary, animTime, 1.0f, assets.PaddleTexId);
+    const bool compact = (leftPanel.Size.X < 330.0f);
+    const float headerFont = compact ? 18.0f : 20.0f;
+    const float rowFont = compact ? 16.0f : 18.0f;
+    const float padX = compact ? 14.0f : 18.0f;
 
-    const UIRect editBtn = ProfileGarageLayout::GetCareerEditNameRect(viewSize);
-    const bool editHov = editBtn.Contains(mouse);
-    DrawReliefPanel(r, editBtn, editHov ? ScaleAlpha(primary, 0.30f) : Color{22, 32, 52, 240}, editHov ? Colors::White : primary, 1.6f, editHov, false, false);
-    if (assets.FontId != 0)
+    auto drawHeader = [&](const UIRect& panel, const char* title, Color accent)
     {
-        r.DrawTextCentered("EDIT CALLSIGN", assets.FontId, 19.0f, Transform2D{Vector2f{editBtn.Center.X, editBtn.Center.Y + (editHov ? -2.0f : 0.0f)}}, Colors::White);
+        const float xL = panel.Left() + padX;
+        const float xR = panel.Right() - padX;
+        const float titleY = panel.Top() + 12.0f;
+        r.DrawText(title, assets.FontId, headerFont, Transform2D{Vector2f{xL, titleY}}, accent);
+        const float divY = titleY + headerFont + 8.0f;
+        r.DrawLine(Vector2f{xL, divY}, Vector2f{xR, divY}, ScaleAlpha(accent, 0.45f), 1.5f);
+        return divY + 12.0f;
+    };
 
-        const float statLeft = leftPanel.Left() + 26.0f;
-        const float statRight = leftPanel.Right() - 26.0f;
-        float sy = leftPanel.Top() + 224.0f;
+    auto drawRow = [&](const UIRect& panel, float y, const char* label, const std::string& val, Color valCol)
+    {
+        const float xL = panel.Left() + padX;
+        const float xR = panel.Right() - padX;
+        r.DrawText(label, assets.FontId, rowFont, Transform2D{Vector2f{xL, y}}, Color{168, 188, 218, 235});
+        const Vector2f sz = r.GetTextSize(val, assets.FontId, rowFont);
+        r.DrawText(val, assets.FontId, rowFont, Transform2D{Vector2f{xR - sz.X, y}}, valCol);
+    };
 
-        r.DrawText("PILOT TELEMETRY // " + pm.GetUsername(), assets.FontId, 22.0f, Transform2D{Vector2f{statLeft, sy}}, primary);
-        sy += 32.0f;
-        r.DrawLine(Vector2f{statLeft, sy}, Vector2f{statRight, sy}, ScaleAlpha(primary, 0.4f), 1.5f);
-        sy += 12.0f;
+    const float leftStartY = drawHeader(leftPanel, "CAREER STATS", primary);
+    const float rowStep = (leftPanel.Bottom() - 12.0f - leftStartY) / 5.0f;
+    const int highestCleared = std::max(0, PlayerPrefs::GetInt("HighestClearedLevel", 0));
+    const int achUnlocked = am.GetUnlockedCount();
+    const int achTotal = am.GetTotalCount();
+    const int achPct = static_cast<int>(std::round(am.GetCompletionPercentage()));
 
-        int upgradedPwrCount = 0;
-        const PowerUpType allPwr[] = {
-            PowerUpType::MultiBall, PowerUpType::ExpandPaddle, PowerUpType::Storm,
-            PowerUpType::TempoBall, PowerUpType::ExtraLife, PowerUpType::BigBall,
-            PowerUpType::FireBall, PowerUpType::StickyPaddle, PowerUpType::BottomBarrier,
-            PowerUpType::MagnetPaddle, PowerUpType::GhostBall, PowerUpType::ItemRegen,
-            PowerUpType::ShieldBarrier
-        };
-        for (PowerUpType t : allPwr)
-        {
-            if (PowerUpManager::Get().GetPersistedLevel(t) > 1) ++upgradedPwrCount;
-        }
-        const int highestCleared = std::max(0, PlayerPrefs::GetInt("HighestClearedLevel", 0));
+    drawRow(leftPanel, leftStartY + rowStep * 0.0f, "LIFETIME SCORE", FormatCommas(pm.GetLifetimeScore()) + " PTS", Colors::White);
+    drawRow(leftPanel, leftStartY + rowStep * 1.0f, "CREDITS EARNED", FormatCommas(pm.GetLifetimeCredits()) + " CR", Color{255, 224, 95, 255});
+    drawRow(leftPanel, leftStartY + rowStep * 2.0f, "HIGHEST STAGE", "STAGE " + std::to_string(highestCleared), primary);
+    drawRow(leftPanel, leftStartY + rowStep * 3.0f, "ACHIEVEMENTS", std::to_string(achUnlocked) + "/" + std::to_string(achTotal) + " (" + std::to_string(achPct) + "%)", Color{255, 215, 80, 255});
+    drawRow(leftPanel, leftStartY + rowStep * 4.0f, "COSMETICS", std::to_string(pm.GetTotalUnlockedCosmetics()) + " / " + std::to_string(pm.GetTotalCosmetics()), Color{110, 255, 175, 255});
 
-        auto drawStatRow = [&](const char* label, const std::string& val, Color col)
-        {
-            r.DrawText(label, assets.FontId, 19.0f, Transform2D{Vector2f{statLeft, sy}}, Color{175, 195, 225, 240});
-            const Vector2f sz = r.GetTextSize(val, assets.FontId, 19.0f);
-            r.DrawText(val, assets.FontId, 19.0f, Transform2D{Vector2f{statRight - sz.X, sy}}, col);
-            sy += 34.0f;
-        };
-
-        drawStatRow("LIFETIME SCORE", FormatCommas(pm.GetLifetimeScore()) + " PTS", Colors::White);
-        drawStatRow("TOTAL CREDITS EARNED", FormatCommas(pm.GetLifetimeCredits()) + " CR", Color{255, 224, 95, 255});
-        drawStatRow("CURRENT BANK", FormatCommas(static_cast<uint32_t>(std::max(0, PowerUpManager::Get().GetCoins()))) + " CR", Color{255, 215, 70, 255});
-        drawStatRow("HIGHEST STAGE CLEARED", "STAGE " + std::to_string(highestCleared), primary);
-        drawStatRow("POWER-UPS UPGRADED", std::to_string(upgradedPwrCount) + " / 13", Color{125, 235, 255, 255});
-        drawStatRow("COSMETICS COLLECTED", std::to_string(pm.GetTotalUnlockedCosmetics()) + " / " + std::to_string(pm.GetTotalCosmetics()), Color{110, 255, 175, 255});
-
-        sy += 8.0f;
-        r.DrawText("ENDLESS MODE RECORDS", assets.FontId, 20.0f, Transform2D{Vector2f{statLeft, sy}}, Color{255, 175, 75, 255});
-        sy += 28.0f;
-        r.DrawLine(Vector2f{statLeft, sy}, Vector2f{statRight, sy}, Color{255, 175, 75, 110}, 1.5f);
-        sy += 10.0f;
-
-        drawStatRow("BEST SURVIVAL TIME", pm.GetEndlessBestTimeFormatted(), Color{255, 215, 120, 255});
-        drawStatRow("BEST WAVE REACHED", "WAVE " + std::to_string(pm.GetEndlessBestWaves()), Color{255, 215, 120, 255});
-        drawStatRow("ENDLESS HIGH SCORE", FormatCommas(pm.GetEndlessHighScore()) + " PTS", Colors::White);
-        drawStatRow("TOTAL ENDLESS RUNS", std::to_string(pm.GetEndlessTotalRuns()), Color{190, 205, 230, 255});
+    int upgradedPwrCount = 0;
+    const PowerUpType allPwr[] = {
+        PowerUpType::MultiBall, PowerUpType::ExpandPaddle, PowerUpType::Storm,
+        PowerUpType::TempoBall, PowerUpType::ExtraLife, PowerUpType::BigBall,
+        PowerUpType::FireBall, PowerUpType::StickyPaddle, PowerUpType::BottomBarrier,
+        PowerUpType::MagnetPaddle, PowerUpType::GhostBall, PowerUpType::ItemRegen,
+        PowerUpType::ShieldBarrier
+    };
+    for (PowerUpType t : allPwr)
+    {
+        if (PowerUpManager::Get().GetPersistedLevel(t) > 1) ++upgradedPwrCount;
     }
 
-    const UIRect resetBtn = ProfileGarageLayout::GetCareerResetRect(viewSize);
-    const bool resetHov = resetBtn.Contains(mouse);
-    const Color rFill = state.IsResetArmed() ? Color{155, 28, 32, 250} : (resetHov ? Color{95, 26, 30, 245} : Color{56, 18, 22, 235});
-    const Color rBorder = state.IsResetArmed() ? Color{255, 95, 95, 255} : Color{210, 65, 65, 220};
-    DrawReliefPanel(r, resetBtn, rFill, rBorder, 2.0f, resetHov, false, false);
-    if (assets.FontId != 0)
-    {
-        const std::string rLabel = state.IsResetArmed() ? "CONFIRM FULL RESET? CLICK AGAIN" : "RESET SAVE DATA";
-        r.DrawTextCentered(rLabel, assets.FontId, 20.0f, Transform2D{Vector2f{resetBtn.Center.X, resetBtn.Center.Y + (resetHov ? -2.0f : 0.0f)}}, Color{255, 205, 205, 255});
-        r.DrawText("ACHIEVEMENT MILESTONES", assets.FontId, 24.0f, Transform2D{Vector2f{rightPanel.Left() + 20.0f, rightPanel.Top() + 18.0f}}, Color{255, 220, 95, 255});
-    }
-
-    const auto& all = ProfileManager::Get().GetAvailableCosmetics();
-    const float listTop = ProfileGarageLayout::GetCareerListTop(viewSize);
-    const float listBot = ProfileGarageLayout::GetCareerListBottom(viewSize);
-    int mIdx = 0;
-
-    for (const auto& item : all)
-    {
-        if (item.UnlockType != CosmeticUnlockType::Achievement) continue;
-        const UIRect card = ProfileGarageLayout::GetCareerMilestoneRect(mIdx++, state.GetCareerScrollY(), viewSize);
-        if (card.Top() < listTop - 6.0f || card.Bottom() > listBot + 6.0f) continue;
-
-        const bool hov = card.Contains(mouse);
-        const bool isEquipped = (pm.GetEquippedCosmetic(item.Slot) == item.Id);
-        const auto prog = pm.GetCosmeticMilestoneProgress(item.Id);
-
-        const Color bg = item.Unlocked
-            ? (isEquipped ? Color{18, 52, 42, 245} : (hov ? Color{28, 44, 68, 245} : Color{20, 32, 50, 240}))
-            : Color{14, 18, 28, 238};
-        const Color border = isEquipped
-            ? Color{90, 255, 165, 255}
-            : (item.Unlocked ? Color{100, 220, 255, 220} : Color{75, 90, 120, 190});
-
-        DrawReliefPanel(r, card, bg, border, isEquipped ? 2.5f : 1.6f, hov && item.Unlocked, false, !item.Unlocked);
-
-        const Vector2f iconCenter{card.Left() + 54.0f, card.Center.Y};
-        r.DrawRectangle(76.0f, 76.0f, Transform2D{iconCenter}, Color{10, 14, 24, 220});
-        r.DrawRectangleOutline(76.0f, 76.0f, Transform2D{iconCenter}, ScaleAlpha(border, 0.5f), 1.0f);
-
-        const float alpha = item.Unlocked ? 1.0f : 0.45f;
-        if (item.Slot == CosmeticSlot::PrimaryColor || item.Slot == CosmeticSlot::SecondaryColor)
-        {
-            r.DrawRectangle(50.0f, 50.0f, Transform2D{iconCenter}, ScaleAlpha(item.SwatchColor, alpha));
-            r.DrawRectangleOutline(50.0f, 50.0f, Transform2D{iconCenter}, Colors::White, 1.5f);
-        }
-        else if (item.Slot == CosmeticSlot::PaddleSkin)
-        {
-            CosmeticRenderer::DrawPaddle(r, iconCenter, Vector2f{64.0f, 15.0f}, 0.0f, ProfileManager::ResolvePaddleSkinStyle(item.Id), primary, secondary, 0.0f, alpha, assets.PaddleTexId);
-        }
-        else if (item.Slot == CosmeticSlot::BallSkin)
-        {
-            CosmeticRenderer::DrawBall(r, iconCenter, 18.0f, ProfileManager::ResolveBallSkinStyle(item.Id), primary, secondary, 0.0f, alpha, false, false, false, assets.BallTexId);
-        }
-        else if (item.Slot == CosmeticSlot::BallTrail)
-        {
-            CosmeticRenderer::DrawTrailPreviewIcon(r, iconCenter, Vector2f{60.0f, 34.0f}, ProfileManager::ResolveTrailStyle(item.Id), ScaleAlpha(primary, alpha), ScaleAlpha(secondary, alpha), 0.0f);
-        }
-        else if (item.Slot == CosmeticSlot::DeathEffect)
-        {
-            CosmeticRenderer::DrawDeathEffectPreviewIcon(r, iconCenter, 22.0f, ProfileManager::ResolveDeathEffectStyle(item.Id), ScaleAlpha(primary, alpha), ScaleAlpha(secondary, alpha), 0.42f);
-        }
-
-        if (!item.Unlocked)
-        {
-            DrawLockedBadge(r, Vector2f{iconCenter.X + 24.0f, iconCenter.Y - 24.0f}, 11.0f);
-        }
-
-        if (assets.FontId != 0)
-        {
-            const float tx = card.Left() + 106.0f;
-            const float ty = card.Top() + 12.0f;
-            r.DrawText(item.Name, assets.FontId, 19.0f, Transform2D{Vector2f{tx, ty}}, Colors::White);
-            r.DrawText(item.UnlockRequirement, assets.FontId, 16.0f, Transform2D{Vector2f{tx, ty + 25.0f}}, Color{185, 202, 230, 235});
-
-            const float barW = card.Size.X - 124.0f;
-            const float barH = 12.0f;
-            const Vector2f barC{tx + barW * 0.5f, ty + 60.0f};
-            r.DrawRectangle(barW, barH, Transform2D{barC}, Color{22, 30, 46, 240});
-            const float fillW = std::max(0.0f, barW * (item.Unlocked ? 1.0f : prog.GetRatio()));
-            if (fillW > 1.0f)
-            {
-                r.DrawRectangle(fillW, barH - 2.0f, Transform2D{Vector2f{tx + fillW * 0.5f, barC.Y}},
-                                item.Unlocked ? Color{85, 245, 155, 245} : Color{255, 185, 60, 245});
-            }
-
-            const std::string progLabel = item.Unlocked
-                ? (isEquipped ? "EQUIPPED" : "UNLOCKED")
-                : (std::to_string(prog.Current) + " / " + std::to_string(prog.Target));
-            r.DrawText(progLabel, assets.FontId, 15.0f, Transform2D{Vector2f{tx, ty + 72.0f}},
-                       item.Unlocked ? Color{105, 255, 175, 255} : Color{255, 205, 105, 245});
-        }
-    }
+    const float rightStartY = drawHeader(rightPanel, "ENDLESS & GEAR", amber);
+    drawRow(rightPanel, rightStartY + rowStep * 0.0f, "BEST TIME", pm.GetEndlessBestTimeFormatted(), Color{255, 215, 120, 255});
+    drawRow(rightPanel, rightStartY + rowStep * 1.0f, "BEST WAVE", "WAVE " + std::to_string(pm.GetEndlessBestWaves()), Color{255, 215, 120, 255});
+    drawRow(rightPanel, rightStartY + rowStep * 2.0f, "ENDLESS SCORE", FormatCommas(pm.GetEndlessHighScore()) + " PTS", Colors::White);
+    drawRow(rightPanel, rightStartY + rowStep * 3.0f, "ENDLESS RUNS", std::to_string(pm.GetEndlessTotalRuns()), Color{195, 210, 235, 255});
+    drawRow(rightPanel, rightStartY + rowStep * 4.0f, "UPGRADES", std::to_string(upgradedPwrCount) + " / 13", Color{125, 235, 255, 255});
 }
 
 void ProfileGarageRenderer::RenderToast(
@@ -945,8 +844,7 @@ void ProfileGarageRenderer::RenderToast(
     const float halfH = viewSize.Y * 0.5f;
     const Vector2f sz = r.GetTextSize(state.GetToastText(), assets.FontId, 21.0f);
     const float boxW = std::max(260.0f, sz.X + 46.0f);
-    const float toastY = (state.GetViewMode() == ProfileViewMode::Garage) ? (-halfH + 34.0f) : (-halfH + 94.0f);
-    const Vector2f pos{0.0f, toastY};
+    const Vector2f pos{0.0f, -halfH + 34.0f};
 
     r.DrawRectangle(boxW, 38.0f, Transform2D{pos}, ScaleAlpha(Color{10, 16, 28, 245}, alpha));
     r.DrawRectangleOutline(boxW, 38.0f, Transform2D{pos}, ScaleAlpha(state.GetToastColor(), alpha), 2.0f);

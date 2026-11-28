@@ -1,5 +1,6 @@
 #include "Scenes/EndlessScene.h"
 #include "Core/ProfileManager.h"
+#include "Core/AchievementManager.h"
 #include "Core/GameRules.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/BoxCollider.h"
@@ -487,6 +488,7 @@ void EndlessScene::OnUpdate(float dt, GameContext& context)
     {
         m_survivalTime += dt;
         m_endlessGenerator.Update(dt, m_registry, context);
+        AchievementManager::Get().NotifyEndlessProgress(m_survivalTime, m_wavesCleared);
     }
 
     // 3. Wave Clear Banner Animation
@@ -572,6 +574,7 @@ void EndlessScene::CheckWaveClear(GameContext& context)
     if (m_endlessGenerator.IsWaveTimeElapsed() && !m_draftActive)
     {
         ++m_wavesCleared;
+        AchievementManager::Get().NotifyEndlessProgress(m_survivalTime, m_wavesCleared);
         m_justClearedWaveNumber = m_wavesCleared;
         m_waveClearBannerActive = true;
         m_waveClearBannerTimer = 2.5f;
@@ -716,6 +719,7 @@ void EndlessScene::OnGameOverEnter()
 {
     // Record Endless Run Stats
     ProfileManager::Get().RecordEndlessRun(m_survivalTime, m_wavesCleared, m_scoreManager.GetScore());
+    AchievementManager::Get().NotifyEndlessRunCompleted(m_survivalTime, m_wavesCleared, m_scoreManager.GetScore());
 
     GameScene::OnGameOverEnter();
 }

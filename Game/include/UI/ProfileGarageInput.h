@@ -13,7 +13,7 @@ struct ProfileInputResult
     bool PlayUnlockSfx = false;
     bool PlayErrorSfx = false;
     bool TriggerDeathBurst = false;
-    bool FullResetConfirmed = false;
+    bool OpenAchievementShowcase = false;
     Vector2f BurstPos{0.0f, 0.0f};
 };
 
@@ -42,13 +42,6 @@ private:
         ProfileInputResult& out);
 
     static void HandleGarage(
-        ProfileGarageState& state,
-        const InputManager& input,
-        const Vector2f& viewSize,
-        const Vector2f& mouse,
-        ProfileInputResult& out);
-
-    static void HandleCareer(
         ProfileGarageState& state,
         const InputManager& input,
         const Vector2f& viewSize,

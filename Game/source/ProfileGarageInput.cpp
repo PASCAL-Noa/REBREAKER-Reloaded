@@ -20,14 +20,7 @@ ProfileInputResult ProfileGarageInput::Process(
         HandleColorModal(state, input, viewSize, mouse, out);
         return out;
     }
-    if (state.GetViewMode() == ProfileViewMode::Garage)
-    {
-        HandleGarage(state, input, viewSize, mouse, out);
-    }
-    else
-    {
-        HandleCareer(state, input, viewSize, mouse, out);
-    }
+    HandleGarage(state, input, viewSize, mouse, out);
     return out;
 }
 
@@ -94,7 +87,7 @@ void ProfileGarageInput::HandleNickname(
         return;
     }
     if (input.IsMouseButtonPress(MouseButton::Left) &&
-        !ProfileGarageLayout::GetNicknameRect(viewSize, state.GetViewMode() == ProfileViewMode::Career).Contains(mouse))
+        !ProfileGarageLayout::GetNicknameRect(viewSize).Contains(mouse))
     {
         state.CommitNicknameEdit();
         out.PlayClickSfx = true;
@@ -270,8 +263,8 @@ void ProfileGarageInput::HandleGarage(
     }
     if (ProfileGarageLayout::GetSideButtonRect(1, viewSize).Contains(mouse))
     {
-        state.SetViewMode(ProfileViewMode::Career);
-        out.PlaySwitchSfx = true;
+        out.OpenAchievementShowcase = true;
+        out.PlayClickSfx = true;
         return;
     }
     if (ProfileGarageLayout::GetSideButtonRect(2, viewSize).Contains(mouse))
@@ -339,77 +332,5 @@ void ProfileGarageInput::HandleGarage(
             }
         }
         return;
-    }
-}
-
-void ProfileGarageInput::HandleCareer(
-    ProfileGarageState& state,
-    const InputManager& input,
-    const Vector2f& viewSize,
-    const Vector2f& mouse,
-    ProfileInputResult& out)
-{
-    if (input.IsKeyPress(KeyCode::Escape))
-    {
-        state.SetViewMode(ProfileViewMode::Garage);
-        out.PlaySwitchSfx = true;
-        return;
-    }
-
-    const float wheel = input.GetMouseWheelDelta();
-    if (std::abs(wheel) > 0.01f)
-    {
-        state.AddCareerScroll(-wheel * 55.0f);
-    }
-
-    if (!input.IsMouseButtonPress(MouseButton::Left)) return;
-
-    if (ProfileGarageLayout::GetBackButtonRect(viewSize).Contains(mouse))
-    {
-        state.SetViewMode(ProfileViewMode::Garage);
-        out.PlaySwitchSfx = true;
-        return;
-    }
-    if (ProfileGarageLayout::GetNicknameRect(viewSize, true).Contains(mouse) ||
-        ProfileGarageLayout::GetCareerEditNameRect(viewSize).Contains(mouse))
-    {
-        state.BeginNicknameEdit();
-        out.PlayClickSfx = true;
-        return;
-    }
-    if (ProfileGarageLayout::GetCareerResetRect(viewSize).Contains(mouse))
-    {
-        if (state.ArmOrPerformReset())
-        {
-            out.FullResetConfirmed = true;
-            out.PlayUnlockSfx = true;
-        }
-        else
-        {
-            out.PlayErrorSfx = true;
-        }
-        return;
-    }
-
-    auto& pm = ProfileManager::Get();
-    const auto& all = pm.GetAvailableCosmetics();
-    const float listTop = ProfileGarageLayout::GetCareerListTop(viewSize);
-    const float listBot = ProfileGarageLayout::GetCareerListBottom(viewSize);
-    int milestoneIdx = 0;
-
-    for (const auto& c : all)
-    {
-        if (c.UnlockType != CosmeticUnlockType::Achievement) continue;
-        const UIRect card = ProfileGarageLayout::GetCareerMilestoneRect(milestoneIdx++, state.GetCareerScrollY(), viewSize);
-        if (card.Bottom() < listTop - 10.0f || card.Top() > listBot + 10.0f) continue;
-        if (card.Contains(mouse) && c.Unlocked)
-        {
-            pm.EquipCosmetic(c.Slot, c.Id);
-            state.RefreshCategoryItems();
-            state.RefreshColorModalItems();
-            state.ShowToast("EQUIPPED: " + c.Name, pm.GetEquippedPrimaryColor());
-            out.PlayClickSfx = true;
-            return;
-        }
     }
 }

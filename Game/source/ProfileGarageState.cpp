@@ -1,5 +1,4 @@
 #include "UI/ProfileGarageState.h"
-#include "Core/PlayerPrefs.h"
 #include "PowerUps/PowerUpConfig.h"
 #include <algorithm>
 #include <array>
@@ -41,7 +40,6 @@ void ProfileGarageState::Initialize()
         ShowToast("NEW MILESTONE UNLOCKED (+" + std::to_string(newlyUnlocked) + ")", Color{255, 220, 75, 255});
     }
 
-    m_viewMode = ProfileViewMode::Garage;
     m_activeTab = 0;
     m_currentPage = 0;
     m_hoveredIndex = -1;
@@ -52,9 +50,6 @@ void ProfileGarageState::Initialize()
     m_pressedColorSwatch = -1;
     m_editingNickname = false;
     m_nicknameBuffer = pm.GetUsername();
-    m_careerScrollY = 0.0f;
-    m_resetArmed = false;
-    m_resetArmTimer = 0.0f;
 
     RefreshCategoryItems();
     SelectEquippedInCurrentTab();
@@ -67,25 +62,6 @@ void ProfileGarageState::UpdateTimers(float dt)
     if (m_toastTimer > 0.0f)
     {
         m_toastTimer = std::max(0.0f, m_toastTimer - dt);
-    }
-    if (m_resetArmed)
-    {
-        m_resetArmTimer -= dt;
-        if (m_resetArmTimer <= 0.0f)
-        {
-            m_resetArmed = false;
-        }
-    }
-}
-
-void ProfileGarageState::SetViewMode(ProfileViewMode mode)
-{
-    m_viewMode = mode;
-    m_hoveredIndex = -1;
-    m_pressedSlot = -1;
-    if (mode == ProfileViewMode::Career)
-    {
-        ProfileManager::Get().EvaluateAchievementUnlocks();
     }
 }
 
@@ -293,7 +269,6 @@ void ProfileGarageState::RandomizeEquippedLoadout()
 
 void ProfileGarageState::OpenColorModal(int channel)
 {
-    m_viewMode = ProfileViewMode::Garage;
     m_colorModalOpen = true;
     m_colorChannel = std::clamp(channel, 0, 1);
     m_colorHoveredIndex = -1;
@@ -483,44 +458,6 @@ void ProfileGarageState::CancelNicknameEdit()
     m_editingNickname = false;
 }
 
-void ProfileGarageState::AddCareerScroll(float deltaY)
-{
-    m_careerScrollY = std::max(0.0f, m_careerScrollY + deltaY);
-}
-
-void ProfileGarageState::ClampCareerScroll(float maxScroll)
-{
-    m_careerScrollY = std::clamp(m_careerScrollY, 0.0f, std::max(0.0f, maxScroll));
-}
-
-bool ProfileGarageState::ArmOrPerformReset()
-{
-    if (!m_resetArmed)
-    {
-        m_resetArmed = true;
-        m_resetArmTimer = 4.0f;
-        ShowToast("CLICK AGAIN WITHIN 4S TO CONFIRM FULL RESET", Color{255, 110, 75, 255});
-        return false;
-    }
-    PerformFullSaveReset();
-    return true;
-}
-
-void ProfileGarageState::PerformFullSaveReset()
-{
-    PowerUpManager::Get().ResetToDefaults();
-    ProfileManager::Get().ResetToDefaults();
-    PlayerPrefs::Save();
-    m_resetArmed = false;
-    m_resetArmTimer = 0.0f;
-    m_nicknameBuffer = ProfileManager::Get().GetUsername();
-    RefreshCategoryItems();
-    SelectEquippedInCurrentTab();
-    RefreshColorModalItems();
-    SelectEquippedInColorModal();
-    ShowToast("SAVE DATA RESET TO DEFAULTS", Color{255, 110, 90, 255});
-}
-
 void ProfileGarageState::ShowToast(const std::string& text, Color color)
 {
     m_toastText = text;
@@ -557,7 +494,7 @@ Color ProfileGarageState::GetPreviewSecondaryColor() const
 PaddleSkinStyle ProfileGarageState::GetPreviewPaddleStyle() const
 {
     const auto& pm = ProfileManager::Get();
-    if (m_viewMode == ProfileViewMode::Garage && !m_colorModalOpen && GetActiveSlot() == CosmeticSlot::PaddleSkin)
+    if (!m_colorModalOpen && GetActiveSlot() == CosmeticSlot::PaddleSkin)
     {
         if (const CosmeticItem* it = GetInspectedItem())
         {
@@ -570,7 +507,7 @@ PaddleSkinStyle ProfileGarageState::GetPreviewPaddleStyle() const
 BallSkinStyle ProfileGarageState::GetPreviewBallStyle() const
 {
     const auto& pm = ProfileManager::Get();
-    if (m_viewMode == ProfileViewMode::Garage && !m_colorModalOpen && GetActiveSlot() == CosmeticSlot::BallSkin)
+    if (!m_colorModalOpen && GetActiveSlot() == CosmeticSlot::BallSkin)
     {
         if (const CosmeticItem* it = GetInspectedItem())
         {
@@ -583,7 +520,7 @@ BallSkinStyle ProfileGarageState::GetPreviewBallStyle() const
 TrailStyle ProfileGarageState::GetPreviewTrailStyle() const
 {
     const auto& pm = ProfileManager::Get();
-    if (m_viewMode == ProfileViewMode::Garage && !m_colorModalOpen && GetActiveSlot() == CosmeticSlot::BallTrail)
+    if (!m_colorModalOpen && GetActiveSlot() == CosmeticSlot::BallTrail)
     {
         if (const CosmeticItem* it = GetInspectedItem())
         {
@@ -596,7 +533,7 @@ TrailStyle ProfileGarageState::GetPreviewTrailStyle() const
 DeathEffectStyle ProfileGarageState::GetPreviewDeathStyle() const
 {
     const auto& pm = ProfileManager::Get();
-    if (m_viewMode == ProfileViewMode::Garage && !m_colorModalOpen && GetActiveSlot() == CosmeticSlot::DeathEffect)
+    if (!m_colorModalOpen && GetActiveSlot() == CosmeticSlot::DeathEffect)
     {
         if (const CosmeticItem* it = GetInspectedItem())
         {

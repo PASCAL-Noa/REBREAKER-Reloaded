@@ -1,6 +1,9 @@
 #include "Application.h"
+#include "Core/AchievementManager.h"
 #include "Core/PlayerPrefs.h"
+#include "Core/ProfileManager.h"
 #include "ECS/Systems/UISystem.h"
+#include "Scenes/AchievementScene.h"
 #include "Scenes/MenuScene.h"
 #include "Scenes/GameScene.h"
 #include "Scenes/StoryScene.h"
@@ -26,6 +29,11 @@ Application::Application(const WindowConfig& config)
       m_cheatManager(m_context)
 {
     Init();
+}
+
+Application::~Application()
+{
+    AchievementManager::Get().UnbindEvents();
 }
 
 void Application::Init()
@@ -81,6 +89,10 @@ void Application::Init()
     uint32_t hoverSfx = m_resourceManager.LoadResource("Resources/audio/sfx/ui_hover.wav");
     UISystem::SetDefaultAudio(hoverSfx, clickSfx);
 
+    ProfileManager::Get().LoadProfile();
+    AchievementManager::Get().BindEvents(m_eventDispatcher);
+    m_achievementToast.Init(m_context);
+
     // Register global rules
     m_context.Rules.RegisterRule(Rule::Graphics::EnableShader, "Toggle Shaders", PlayerPrefs::GetBool("EnableShader", true), RuleAccess::Public);
     m_context.Rules.RegisterRule(Rule::Graphics::EnableParticles, "Toggle Particles", PlayerPrefs::GetBool("EnableParticles", true), RuleAccess::Public);
@@ -118,14 +130,18 @@ void Application::Run()
 
         m_cheatManager.Update(m_time.GetDeltaTime(), m_context);
         m_sceneManager.Update(m_time.GetDeltaTime(), m_context);
+        m_achievementToast.Update(m_time.GetDeltaTime(), m_context);
 
         m_renderer.BeginDraw(m_sceneManager.GetClearColor());
         m_sceneManager.Render(m_context);
         m_cheatManager.Render(m_renderer);
+        m_achievementToast.Render(m_renderer);
         m_renderer.EndDraw(m_sceneManager.GetPostProcessShader(), m_sceneManager.GetPostProcessParams());
     }
 
+    AchievementManager::Get().UnbindEvents();
     m_sceneManager.Shutdown(m_context);
+    ProfileManager::Get().SaveProfile();
     PlayerPrefs::Save();
 }
 
@@ -144,9 +160,11 @@ bool Application::RunSmokeTest()
             if (!m_window.PollEvents(m_inputManager, &m_renderer)) break;
             m_cheatManager.Update(0.016f, m_context);
             m_sceneManager.Update(0.016f, m_context);
+            m_achievementToast.Update(0.016f, m_context);
             m_renderer.BeginDraw(m_sceneManager.GetClearColor());
             m_sceneManager.Render(m_context);
             m_cheatManager.Render(m_renderer);
+            m_achievementToast.Render(m_renderer);
             m_renderer.EndDraw(m_sceneManager.GetPostProcessShader(), m_sceneManager.GetPostProcessParams());
         }
     };
@@ -159,6 +177,11 @@ bool Application::RunSmokeTest()
     ProfileScene::Launch(m_context.Scenes, SceneTransitionType::StaticSnow, 0.55f);
     stepFrames(120);
     std::cout << "[SmokeTest] ProfileScene direct transition stable!" << std::endl;
+
+    std::cout << "[SmokeTest] Transitioning to AchievementScene (Achievement Showcase)..." << std::endl;
+    AchievementScene::Launch(m_context.Scenes);
+    stepFrames(60);
+    std::cout << "[SmokeTest] AchievementScene active and running stably!" << std::endl;
 
     // Step 2: Launch Campaign (StoryScene) with transition
     std::cout << "[SmokeTest] Triggering transition to StoryScene (StoryMode)..." << std::endl;
@@ -202,6 +225,7 @@ bool Application::RunSmokeTest()
     stepFrames(70);
     std::cout << "[SmokeTest] MenuScene re-entered and running stably!" << std::endl;
 
+    AchievementManager::Get().UnbindEvents();
     m_sceneManager.Shutdown(m_context);
     std::cout << "[SmokeTest] PASSED: All channels verified with zero crashes!" << std::endl;
     return true;

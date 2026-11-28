@@ -32,7 +32,6 @@ private:
     void UpdateShowcase(float dt, const Vector2f& viewSize);
     void SpawnShowcaseBurst(const Vector2f& pos, float scale);
     void ReturnToMenu(GameContext& context);
-    void ClampCareerScroll(const Vector2f& viewSize);
 
     std::unique_ptr<ProfileGarageState> m_state;
     ProfileRenderAssets m_assets;

@@ -8,6 +8,7 @@
 #include "Factories/BrickFactory.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Core/ProfileManager.h"
+#include "Core/AchievementManager.h"
 #include "Graphics/Renderer.h"
 #include "UI/UIFactory.h"
 #include "ECS/Components/UI/CanvasComponent.h"
@@ -210,6 +211,7 @@ void SandboxScene::StartCountdown()
 void SandboxScene::OnInit(GameContext& context)
 {
     GameScene::OnInit(context);
+    AchievementManager::Get().SetTrackingEnabled(false);
     PowerUpManager::Get().ClearTransientOverrides();
 
     // Sandbox / Debug defaults: 3 red hearts, no safety barrier, drop mode by default, manual ball launch, no countdown
@@ -294,6 +296,7 @@ void SandboxScene::OnRender(GameContext& context)
 
 void SandboxScene::OnDestroy(GameContext& context)
 {
+    AchievementManager::Get().SetTrackingEnabled(true);
     PowerUpManager::Get().ClearTransientOverrides();
     GameScene::OnDestroy(context);
 }
