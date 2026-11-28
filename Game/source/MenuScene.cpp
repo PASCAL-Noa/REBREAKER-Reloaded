@@ -11,6 +11,7 @@
 #include "Scenes/EditorScene.h"
 #include "Scenes/RobostockScene.h"
 #include "Scenes/ProfileScene.h"
+#include "Core/AchievementManager.h"
 #include "Scenes/SamplePhysics.h"
 #include "Scenes/SampleAudio.h"
 #include "Scenes/SampleStateMachine.h"
@@ -28,6 +29,7 @@
 #include "Graphics/CosmeticRenderer.h"
 #include "Resources/ResourceManager.h"
 #include "UI/UIFactory.h"
+#include "UI/ProfileGarageRenderer.h"
 #include "ECS/Systems/UISystem.h"
 #include "ECS/Components/UI/CanvasComponent.h"
 #include "ECS/Components/UI/PanelComponent.h"
@@ -2464,12 +2466,6 @@ void MenuScene::RenderChannelGrid(GameContext& context)
         m_selectedChannel = 0;
     }
 
-    // 1. CRT Screen Header Bar (Fixed inside 1390 x 910 TV screen)
-    const Vector2f headerPillPos{695.0f, 55.0f};
-    context.Render.DrawRectangle(520.0f, 44.0f, Transform2D{headerPillPos}, Color{20, 28, 44, 230});
-    context.Render.DrawRectangleOutline(520.0f, 44.0f, Transform2D{headerPillPos}, Color{70, 150, 240, 220}, 2.0f);
-    context.Render.DrawTextCentered("REBREAKER CHANNEL MENU", m_fontId, 22.0f, Transform2D{headerPillPos}, Color{240, 250, 255, 255});
-
     // Left Phosphor TV channel tag
     std::string chTag = "CH 0" + std::to_string(m_selectedChannel + 1) + "  AV-1";
     context.Render.DrawText(chTag, m_fontId, 18.0f, Transform2D{Vector2f{45.0f, 45.0f}}, Color{75, 255, 120, 220});
@@ -2519,12 +2515,6 @@ void MenuScene::RenderChannelGrid(GameContext& context)
         Vector2f vignettePos = pos + Vector2f{0.0f, -4.0f * s};
         RenderChannelVignette(context, ch, vignettePos, ch.CurrentScale);
     }
-
-    // 3. CRT Screen Bottom Status Bar with Custom Match shortcut
-    const Vector2f footerPos{695.0f, 835.0f};
-    context.Render.DrawRectangle(920.0f, 36.0f, Transform2D{footerPos}, Color{16, 24, 38, 235});
-    context.Render.DrawRectangleOutline(920.0f, 36.0f, Transform2D{footerPos}, Color{70, 160, 245, 200}, 1.5f);
-    context.Render.DrawTextCentered("[C] CUSTOM MATCH   |   [B] SANDBOX LAB   |   [ENTER] SELECT   |   [ESC] SLEEP", m_fontId, 16.0f, Transform2D{footerPos}, Color{220, 235, 255, 245});
 }
 
 void MenuScene::RenderStageSelectPreview(GameContext& context, const Vector2f& pos, float w, float h, bool isZoomed) const
@@ -4089,24 +4079,14 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .ZOrder = 1
     });
 
-    // Left Player Name in Header (without "PLAYER: " prefix)
-    m_workshopPlayerText = UIFactory::CreateText(m_registry, m_workshopCanvas, TextDescriptor{
-        .Text = ProfileManager::Get().GetUsername(),
-        .Position = {-900.0f, -635.0f},
-        .FontId = m_fontId,
-        .FontSize = 32.0f,
-        .Tint = Color{80, 220, 255, 255},
-        .ZOrder = 2
-    });
-
-    // Center Nav Tabs (Clash Royale Style Switchers)
+    // Center Nav Tabs
     UIFactory::CreateButton(m_registry, m_workshopCanvas, ButtonDescriptor{
         .Text = "POWER-UPS",
         .OnClick = [this]() {
             if (m_showDescriptionModal) return;
             OpenWorkshopTab(m_workshopUpgradesCanvas);
         },
-        .Position = {-240.0f, -635.0f},
+        .Position = {-290.0f, -635.0f},
         .Size = {260.0f, 54.0f},
         .DefaultColor = Color{35, 50, 85, 255},
         .HoverColor = Color{55, 80, 135, 255},
@@ -4122,7 +4102,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             if (m_showDescriptionModal) return;
             OpenWorkshopTab(m_workshopUltimatesCanvas);
         },
-        .Position = {30.0f, -635.0f},
+        .Position = {-20.0f, -635.0f},
         .Size = {240.0f, 54.0f},
         .DefaultColor = Color{35, 50, 85, 255},
         .HoverColor = Color{55, 80, 135, 255},
@@ -4138,23 +4118,13 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             if (m_showDescriptionModal) return;
             OpenWorkshopTab(m_workshopEndlessPerksCanvas);
         },
-        .Position = {325.0f, -635.0f},
+        .Position = {270.0f, -635.0f},
         .Size = {300.0f, 54.0f},
         .DefaultColor = Color{35, 50, 85, 255},
         .HoverColor = Color{55, 80, 135, 255},
         .PressedColor = Color{25, 35, 60, 255},
         .FontId = m_fontId,
         .FontSize = 26.0f,
-        .ZOrder = 2
-    });
-
-    // Right Bank Display (Golden Pill)
-    m_workshopBankText = UIFactory::CreateText(m_registry, m_workshopCanvas, TextDescriptor{
-        .Text = "BANK: 0 CREDITS",
-        .Position = {800.0f, -635.0f},
-        .FontId = m_fontId,
-        .FontSize = 32.0f,
-        .Tint = Colors::Gold,
         .ZOrder = 2
     });
 
@@ -4450,6 +4420,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
             if (PowerUpManager::Get().CanUpgrade(t))
             {
                 PowerUpManager::Get().Upgrade(t);
+                AchievementManager::Get().NotifyWorkshopUpgraded();
                 m_inspectedLevel = PowerUpManager::Get().GetPersistedLevel(t);
                 m_workshopPreviewLevel = m_inspectedLevel;
                 if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 16.0f);
@@ -4736,10 +4707,10 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
     // =========================================================================
     UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
         .Text = "ENDLESS MODE PERKS & SURVIVAL UPGRADES",
-        .Position = {0.0f, -540.0f},
+        .Position = {0.0f, -536.0f},
         .FontId = m_fontId,
         .FontSize = 32.0f,
-        .Tint = Colors::Gold,
+        .Tint = Color{255, 232, 118, 255},
         .ZOrder = 2
     });
 
@@ -4748,7 +4719,7 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         .Position = {0.0f, -496.0f},
         .FontId = m_fontId,
         .FontSize = 20.0f,
-        .Tint = Color{130, 210, 245, 220},
+        .Tint = Color{195, 232, 255, 250},
         .ZOrder = 2
     });
 
@@ -4766,25 +4737,25 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
         UIFactory::CreatePanel(m_registry, m_workshopEndlessPerksCanvas, PanelDescriptor{
             .Position = {cx, cy},
             .Size = {980.0f, 360.0f},
-            .Tint = Color{20, 28, 46, 250},
+            .Tint = Color{0, 0, 0, 0},
             .ZOrder = 1
         });
 
         m_workshopEndlessPerkTexts[i] = UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
             .Text = ProfileManager::GetEndlessPerkName(perkType),
-            .Position = {cx, cy - 125.0f},
+            .Position = {cx + 22.0f, cy - 135.0f},
             .FontId = m_fontId,
-            .FontSize = 32.0f,
+            .FontSize = 30.0f,
             .Tint = Colors::Gold,
             .ZOrder = 3
         });
 
         m_workshopEndlessPerkDescTexts[i] = UIFactory::CreateText(m_registry, m_workshopEndlessPerksCanvas, TextDescriptor{
             .Text = ProfileManager::GetEndlessPerkDescription(perkType),
-            .Position = {cx, cy - 20.0f},
+            .Position = {cx, cy - 30.0f},
             .FontId = m_fontId,
             .FontSize = 22.0f,
-            .Tint = Color{215, 230, 250, 245},
+            .Tint = Color{232, 240, 255, 255},
             .ZOrder = 3
         });
 
@@ -4803,8 +4774,8 @@ void MenuScene::CreateWorkshopModal(const GameContext& /*context*/)
                     if (m_bounceSfxId != 0 && mp_context) mp_context->Audio.PlaySfx(m_bounceSfxId, 25.0f, 0.8f);
                 }
             },
-            .Position = {cx, cy + 115.0f},
-            .Size = {420.0f, 56.0f},
+            .Position = {cx, cy + 122.0f},
+            .Size = {420.0f, 54.0f},
             .DefaultColor = Color{45, 65, 105, 255},
             .HoverColor = Color{68, 100, 155, 255},
             .PressedColor = Color{30, 44, 72, 255},
@@ -4914,20 +4885,7 @@ void MenuScene::OpenWorkshopTab(Entity targetCanvas)
 
 void MenuScene::RefreshWorkshopUI()
 {
-    // 1. Update Header Call & Bank
-    if (m_workshopBankText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopBankText))
-    {
-        m_registry.GetComponent<TextComponent>(m_workshopBankText).Text =
-            "[C] " + std::to_string(PowerUpManager::Get().GetCoins()) + " CREDITS";
-    }
-
-    if (m_workshopPlayerText != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopPlayerText))
-    {
-        m_registry.GetComponent<TextComponent>(m_workshopPlayerText).Text =
-            ProfileManager::Get().GetUsername();
-    }
-
-    // 2. Upgrades Tab Refresh (3x3 Clash Royale Grid)
+    // 1. Upgrades Tab Refresh (3x3 Clash Royale Grid)
     for (size_t slot = 0; slot < m_upgradeCards.size() && slot < 9; ++slot)
     {
         int pwrIdx = m_workshopScrollRow * 3 + static_cast<int>(slot);
@@ -5272,22 +5230,34 @@ void MenuScene::RefreshWorkshopUI()
     }
 
     // 4. Endless Mode Perks Refresh
+    const Color perkAccents[4] = {
+        Color{208, 118, 255, 255},
+        Color{52, 224, 255, 255},
+        Color{255, 206, 64, 255},
+        Color{76, 246, 154, 255}
+    };
+    const int currentCoins = PowerUpManager::Get().GetCoins();
+
     for (int i = 0; i < 4; ++i)
     {
         EndlessPerkType perk = static_cast<EndlessPerkType>(i);
         int lvl = ProfileManager::Get().GetEndlessPerkLevel(perk);
         int maxLvl = ProfileManager::Get().GetEndlessPerkMaxLevel(perk);
+        bool isMaxed = (lvl >= maxLvl);
+        int cost = isMaxed ? 0 : ProfileManager::Get().GetEndlessPerkUpgradeCost(perk);
+        bool canAfford = (!isMaxed && currentCoins >= cost);
 
         if (m_workshopEndlessPerkTexts[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkTexts[i]))
         {
-            std::string perkInfo = ProfileManager::GetEndlessPerkName(perk) + "  (TIER " + std::to_string(lvl) + " / " + std::to_string(maxLvl) + ")";
-            m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkTexts[i]).Text = perkInfo;
+            auto& titleText = m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkTexts[i]);
+            titleText.Text = ProfileManager::GetEndlessPerkName(perk) + "  //  TIER " + std::to_string(lvl) + " / " + std::to_string(maxLvl);
+            titleText.Tint = isMaxed ? Color{255, 224, 96, 255} : perkAccents[i];
         }
 
         if (m_workshopEndlessPerkDescTexts[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkDescTexts[i]))
         {
             std::string tierLine = "CURRENT: " + ProfileManager::GetEndlessPerkTierInfo(perk, lvl);
-            if (lvl < maxLvl)
+            if (!isMaxed)
             {
                 tierLine += "\nNEXT: " + ProfileManager::GetEndlessPerkTierInfo(perk, lvl + 1);
             }
@@ -5295,20 +5265,51 @@ void MenuScene::RefreshWorkshopUI()
             {
                 tierLine += "\n[ MAXIMUM TIER REACHED ]";
             }
-            m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkDescTexts[i]).Text =
-                ProfileManager::GetEndlessPerkDescription(perk) + "\n\n" + tierLine;
+            auto& descText = m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkDescTexts[i]);
+            descText.Text = ProfileManager::GetEndlessPerkDescription(perk) + "\n\n" + tierLine;
+            descText.Tint = Color{232, 240, 255, 255};
         }
 
         if (m_workshopEndlessPerkBtns[i] != NULL_ENTITY && m_registry.HasComponent<TextComponent>(m_workshopEndlessPerkBtns[i]))
         {
-            if (lvl >= maxLvl)
+            auto& btnText = m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkBtns[i]);
+            if (isMaxed)
             {
-                m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkBtns[i]).Text = "[MAX TIER]";
+                btnText.Text = "[ MAX TIER ]";
+                btnText.Tint = Color{255, 232, 128, 255};
+            }
+            else if (canAfford)
+            {
+                btnText.Text = "UPGRADE  (" + std::to_string(cost) + " CR)";
+                btnText.Tint = Colors::White;
             }
             else
             {
-                int cost = ProfileManager::Get().GetEndlessPerkUpgradeCost(perk);
-                m_registry.GetComponent<TextComponent>(m_workshopEndlessPerkBtns[i]).Text = "UPGRADE (" + std::to_string(cost) + " CR)";
+                btnText.Text = "NEED " + std::to_string(cost) + " CR";
+                btnText.Tint = Color{255, 175, 165, 255};
+            }
+        }
+
+        if (m_workshopEndlessPerkBtns[i] != NULL_ENTITY && m_registry.HasComponent<ButtonComponent>(m_workshopEndlessPerkBtns[i]))
+        {
+            auto& btn = m_registry.GetComponent<ButtonComponent>(m_workshopEndlessPerkBtns[i]);
+            if (isMaxed)
+            {
+                btn.DefaultColor = Color{68, 52, 16, 255};
+                btn.HoverColor = Color{84, 66, 22, 255};
+                btn.PressedColor = Color{52, 40, 12, 255};
+            }
+            else if (canAfford)
+            {
+                btn.DefaultColor = Color{24, 124, 78, 255};
+                btn.HoverColor = Color{38, 164, 104, 255};
+                btn.PressedColor = Color{18, 92, 58, 255};
+            }
+            else
+            {
+                btn.DefaultColor = Color{66, 30, 42, 255};
+                btn.HoverColor = Color{86, 38, 54, 255};
+                btn.PressedColor = Color{48, 22, 32, 255};
             }
         }
     }
@@ -5477,13 +5478,16 @@ void MenuScene::RenderWorkshopBackgroundVisuals(GameContext& context)
         }
     }
 
-    // Vertical Cyber Spine / Data Conduit between Left Deck and Right Deck
-    const float spineX = screenCenterX - 130.0f;
-    context.Render.DrawLine(Vector2f{spineX, gridMinY + 20.0f}, Vector2f{spineX, gridMaxY - 20.0f}, Color{35, 60, 105, 160}, 2.0f);
-    for (float py = gridMinY + 100.0f; py <= gridMaxY - 60.0f; py += 160.0f)
+    // Vertical Cyber Spine / Data Conduit between Left Deck and Right Deck (Upgrades tab only)
+    if (m_workshopActiveTabCanvas == m_workshopUpgradesCanvas)
     {
-        context.Render.DrawCircle(4.0f, Transform2D{Vector2f{spineX, py}}, Color{0, 220, 255, 180});
-        context.Render.DrawLine(Vector2f{spineX - 12.0f, py}, Vector2f{spineX + 12.0f, py}, Color{0, 200, 255, 120}, 1.5f);
+        const float spineX = screenCenterX - 130.0f;
+        context.Render.DrawLine(Vector2f{spineX, gridMinY + 20.0f}, Vector2f{spineX, gridMaxY - 20.0f}, Color{35, 60, 105, 160}, 2.0f);
+        for (float py = gridMinY + 100.0f; py <= gridMaxY - 60.0f; py += 160.0f)
+        {
+            context.Render.DrawCircle(4.0f, Transform2D{Vector2f{spineX, py}}, Color{0, 220, 255, 180});
+            context.Render.DrawLine(Vector2f{spineX - 12.0f, py}, Vector2f{spineX + 12.0f, py}, Color{0, 200, 255, 120}, 1.5f);
+        }
     }
 
     // Modal Frame Cyber Outline & Corner Brackets
@@ -5723,6 +5727,150 @@ void MenuScene::RenderWorkshopBackgroundVisuals(GameContext& context)
             }
         }
     }
+
+    // -------------------------------------------------------------
+    // 4. Tab 3 Backgrounds: Endless Mode Perks High-Contrast Relief Deck
+    // -------------------------------------------------------------
+    if (m_workshopActiveTabCanvas == m_workshopEndlessPerksCanvas)
+    {
+        Renderer& r = context.Render;
+        const Vector2f bannerCenter{screenCenterX, screenCenterY - 518.0f};
+        r.DrawRectangle(1460.0f, 84.0f, Transform2D{Vector2f{bannerCenter.X, bannerCenter.Y + 4.0f}}, Color{0, 0, 0, 150});
+        r.DrawRectangle(1456.0f, 82.0f, Transform2D{bannerCenter}, Color{20, 29, 50, 245});
+        r.DrawRectangleOutline(1456.0f, 82.0f, Transform2D{bannerCenter}, Color{255, 204, 68, 215}, 2.0f);
+        r.DrawLine(Vector2f{bannerCenter.X - 680.0f, bannerCenter.Y - 41.0f}, Vector2f{bannerCenter.X + 680.0f, bannerCenter.Y - 41.0f}, Color{255, 232, 132, 230}, 2.5f);
+
+        const float perkCardX[2] = {-530.0f, 530.0f};
+        const float perkCardY[2] = {-215.0f, 195.0f};
+        const Color perkAccents[4] = {
+            Color{208, 118, 255, 255},
+            Color{52, 224, 255, 255},
+            Color{255, 206, 64, 255},
+            Color{76, 246, 154, 255}
+        };
+
+        auto drawPerkEmblem = [&](int idx, const Vector2f& c, Color accent)
+        {
+            r.DrawRectangle(44.0f, 44.0f, Transform2D{c}, Color{10, 15, 26, 245});
+            r.DrawRectangleOutline(44.0f, 44.0f, Transform2D{c}, accent, 2.0f);
+
+            if (idx == 0)
+            {
+                r.DrawRectangle(22.0f, 22.0f, Transform2D{c}, Color{235, 215, 255, 245});
+                r.DrawRectangleOutline(22.0f, 22.0f, Transform2D{c}, accent, 1.8f);
+                const Color pip{26, 16, 44, 255};
+                r.DrawCircle(2.4f, Transform2D{c}, pip);
+                r.DrawCircle(2.4f, Transform2D{Vector2f{c.X - 5.5f, c.Y - 5.5f}}, pip);
+                r.DrawCircle(2.4f, Transform2D{Vector2f{c.X + 5.5f, c.Y + 5.5f}}, pip);
+                r.DrawCircle(2.4f, Transform2D{Vector2f{c.X - 5.5f, c.Y + 5.5f}}, pip);
+                r.DrawCircle(2.4f, Transform2D{Vector2f{c.X + 5.5f, c.Y - 5.5f}}, pip);
+            }
+            else if (idx == 1)
+            {
+                r.DrawLine(Vector2f{c.X - 12.0f, c.Y - 10.0f}, Vector2f{c.X + 12.0f, c.Y - 10.0f}, accent, 2.8f);
+                r.DrawLine(Vector2f{c.X - 12.0f, c.Y - 10.0f}, Vector2f{c.X - 10.0f, c.Y + 3.0f}, accent, 2.8f);
+                r.DrawLine(Vector2f{c.X + 12.0f, c.Y - 10.0f}, Vector2f{c.X + 10.0f, c.Y + 3.0f}, accent, 2.8f);
+                r.DrawLine(Vector2f{c.X - 10.0f, c.Y + 3.0f}, Vector2f{c.X, c.Y + 13.0f}, accent, 2.8f);
+                r.DrawLine(Vector2f{c.X + 10.0f, c.Y + 3.0f}, Vector2f{c.X, c.Y + 13.0f}, accent, 2.8f);
+                r.DrawCircle(4.5f, Transform2D{Vector2f{c.X, c.Y - 1.0f}}, Color{180, 248, 255, 240});
+            }
+            else if (idx == 2)
+            {
+                constexpr float kPi = 3.14159265358979323846f;
+                Vector2f pts[10];
+                for (int k = 0; k < 10; ++k)
+                {
+                    const float rad = (k % 2 == 0) ? 14.0f : 6.0f;
+                    const float ang = -kPi * 0.5f + static_cast<float>(k) * (kPi / 5.0f);
+                    pts[k] = Vector2f{c.X + std::cos(ang) * rad, c.Y + std::sin(ang) * rad};
+                }
+                for (int k = 0; k < 10; ++k)
+                {
+                    r.DrawLine(pts[k], pts[(k + 1) % 10], accent, 2.2f);
+                }
+                r.DrawCircle(4.5f, Transform2D{c}, Color{255, 244, 175, 245});
+            }
+            else
+            {
+                r.DrawCircle(6.5f, Transform2D{Vector2f{c.X - 5.5f, c.Y - 4.0f}}, accent);
+                r.DrawCircle(6.5f, Transform2D{Vector2f{c.X + 5.5f, c.Y - 4.0f}}, accent);
+                std::vector<Vertex> heartTri = {
+                    Vertex{c.X - 11.5f, c.Y - 1.5f, accent, 0.0f, 0.0f},
+                    Vertex{c.X + 11.5f, c.Y - 1.5f, accent, 0.0f, 0.0f},
+                    Vertex{c.X, c.Y + 12.5f, accent, 0.0f, 0.0f}
+                };
+                r.DrawVertices(heartTri, PrimitiveType::Triangles);
+            }
+        };
+
+        for (int i = 0; i < 4; ++i)
+        {
+            const EndlessPerkType perk = static_cast<EndlessPerkType>(i);
+            const int lvl = ProfileManager::Get().GetEndlessPerkLevel(perk);
+            const int maxLvl = std::max(1, ProfileManager::Get().GetEndlessPerkMaxLevel(perk));
+            const bool isMaxed = (lvl >= maxLvl);
+            const Color accent = isMaxed ? Color{255, 214, 72, 255} : perkAccents[i];
+
+            const float cx = screenCenterX + perkCardX[i % 2];
+            const float cy = screenCenterY + perkCardY[i / 2];
+            constexpr float cardW = 980.0f;
+            constexpr float cardH = 360.0f;
+            const float left = cx - cardW * 0.5f;
+            const float right = cx + cardW * 0.5f;
+            const float top = cy - cardH * 0.5f;
+            const float bot = cy + cardH * 0.5f;
+
+            // Soft signature aura & grounded drop shadow to detach card cleanly from background
+            r.DrawCircle(250.0f, Transform2D{Vector2f{cx, cy}}, Color{accent.r, accent.g, accent.b, 20}, BlendMode::Add);
+            r.DrawRectangle(cardW + 8.0f, cardH + 8.0f, Transform2D{Vector2f{cx, cy + 8.0f}}, Color{0, 0, 0, 195});
+
+            // Elevated high-contrast slate card chassis + top highlight / bottom bevel
+            r.DrawRectangle(cardW, cardH, Transform2D{Vector2f{cx, cy}}, Color{28, 39, 64, 252});
+            r.DrawRectangle(cardW - 8.0f, 6.0f, Transform2D{Vector2f{cx, top + 5.0f}}, Color{255, 255, 255, 28});
+            r.DrawRectangle(cardW - 8.0f, 8.0f, Transform2D{Vector2f{cx, bot - 6.0f}}, Color{6, 10, 18, 175});
+
+            // Header band + bold left accent pillar + glowing divider
+            r.DrawRectangle(cardW - 16.0f, 66.0f, Transform2D{Vector2f{cx, top + 45.0f}}, Color{15, 22, 38, 248});
+            r.DrawRectangle(8.0f, cardH - 6.0f, Transform2D{Vector2f{left + 6.0f, cy}}, accent);
+            r.DrawLine(Vector2f{left + 14.0f, top + 78.0f}, Vector2f{right - 14.0f, top + 78.0f}, accent, 2.2f);
+            drawPerkEmblem(i, Vector2f{left + 48.0f, top + 45.0f}, accent);
+
+            // Recessed dark telemetry box behind description and current/next tier details
+            const Vector2f descCenter{cx, cy - 30.0f};
+            r.DrawRectangle(cardW - 56.0f, 134.0f, Transform2D{descCenter}, Color{13, 19, 32, 242});
+            r.DrawRectangleOutline(cardW - 56.0f, 134.0f, Transform2D{descCenter}, Color{accent.r, accent.g, accent.b, 95}, 1.5f);
+
+            // Segmented Tier Progress Pips
+            const float pipGap = 12.0f;
+            const float totalPipW = 540.0f;
+            const float pipW = (totalPipW - pipGap * static_cast<float>(maxLvl - 1)) / static_cast<float>(maxLvl);
+            const float pipH = 16.0f;
+            const float pipY = cy + 60.0f;
+            const float startPipX = cx - totalPipW * 0.5f + pipW * 0.5f;
+            for (int t = 0; t < maxLvl; ++t)
+            {
+                const float px = startPipX + static_cast<float>(t) * (pipW + pipGap);
+                const bool filled = (t < lvl);
+                const Color pipFill = filled ? accent : Color{16, 23, 38, 240};
+                const Color pipEdge = filled ? Color{255, 255, 255, 210} : Color{74, 96, 134, 210};
+                r.DrawRectangle(pipW, pipH, Transform2D{Vector2f{px, pipY}}, pipFill);
+                if (filled)
+                {
+                    r.DrawRectangle(pipW - 6.0f, 4.0f, Transform2D{Vector2f{px, pipY - 4.0f}}, Color{255, 255, 255, 95});
+                }
+                r.DrawRectangleOutline(pipW, pipH, Transform2D{Vector2f{px, pipY}}, pipEdge, 1.5f);
+            }
+
+            // Crisp outer border & corner cyber brackets
+            r.DrawRectangleOutline(cardW, cardH, Transform2D{Vector2f{cx, cy}}, accent, isMaxed ? 3.2f : 2.6f);
+            constexpr float arm = 22.0f;
+            const Color cornerCol{255, 255, 255, 220};
+            r.DrawLine(Vector2f{right, top}, Vector2f{right - arm, top}, cornerCol, 2.8f);
+            r.DrawLine(Vector2f{right, top}, Vector2f{right, top + arm}, cornerCol, 2.8f);
+            r.DrawLine(Vector2f{right, bot}, Vector2f{right - arm, bot}, cornerCol, 2.8f);
+            r.DrawLine(Vector2f{right, bot}, Vector2f{right, bot - arm}, cornerCol, 2.8f);
+        }
+    }
 }
 
 void MenuScene::RenderWorkshopForegroundVisuals(GameContext& context)
@@ -5730,6 +5878,10 @@ void MenuScene::RenderWorkshopForegroundVisuals(GameContext& context)
     const Vector2f viewSize = context.Render.GetLogicalViewSize();
     const float screenCenterX = viewSize.X * 0.5f;
     const float screenCenterY = viewSize.Y * 0.5f;
+
+    const float creditsX = std::min(screenCenterX + 1030.0f, viewSize.X - 144.0f);
+    const UIRect workshopCreditsRect{Vector2f{creditsX, screenCenterY - 635.0f}, Vector2f{216.0f, 50.0f}};
+    ProfileGarageRenderer::DrawCreditsBadge(context.Render, workshopCreditsRect, m_fontId, PowerUpManager::Get().GetCoins());
 
     // 1. Tab 1 Foreground Reticles, Pulsing Selection Frames & CTA Glows
     if (m_workshopActiveTabCanvas == m_workshopUpgradesCanvas)
@@ -5819,6 +5971,30 @@ void MenuScene::RenderWorkshopForegroundVisuals(GameContext& context)
             uint8_t glowAlpha = static_cast<uint8_t>(180.0f + pulse * 75.0f);
             context.Render.DrawRectangleOutline(ultPipW, ultPipH,
                 Transform2D{Vector2f{activePipX, pipY}}, Color{255, 215, 60, glowAlpha}, 2.0f);
+        }
+    }
+
+    // 2b. Tab 3 Endless Perks Foreground CTA Glow when affordable
+    if (m_workshopActiveTabCanvas == m_workshopEndlessPerksCanvas)
+    {
+        const float perkCardX[2] = {-530.0f, 530.0f};
+        const float perkCardY[2] = {-215.0f, 195.0f};
+        const int coins = PowerUpManager::Get().GetCoins();
+        const float pulse = 0.5f + 0.5f * std::sin(m_previewAnimTime * 5.5f);
+        const uint8_t glowAlpha = static_cast<uint8_t>(175.0f + pulse * 80.0f);
+
+        for (int i = 0; i < 4; ++i)
+        {
+            const EndlessPerkType perk = static_cast<EndlessPerkType>(i);
+            const int lvl = ProfileManager::Get().GetEndlessPerkLevel(perk);
+            const int maxLvl = ProfileManager::Get().GetEndlessPerkMaxLevel(perk);
+            if (lvl < maxLvl && coins >= ProfileManager::Get().GetEndlessPerkUpgradeCost(perk))
+            {
+                const float cx = screenCenterX + perkCardX[i % 2];
+                const float cy = screenCenterY + perkCardY[i / 2] + 122.0f;
+                context.Render.DrawRectangleOutline(426.0f, 60.0f, Transform2D{Vector2f{cx, cy}},
+                    Color{92, 255, 168, glowAlpha}, 2.8f);
+            }
         }
     }
 

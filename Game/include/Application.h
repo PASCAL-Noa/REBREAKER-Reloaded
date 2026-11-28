@@ -12,12 +12,13 @@
 #include "Core/Timer.h"
 #include "Core/GameContext.h"
 #include "CheatManager.h"
+#include "UI/AchievementToastOverlay.h"
 
 class Application
 {
 public:
     explicit Application(const WindowConfig& config);
-    ~Application() = default;
+    ~Application();
 
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
@@ -41,4 +42,5 @@ private:
 
     GameContext m_context;
     CheatManager m_cheatManager;
+    AchievementToastOverlay m_achievementToast;
 };

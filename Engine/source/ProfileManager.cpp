@@ -1,4 +1,5 @@
 #include "Core/ProfileManager.h"
+#include "Core/AchievementManager.h"
 #include "Core/PlayerPrefs.h"
 #include "Core/json.hpp"
 #include "PowerUps/PowerUpConfig.h"
@@ -401,6 +402,11 @@ void ProfileManager::LoadProfile()
             }
         }
 
+        if (data.contains("achievements") && data["achievements"].is_object())
+        {
+            AchievementManager::Get().DeserializeFromJson(data["achievements"].dump());
+        }
+
         EvaluateAchievementUnlocks();
     }
     catch (const std::exception& e)
@@ -412,7 +418,7 @@ void ProfileManager::LoadProfile()
 void ProfileManager::SaveProfile() const
 {
     json data = json::object();
-    data["version"] = 2;
+    data["version"] = 3;
     data["username"] = GetUsername();
     data["lifetimeScore"] = GetLifetimeScore();
     data["lifetimeCredits"] = GetLifetimeCredits();
@@ -459,6 +465,15 @@ void ProfileManager::SaveProfile() const
         {"soundPack",      GetEquippedCosmetic(CosmeticSlot::SoundPack)},
         {"unlockedIds",    unlockedIds}
     };
+
+    try
+    {
+        data["achievements"] = json::parse(AchievementManager::Get().SerializeToJson());
+    }
+    catch (...)
+    {
+        data["achievements"] = json::object();
+    }
 
     AtomicWriteJson(std::filesystem::path(GetProfileFilePath()), data);
 }
@@ -1204,6 +1219,8 @@ void ProfileManager::ResetToDefaults()
         item.Unlocked = (item.UnlockType == CosmeticUnlockType::Default);
         PlayerPrefs::SetBool("Cosmetic_Unlocked_" + item.Id, item.Unlocked);
     }
+
+    AchievementManager::Get().ResetToDefaults();
 
     PlayerPrefs::Save();
     SaveProfile();

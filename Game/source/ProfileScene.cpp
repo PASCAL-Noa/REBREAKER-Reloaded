@@ -1,4 +1,5 @@
 #include "Scenes/ProfileScene.h"
+#include "Scenes/AchievementScene.h"
 #include "Scenes/MenuScene.h"
 #include "UI/ProfileGarageState.h"
 #include "UI/ProfileGarageInput.h"
@@ -6,9 +7,6 @@
 #include "Core/GameContext.h"
 #include "Core/SceneManager.h"
 #include "Core/InputManager.h"
-#include "Core/PlayerPrefs.h"
-#include "LevelManager.h"
-#include "LeaderboardManager.h"
 #include "Graphics/Renderer.h"
 #include "Resources/ResourceManager.h"
 #include "ECS/Components/Camera2D.h"
@@ -88,13 +86,11 @@ void ProfileScene::OnUpdate(float dt, GameContext& context)
         ReturnToMenu(context);
         return;
     }
-    if (res.FullResetConfirmed)
+    if (res.OpenAchievementShowcase)
     {
-        LevelManager lm;
-        lm.ResetProgression();
-        LeaderboardManager lb;
-        lb.ResetToDefaults();
-        PlayerPrefs::Save();
+        if (res.PlayClickSfx && m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 18.0f);
+        AchievementScene::Launch(context.Scenes);
+        return;
     }
     if (res.PlayClickSfx && m_clickSfxId != 0) context.Audio.PlaySfx(m_clickSfxId, 18.0f);
     if (res.PlaySwitchSfx && m_switchSfxId != 0) context.Audio.PlaySfx(m_switchSfxId, 16.0f);
@@ -104,11 +100,6 @@ void ProfileScene::OnUpdate(float dt, GameContext& context)
     {
         SpawnShowcaseBurst(res.BurstPos, 1.3f);
         m_autoBurstTimer = 1.65f;
-    }
-
-    if (m_state->GetViewMode() == ProfileViewMode::Career)
-    {
-        ClampCareerScroll(viewSize);
     }
 
     UpdateShowcase(dt, viewSize);
@@ -145,7 +136,7 @@ void ProfileScene::UpdateShowcase(float dt, const Vector2f& viewSize)
 
     const float phase = m_animTime * 2.1f;
     m_ballPos = Vector2f{
-        bounds.Center.X + std::sin(phase) * (bounds.Size.X * 0.28f),
+        bounds.Center.X + std::sin(phase) * (bounds.Size.X * 0.34f),
         bounds.Center.Y + std::sin(phase * 2.0f) * (bounds.Size.Y * 0.16f)
     };
 
@@ -201,9 +192,7 @@ void ProfileScene::UpdateShowcase(float dt, const Vector2f& viewSize)
         }
     }
 
-    if (m_state->GetViewMode() == ProfileViewMode::Garage &&
-        !m_state->IsColorModalOpen() &&
-        m_state->GetActiveSlot() == CosmeticSlot::DeathEffect)
+    if (!m_state->IsColorModalOpen() && m_state->GetActiveSlot() == CosmeticSlot::DeathEffect)
     {
         m_autoBurstTimer -= clampedDt;
         if (m_autoBurstTimer <= 0.0f)
@@ -236,17 +225,4 @@ void ProfileScene::ReturnToMenu(GameContext& context)
     MenuScene::SetReturnChannelType(ChannelType::Achievements);
     MenuScene::SetReturnWithDezoom(true);
     context.Scenes.LoadSceneWithTransition<MenuScene>(SceneTransitionType::StaticSnow, 0.55f);
-}
-
-void ProfileScene::ClampCareerScroll(const Vector2f& viewSize)
-{
-    int milestoneCount = 0;
-    for (const auto& c : ProfileManager::Get().GetAvailableCosmetics())
-    {
-        if (c.UnlockType == CosmeticUnlockType::Achievement) ++milestoneCount;
-    }
-    const int totalRows = (milestoneCount + 1) / 2;
-    const float totalContentH = static_cast<float>(totalRows) * 124.0f;
-    const float availH = ProfileGarageLayout::GetCareerListBottom(viewSize) - ProfileGarageLayout::GetCareerListTop(viewSize);
-    m_state->ClampCareerScroll(std::max(0.0f, totalContentH - availH));
 }

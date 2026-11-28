@@ -263,13 +263,13 @@ TEST_SUITE("Profile Customization Garage & Persistence")
         CHECK(state.GetInspectedItem()->Unlocked);
     }
 
-    TEST_CASE("ProfileGarageLayout centers 3 action buttons above 4 tabs and lowers nickname and showcase")
+    TEST_CASE("ProfileGarageLayout centers 3 action buttons above 4 tabs and flanks inline stats panels without overlap")
     {
         const Vector2f view{1920.0f, 1080.0f};
         const UIRect back = ProfileGarageLayout::GetBackButtonRect(view);
-        const UIRect nick = ProfileGarageLayout::GetNicknameRect(view, false);
-        const UIRect careerNick = ProfileGarageLayout::GetNicknameRect(view, true);
-        const UIRect careerLeft = ProfileGarageLayout::GetCareerLeftPanel(view);
+        const UIRect nick = ProfileGarageLayout::GetNicknameRect(view);
+        const UIRect statsLeft = ProfileGarageLayout::GetProfileStatsLeftRect(view);
+        const UIRect statsRight = ProfileGarageLayout::GetProfileStatsRightRect(view);
         const UIRect showcase = ProfileGarageLayout::GetShowcaseBounds(view);
         const UIRect action0 = ProfileGarageLayout::GetSideButtonRect(0, view);
         const UIRect action1 = ProfileGarageLayout::GetSideButtonRect(1, view);
@@ -307,6 +307,27 @@ TEST_SUITE("Profile Customization Garage & Persistence")
         CHECK(rightArrow.Center.Y == doctest::Approx(drawer.Center.Y));
         CHECK(leftArrow.Size.X == doctest::Approx(leftArrow.Size.Y));
 
-        CHECK(careerNick.Bottom() < careerLeft.Top());
+        CHECK(statsLeft.Center.X == doctest::Approx(-statsRight.Center.X));
+        CHECK(statsLeft.Center.Y == doctest::Approx(statsRight.Center.Y));
+        CHECK(statsLeft.Top() > back.Bottom());
+        CHECK(statsLeft.Bottom() < drawer.Top());
+        CHECK(statsLeft.Right() < tab0.Left());
+        CHECK(statsLeft.Right() < nick.Left());
+        CHECK(statsLeft.Right() < showcase.Left());
+        CHECK(statsRight.Left() > tab3.Right());
+        CHECK(statsRight.Left() > nick.Right());
+        CHECK(statsRight.Left() > showcase.Right());
+
+        const Vector2f view720{1280.0f, 720.0f};
+        const UIRect back720 = ProfileGarageLayout::GetBackButtonRect(view720);
+        const UIRect drawer720 = ProfileGarageLayout::GetDrawerRect(view720);
+        const UIRect tab0720 = ProfileGarageLayout::GetTabRect(0, view720);
+        const UIRect left720 = ProfileGarageLayout::GetProfileStatsLeftRect(view720);
+        const UIRect right720 = ProfileGarageLayout::GetProfileStatsRightRect(view720);
+        CHECK(left720.Top() > back720.Bottom());
+        CHECK(left720.Bottom() < drawer720.Top());
+        CHECK(left720.Right() < tab0720.Left());
+        CHECK(left720.Left() > -view720.X * 0.5f);
+        CHECK(right720.Right() < view720.X * 0.5f);
     }
 }

@@ -8,6 +8,7 @@
 #include "Core/GameRules.h"
 #include "Core/PlayerPrefs.h"
 #include "Core/ProfileManager.h"
+#include "Core/AchievementManager.h"
 #include "Core/SceneManager.h"
 #include "ECS/Systems/DynamicEventSystem.h"
 #include "ECS/Systems/PaddleSystem.h"
@@ -193,6 +194,7 @@ void EditorScene::OnInit(GameContext& context)
     m_renderGameUI = true;
     m_musicEnabled = false;
     GameScene::OnInit(context);
+    AchievementManager::Get().SetTrackingEnabled(false);
     m_renderGameUI = false;
     m_musicEnabled = true;
 
@@ -280,6 +282,7 @@ void EditorScene::OnInit(GameContext& context)
 
 void EditorScene::OnDestroy(GameContext& context)
 {
+    AchievementManager::Get().SetTrackingEnabled(true);
     context.Audio.SetMusicEditMode(false, 0.15f);
     GameScene::OnDestroy(context);
 }

@@ -5,6 +5,7 @@
 #include "Core/InputManager.h"
 #include "Core/SceneManager.h"
 #include "Core/GameRules.h"
+#include "Core/AchievementManager.h"
 #include "AudioMixer.h"
 #include "ECS/Components/Transform2D.h"
 #include "ECS/Components/BoxCollider.h"
@@ -330,6 +331,7 @@ void PreviewScene::OnInit(GameContext& context)
     m_musicEnabled = false;
     m_audioEnabled = false;
     GameScene::OnInit(context);
+    AchievementManager::Get().SetTrackingEnabled(false);
 
     if (!m_isEmbeddedMode)
     {
@@ -434,6 +436,7 @@ void PreviewScene::OnDestroy(GameContext& context)
     m_eventToastTimer = 0.0f;
     // Restore persistent levels so preview transient mutations never leak
     PowerUpManager::Get().ClearTransientOverrides();
+    AchievementManager::Get().SetTrackingEnabled(true);
     if (!m_isEmbeddedMode)
     {
         PowerUpManager::Get().LoadFromPrefs();

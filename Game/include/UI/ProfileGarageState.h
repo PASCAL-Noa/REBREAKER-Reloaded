@@ -7,12 +7,6 @@
 #include <vector>
 #include <cstdint>
 
-enum class ProfileViewMode : uint8_t
-{
-    Garage = 0,
-    Career = 1
-};
-
 enum class ProfileActionResult : uint8_t
 {
     None = 0,
@@ -35,9 +29,6 @@ public:
 
     void Initialize();
     void UpdateTimers(float dt);
-
-    [[nodiscard]] ProfileViewMode GetViewMode() const noexcept { return m_viewMode; }
-    void SetViewMode(ProfileViewMode mode);
 
     [[nodiscard]] int GetActiveTab() const noexcept { return m_activeTab; }
     [[nodiscard]] CosmeticSlot GetActiveSlot() const noexcept;
@@ -90,13 +81,6 @@ public:
     void CommitNicknameEdit();
     void CancelNicknameEdit();
 
-    [[nodiscard]] float GetCareerScrollY() const noexcept { return m_careerScrollY; }
-    void AddCareerScroll(float deltaY);
-    void ClampCareerScroll(float maxScroll);
-
-    [[nodiscard]] bool IsResetArmed() const noexcept { return m_resetArmed; }
-    bool ArmOrPerformReset();
-
     void ShowToast(const std::string& text, Color color);
     [[nodiscard]] const std::string& GetToastText() const noexcept { return m_toastText; }
     [[nodiscard]] Color GetToastColor() const noexcept { return m_toastColor; }
@@ -118,9 +102,7 @@ public:
 private:
     void SelectEquippedInCurrentTab();
     void SelectEquippedInColorModal();
-    void PerformFullSaveReset();
 
-    ProfileViewMode m_viewMode = ProfileViewMode::Garage;
     int m_activeTab = 0;
     int m_currentPage = 0;
     std::vector<CosmeticItem> m_currentItems;
@@ -137,10 +119,6 @@ private:
 
     bool m_editingNickname = false;
     std::string m_nicknameBuffer;
-
-    float m_careerScrollY = 0.0f;
-    bool m_resetArmed = false;
-    float m_resetArmTimer = 0.0f;
 
     std::string m_toastText;
     Color m_toastColor{0, 235, 255, 255};

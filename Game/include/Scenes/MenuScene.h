@@ -253,8 +253,6 @@ private:
     Entity  m_workshopUltimatesCanvas = NULL_ENTITY;
     Entity  m_workshopEndlessPerksCanvas = NULL_ENTITY;
     Entity  m_workshopActiveTabCanvas = NULL_ENTITY;
-    Entity  m_workshopBankText = NULL_ENTITY;
-    Entity  m_workshopPlayerText = NULL_ENTITY;
     Entity  m_workshopPageText = NULL_ENTITY;
     Entity  m_workshopEndlessPerkBtns[4]{NULL_ENTITY, NULL_ENTITY, NULL_ENTITY, NULL_ENTITY};
     Entity  m_workshopEndlessPerkTexts[4]{NULL_ENTITY, NULL_ENTITY, NULL_ENTITY, NULL_ENTITY};

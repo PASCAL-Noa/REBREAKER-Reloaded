@@ -10,6 +10,7 @@
 #include "ECS/Components/Transform2D.h"
 #include "PowerUps/PowerUpConfig.h"
 #include "Core/ProfileManager.h"
+#include "Core/AchievementManager.h"
 #include <optional>
 
 CheatManager::CheatManager(GameContext& context)
@@ -74,6 +75,7 @@ void CheatManager::Update(float dt, const GameContext& context)
                 if (static_cast<size_t>(m_konamiIndex) >= m_konamiSequence.size())
                 {
                     m_konamiIndex = 0;
+                    AchievementManager::Get().NotifyKonamiCodeActivated();
                     if (!m_cheatTabUnlocked)
                     {
                         m_cheatTabUnlocked = true;
